@@ -12,6 +12,7 @@ struct AddDeviceSheet: View {
     @State private var port = String(VantageProtocol.defaultPort)
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
+    @State private var useVirtualDisplay = false
     @State private var validationError: String?
 
     var body: some View {
@@ -38,11 +39,12 @@ struct AddDeviceSheet: View {
                         Text("HEVC (better quality)").tag(VideoCodec.hevc)
                         Text("H.264 (max compatibility)").tag(VideoCodec.h264)
                     }
-                    Toggle("Natural scrolling", isOn: $naturalScroll)
+                    Toggle("Natural Scrolling", isOn: $naturalScroll)
                 }
                 Section {
-                    Text("Vantage connects only over your Tailscale network. Make sure Tailscale is running on both devices.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Virtual Display", isOn: $useVirtualDisplay)
+                } footer: {
+                    Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Vantage connects only over your Tailscale network.")
                 }
             }
             .navigationTitle(existing == nil ? "Add Device" : "Edit Device")
@@ -63,6 +65,7 @@ struct AddDeviceSheet: View {
         port = String(existing.port)
         codec = existing.preferredCodec ?? .hevc
         naturalScroll = existing.naturalScroll
+        useVirtualDisplay = existing.useVirtualDisplay == true
     }
 
     private func save() {
@@ -79,6 +82,7 @@ struct AddDeviceSheet: View {
         device.port = address.port
         device.preferredCodec = codec
         device.naturalScroll = naturalScroll
+        device.useVirtualDisplay = useVirtualDisplay
         if existing != nil { store.update(device) } else { store.add(device) }
         dismiss()
     }

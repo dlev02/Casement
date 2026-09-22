@@ -59,12 +59,28 @@ nonisolated enum TailscaleCLI {
         return try JSONDecoder().decode(Status.self, from: data)
     }
 
-    /// Identifies the tailnet node behind a peer IP:port using LocalAPI whois via the CLI.
+    private static let whoisLock = NSLock()
+    nonisolated(unsafe) private static var whoisCache: [String: String?] = [:]
+
+    /// Identifies the tailnet node behind a peer IP using LocalAPI whois via the CLI. The result
+    /// is cached per address for the life of the process so reconnects don't pay for a subprocess
+    /// on the handshake path.
     static func whois(addr: String) -> String? {
-        guard let data = try? run(["whois", "--json", addr]),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let userProfile = object["UserProfile"] as? [String: Any] else { return nil }
-        return userProfile["LoginName"] as? String ?? userProfile["DisplayName"] as? String
+        let address = addr.split(separator: ":").first.map(String.init) ?? addr
+        whoisLock.lock()
+        if let cached = whoisCache[address] { whoisLock.unlock(); return cached }
+        whoisLock.unlock()
+
+        var name: String?
+        if let data = try? run(["whois", "--json", address], timeout: 2),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let userProfile = object["UserProfile"] as? [String: Any] {
+            name = userProfile["LoginName"] as? String ?? userProfile["DisplayName"] as? String
+        }
+        whoisLock.lock()
+        whoisCache[address] = name
+        whoisLock.unlock()
+        return name
     }
 
     @discardableResult

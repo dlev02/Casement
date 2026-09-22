@@ -171,7 +171,8 @@ final class ClientSession {
                 }
                 // Every new connection needs its own stream request, including reconnects.
                 try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
-                    targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec)))
+                    targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
+                    useVirtualDisplay: device.useVirtualDisplay == true)))
                 state = .connected
                 reconnectAttempts = 0
                 while let message = try await channel.receive() {

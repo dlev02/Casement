@@ -60,8 +60,11 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     var connectionCount: Int
     var preferredCodec: VideoCodec?
     var naturalScroll: Bool
+    /// Ask the Mac for a BetterDisplay virtual display sized to this device. Optional so devices
+    /// saved by earlier builds still decode; nil means off.
+    var useVirtualDisplay: Bool?
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -71,6 +74,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.connectionCount = connectionCount
         self.preferredCodec = preferredCodec
         self.naturalScroll = naturalScroll
+        self.useVirtualDisplay = useVirtualDisplay
     }
 }
 

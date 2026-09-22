@@ -37,7 +37,14 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   forwards through `InputController`. SwiftUI shell: `DeviceListScreen`, `RemoteSessionScreen`,
   `ControlStrip`, Liquid Glass throughout.
 - **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual screen sized to
-  the iPad viewport (behind a protocol so `CGVirtualDisplay` can replace it later).
+  the iPad viewport (behind a protocol so `CGVirtualDisplay` can replace it later). It is opt-in
+  per saved device (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`). The
+  default path streams the main display immediately; never put BetterDisplay's CLI back on the
+  connect path unconditionally — on Drew's Mac it answers "Failed." to everything and the old
+  15 s poll made every connect take 16 s.
+- **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
+  characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
+  back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.
 
 ## Build & test
 
@@ -82,7 +89,17 @@ xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0
 ```
 
 `--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the
-whole encode → transport → decode → display path runs without Screen Recording access. Synthetic mode
+whole encode → transport → decode → display path runs without Screen Recording access.
+
+To test against the **real** host (display capture + CGEvent input) from the simulator, launch the
+Debug host with `--pairing-code 246810` and no `--synthetic-capture`, then auto-connect the
+simulator to `127.0.0.1`. The simulator's identity is trusted after the first pairing. To verify
+clicks without touching anything on the desktop, build `scripts/click-target.swift` (`swiftc -O`)
+and run it: it floats an orange window at CG 400–700 × 300–500 and prints every pointer event it
+receives; a tap in the simulator in Trackpad mode clicks at the display centre, inside that window.
+Drive the simulator with Axiom's `xcui tap -x -y` (the `--label` matcher does not resolve SwiftUI
+rows here). Host timing is logged as "stream setup took N ms" in the `session` category, and every
+click as "pointer down/up" in the `input` category. Synthetic mode
 disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
 and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)

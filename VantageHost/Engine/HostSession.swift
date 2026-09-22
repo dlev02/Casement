@@ -144,6 +144,8 @@ actor HostSession {
     // MARK: Streaming
 
     private func startStreaming(_ select: SelectDisplay) async throws {
+        let startedAt = MonotonicClock.nanos()
+        defer { log.info("stream setup took \((MonotonicClock.nanos() - startedAt) / 1_000_000) ms") }
         await stopStreaming()
         let chosen: DisplayInfo
         if HostOptions.shared.syntheticCapture {
@@ -161,10 +163,25 @@ actor HostSession {
                 guard let match = all.first(where: { $0.info.id == id }) else { throw CaptureError.displayNotFound }
                 chosen = match.info
             case .fitViewport(let viewport):
-                let vdm = VirtualDisplayManager()
-                if vdm.isAvailable, let virtualID = try? await vdm.provision(pointWidth: viewport.pixelWidth / 2, pointHeight: viewport.pixelHeight / 2),
-                   let match = try? await DisplayEnumerator.shareableDisplays().first(where: { $0.info.id == virtualID }) {
-                    chosen = match.info
+                // Only provision a virtual display when the client asked for one. The default
+                // path must never wait on BetterDisplay: it costs the whole connect time.
+                var virtualMatch: DisplayInfo?
+                if select.useVirtualDisplay == true {
+                    let vdm = VirtualDisplayManager()
+                    if vdm.isAvailable {
+                        let started = MonotonicClock.nanos()
+                        if let virtualID = try? await vdm.provision(pointWidth: viewport.pixelWidth / 2, pointHeight: viewport.pixelHeight / 2),
+                           let match = try? await DisplayEnumerator.shareableDisplays().first(where: { $0.info.id == virtualID }) {
+                            virtualMatch = match.info
+                        } else {
+                            log.error("virtual display unavailable after \((MonotonicClock.nanos() - started) / 1_000_000) ms; using the main display")
+                        }
+                    } else {
+                        log.info("virtual display requested but BetterDisplay CLI is not installed; using the main display")
+                    }
+                }
+                if let virtualMatch {
+                    chosen = virtualMatch
                 } else if let match = all.first(where: { $0.info.id == mainID }) ?? all.first {
                     chosen = match.info
                 } else {
@@ -217,7 +234,7 @@ actor HostSession {
         lockMonitor.start()
         channel.sendDetached(.hostStatus(lockMonitor.currentStatus()))
         needsKeyframe = true
-        log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight)")
+        log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
     }
 
     private func ingest(_ frame: CapturedFrame) {

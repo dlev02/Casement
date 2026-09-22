@@ -39,8 +39,9 @@ nonisolated final class VirtualDisplayManager: @unchecked Sendable {
         }
         _ = try? runCLI(["set", "-namelike=\(screenName)", "-resolution=\(pixelWidth)x\(pixelHeight)", "-hidpi=on"])
 
-        // Poll CoreGraphics for the display to come online.
-        for _ in 0 ..< 60 {
+        // Poll CoreGraphics briefly for the display to come online. This runs on the connect
+        // path, so give up quickly; the caller falls back to the main display.
+        for _ in 0 ..< 16 {
             if let id = existingVirtualDisplayID() { return id }
             try await Task.sleep(for: .milliseconds(250))
         }
@@ -62,7 +63,7 @@ nonisolated final class VirtualDisplayManager: @unchecked Sendable {
     }
 
     @discardableResult
-    private func runCLI(_ arguments: [String], timeout: TimeInterval = 8) throws -> Data {
+    private func runCLI(_ arguments: [String], timeout: TimeInterval = 3) throws -> Data {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: cliPath)
         process.arguments = arguments

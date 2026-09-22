@@ -198,12 +198,16 @@ public struct SelectDisplay: Codable, Sendable {
     public var targetFPS: Int
     public var quality: QualityPreset
     public var preferredCodec: VideoCodec?
+    /// When true, `.fitViewport` asks the host to provision a virtual display sized to the
+    /// viewport (BetterDisplay). When false or absent the host streams its main display at once.
+    public var useVirtualDisplay: Bool?
 
-    public init(selection: DisplaySelection, targetFPS: Int, quality: QualityPreset, preferredCodec: VideoCodec? = nil) {
+    public init(selection: DisplaySelection, targetFPS: Int, quality: QualityPreset, preferredCodec: VideoCodec? = nil, useVirtualDisplay: Bool? = nil) {
         self.selection = selection
         self.targetFPS = targetFPS
         self.quality = quality
         self.preferredCodec = preferredCodec
+        self.useVirtualDisplay = useVirtualDisplay
     }
 }
 

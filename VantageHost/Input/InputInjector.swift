@@ -22,6 +22,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
     private var currentFlags: CGEventFlags = []
     private var lastPointer: CGPoint = .zero
     private var naturalScroll: Bool
+    private var pointerEventCount = 0
 
     init(displayFrame: CGRect, naturalScroll: Bool = false) {
         self.displayFrame = displayFrame
@@ -71,7 +72,10 @@ nonisolated final class InputInjector: @unchecked Sendable {
             heldButtons.remove(event.button)
             type = upType(for: event.button)
         }
-        guard let cgEvent = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return }
+        guard let cgEvent = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button) else {
+            log.error("could not create pointer event")
+            return
+        }
         cgEvent.flags = flags
         if event.action != .move {
             cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(max(1, event.clickCount)))
@@ -80,6 +84,10 @@ nonisolated final class InputInjector: @unchecked Sendable {
             cgEvent.setIntegerValueField(.mouseEventButtonNumber, value: Int64(event.button.rawValue))
         }
         cgEvent.post(tap: tap)
+        pointerEventCount += 1
+        if event.action != .move || pointerEventCount == 1 {
+            log.info("pointer \(String(describing: event.action), privacy: .public) \(String(describing: event.button), privacy: .public) at \(Int(point.x)),\(Int(point.y)) clicks=\(event.clickCount) trusted=\(AXIsProcessTrusted())")
+        }
     }
 
     // MARK: Scroll
