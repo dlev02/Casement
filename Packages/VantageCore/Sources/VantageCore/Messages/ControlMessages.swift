@@ -78,8 +78,10 @@ public struct Hello: Codable, Sendable {
     public var maxDecodeWidth: Int
     public var maxDecodeHeight: Int
     public var viewport: Viewport?
+    /// Optional for compatibility with hosts/clients predating readiness checks.
+    public var isReadinessProbe: Bool?
 
-    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?) {
+    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil) {
         self.protocolVersion = protocolVersion
         self.clientName = clientName
         self.deviceModel = deviceModel
@@ -89,6 +91,7 @@ public struct Hello: Codable, Sendable {
         self.maxDecodeWidth = maxDecodeWidth
         self.maxDecodeHeight = maxDecodeHeight
         self.viewport = viewport
+        self.isReadinessProbe = isReadinessProbe
     }
 }
 
@@ -155,13 +158,24 @@ public struct AuthResult: Codable, Sendable {
     public var sessionToken: Data?
     public var displays: [DisplayInfo]?
     public var capabilities: HostCapabilities?
+    public var readiness: HostReadiness?
 
-    public init(status: AuthStatus, message: String? = nil, sessionToken: Data? = nil, displays: [DisplayInfo]? = nil, capabilities: HostCapabilities? = nil) {
+    public init(status: AuthStatus, message: String? = nil, sessionToken: Data? = nil, displays: [DisplayInfo]? = nil, capabilities: HostCapabilities? = nil, readiness: HostReadiness? = nil) {
         self.status = status
         self.message = message
         self.sessionToken = sessionToken
         self.displays = displays
         self.capabilities = capabilities
+        self.readiness = readiness
+    }
+}
+
+public struct HostReadiness: Codable, Sendable {
+    public var screenRecordingGranted: Bool
+    public var accessibilityGranted: Bool
+    public init(screenRecordingGranted: Bool, accessibilityGranted: Bool) {
+        self.screenRecordingGranted = screenRecordingGranted
+        self.accessibilityGranted = accessibilityGranted
     }
 }
 

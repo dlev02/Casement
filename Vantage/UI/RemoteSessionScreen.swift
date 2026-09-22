@@ -18,6 +18,10 @@ struct RemoteSessionScreen: View {
     @State private var viewportSize = CGSize(width: 1210, height: 834)
     @Environment(\.displayScale) private var displayScale
     @AppStorage("vantage.trackpadSensitivity") private var trackpadSensitivity = 1.5
+    @State private var toolbarCollapsed = UserDefaults.standard.bool(forKey: "vantage.toolbarCollapsed")
+    @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @GestureState private var toolbarTranslation = CGSize.zero
     @State private var feedbackTask: Task<Void, Never>?
 
     var body: some View {
@@ -42,8 +46,12 @@ struct RemoteSessionScreen: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Spacer()
-                if session.state == .connected {
+            }
+            if session.state == .connected {
+                GeometryReader { geometry in
                     ControlStrip(
+                        isCollapsed: $toolbarCollapsed,
+                        dock: $toolbarDock,
                         stickyModifiers: $stickyModifiers,
                         touchMode: $touchMode,
                         onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
@@ -56,12 +64,21 @@ struct RemoteSessionScreen: View {
                         },
                         onDisconnect: disconnect
                     )
-                    .padding(.bottom, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .offset(toolbarTranslation)
+                    .simultaneousGesture(DragGesture(minimumDistance: 18)
+                        .updating($toolbarTranslation) { value, translation, _ in
+                            translation = CGSize(width: max(-geometry.size.width / 2, min(geometry.size.width / 2, value.translation.width)),
+                                                 height: max(-geometry.size.height / 2, min(geometry.size.height / 2, value.translation.height)))
+                        }
+                        .onEnded { value in toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation) })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
+                    .padding(12)
+                    .padding(.top, 32) // Keep drags below iPadOS window-management gestures.
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: toolbarDock)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: toolbarCollapsed)
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
@@ -74,7 +91,15 @@ struct RemoteSessionScreen: View {
             }
         }
         .onChange(of: touchMode) { _, newValue in input.mode = newValue }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { session.retryNow() } }
+        .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
+        .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                showKeyboard = false
+                stickyModifiers = []
+                session.suspendForBackground()
+            } else if phase == .active { session.retryNow() }
+        }
         .overlay(alignment: .top) { hiddenKeyboardField }
         .task { await startSession() }
         .onDisappear { teardown() }
@@ -86,7 +111,7 @@ struct RemoteSessionScreen: View {
             case .connecting, .authenticating:
                 ProgressView().controlSize(.large).tint(.white)
                 Text("Connecting to \(device.name)…").foregroundStyle(.white)
-            case .reconnecting:
+            case .reconnecting, .suspended:
                 ProgressView().controlSize(.large).tint(.white)
                 Text("Reconnecting…").foregroundStyle(.white)
             case .pairingRequired:
@@ -108,7 +133,17 @@ struct RemoteSessionScreen: View {
             }
         }
         .padding(32)
-        .glassEffect(in: .rect(cornerRadius: 24))
+        .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
+        .preferredColorScheme(.dark)
+    }
+
+    private var toolbarAlignment: Alignment {
+        switch toolbarDock {
+        case .topLeft: .topLeading
+        case .topRight: .topTrailing
+        case .bottomLeft: .bottomLeading
+        case .bottomRight: .bottomTrailing
+        }
     }
 
     @ViewBuilder

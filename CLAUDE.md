@@ -77,14 +77,14 @@ The simulator cannot route to the Mac's Tailscale interface, so test over loopba
 loopback peers in addition to tailnet peers):
 
 ```
-open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture --pairing-code 246810
-xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1 -VantagePairingCode 246810
+open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture --port 47821 --pairing-code 246810
+xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
 `--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the
 whole encode → transport → decode → display path runs without Screen Recording access. Synthetic mode
 disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
-and fixed-code arguments are DEBUG-only. Quit the synthetic host before a real-device test. Client debug
+and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
 `log` in Drew's profile).
@@ -108,5 +108,5 @@ are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a she
   Hardware behavior still needs a physical-device check.
 - File transfer is not implemented; clipboard carries text, RTF, and PNG images both ways.
 - Virtual-display provisioning is wired but falls back to the main display if BetterDisplay's CLI
-  isn't available. Live capture/input on a real display is still unverified pending the two TCC
-  grants; the synthetic path is verified end to end.
+  isn't available. Drew verified real Mac video, pointer/clicks, and software-keyboard typing on the physical iPad.
+  Clipboard, hardware keyboard, BetterDisplay, and biometric session recovery still need device checks.

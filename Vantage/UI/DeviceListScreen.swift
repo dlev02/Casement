@@ -7,7 +7,9 @@ struct DeviceListScreen: View {
     @Environment(TailscaleReachability.self) private var reachability
     @State private var showAddDevice = false
     @State private var editingDevice: SavedDevice?
-    @State private var selectedDevice: SavedDevice?
+    @Binding var selectedDevice: SavedDevice?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var availability = HostAvailabilityStore()
 
     var body: some View {
         @Bindable var store = store
@@ -33,13 +35,14 @@ struct DeviceListScreen: View {
             .sheet(item: $editingDevice) { device in
                 AddDeviceSheet(existing: device)
             }
-            .fullScreenCover(item: $selectedDevice) { device in
-                RemoteSessionScreen(device: device)
-            }
             .task {
                 if let host = ClientOptions.autoConnectHost, selectedDevice == nil {
                     selectedDevice = store.devices.first { $0.host == host }
                 }
+            }
+            .task(id: availabilityKey) {
+                guard scenePhase == .active, selectedDevice == nil else { return }
+                await availability.monitor(store.devices)
             }
         }
     }
@@ -48,7 +51,7 @@ struct DeviceListScreen: View {
         List {
             ForEach(store.sortedDevices) { device in
                 Button { selectedDevice = device } label: {
-                    DeviceRow(device: device)
+                    DeviceRow(device: device, availability: availability.statuses[device.id] ?? .checking)
                 }
                 .buttonStyle(.plain)
                 .swipeActions {
@@ -64,7 +67,7 @@ struct DeviceListScreen: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], spacing: 16) {
                 ForEach(store.sortedDevices) { device in
                     Button { selectedDevice = device } label: {
-                        DeviceCard(device: device)
+                        DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking)
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
@@ -114,6 +117,11 @@ struct DeviceListScreen: View {
         Binding(get: { store.sort }, set: { store.sort = $0 })
     }
 
+    private var availabilityKey: String {
+        guard scenePhase == .active, selectedDevice == nil else { return "paused" }
+        return store.devices.map { "\($0.id):\($0.host):\($0.port)" }.joined(separator: "|")
+    }
+
     @ViewBuilder
     private var tailscaleBanner: some View {
         if !reachability.isActive {
@@ -134,6 +142,7 @@ struct DeviceListScreen: View {
 
 struct DeviceRow: View {
     let device: SavedDevice
+    var availability: HostAvailability = .checking
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: osSymbol(device.os))
@@ -143,6 +152,7 @@ struct DeviceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name).font(.headline)
                 Text(device.host).font(.caption).foregroundStyle(.secondary)
+                AvailabilityLabel(status: availability)
             }
             Spacer()
             if let last = device.lastConnected {
@@ -158,17 +168,43 @@ struct DeviceRow: View {
 
 struct DeviceCard: View {
     let device: SavedDevice
+    var availability: HostAvailability = .checking
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: osSymbol(device.os)).font(.largeTitle).foregroundStyle(.tint)
+            HStack {
+                Image(systemName: osSymbol(device.os)).font(.largeTitle).foregroundStyle(.tint)
+                Spacer()
+                Circle().fill(availability.tint).frame(width: 8, height: 8).accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name).font(.headline).lineLimit(1)
                 Text(device.host).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                AvailabilityLabel(status: availability)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .glassEffect(in: .rect(cornerRadius: 20))
+    }
+}
+
+private struct AvailabilityLabel: View {
+    let status: HostAvailability
+    var body: some View {
+        Label(status.label, systemImage: status == .checking ? "ellipsis" : "circle.fill")
+            .font(.caption)
+            .foregroundStyle(status.tint)
+            .accessibilityLabel("Host status: \(status.label)")
+    }
+}
+
+private extension HostAvailability {
+    var tint: Color {
+        switch self {
+        case .ready, .online: .green
+        case .pairingRequired, .needsPermission, .incompatible: .orange
+        case .checking, .unavailable: .secondary
+        }
     }
 }
 

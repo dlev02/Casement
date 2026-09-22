@@ -9,11 +9,15 @@ nonisolated final class HostOptions: @unchecked Sendable {
 
     let syntheticCapture: Bool
     let fixedPairingCode: String?
+    let port: UInt16
 
     private init() {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         syntheticCapture = args.contains("--synthetic-capture")
+        if let index = args.firstIndex(of: "--port"), index + 1 < args.count,
+           let value = UInt16(args[index + 1]), value > 0 { port = value }
+        else { port = 47820 }
         if let index = args.firstIndex(of: "--pairing-code"), index + 1 < args.count {
             fixedPairingCode = args[index + 1]
         } else {
@@ -22,6 +26,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         #else
         syntheticCapture = false
         fixedPairingCode = nil
+        port = 47820
         #endif
     }
 }

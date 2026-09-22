@@ -128,3 +128,99 @@ struct ClientSessionTests {
         await channel.close()
     }
 }
+
+@Suite(.timeLimit(.minutes(1)))
+struct SessionLifecycleTests {
+    @Test @MainActor func returningFromBackgroundCreatesFreshStream() async throws {
+        let (listener, channels) = try await listen()
+        defer { listener.cancel() }
+        let server = Task {
+            var iterator = channels.makeAsyncIterator()
+            for _ in 0..<2 {
+                let channel = try #require(await iterator.next())
+                _ = try await authenticate(channel, status: .ok, paired: true)
+                guard case .selectDisplay? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+                #expect(try await channel.receive() == nil)
+            }
+        }
+        let session = ClientSession(identity: DeviceIdentity())
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Test", host: "127.0.0.1", port: listener.port!.rawValue),
+                        viewport: Viewport(widthPoints: 800, heightPoints: 600, scale: 2))
+        try await eventually { session.state == .connected }
+        session.suspendForBackground()
+        #expect(session.state == .suspended)
+        session.retryNow()
+        try await eventually { session.state == .connected }
+        session.disconnect()
+        session.retryNow()
+        #expect(session.state == .idle)
+        try await server.value
+    }
+
+    @Test @MainActor func backgroundPreservesPairingPrompt() async throws {
+        let (listener, channels) = try await listen()
+        defer { listener.cancel() }
+        let server = Task {
+            var iterator = channels.makeAsyncIterator()
+            let channel = try #require(await iterator.next())
+            _ = try await authenticate(channel, status: .badPairingCode, paired: false)
+            await channel.close()
+        }
+        let session = ClientSession(identity: DeviceIdentity())
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Test", host: "127.0.0.1", port: listener.port!.rawValue),
+                        viewport: Viewport(widthPoints: 800, heightPoints: 600, scale: 2), pairingCode: "000000")
+        try await eventually { session.state == .pairingRequired }
+        session.suspendForBackground()
+        session.retryNow()
+        #expect(session.state == .pairingRequired)
+        #expect(session.pairingError != nil)
+        try await server.value
+    }
+
+    @Test @MainActor func availabilityAuthenticatesWithoutStartingVideo() async throws {
+        for expected in [HostAvailability.ready, .needsPermission, .pairingRequired, .online] {
+            let (listener, channels) = try await listen()
+            defer { listener.cancel() }
+            let server = Task {
+                var iterator = channels.makeAsyncIterator()
+                let channel = try #require(await iterator.next())
+                try await channel.start()
+                guard case .hello(let hello)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+                #expect(hello.isReadinessProbe == true)
+                let identity = DeviceIdentity()
+                let nonce = AuthTranscript.randomNonce()
+                try await channel.send(.challenge(Challenge(hostName: "Test", hostVersion: "1.0", hostPublicKey: identity.publicKeyData,
+                    nonce: nonce, isPaired: expected != .pairingRequired)))
+                guard case .authenticate(let auth)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+                #expect(auth.pairingCode == nil)
+                #expect(AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData,
+                                              clientPublicKey: hello.clientPublicKey))
+                try await channel.send(.authResult(AuthResult(status: expected == .pairingRequired ? .pairingRequired : .ok,
+                    readiness: expected == .online ? nil : HostReadiness(screenRecordingGranted: true,
+                        accessibilityGranted: expected != .needsPermission))))
+                #expect(try await channel.receive() == nil) // Probe closes instead of selecting a display.
+            }
+            let result = await HostAvailabilityProbe.check(SavedDevice(name: "Test", host: "127.0.0.1", port: listener.port!.rawValue), identity: DeviceIdentity())
+            #expect(result == expected)
+            try await server.value
+        }
+    }
+
+    @Test @MainActor func silentHostProbeTimesOutAndClosesSocket() async throws {
+        let (listener, channels) = try await listen()
+        defer { listener.cancel() }
+        let server = Task {
+            var iterator = channels.makeAsyncIterator()
+            let channel = try #require(await iterator.next())
+            try await channel.start()
+            guard case .hello? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            #expect(try await channel.receive() == nil)
+        }
+        let result = await HostAvailabilityProbe.check(SavedDevice(name: "Test", host: "127.0.0.1", port: listener.port!.rawValue),
+                                                       identity: DeviceIdentity(), timeout: .milliseconds(150))
+        #expect(result == .unavailable)
+        try await server.value
+    }
+}

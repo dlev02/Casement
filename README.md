@@ -8,9 +8,12 @@ A native remote desktop for controlling your Mac from an iPad or iPhone over Tai
 
 - Streams a Mac display using ScreenCaptureKit and hardware HEVC or H.264 encoding.
 - Supports touch, trackpad-style gestures, hardware keyboards, and an on-screen command strip that adapts to iPad and iPhone widths.
+- Collapses the session toolbar to a compact keyboard control; drag it between all four corners, with your position remembered.
+- Offers Automatic, Light, and Dark appearance in organized settings.
+- Checks saved hosts for authenticated availability and required Mac permissions without capturing desktop previews.
 - Pairs a client using a six-digit code, then remembers its device identity.
 - Shares text, rich text, and PNG clipboard content. Sending the iPad clipboard is an explicit action.
-- Reconnects after a dropped connection and requests a fresh stream automatically.
+- Reconnects after a dropped connection and immediately when returning to an open session from another app.
 - Offers start-at-login on the Mac and an optional device-authentication lock on the client.
 - Can request a virtual display through BetterDisplay's CLI, with a main-display fallback. This integration still needs a live test.
 
@@ -52,6 +55,8 @@ The products are `.deriveddata/Build/Products/Debug/VantageHost.app` and `.deriv
 5. Select the device. In the Mac menu, choose **Show pairing code**, then enter that code in the client and tap **Pair**. A code is consumed once; generate another for each new device.
 6. In a session, use **Session Options** for touch mode, **Send Clipboard to Mac**, or **Disconnect**. The keyboard button opens or closes software input; its **Done** button dismisses it.
 
+Drag either the expanded toolbar or its compact control to move it to a top or bottom corner. Tap the chevron to collapse or expand. Settings separates Appearance, Controls, Connection, and Privacy & Security. An **Available** host has answered an authenticated probe and reports both Mac permissions granted; older hosts show **Host online** until updated. Checks run only while the device list is visible.
+
 Optional: enable **Start Vantage Host at login** in the host's **Settings → Reboot** tab. The Mac must still finish login after a restart.
 
 ## Troubleshooting
@@ -74,19 +79,27 @@ xcrun swift test --package-path Packages/VantageCore
 xcrun swift test
 ```
 
-The first suite checks wire encoding, identities, geometry, and real loopback transport. The root package compiles the actual client session source and tests first-time pairing, bad-code retry, stream requests after reconnect, and cancellation during a handshake. It also stress-tests four concurrent synthetic renderers.
+The first suite checks wire encoding, identities, geometry, and real loopback transport. The root package compiles actual client source and tests pairing, bad-code retry, reconnect and foreground recovery, canceled handshakes, authenticated availability probes, address parsing, and toolbar docking. It also stress-tests four concurrent synthetic renderers.
 
 For a permission-free video check, build both debug targets, start a simulator, and substitute its ID for `SIMULATOR_ID`:
 
 ```sh
 open -n .deriveddata/Build/Products/Debug/VantageHost.app \
-  --args --synthetic-capture --pairing-code 246810
+  --args --synthetic-capture --port 47821 --pairing-code 246810
 xcrun simctl install SIMULATOR_ID .deriveddata/Build/Products/Debug-iphonesimulator/Vantage.app
 xcrun simctl launch SIMULATOR_ID com.benjaminlevinson.vantage \
-  -VantageAutoConnect 127.0.0.1 -VantagePairingCode 246810
+  -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
-Quit any normal host first so only one process owns port 47820. Synthetic mode renders a moving test pattern and does not capture the desktop, inject input, apply host commands, or read/write the real clipboard. Its paired-device records are separate from normal host records. The fixed code and synthetic launch arguments are debug-only. **Quit the test host and relaunch without arguments before trying your real desktop.**
+The debug-only port override keeps the test host separate from the normal host on port 47820. Synthetic mode renders a moving test pattern and does not capture the desktop, inject input, apply host commands, or read/write the real clipboard. Its paired-device records are separate from normal host records. The fixed code and synthetic launch arguments are debug-only. **Quit the test host after testing. Use the normal host on port 47820 for your real desktop.**
+
+With that synthetic host running, native UI tests cover availability, appearance selection, toolbar collapse/expansion and dragging, and returning from the Home Screen:
+
+```sh
+xcodebuild test -project Vantage.xcodeproj -scheme VantageUITests \
+  -destination 'platform=iOS Simulator,id=SIMULATOR_ID' \
+  -derivedDataPath .deriveddata -parallel-testing-enabled NO
+```
 
 ## Architecture and boundaries
 

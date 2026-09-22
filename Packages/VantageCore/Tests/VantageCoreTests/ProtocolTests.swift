@@ -122,3 +122,16 @@ import Testing
     #expect(rect.height < 1000)
     #expect(abs(rect.minY - (1000 - rect.height) / 2) < 0.5)
 }
+
+@Test func readinessMetadataRemainsCompatibleWithOlderPeers() throws {
+    let hello = Hello(clientName: "Test", deviceModel: "iPad", appVersion: "1.0", clientPublicKey: Data(repeating: 1, count: 32),
+                      supportedCodecs: [.hevc], maxDecodeWidth: 1, maxDecodeHeight: 1, viewport: nil)
+    let oldHello = try JSONEncoder().encode(hello)
+    #expect(try JSONDecoder().decode(Hello.self, from: oldHello).isReadinessProbe == nil)
+    let oldResult = Data(#"{"status":"ok"}"#.utf8)
+    #expect(try JSONDecoder().decode(AuthResult.self, from: oldResult).readiness == nil)
+    let newResult = AuthResult(status: .ok, readiness: HostReadiness(screenRecordingGranted: true, accessibilityGranted: false))
+    let decoded = try JSONDecoder().decode(AuthResult.self, from: JSONEncoder().encode(newResult))
+    #expect(decoded.readiness?.screenRecordingGranted == true)
+    #expect(decoded.readiness?.accessibilityGranted == false)
+}

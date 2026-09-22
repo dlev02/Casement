@@ -6,16 +6,29 @@ struct ContentView: View {
     @State private var store = DeviceStore()
     @State private var reachability = TailscaleReachability()
     @State private var lock = AppLock()
+    @State private var selectedDevice: SavedDevice?
+    @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
 
     var body: some View {
         ZStack {
             if lock.isLocked {
                 LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
             } else {
-                DeviceListScreen()
+                DeviceListScreen(selectedDevice: $selectedDevice)
                     .environment(store)
                     .environment(reachability)
             }
+        }
+        .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+        .fullScreenCover(item: $selectedDevice) { device in
+            Group {
+                if lock.isLocked {
+                    LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+                } else {
+                    RemoteSessionScreen(device: device).environment(store)
+                }
+            }
+            .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         }
         .task {
             reachability.start()

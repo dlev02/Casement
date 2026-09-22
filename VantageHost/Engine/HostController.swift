@@ -20,7 +20,7 @@ final class HostController {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "controller")
     private let identity: DeviceIdentity
     let trust = TrustStore()
-    private let listener = TailscaleListener()
+    private let listener = TailscaleListener(port: HostOptions.shared.port)
     private var sessions: [HostSession] = []
     let loginItem = LoginItem()
     private var displayObservers: [any NSObjectProtocol] = []

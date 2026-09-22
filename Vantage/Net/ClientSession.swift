@@ -16,6 +16,7 @@ final class ClientSession {
         case authenticating
         case connected
         case reconnecting
+        case suspended
         case failed(String)
     }
 
@@ -83,8 +84,22 @@ final class ClientSession {
 
     /// Retries immediately when returning to the foreground after a failure.
     func retryNow() {
-        guard case .failed = state, let device else { return }
-        connect(to: device, viewport: viewport, pairingCode: pairingCode)
+        guard let device else { return }
+        switch state {
+        case .failed, .suspended, .reconnecting:
+            connect(to: device, viewport: viewport, pairingCode: pairingCode)
+        default: break
+        }
+    }
+
+    /// Release capture and held input while backgrounded; preserve the user's session intent.
+    func suspendForBackground() {
+        switch state {
+        case .connecting, .authenticating, .connected, .reconnecting:
+            disconnect()
+            state = .suspended
+        default: break // Keep a pairing prompt or explicit error intact.
+        }
     }
 
     func disconnect() {

@@ -44,8 +44,7 @@ actor HostSession {
             log.info("session starting channel")
             try await channel.start()
             log.info("channel ready; handshaking")
-            try await handshake()
-            try await receiveLoop()
+            if try await handshake() { try await receiveLoop() }
         } catch {
             log.error("session error: \(error.localizedDescription, privacy: .public)")
         }
@@ -54,7 +53,7 @@ actor HostSession {
 
     // MARK: Handshake
 
-    private func handshake() async throws {
+    private func handshake() async throws -> Bool {
         guard case let .hello(hello)? = try await channel.receive() else { throw SessionError.badHandshake }
         guard hello.protocolVersion == VantageProtocol.version else {
             try await channel.send(.authResult(AuthResult(status: .versionMismatch, message: "Protocol \(VantageProtocol.version) required")))
@@ -63,7 +62,7 @@ actor HostSession {
 
         let nonce = AuthTranscript.randomNonce()
         let isPaired = trust.isTrusted(hello.clientPublicKey)
-        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: TailscaleCLI.whois(addr: peerDescription))
+        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: hello.isReadinessProbe == true ? nil : TailscaleCLI.whois(addr: peerDescription))
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
@@ -73,11 +72,23 @@ actor HostSession {
             throw SessionError.authFailed
         }
         if !isPaired {
-            guard let code = auth.pairingCode, trust.consumePairingCode(code) else {
+            guard let code = auth.pairingCode else {
                 try await channel.send(.authResult(AuthResult(status: .pairingRequired, message: "Enter the pairing code shown on the Mac")))
-                throw SessionError.pairingRequired
+                return false
+            }
+            guard trust.consumePairingCode(code) else {
+                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "Incorrect pairing code. Try the code shown on the Mac.")))
+                return false
             }
             trust.trust(hello.clientPublicKey, name: hello.clientName)
+        }
+
+        if hello.isReadinessProbe == true {
+            let synthetic = HostOptions.shared.syntheticCapture
+            try await channel.send(.authResult(AuthResult(status: .ok,
+                readiness: HostReadiness(screenRecordingGranted: synthetic || ScreenCapture.preflightPermission(),
+                                         accessibilityGranted: synthetic || InputInjector.hasPermission()))))
+            return false // Never enumerate displays, start capture, or access the clipboard for a probe.
         }
 
         if !HostOptions.shared.syntheticCapture, !ScreenCapture.preflightPermission() {
@@ -90,6 +101,7 @@ actor HostSession {
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: nil, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")
+        return true
     }
 
     // MARK: Message loop
