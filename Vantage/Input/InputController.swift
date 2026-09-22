@@ -87,6 +87,26 @@ final class InputController {
         send?(.textInput(TextInput(text: text)))
     }
 
+    /// Types `text` as real key presses (US layout). Characters with no key mapping fall back to
+    /// Unicode text so nothing is dropped. `modifiers` (sticky ⌘/⌥/⌃) apply to every stroke.
+    func typeCharacters(_ text: String, modifiers: KeyModifiers = []) {
+        var pendingText = ""
+        func flushText() {
+            guard !pendingText.isEmpty else { return }
+            typeText(pendingText)
+            pendingText = ""
+        }
+        for character in text {
+            if let stroke = CharacterKeyMap.stroke(for: character) {
+                flushText()
+                tapChord(keyCode: stroke.keyCode, modifiers: stroke.modifiers.union(modifiers))
+            } else {
+                pendingText.append(character)
+            }
+        }
+        flushText()
+    }
+
     // MARK: Geometry
 
     private func displayPoint(fromViewPoint viewPoint: CGPoint) -> CGPoint? {

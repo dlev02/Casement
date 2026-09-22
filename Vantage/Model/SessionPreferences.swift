@@ -9,6 +9,17 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
+/// How characters typed on the software keyboard reach the Mac.
+enum SoftwareKeyboardMode: String, CaseIterable, Identifiable {
+    /// Send the text itself. Layout-independent; supports accents, emoji, and dictation.
+    case unicode
+    /// Send real key presses using the Mac's US layout. Some apps, games, terminals, and
+    /// virtual machines only respond to these, and they combine with ⌘/⌥/⌃ from the controls.
+    case keystrokes
+    var id: String { rawValue }
+    var label: String { self == .unicode ? "Unicode Text" : "Keystrokes" }
+}
+
 enum ToolbarDock: String, CaseIterable, Identifiable {
     case topLeft, topRight, bottomLeft, bottomRight
     var id: String { rawValue }
@@ -16,10 +27,18 @@ enum ToolbarDock: String, CaseIterable, Identifiable {
     var isLeading: Bool { self == .topLeft || self == .bottomLeft }
     var label: String {
         switch self {
-        case .topLeft: "Top left"
-        case .topRight: "Top right"
-        case .bottomLeft: "Bottom left"
-        case .bottomRight: "Bottom right"
+        case .topLeft: "Top Left"
+        case .topRight: "Top Right"
+        case .bottomLeft: "Bottom Left"
+        case .bottomRight: "Bottom Right"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .topLeft: "arrow.up.left"
+        case .topRight: "arrow.up.right"
+        case .bottomLeft: "arrow.down.left"
+        case .bottomRight: "arrow.down.right"
         }
     }
 
