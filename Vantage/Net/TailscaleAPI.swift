@@ -10,6 +10,7 @@ nonisolated struct TailscaleDevice: Codable, Identifiable, Sendable, Equatable {
     var addresses: [String]
     var clientVersion: String?
     var lastSeen: String?
+    var connectedToControl: Bool? = nil
     var authorized: Bool?
     var user: String?
     var tags: [String]?
@@ -65,8 +66,9 @@ nonisolated struct TailscaleDevice: Codable, Identifiable, Sendable, Equatable {
             ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: lastSeen) }()
     }
 
-    /// Tailscale reports lastSeen; a device seen in the last few minutes is effectively online.
+    /// Tailscale omits lastSeen while a device is connected to its control server.
     var isRecentlySeen: Bool {
+        if connectedToControl == true { return true }
         guard let date = lastSeenDate else { return false }
         return Date().timeIntervalSince(date) < 5 * 60
     }
@@ -74,7 +76,7 @@ nonisolated struct TailscaleDevice: Codable, Identifiable, Sendable, Equatable {
 
 /// How Vantage authenticates to the Tailscale API. Tailscale has no end-user OAuth flow for
 /// third-party apps, so the user creates either an API access token or an OAuth client
-/// (with the devices read scope) in the admin console and pastes it here.
+/// (with the devices:core:read scope) in the admin console and pastes it here.
 nonisolated enum TailscaleCredential: Equatable, Sendable {
     case accessToken(String)
     case oauthClient(id: String, secret: String)
@@ -98,7 +100,7 @@ nonisolated enum TailscaleAPIError: LocalizedError, Equatable {
         switch self {
         case .notSignedIn: "Sign in to Tailscale first."
         case .unauthorized: "Tailscale rejected the key. Check that it was copied completely and hasn't expired."
-        case .forbidden: "This key can't read devices. Create one with the devices read scope."
+        case .forbidden: "This key can't read devices. Create one with the devices:core:read scope."
         case .http(let code): "Tailscale returned an error (HTTP \(code))."
         case .malformed: "Tailscale returned an unexpected response."
         }

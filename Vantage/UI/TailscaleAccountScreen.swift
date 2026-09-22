@@ -86,7 +86,7 @@ struct TailscaleAccountScreen: View {
                 } header: {
                     Text("Option 2: OAuth Client")
                 } footer: {
-                    Text("Admin console → Settings → OAuth clients. Choose the Devices read scope. OAuth clients don't expire.")
+                    Text("Admin console → Settings → OAuth clients. Choose the devices:core:read scope. OAuth clients don't expire.")
                 }
                 Section {
                     Button {

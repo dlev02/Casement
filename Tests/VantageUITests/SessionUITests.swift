@@ -51,6 +51,20 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Light appearance", app)
     }
 
+    @MainActor func testTailscalePickerShowsMacsAndUnsupportedDevices() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageTailscaleFixture", "1", "-VantageOpenTailscaleDevices", "1",
+                               "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Studio Mac"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Not Supported Yet"].exists)
+        XCTAssertTrue(app.staticTexts["Drew-PC"].exists)
+        XCTAssertTrue(app.buttons["Add"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Add"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Added"].firstMatch.waitForExistence(timeout: 3))
+        screenshot("Tailscale device picker", app)
+    }
+
     @MainActor private func screenshot(_ name: String, _ app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

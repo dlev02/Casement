@@ -149,7 +149,7 @@ struct TailscaleDevicesSheet: View {
         case .pairingRequired: "Vantage Host is running · pair to connect"
         case .needsPermission: "Vantage Host needs Mac permissions"
         case .incompatible: "Vantage Host needs an update"
-        case .unavailable: device.isRecentlySeen ? "Vantage Host isn't running on this Mac" : "Last seen \(lastSeenText(device))"
+        case .unavailable: device.isRecentlySeen ? "Vantage Host isn't reachable" : "Last seen \(lastSeenText(device))"
         case .checking: "Checking…"
         }
     }
