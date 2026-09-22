@@ -6,7 +6,9 @@ struct DeviceListScreen: View {
     @Environment(DeviceStore.self) private var store
     @Environment(TailscaleReachability.self) private var reachability
     @State private var showAddDevice = false
+    @State private var showTailscaleDevices = false
     @State private var editingDevice: SavedDevice?
+    @State private var deviceToDelete: SavedDevice?
     @Binding var selectedDevice: SavedDevice?
     @Environment(\.scenePhase) private var scenePhase
     @State private var availability = HostAvailabilityStore()
@@ -33,13 +35,28 @@ struct DeviceListScreen: View {
             .sheet(isPresented: $showAddDevice) {
                 AddDeviceSheet()
             }
+            .sheet(isPresented: $showTailscaleDevices) {
+                TailscaleDevicesSheet()
+            }
             .sheet(item: $editingDevice) { device in
                 AddDeviceSheet(existing: device)
+            }
+            .confirmationDialog(
+                deviceToDelete.map { "Remove “\($0.name)”?" } ?? "",
+                isPresented: Binding(get: { deviceToDelete != nil }, set: { if !$0 { deviceToDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: deviceToDelete
+            ) { device in
+                Button("Remove Device", role: .destructive) { store.remove(device) }
+                Button("Cancel", role: .cancel) {}
+            } message: { device in
+                Text("\(device.host) will be removed from this device list. The Mac itself is not affected, and you can add it again later.")
             }
             .task {
                 if let host = ClientOptions.autoConnectHost, selectedDevice == nil {
                     selectedDevice = store.devices.first { $0.host == host }
                 }
+                if ClientOptions.openTailscaleDevices { showTailscaleDevices = true }
             }
             .task(id: availabilityKey) {
                 guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return }
@@ -56,7 +73,7 @@ struct DeviceListScreen: View {
                 }
                 .buttonStyle(.plain)
                 .swipeActions {
-                    Button(role: .destructive) { store.remove(device) } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
                     Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
                 }
             }
@@ -73,7 +90,7 @@ struct DeviceListScreen: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
-                        Button(role: .destructive) { store.remove(device) } label: { Label("Delete", systemImage: "trash") }
+                        Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
             }
