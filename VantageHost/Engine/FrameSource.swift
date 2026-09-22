@@ -10,8 +10,8 @@ nonisolated struct CapturedFrame: @unchecked Sendable {
 }
 
 /// A source of display frames for the encoder. Implemented by ScreenCaptureKit capture (normal
-/// operation), the Screen Sharing bridge (lock screen / login window), and a synthetic test
-/// pattern (headless end-to-end testing without screen-recording permission).
+/// operation) and a synthetic test pattern (headless end-to-end testing without
+/// screen-recording permission).
 nonisolated protocol FrameSource: AnyObject, Sendable {
     var pixelWidth: Int { get }
     var pixelHeight: Int { get }

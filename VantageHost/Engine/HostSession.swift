@@ -80,6 +80,11 @@ actor HostSession {
             trust.trust(hello.clientPublicKey, name: hello.clientName)
         }
 
+        if !HostOptions.shared.syntheticCapture, !ScreenCapture.preflightPermission() {
+            try await channel.send(.authResult(AuthResult(status: .denied,
+                message: "On the Mac, grant Screen Recording to Vantage Host in System Settings → Privacy & Security, then reopen Vantage Host and retry.")))
+            throw SessionError.authFailed
+        }
         let displays = try await DisplayEnumerator.availableDisplays()
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: nil, displays: displays, capabilities: capabilities)))
@@ -103,7 +108,7 @@ actor HostSession {
             case .textInput(let input):
                 injector?.typeText(input.text)
             case .clipboard(let payload):
-                clipboard.apply(payload)
+                if !HostOptions.shared.syntheticCapture { clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
                 if let newBitrate = adaptive.apply(feedback: feedback) {
                     encoder?.setBitrate(kbps: newBitrate)
@@ -169,7 +174,7 @@ actor HostSession {
         self.encoder = encoder
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
-        injector = InputInjector(displayFrame: frame)
+        if !HostOptions.shared.syntheticCapture { injector = InputInjector(displayFrame: frame) }
 
         let capture: any FrameSource = HostOptions.shared.syntheticCapture
             ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
@@ -189,9 +194,11 @@ actor HostSession {
             guard let self else { return }
             Task { await self.sendClipboard(payload) }
         }
-        clipboard.start()
-        let initial = clipboard.currentPayload()
-        if !initial.isEmpty { channel.sendDetached(.clipboard(initial)) }
+        if !HostOptions.shared.syntheticCapture {
+            clipboard.start()
+            let initial = clipboard.currentPayload()
+            if !initial.isEmpty { channel.sendDetached(.clipboard(initial)) }
+        }
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
         lockMonitor.onChange = { [channel] status in channel.sendDetached(.hostStatus(status)) }
@@ -237,6 +244,7 @@ actor HostSession {
     }
 
     private func handle(_ command: HostCommand) async {
+        guard !HostOptions.shared.syntheticCapture else { return }
         switch command {
         case .lockScreen: HostCommandRunner.lockScreen()
         case .sleepDisplay: HostCommandRunner.sleepDisplay()

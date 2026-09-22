@@ -7,3 +7,5 @@ xcuserdata/
 .swiftpm/
 Packages/*/.build/
 scratch/
+
+.build/

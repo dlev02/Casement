@@ -3,6 +3,7 @@ import SwiftUI
 /// Prompts for the six-digit pairing code shown on the Mac.
 struct PairingPrompt: View {
     @State private var code = ""
+    @FocusState private var isCodeFocused: Bool
     let onSubmit: (String) -> Void
 
     var body: some View {
@@ -18,10 +19,17 @@ struct PairingPrompt: View {
                 .frame(width: 160)
                 #if canImport(UIKit)
                 .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
                 #endif
+            .onChange(of: code) { _, value in
+                code = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
+            }
+            .accessibilityLabel("Pairing Code")
+            .focused($isCodeFocused)
             Button("Pair") { onSubmit(code) }
                 .buttonStyle(.glassProminent)
-                .disabled(code.count < 6)
+                .disabled(code.count != 6)
         }
+        .onAppear { isCodeFocused = true }
     }
 }

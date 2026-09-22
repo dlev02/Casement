@@ -11,7 +11,8 @@ nonisolated final class TrustStore: @unchecked Sendable {
         var id: String { fingerprint }
     }
 
-    private let defaults = UserDefaults.standard
+    private let defaults = HostOptions.shared.syntheticCapture
+        ? UserDefaults(suiteName: "com.benjaminlevinson.vantage.synthetic")! : .standard
     private let key = "vantage.trustedClients"
     private let lock = NSLock()
     private var activePairingCode: String?

@@ -1,4 +1,4 @@
-import AppKit
+import CoreText
 import CoreGraphics
 import CoreVideo
 import Foundation
@@ -103,12 +103,16 @@ nonisolated final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         context.fillEllipse(in: CGRect(x: cx - 40, y: cy - 40, width: 80, height: 80))
         // Clock text.
         let text = "VANTAGE SYNTHETIC \(String(format: "%.1f", t))s"
-        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = nsContext
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 36, weight: .bold), .foregroundColor: NSColor.white]
-        NSAttributedString(string: text, attributes: attributes).draw(at: NSPoint(x: 40, y: 40))
-        NSGraphicsContext.restoreGraphicsState()
+        // Draw with a frame-local Core Text line. AppKit's string drawing can share mutable
+        // typography state across sessions and crashed when two synthetic clients rendered.
+        let attributes: [CFString: Any] = [
+            kCTFontAttributeName: CTFontCreateWithName("Menlo-Bold" as CFString, 36, nil),
+            kCTForegroundColorAttributeName: CGColor(gray: 1, alpha: 1),
+        ]
+        if let attributed = CFAttributedStringCreate(kCFAllocatorDefault, text as CFString, attributes as CFDictionary) {
+            context.textPosition = CGPoint(x: 40, y: 40)
+            CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+        }
         return buffer
     }
 }

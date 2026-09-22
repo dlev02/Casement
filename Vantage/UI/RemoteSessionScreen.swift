@@ -14,9 +14,10 @@ struct RemoteSessionScreen: View {
     @State private var input = InputController()
     @State private var stickyModifiers: KeyModifiers = []
     @State private var touchMode: InputController.TouchMode = .trackpad
-    @State private var controlsVisible = true
     @State private var showKeyboard = false
-    @State private var keyboardText = ""
+    @State private var viewportSize = CGSize(width: 1210, height: 834)
+    @Environment(\.displayScale) private var displayScale
+    @AppStorage("vantage.trackpadSensitivity") private var trackpadSensitivity = 1.5
     @State private var feedbackTask: Task<Void, Never>?
 
     var body: some View {
@@ -24,8 +25,10 @@ struct RemoteSessionScreen: View {
             Color.black.ignoresSafeArea()
 
             #if canImport(UIKit)
-            RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers)
-                .ignoresSafeArea()
+            if session.state == .connected {
+                RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers)
+                    .ignoresSafeArea()
+            }
             #endif
 
             if session.state != .connected {
@@ -39,29 +42,37 @@ struct RemoteSessionScreen: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Spacer()
-                if controlsVisible {
+                if session.state == .connected {
                     ControlStrip(
                         stickyModifiers: $stickyModifiers,
                         touchMode: $touchMode,
                         onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
-                        onShowKeyboard: { showKeyboard = true },
+                        onShowKeyboard: { showKeyboard.toggle() },
                         onSendClipboard: {
                             #if canImport(UIKit)
                             let payload = ClipboardSync.currentPayload()
                             if !payload.isEmpty { session.send(.clipboard(payload)) }
                             #endif
                         },
-                        onDisconnect: disconnect,
-                        onToggleControls: { withAnimation { controlsVisible.toggle() } }
+                        onDisconnect: disconnect
                     )
                     .padding(.bottom, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .statusBarHidden()
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .persistentSystemOverlays(.hidden)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
+        .onChange(of: session.state) { _, state in
+            if state == .connected { store.markConnected(device) }
+        }
+        .onChange(of: session.activeConfig) { _, config in
+            if let config {
+                input.displayPointSize = CGSize(width: config.display.pointWidth, height: config.display.pointHeight)
+            }
+        }
         .onChange(of: touchMode) { _, newValue in input.mode = newValue }
         .onChange(of: scenePhase) { _, phase in if phase == .active { session.retryNow() } }
         .overlay(alignment: .top) { hiddenKeyboardField }
@@ -92,6 +103,9 @@ struct RemoteSessionScreen: View {
             default:
                 EmptyView()
             }
+            if case .failed = session.state {} else {
+                Button("Close", action: disconnect).buttonStyle(.glass)
+            }
         }
         .padding(32)
         .glassEffect(in: .rect(cornerRadius: 24))
@@ -100,9 +114,10 @@ struct RemoteSessionScreen: View {
     @ViewBuilder
     private var hiddenKeyboardField: some View {
         if showKeyboard {
-            RemoteKeyboardField(text: $keyboardText, isPresented: $showKeyboard) { text in
-                input.typeText(text)
-            }
+            RemoteKeyboardField(isPresented: $showKeyboard, onText: input.typeText, onKey: { keyCode in
+                input.tapChord(keyCode: keyCode, modifiers: stickyModifiers)
+                stickyModifiers = []
+            })
             .frame(width: 1, height: 1)
             .opacity(0.01)
         }
@@ -115,42 +130,23 @@ struct RemoteSessionScreen: View {
             ClipboardSync.apply(payload)
             #endif
         }
-        video.onNeedsKeyframe = { session.send(.requestKeyframe) }
+        video.onNeedsKeyframe = {
+            Task { @MainActor in session.send(.requestKeyframe) }
+        }
         input.send = { message in session.send(message) }
         input.mode = touchMode
+        input.naturalScroll = device.naturalScroll
+        input.trackpadSensitivity = trackpadSensitivity
 
         session.connect(to: device, viewport: currentViewport(), pairingCode: ClientOptions.pairingCode)
-        store.markConnected(device)
         startFeedbackLoop()
-        observeConnected()
-    }
-
-    private func observeConnected() {
-        Task {
-            // Wait until authenticated, then request the stream (fit to the iPad viewport).
-            while !Task.isCancelled, session.state != .connected {
-                if case .failed = session.state { return }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            guard session.state == .connected else { return }
-            session.selectDisplay(.fitViewport(currentViewport()), targetFPS: 60, quality: .auto)
-
-            // Then keep the input geometry in sync with the negotiated display size.
-            while !Task.isCancelled {
-                if let config = session.activeConfig {
-                    input.displayPointSize = CGSize(width: config.display.pointWidth, height: config.display.pointHeight)
-                }
-                if session.state == .idle { return }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-        }
     }
 
     private func startFeedbackLoop() {
         feedbackTask?.cancel()
         feedbackTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
                 guard session.state == .connected else { continue }
                 session.ping()
                 let feedback = video.snapshotStats(windowSeconds: 0.25, rttMillis: session.lastRTTMillis)
@@ -160,7 +156,6 @@ struct RemoteSessionScreen: View {
     }
 
     private func disconnect() {
-        session.disconnect()
         teardown()
         dismiss()
     }
@@ -172,13 +167,7 @@ struct RemoteSessionScreen: View {
     }
 
     private func currentViewport() -> Viewport {
-        #if canImport(UIKit)
-        let screen = UIScreen.main.bounds.size
-        let scale = UIScreen.main.scale
-        return Viewport(widthPoints: Double(screen.width), heightPoints: Double(screen.height), scale: Double(scale))
-        #else
-        return Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)
-        #endif
+        Viewport(widthPoints: Double(viewportSize.width), heightPoints: Double(viewportSize.height), scale: Double(displayScale))
     }
 }
 

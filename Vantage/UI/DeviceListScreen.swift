@@ -15,6 +15,8 @@ struct DeviceListScreen: View {
             Group {
                 if store.devices.isEmpty {
                     emptyState
+                } else if store.sortedDevices.isEmpty {
+                    ContentUnavailableView.search(text: store.searchText)
                 } else if store.isGridLayout {
                     gridView
                 } else {
@@ -88,7 +90,7 @@ struct DeviceListScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            NavigationLink { SettingsScreen() } label: { Image(systemName: "gearshape") }
+            NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Menu {
@@ -102,9 +104,9 @@ struct DeviceListScreen: View {
                     Label(store.isGridLayout ? "List" : "Grid", systemImage: store.isGridLayout ? "list.bullet" : "square.grid.2x2")
                 }
             } label: {
-                Image(systemName: "arrow.up.arrow.down")
+                Label("Sort and Layout", systemImage: "arrow.up.arrow.down")
             }
-            Button { showAddDevice = true } label: { Image(systemName: "plus") }
+            Button { showAddDevice = true } label: { Label("Add Device", systemImage: "plus") }
         }
     }
 

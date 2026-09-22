@@ -2,52 +2,65 @@
 import SwiftUI
 import UIKit
 
-/// An invisible text field used to raise the software keyboard and forward typed characters
-/// (including dictation and emoji) to the host as Unicode text.
+/// A text-input responder with no local buffer. Keeping hasText true lets Backspace reach the
+/// remote Mac even when this view has never stored a character.
 struct RemoteKeyboardField: UIViewRepresentable {
-    @Binding var text: String
     @Binding var isPresented: Bool
     let onText: (String) -> Void
+    let onKey: (UInt16) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> RemoteKeyboardView { RemoteKeyboardView() }
 
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField()
-        field.delegate = context.coordinator
-        field.autocorrectionType = .no
-        field.autocapitalizationType = .none
-        field.smartQuotesType = .no
-        field.smartDashesType = .no
-        field.spellCheckingType = .no
-        return field
+    func updateUIView(_ view: RemoteKeyboardView, context: Context) {
+        view.onText = onText
+        view.onKey = onKey
+        view.onDismiss = { isPresented = false }
+        view.wantsKeyboard = isPresented
+        if isPresented, view.window != nil, !view.isFirstResponder { view.becomeFirstResponder() }
+        else if !isPresented, view.isFirstResponder { view.resignFirstResponder() }
     }
 
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        if isPresented, !uiView.isFirstResponder {
-            uiView.becomeFirstResponder()
-        } else if !isPresented, uiView.isFirstResponder {
-            uiView.resignFirstResponder()
-        }
+    static func dismantleUIView(_ view: RemoteKeyboardView, coordinator: ()) {
+        view.resignFirstResponder()
+    }
+}
+
+final class RemoteKeyboardView: UIView, UIKeyInput {
+    var onText: ((String) -> Void)?
+    var onKey: ((UInt16) -> Void)?
+    var onDismiss: (() -> Void)?
+    var wantsKeyboard = false
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, wantsKeyboard { becomeFirstResponder() }
+    }
+    var hasText: Bool { true }
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var smartQuotesType: UITextSmartQuotesType = .no
+    var smartDashesType: UITextSmartDashesType = .no
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        let toolbar = UIToolbar()
+        toolbar.items = [UIBarButtonItem(systemItem: .flexibleSpace),
+                         UIBarButtonItem(title: "Done", style: .prominent, target: self, action: #selector(dismissKeyboard))]
+        toolbar.sizeToFit()
+        accessory = toolbar
     }
 
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        let parent: RemoteKeyboardField
-        init(_ parent: RemoteKeyboardField) { self.parent = parent }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    private var accessory: UIView?
+    override var inputAccessoryView: UIView? { accessory }
 
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            if string.isEmpty {
-                // Backspace.
-                parent.onText("\u{8}")
-            } else {
-                parent.onText(string)
-            }
-            return false
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            parent.onText("\n")
-            return false
-        }
+    func insertText(_ text: String) {
+        if text == "\n" || text == "\r" { onKey?(0x24) }
+        else { onText?(text) }
     }
+
+    func deleteBackward() { onKey?(0x33) }
+    @objc private func dismissKeyboard() { resignFirstResponder(); onDismiss?() }
 }
 #endif

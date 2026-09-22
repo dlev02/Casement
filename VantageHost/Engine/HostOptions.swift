@@ -11,6 +11,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let fixedPairingCode: String?
 
     private init() {
+        #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         syntheticCapture = args.contains("--synthetic-capture")
         if let index = args.firstIndex(of: "--pairing-code"), index + 1 < args.count {
@@ -18,5 +19,9 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             fixedPairingCode = nil
         }
+        #else
+        syntheticCapture = false
+        fixedPairingCode = nil
+        #endif
     }
 }

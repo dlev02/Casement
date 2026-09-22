@@ -8,7 +8,13 @@ enum ClientOptions {
     static var seedHost: String? { value(for: "-VantageSeedHost") }
     static var autoConnectHost: String? { value(for: "-VantageAutoConnect") }
     static var pairingCode: String? { value(for: "-VantagePairingCode") }
-    static var seedSampleDevices: Bool { ProcessInfo.processInfo.arguments.contains("-VantageSeedSamples") }
+    static var seedSampleDevices: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-VantageSeedSamples")
+        #else
+        false
+        #endif
+    }
 
     private static func value(for flag: String) -> String? {
         #if DEBUG

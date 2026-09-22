@@ -156,7 +156,7 @@ final class HostController {
         trustedClients = trust.trustedClients()
     }
 
-    private func refreshPermissions() {
+    func refreshPermissions() {
         hasScreenPermission = ScreenCapture.preflightPermission()
         hasInputPermission = InputInjector.hasPermission()
     }

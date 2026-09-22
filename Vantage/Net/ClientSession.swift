@@ -37,16 +37,18 @@ final class ClientSession {
     private var device: SavedDevice?
     private var pairingCode: String?
     private var reconnectAttempts = 0
-    private var explicitlyDisconnected = false
+    private var connectionTask: Task<Void, Never>?
+    private var connectionID = UUID()
+    private var viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)
 
     /// Called with each decoded video message (config/frame) so the renderer can consume it.
     var onVideo: ((Message) -> Void)?
     var onCursor: ((CursorPosition) -> Void)?
     var onClipboard: ((ClipboardPayload) -> Void)?
 
-    init() {
+    init(identity: DeviceIdentity? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
-        self.identity = (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
+        self.identity = identity ?? (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
         #if canImport(UIKit)
         self.deviceName = UIDevice.current.name
         self.deviceModel = ClientSession.hardwareModel()
@@ -59,24 +61,32 @@ final class ClientSession {
     var fingerprint: String { identity.fingerprint }
 
     func connect(to device: SavedDevice, viewport: Viewport, pairingCode: String? = nil) {
+        disconnect()
         self.device = device
+        self.viewport = viewport
         self.pairingCode = pairingCode
-        explicitlyDisconnected = false
         reconnectAttempts = 0
-        Task { await self.openConnection(viewport: viewport) }
+        let id = connectionID
+        state = .connecting
+        connectionTask = Task { await self.runConnection(id: id) }
     }
 
-    /// Retries immediately (e.g. when the app returns to the foreground after a failure).
+    /// Retries immediately when returning to the foreground after a failure.
     func retryNow() {
-        guard case .failed = state, device != nil else { return }
-        reconnectAttempts = 0
-        explicitlyDisconnected = false
-        Task { await self.openConnection(viewport: currentViewport()) }
+        guard case .failed = state, let device else { return }
+        connect(to: device, viewport: viewport, pairingCode: pairingCode)
     }
 
     func disconnect() {
-        explicitlyDisconnected = true
-        Task { await self.channel?.close(); await MainActor.run { self.state = .idle } }
+        connectionID = UUID()
+        connectionTask?.cancel()
+        connectionTask = nil
+        let oldChannel = channel
+        channel = nil
+        state = .idle
+        activeConfig = nil
+        hostStatus = nil
+        Task { await oldChannel?.close() }
     }
 
     // MARK: Sending
@@ -100,36 +110,88 @@ final class ClientSession {
 
     // MARK: Connection lifecycle
 
-    private func openConnection(viewport: Viewport) async {
+    private func runConnection(id: UUID) async {
         guard let device else { return }
-        state = reconnectAttempts == 0 ? .connecting : .reconnecting
-        let host = NWEndpoint.Host(device.host)
-        guard let port = NWEndpoint.Port(rawValue: device.port) else {
-            state = .failed("Invalid port"); return
-        }
-        let connection = NWConnection(host: host, port: port, using: VantageNetwork.tcpParameters())
-        let channel = MessageChannel(connection: connection, label: "vantage.client.session")
-        self.channel = channel
-        do {
-            try await channel.start()
-            try await handshake(channel: channel, viewport: viewport)
-            reconnectAttempts = 0
-            await messageLoop(channel: channel)
-        } catch let error as ProtocolErrorMessage {
-            state = .failed(error.message)
-        } catch {
-            log.error("connection error: \(error.localizedDescription)")
-            await handleDrop(viewport: viewport)
+        while !Task.isCancelled, connectionID == id {
+            state = reconnectAttempts == 0 ? .connecting : .reconnecting
+            activeConfig = nil
+            hostStatus = nil
+            guard let port = NWEndpoint.Port(rawValue: device.port) else {
+                state = .failed("Invalid port")
+                return
+            }
+            let connection = NWConnection(host: NWEndpoint.Host(device.host), port: port,
+                                          using: VantageNetwork.tcpParameters())
+            let channel = MessageChannel(connection: connection, label: "vantage.client.session")
+            self.channel = channel
+            // Also bound the handshake: an accepted socket need not send a challenge.
+            let timeout = Task {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                await channel.close()
+            }
+            do {
+                try await channel.start()
+                guard connectionID == id, !Task.isCancelled else {
+                    timeout.cancel(); await channel.close(); return
+                }
+                let authenticated = try await handshake(channel: channel, viewport: viewport, id: id)
+                timeout.cancel()
+                guard connectionID == id, !Task.isCancelled else {
+                    await channel.close(); return
+                }
+                guard authenticated else {
+                    await channel.close()
+                    self.channel = nil
+                    return // Leave the pairing prompt visible until the user submits a code.
+                }
+                // Every new connection needs its own stream request, including reconnects.
+                try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
+                    targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec)))
+                state = .connected
+                reconnectAttempts = 0
+                while let message = try await channel.receive() {
+                    guard connectionID == id, !Task.isCancelled else { break }
+                    if case .disconnect = message {
+                        await channel.close()
+                        self.channel = nil
+                        state = .failed("The Mac ended the session.")
+                        return
+                    }
+                    route(message)
+                }
+            } catch let error as ProtocolErrorMessage {
+                timeout.cancel()
+                await channel.close()
+                guard connectionID == id, !Task.isCancelled else { return }
+                self.channel = nil
+                state = .failed(error.message)
+                return
+            } catch {
+                log.error("connection error: \(error.localizedDescription)")
+            }
+            timeout.cancel()
+            await channel.close()
+            guard connectionID == id, !Task.isCancelled else { return }
+            self.channel = nil
+            reconnectAttempts += 1
+            guard reconnectAttempts <= 40 else {
+                state = .failed("Couldn’t reach the Mac. Check that Vantage Host and Tailscale are running on both devices.")
+                return
+            }
+            state = .reconnecting
+            do { try await Task.sleep(for: .seconds(min(pow(1.6, Double(reconnectAttempts)), 15))) }
+            catch { return }
         }
     }
 
-    private func handshake(channel: MessageChannel, viewport: Viewport) async throws {
+    private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> Bool {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport)
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
+        guard connectionID == id, !Task.isCancelled else { throw CancellationError() }
         hostName = challenge.hostName
         peerTailnetName = challenge.peerTailnetName
         state = .authenticating
@@ -139,28 +201,17 @@ final class ClientSession {
         try await channel.send(.authenticate(auth))
 
         guard case let .authResult(result)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
+        guard connectionID == id, !Task.isCancelled else { throw CancellationError() }
         switch result.status {
         case .ok:
             displays = result.displays ?? []
             capabilities = result.capabilities
-            state = .connected
+            return true
         case .pairingRequired, .badPairingCode:
             state = .pairingRequired
-            throw ProtocolErrorMessage(code: result.status.rawValue, message: result.message ?? "Pairing required")
+            return false
         default:
             throw ProtocolErrorMessage(code: result.status.rawValue, message: result.message ?? "Authentication failed")
-        }
-    }
-
-    private func messageLoop(channel: MessageChannel) async {
-        do {
-            while let message = try await channel.receive() {
-                route(message)
-            }
-            // Stream ended without error.
-            if !explicitlyDisconnected { await handleDrop(viewport: currentViewport()) }
-        } catch {
-            if !explicitlyDisconnected { await handleDrop(viewport: currentViewport()) }
         }
     }
 
@@ -181,32 +232,9 @@ final class ClientSession {
         case .pong(let pong):
             let now = DispatchTime.now().uptimeNanoseconds
             lastRTTMillis = Double(now &- pong.echoNanos) / 1_000_000
-        case .disconnect:
-            explicitlyDisconnected = true
-            state = .idle
         default:
             break
         }
-    }
-
-    private func handleDrop(viewport: Viewport) async {
-        guard !explicitlyDisconnected else { return }
-        reconnectAttempts += 1
-        // Keep trying for roughly ten minutes so a Mac restart or a Tailscale blip recovers on its own.
-        guard reconnectAttempts <= 40 else {
-            state = .failed("Lost connection")
-            return
-        }
-        state = .reconnecting
-        let delay = min(pow(1.6, Double(reconnectAttempts)), 15)
-        try? await Task.sleep(for: .seconds(delay))
-        guard !explicitlyDisconnected else { return }
-        await openConnection(viewport: viewport)
-    }
-
-    private func currentViewport() -> Viewport {
-        activeConfig.map { Viewport(widthPoints: Double($0.display.pointWidth), heightPoints: Double($0.display.pointHeight), scale: $0.display.scale) }
-            ?? Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)
     }
 
     #if canImport(UIKit)

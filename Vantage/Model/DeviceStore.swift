@@ -30,14 +30,14 @@ final class DeviceStore {
 
     private func applyLaunchOptions() {
         if let host = ClientOptions.seedHost ?? ClientOptions.autoConnectHost, !devices.contains(where: { $0.host == host }) {
-            devices.append(SavedDevice(name: "Drew's MacBook Pro", host: host))
+            devices.append(SavedDevice(name: "My Mac", host: host))
             save()
         }
         if ClientOptions.seedSampleDevices, devices.count < 3 {
             devices.append(contentsOf: [
-                SavedDevice(name: "Drew's MacBook Pro", host: "drews-macbook-pro-1.tail1234.ts.net", lastConnected: Date().addingTimeInterval(-300), connectionCount: 42),
-                SavedDevice(name: "Drew-PC", host: "drew-pc.tail1234.ts.net", os: "windows", lastConnected: Date().addingTimeInterval(-86_400 * 3), connectionCount: 7),
-                SavedDevice(name: "Julie's MacBook Air", host: "julies-macbook-air.tail1234.ts.net", lastConnected: nil, connectionCount: 0),
+                SavedDevice(name: "My Mac", host: "studio-mac.example.ts.net", lastConnected: Date().addingTimeInterval(-300), connectionCount: 42),
+                SavedDevice(name: "Office Mac", host: "office-mac.example.ts.net", os: "macOS", lastConnected: Date().addingTimeInterval(-86_400 * 3), connectionCount: 7),
+                SavedDevice(name: "MacBook Air", host: "macbook-air.example.ts.net", lastConnected: nil, connectionCount: 0),
             ])
         }
     }

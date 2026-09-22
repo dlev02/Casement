@@ -21,6 +21,12 @@ struct HostMenuView: View {
         }
         .padding(16)
         .frame(width: 320)
+        .task {
+            while !Task.isCancelled {
+                controller.refreshPermissions()
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
     }
 
     private var header: some View {
