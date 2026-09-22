@@ -1,0 +1,39 @@
+/// Identifies the payload type of a frame. Values below 100 are JSON-encoded control
+/// messages; values from 100 up are hand-packed binary hot-path messages.
+public enum MessageKind: UInt8, Sendable, CaseIterable {
+    // MARK: Handshake & authentication (JSON)
+    case hello = 1
+    case challenge = 2
+    case authenticate = 3
+    case authResult = 4
+
+    // MARK: Session control (JSON)
+    case displayList = 10
+    case selectDisplay = 11
+    case streamConfig = 12
+    case viewportChanged = 13
+    case qualityFeedback = 20
+    case requestKeyframe = 21
+    case streamStats = 22
+    case clipboard = 30
+    case hostCommand = 40
+    case ping = 50
+    case pong = 51
+    case disconnect = 52
+    case protocolError = 53
+    case attachMedia = 60
+    case textInput = 61
+    case modifierState = 62
+    case cursorShape = 70
+    case videoConfig = 71
+    case hostStatus = 72
+
+    // MARK: Hot path (binary)
+    case videoFrame = 100
+    case cursorPosition = 101
+    case pointerEvent = 120
+    case scrollEvent = 121
+    case keyEvent = 122
+
+    public var isBinary: Bool { rawValue >= 100 }
+}
