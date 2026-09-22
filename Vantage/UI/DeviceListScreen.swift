@@ -10,6 +10,7 @@ struct DeviceListScreen: View {
     @Binding var selectedDevice: SavedDevice?
     @Environment(\.scenePhase) private var scenePhase
     @State private var availability = HostAvailabilityStore()
+    @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
 
     var body: some View {
         @Bindable var store = store
@@ -41,7 +42,7 @@ struct DeviceListScreen: View {
                 }
             }
             .task(id: availabilityKey) {
-                guard scenePhase == .active, selectedDevice == nil else { return }
+                guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return }
                 await availability.monitor(store.devices)
             }
         }
@@ -118,7 +119,7 @@ struct DeviceListScreen: View {
     }
 
     private var availabilityKey: String {
-        guard scenePhase == .active, selectedDevice == nil else { return "paused" }
+        guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return "paused" }
         return store.devices.map { "\($0.id):\($0.host):\($0.port)" }.joined(separator: "|")
     }
 
@@ -145,24 +146,30 @@ struct DeviceRow: View {
     var availability: HostAvailability = .checking
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: osSymbol(device.os))
-                .font(.title2)
-                .frame(width: 36)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.name).font(.headline)
-                Text(device.host).font(.caption).foregroundStyle(.secondary)
+            DeviceIconTile(os: device.os, size: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.name)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                Text(device.host)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 AvailabilityLabel(status: availability)
             }
-            Spacer()
+            Spacer(minLength: 12)
             if let last = device.lastConnected {
-                Text(last, format: .relative(presentation: .named))
-                    .font(.caption2).foregroundStyle(.tertiary)
+                Text(lastConnectedText(last))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -170,32 +177,68 @@ struct DeviceCard: View {
     let device: SavedDevice
     var availability: HostAvailability = .checking
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: osSymbol(device.os)).font(.largeTitle).foregroundStyle(.tint)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                DeviceIconTile(os: device.os, size: 48)
                 Spacer()
-                Circle().fill(availability.tint).frame(width: 8, height: 8).accessibilityHidden(true)
+                if let last = device.lastConnected {
+                    Text(lastConnectedText(last))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.name).font(.headline).lineLimit(1)
-                Text(device.host).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.name).font(.body.weight(.semibold)).lineLimit(1)
+                Text(device.host).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 AvailabilityLabel(status: availability)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(16)
         .glassEffect(in: .rect(cornerRadius: 20))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The rounded, tinted tile used for device icons in the list and grid.
+struct DeviceIconTile: View {
+    let os: String
+    var size: CGFloat = 44
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+            .fill(Color.accentColor.opacity(0.14))
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: osSymbol(os))
+                    .font(.system(size: size * 0.46, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .accessibilityHidden(true)
     }
 }
 
 private struct AvailabilityLabel: View {
     let status: HostAvailability
     var body: some View {
-        Label(status.label, systemImage: status == .checking ? "ellipsis" : "circle.fill")
-            .font(.caption)
-            .foregroundStyle(status.tint)
-            .accessibilityLabel("Host status: \(status.label)")
+        HStack(spacing: 6) {
+            if status == .checking {
+                ProgressView().controlSize(.mini)
+            } else {
+                Circle().fill(status.tint).frame(width: 7, height: 7)
+            }
+            Text(status.label)
+                .font(.footnote)
+                .foregroundStyle(status.isWarning ? status.tint : .secondary)
+        }
+        .padding(.top, 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Host status: \(status.label)")
     }
+}
+
+private func lastConnectedText(_ date: Date) -> String {
+    if Date().timeIntervalSince(date) < 60 { return "Just now" }
+    return date.formatted(.relative(presentation: .named))
 }
 
 private extension HostAvailability {
@@ -204,6 +247,12 @@ private extension HostAvailability {
         case .ready, .online: .green
         case .pairingRequired, .needsPermission, .incompatible: .orange
         case .checking, .unavailable: .secondary
+        }
+    }
+    var isWarning: Bool {
+        switch self {
+        case .pairingRequired, .needsPermission, .incompatible: true
+        default: false
         }
     }
 }

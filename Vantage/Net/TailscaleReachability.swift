@@ -9,6 +9,8 @@ import VantageCore
 @Observable
 final class TailscaleReachability {
     private(set) var isActive = false
+    /// This device's tailnet IPv4 address, when Tailscale is up.
+    private(set) var address: String?
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "vantage.reachability")
 
@@ -21,7 +23,9 @@ final class TailscaleReachability {
     }
 
     func refresh() {
-        isActive = !VantageNetwork.localTailscaleAddresses().isEmpty
+        let addresses = VantageNetwork.localTailscaleAddresses()
+        isActive = !addresses.isEmpty
+        address = addresses.first { !$0.contains(":") } ?? addresses.first
     }
 
     static func openTailscaleApp() {
