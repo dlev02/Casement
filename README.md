@@ -15,6 +15,7 @@ A native remote desktop for controlling your Mac from an iPad or iPhone over Tai
 - Shares text, rich text, and PNG clipboard content. Sending the iPad clipboard is an explicit action.
 - Reconnects after a dropped connection and immediately when returning to an open session from another app.
 - Offers start-at-login on the Mac and an optional device-authentication lock on the client.
+- Uses coordinated Vantage icons on Mac, iPad, and iPhone, with a Windows `.ico` ready for future packaging.
 - Can request a virtual display through BetterDisplay's CLI, with a main-display fallback. This integration still needs a live test.
 
 ## Requirements
@@ -114,9 +115,10 @@ Client: AVSampleBufferDisplayLayer ← VantageCore
 - `Vantage/`: SwiftUI client, saved devices, connection lifecycle, rendering, and input.
 - `Packages/VantageCore/`: protocol, Ed25519 identity, network transport, and core tests.
 - `Tests/ClientSessionTests/`: actual-client loopback regression tests.
+- [Icon sources](brand/README.md): approved artwork and cross-platform exports.
 - [Research](docs/research/README.md): engineering notes and source references.
 - [Agent guide](CLAUDE.md): repository conventions and implementation notes.
 
 Encryption is supplied by Tailscale's tunnel; Vantage's TCP stream does not add TLS. The host accepts tailnet addresses and local loopback, then requires device authentication/pairing. Use it only on a trusted tailnet. This preview has not had a comprehensive security audit; host identity pinning and expiring/rate-limited pairing should be reviewed before broader distribution.
 
-Known limits: no Windows host, file transfer, remote audio, login-window control, or FileVault pre-boot access. Physical keyboard/trackpad behavior, clipboard, BetterDisplay provisioning, sleep/wake, and launch-at-login still need device testing. Application icons and distribution packaging are unfinished.
+Known limits: no Windows host, file transfer, remote audio, login-window control, or FileVault pre-boot access. Physical keyboard/trackpad behavior, clipboard, BetterDisplay provisioning, sleep/wake, and launch-at-login still need device testing. Distribution packaging is unfinished.

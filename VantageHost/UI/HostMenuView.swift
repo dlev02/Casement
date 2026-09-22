@@ -31,9 +31,11 @@ struct HostMenuView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.title2)
-                .foregroundStyle(.tint)
+            Image("VantageLogo")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Vantage Host").font(.headline)
                 Text(controller.tailscaleSelfName.isEmpty ? "This Mac" : controller.tailscaleSelfName)
