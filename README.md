@@ -52,7 +52,7 @@ The products are `.deriveddata/Build/Products/Debug/VantageHost.app` and `.deriv
 1. Connect Tailscale on the Mac and iPad/iPhone. Complete any pending Tailscale sign-in on the client.
 2. Launch **Vantage Host** on the Mac. It lives in the menu bar, rather than opening a normal window.
 3. Use its **Grant Screen Recording** and **Grant Accessibility (input)** buttons. Approve Vantage Host in **System Settings → Privacy & Security → Screen & System Audio Recording / Accessibility**. Reopen the same host build after approving if macOS requests it.
-4. In the client, choose **Add Device**. Enter the Mac's Tailscale IP or MagicDNS name, a display name, and port **47820**. Pasted `host:port` addresses are also accepted; the pasted port takes precedence. Save, then tap the Mac's card or row to connect.
+4. In the client, tap **+**. **Add from Tailscale…** signs in with a read-only key from the Tailscale admin console (API access token or OAuth client with the Devices read scope) and lists your tailnet's Macs with a live check for Vantage Host; Windows, Linux, and mobile devices are shown but can't be added yet. **Add Manually…** takes the Mac's Tailscale IP or MagicDNS name, a display name, and port **47820**; pasted `host:port` addresses are accepted. Then tap the Mac's card or row to connect.
 5. Select the device. In the Mac menu, choose **Show pairing code**, then enter that code in the client and tap **Pair**. A code is consumed once; generate another for each new device.
 6. In a session, use **Session Options** for touch mode, **Send Clipboard to Mac**, or **Disconnect**. The keyboard button opens or closes software input; its **Done** button dismisses it.
 

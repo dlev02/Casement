@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var store = DeviceStore()
     @State private var reachability = TailscaleReachability()
     @State private var lock = AppLock()
+    @State private var tailscaleAccount = TailscaleAccount()
     @State private var selectedDevice: SavedDevice?
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
 
@@ -17,6 +18,7 @@ struct ContentView: View {
                 DeviceListScreen(selectedDevice: $selectedDevice)
                     .environment(store)
                     .environment(reachability)
+                    .environment(tailscaleAccount)
             }
         }
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))

@@ -104,7 +104,8 @@ struct DeviceListScreen: View {
         } description: {
             Text("Add your Mac to start a remote session over Tailscale.")
         } actions: {
-            Button("Add Device") { showAddDevice = true }.buttonStyle(.glassProminent)
+            Button("Add from Tailscale") { showTailscaleDevices = true }.buttonStyle(.glassProminent)
+            Button("Add Manually") { showAddDevice = true }.buttonStyle(.glass)
         }
     }
 
@@ -127,7 +128,12 @@ struct DeviceListScreen: View {
             } label: {
                 Label("Sort and Layout", systemImage: "arrow.up.arrow.down")
             }
-            Button { showAddDevice = true } label: { Label("Add Device", systemImage: "plus") }
+            Menu {
+                Button { showTailscaleDevices = true } label: { Label("Add from Tailscale…", systemImage: "network") }
+                Button { showAddDevice = true } label: { Label("Add Manually…", systemImage: "keyboard") }
+            } label: {
+                Label("Add Device", systemImage: "plus")
+            }
         }
     }
 

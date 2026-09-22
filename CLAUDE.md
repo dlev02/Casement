@@ -41,7 +41,15 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   per saved device (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`). The
   default path streams the main display immediately; never put BetterDisplay's CLI back on the
   connect path unconditionally — on Drew's Mac it answers "Failed." to everything and the old
-  15 s poll made every connect take 16 s.
+  15 s poll made every connect take 16 s. When the toggle is on, a connected non-built-in display
+  whose point size already matches the viewport is reused without touching the CLI.
+- **Tailscale account**: `TailscaleAccount` (client) talks read-only to `api.tailscale.com`
+  (`GET /api/v2/tailnet/-/devices`) with either an API access token or an OAuth client
+  (`client_credentials` at `/api/v2/oauth/token`, tokens cached ~1 h). Tailscale has no end-user
+  sign-in for third-party apps, so the user pastes a key from the admin console; it lives in the
+  Keychain. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
+  other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
+  `-VantageOpenTailscaleDevices 1` opens the picker on launch.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.

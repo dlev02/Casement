@@ -113,10 +113,24 @@ private struct ControlSettings: View {
 
 private struct ConnectionSettings: View {
     @Environment(TailscaleReachability.self) private var reachability
+    @Environment(TailscaleAccount.self) private var account
     @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
 
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    TailscaleAccountScreen()
+                } label: {
+                    HStack {
+                        Text("Tailscale Account")
+                        Spacer()
+                        Text(account.isSignedIn ? "Signed In" : "Not Signed In").foregroundStyle(.secondary)
+                    }
+                }
+            } footer: {
+                Text("Sign in with a read-only key to add Macs straight from your tailnet's device list.")
+            }
             Section {
                 HStack {
                     Text("Tailscale")
