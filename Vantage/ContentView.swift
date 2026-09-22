@@ -9,13 +9,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            DeviceListScreen()
-                .environment(store)
-                .environment(reachability)
-                .blur(radius: lock.isLocked ? 24 : 0)
-
             if lock.isLocked {
-                LockOverlay { lock.authenticate() }
+                LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+            } else {
+                DeviceListScreen()
+                    .environment(store)
+                    .environment(reachability)
             }
         }
         .task {
@@ -24,7 +23,9 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: lock.authenticate()
+            case .active:
+                reachability.refresh()
+                lock.authenticate()
             case .background: lock.lockIfNeeded()
             default: break
             }
@@ -33,6 +34,7 @@ struct ContentView: View {
 }
 
 private struct LockOverlay: View {
+    let errorMessage: String?
     let onUnlock: () -> Void
     var body: some View {
         ZStack {
@@ -40,6 +42,9 @@ private struct LockOverlay: View {
             VStack(spacing: 16) {
                 Image(systemName: "lock.fill").font(.largeTitle)
                 Text("Vantage is locked").font(.headline)
+                if let errorMessage {
+                    Text(errorMessage).font(.callout).multilineTextAlignment(.center).padding(.horizontal)
+                }
                 Button("Unlock", action: onUnlock).buttonStyle(.glassProminent)
             }
         }

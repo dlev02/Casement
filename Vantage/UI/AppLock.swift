@@ -6,23 +6,28 @@ import SwiftUI
 @Observable
 final class AppLock {
     var isLocked: Bool
-    private let enabled: Bool
+    var errorMessage: String?
+    private var isAuthenticating = false
 
     init() {
-        enabled = UserDefaults.standard.bool(forKey: "vantage.requireBiometrics")
-        isLocked = enabled
+        isLocked = UserDefaults.standard.bool(forKey: "vantage.requireBiometrics")
     }
 
     func authenticate() {
-        guard isLocked else { return }
+        guard isLocked, !isAuthenticating else { return }
+        errorMessage = nil
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            isLocked = false
+            errorMessage = "Device authentication is unavailable. Set up a device passcode or biometrics, then try again."
             return
         }
+        isAuthenticating = true
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vantage") { success, _ in
-            Task { @MainActor in self.isLocked = !success }
+            Task { @MainActor in
+                self.isAuthenticating = false
+                self.isLocked = !success
+            }
         }
     }
 
