@@ -1,5 +1,52 @@
 import Foundation
+import Network
 import VantageCore
+
+/// Accepts a plain host or pasted host:port without treating the port as part of a DNS name.
+struct ConnectionAddress: Equatable {
+    let host: String
+    let port: UInt16
+
+    init(host input: String, port portInput: String) throws {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(where: { $0.isWhitespace || "/?#@%".contains($0) }) else {
+            throw AddressError.invalidHost
+        }
+        var host = text
+        var port = portInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("[") {
+            guard let end = text.firstIndex(of: "]") else { throw AddressError.invalidHost }
+            host = String(text[text.index(after: text.startIndex)..<end])
+            guard IPv6Address(host) != nil else { throw AddressError.invalidHost }
+            let suffix = text[text.index(after: end)...]
+            if !suffix.isEmpty {
+                guard suffix.hasPrefix(":") else { throw AddressError.invalidHost }
+                port = String(suffix.dropFirst())
+            }
+        } else if text.filter({ $0 == ":" }).count == 1 {
+            let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+            host = String(parts[0])
+            port = String(parts[1])
+        } else if text.contains(":") {
+            guard IPv6Address(text) != nil else { throw AddressError.invalidHost }
+        }
+        guard !host.isEmpty, !host.contains("["), !host.contains("]") else { throw AddressError.invalidHost }
+        guard !port.isEmpty, port.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let number = UInt16(port), number > 0 else { throw AddressError.invalidPort }
+        self.host = host
+        self.port = number
+    }
+
+    enum AddressError: LocalizedError {
+        case invalidHost, invalidPort
+        var errorDescription: String? {
+            switch self {
+            case .invalidHost: "Enter a Tailscale IP or MagicDNS name, optionally followed by :port."
+            case .invalidPort: "Enter a port between 1 and 65535. Vantage normally uses 47820."
+            }
+        }
+    }
+}
 
 /// A host the user can connect to. Discovered via Tailscale or entered manually.
 struct SavedDevice: Codable, Identifiable, Hashable, Sendable {

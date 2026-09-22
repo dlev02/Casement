@@ -12,6 +12,7 @@ struct AddDeviceSheet: View {
     @State private var port = String(VantageProtocol.defaultPort)
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
+    @State private var validationError: String?
 
     var body: some View {
         NavigationStack {
@@ -28,6 +29,9 @@ struct AddDeviceSheet: View {
                         #if canImport(UIKit)
                         .keyboardType(.numberPad)
                         #endif
+                    if let validationError {
+                        Text(validationError).foregroundStyle(.red)
+                    }
                 }
                 Section("Preferences") {
                     Picker("Codec", selection: $codec) {
@@ -62,11 +66,17 @@ struct AddDeviceSheet: View {
     }
 
     private func save() {
-        let portValue = UInt16(port) ?? VantageProtocol.defaultPort
-        var device = existing ?? SavedDevice(name: name, host: host, port: portValue)
+        let address: ConnectionAddress
+        do {
+            address = try ConnectionAddress(host: host, port: port)
+        } catch {
+            validationError = error.localizedDescription
+            return
+        }
+        var device = existing ?? SavedDevice(name: name, host: address.host, port: address.port)
         device.name = name
-        device.host = host.trimmingCharacters(in: .whitespaces)
-        device.port = portValue
+        device.host = address.host
+        device.port = address.port
         device.preferredCodec = codec
         device.naturalScroll = naturalScroll
         if existing != nil { store.update(device) } else { store.add(device) }

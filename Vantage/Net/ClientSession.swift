@@ -25,6 +25,7 @@ final class ClientSession {
     private let deviceModel: String
 
     private(set) var state: State = .idle
+    private(set) var pairingError: String?
     private(set) var displays: [DisplayInfo] = []
     private(set) var capabilities: HostCapabilities?
     private(set) var activeConfig: StreamConfig?
@@ -62,7 +63,16 @@ final class ClientSession {
 
     func connect(to device: SavedDevice, viewport: Viewport, pairingCode: String? = nil) {
         disconnect()
+        pairingError = nil
         self.device = device
+        do {
+            let address = try ConnectionAddress(host: device.host, port: String(device.port))
+            self.device?.host = address.host
+            self.device?.port = address.port
+        } catch {
+            state = .failed(error.localizedDescription)
+            return
+        }
         self.viewport = viewport
         self.pairingCode = pairingCode
         reconnectAttempts = 0
@@ -208,6 +218,9 @@ final class ClientSession {
             capabilities = result.capabilities
             return true
         case .pairingRequired, .badPairingCode:
+            pairingError = result.status == .badPairingCode
+                ? "Incorrect pairing code. Check the code in Vantage Host on your Mac and try again."
+                : nil
             state = .pairingRequired
             return false
         default:

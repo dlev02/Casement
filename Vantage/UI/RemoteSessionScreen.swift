@@ -90,7 +90,7 @@ struct RemoteSessionScreen: View {
                 ProgressView().controlSize(.large).tint(.white)
                 Text("Reconnecting…").foregroundStyle(.white)
             case .pairingRequired:
-                PairingPrompt { code in
+                PairingPrompt(errorMessage: session.pairingError) { code in
                     session.connect(to: device, viewport: currentViewport(), pairingCode: code)
                 }
             case .failed(let message):

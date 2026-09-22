@@ -4,6 +4,7 @@ import SwiftUI
 struct PairingPrompt: View {
     @State private var code = ""
     @FocusState private var isCodeFocused: Bool
+    var errorMessage: String? = nil
     let onSubmit: (String) -> Void
 
     var body: some View {
@@ -12,6 +13,14 @@ struct PairingPrompt: View {
             Text("Enter Pairing Code").font(.headline).foregroundStyle(.white)
             Text("Open Vantage Host on your Mac and choose “Show pairing code.”")
                 .font(.caption).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("pairingError")
+            }
             TextField("000000", text: $code)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.title2, design: .monospaced))

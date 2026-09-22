@@ -2,7 +2,7 @@
 
 A native remote desktop for controlling your Mac from an iPad or iPhone over Tailscale.
 
-**Private development preview.** The macOS host and iPadOS/iOS client are implemented. Windows hosting is not implemented. This is source code for local builds, not a signed installer or an App Store release. Real-device acceptance is still pending; see the [verification report](docs/testing/2026-09-22.md).
+**Private development preview.** The macOS host and iPadOS/iOS client are implemented. Windows hosting is not implemented. This is source code for local builds, not a signed installer or an App Store release. Basic real-Mac video, pointer control, and software-keyboard typing are user-verified on a physical iPad; see the [verification report](docs/testing/2026-09-22.md) for remaining checks.
 
 ## What it does
 
@@ -48,7 +48,7 @@ The products are `.deriveddata/Build/Products/Debug/VantageHost.app` and `.deriv
 1. Connect Tailscale on the Mac and iPad/iPhone. Complete any pending Tailscale sign-in on the client.
 2. Launch **Vantage Host** on the Mac. It lives in the menu bar, rather than opening a normal window.
 3. Use its **Grant Screen Recording** and **Grant Accessibility (input)** buttons. Approve Vantage Host in **System Settings → Privacy & Security → Screen & System Audio Recording / Accessibility**. Reopen the same host build after approving if macOS requests it.
-4. In the client, choose **Add Device**. Enter the Mac's Tailscale IP or MagicDNS name, a display name, and port **47820**.
+4. In the client, choose **Add Device**. Enter the Mac's Tailscale IP or MagicDNS name, a display name, and port **47820**. Pasted `host:port` addresses are also accepted; the pasted port takes precedence. Save, then tap the Mac's card or row to connect.
 5. Select the device. In the Mac menu, choose **Show pairing code**, then enter that code in the client and tap **Pair**. A code is consumed once; generate another for each new device.
 6. In a session, use **Session Options** for touch mode, **Send Clipboard to Mac**, or **Disconnect**. The keyboard button opens or closes software input; its **Done** button dismisses it.
 
@@ -106,4 +106,4 @@ Client: AVSampleBufferDisplayLayer ← VantageCore
 
 Encryption is supplied by Tailscale's tunnel; Vantage's TCP stream does not add TLS. The host accepts tailnet addresses and local loopback, then requires device authentication/pairing. Use it only on a trusted tailnet. This preview has not had a comprehensive security audit; host identity pinning and expiring/rate-limited pairing should be reviewed before broader distribution.
 
-Known limits: no Windows host, file transfer, remote audio, login-window control, or FileVault pre-boot access. Real display/input, physical keyboard/trackpad behavior, BetterDisplay provisioning, sleep/wake, and launch-at-login still need device testing. Application icons and distribution packaging are unfinished.
+Known limits: no Windows host, file transfer, remote audio, login-window control, or FileVault pre-boot access. Physical keyboard/trackpad behavior, clipboard, BetterDisplay provisioning, sleep/wake, and launch-at-login still need device testing. Application icons and distribution packaging are unfinished.

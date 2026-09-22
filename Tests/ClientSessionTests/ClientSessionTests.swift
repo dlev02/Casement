@@ -71,15 +71,19 @@ struct ClientSessionTests {
         }
         let session = ClientSession(identity: DeviceIdentity())
         defer { session.disconnect() }
-        let device = SavedDevice(name: "Test Mac", host: "127.0.0.1", port: listener.port!.rawValue)
+        // A pasted host:port must reach the real pairing flow, including old saved entries.
+        let device = SavedDevice(name: "Test Mac", host: "127.0.0.1:\(listener.port!.rawValue)")
         let viewport = Viewport(widthPoints: 800, heightPoints: 600, scale: 2)
         session.connect(to: device, viewport: viewport)
         try await eventually { session.state == .pairingRequired }
         try await Task.sleep(for: .milliseconds(100))
         #expect(session.state == .pairingRequired)
+        #expect(session.pairingError == nil)
         session.connect(to: device, viewport: viewport, pairingCode: "000000")
         try await eventually { session.state == .pairingRequired }
+        #expect(session.pairingError?.contains("Incorrect pairing code") == true)
         session.connect(to: device, viewport: viewport, pairingCode: "246810")
+        #expect(session.pairingError == nil)
         try await server.value
     }
 
