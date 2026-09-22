@@ -1,9 +1,10 @@
 import SwiftUI
 import VantageCore
 
-/// Fits the session controls into one row on iPad, or two rows in a narrow window.
+/// Floating session controls: modifier keys, navigation keys, keyboard, and a session menu.
+/// Collapses to a compact pill. Both states share one glass identity so the surface morphs
+/// between them instead of cutting.
 struct ControlStrip: View {
-    @State private var showOptions = false
     @Binding var isCollapsed: Bool
     @Binding var dock: ToolbarDock
     @Binding var stickyModifiers: KeyModifiers
@@ -13,62 +14,79 @@ struct ControlStrip: View {
     let onSendClipboard: () -> Void
     let onDisconnect: () -> Void
 
+    @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Group {
+        GlassEffectContainer(spacing: 16) {
             if isCollapsed {
-                HStack(spacing: 4) {
-                    keyboardButton
-                    collapseButton
-                }
+                compact
+                    .transition(.blurReplace)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .glassEffectID("controls", in: glassNamespace)
             } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 4) {
-                        modifiers
-                        Divider().frame(height: 24)
-                        keys
-                        Divider().frame(height: 24)
-                        actions
-                    }
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) { modifiers; actions }
-                        HStack(spacing: 4) { keys }
-                    }
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) { modifiers }
-                        HStack(spacing: 0) { keys }
-                        HStack(spacing: 4) { actions }
-                    }
-                }
+                expanded
+                    .transition(.blurReplace)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
+                    .glassEffectID("controls", in: glassNamespace)
             }
         }
-        .buttonStyle(.plain)
-        .padding(8)
-        .glassEffect(in: .rect(cornerRadius: 28))
         .accessibilityElement(children: .contain)
         .accessibilityValue(dock.label)
-        .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { isCollapsed.toggle() }
-        .accessibilityAction(named: "Move to top left") { dock = .topLeft }
-        .accessibilityAction(named: "Move to top right") { dock = .topRight }
-        .accessibilityAction(named: "Move to bottom left") { dock = .bottomLeft }
-        .accessibilityAction(named: "Move to bottom right") { dock = .bottomRight }
+        .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
+        .accessibilityAction(named: "Move to top left") { move(to: .topLeft) }
+        .accessibilityAction(named: "Move to top right") { move(to: .topRight) }
+        .accessibilityAction(named: "Move to bottom left") { move(to: .bottomLeft) }
+        .accessibilityAction(named: "Move to bottom right") { move(to: .bottomRight) }
         .contextMenu {
-            ForEach(ToolbarDock.allCases) { position in
-                Button("Move to \(position.label.lowercased())") { dock = position }
+            Section("Move Controls") {
+                ForEach(ToolbarDock.allCases) { position in
+                    Button { move(to: position) } label: { Label(position.label, systemImage: position.symbol) }
+                }
             }
-            Button(isCollapsed ? "Expand controls" : "Collapse controls") { isCollapsed.toggle() }
-        }
-        .confirmationDialog("Session Options", isPresented: $showOptions, titleVisibility: .visible) {
-            Button("Direct Touch") { touchMode = .direct }
-            Button("Trackpad") { touchMode = .trackpad }
-            Button("Send Clipboard to Mac", action: onSendClipboard)
-            ForEach(ToolbarDock.allCases) { position in
-                Button("Move to \(position.label.lowercased())") { dock = position }
-            }
-            Button("Collapse controls") { isCollapsed = true }
-            Button("Disconnect", role: .destructive, action: onDisconnect)
-            Button("Cancel", role: .cancel) {}
         }
     }
+
+    // MARK: States
+
+    private var compact: some View {
+        HStack(spacing: 0) {
+            keyboardButton
+            collapseButton
+        }
+        .padding(4)
+    }
+
+    private var expanded: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                modifiers
+                separator
+                keys
+                separator
+                actions
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 0) { modifiers; separator; actions }
+                HStack(spacing: 0) { keys }
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 0) { modifiers }
+                HStack(spacing: 0) { keys }
+                HStack(spacing: 0) { actions }
+            }
+        }
+        .padding(4)
+    }
+
+    private var separator: some View {
+        Capsule()
+            .fill(.primary.opacity(0.14))
+            .frame(width: 1, height: 22)
+            .padding(.horizontal, 4)
+    }
+
+    // MARK: Groups
 
     @ViewBuilder private var modifiers: some View {
         modifierButton("Control", "control", .control)
@@ -88,53 +106,140 @@ struct ControlStrip: View {
 
     @ViewBuilder private var actions: some View {
         keyboardButton
-        Button { showOptions = true } label: {
-            Image(systemName: "ellipsis.circle").frame(width: 44, height: 44).contentShape(Rectangle())
-        }
-        .accessibilityLabel("Session Options")
+        sessionMenu
         collapseButton
     }
 
+    // MARK: Buttons
+
     private var keyboardButton: some View {
         Button(action: onShowKeyboard) {
-            Image(systemName: "keyboard").frame(width: 44, height: 44).contentShape(Rectangle())
+            Image(systemName: "keyboard")
         }
+        .buttonStyle(StripButtonStyle())
         .accessibilityLabel("Toggle Keyboard")
     }
 
     private var collapseButton: some View {
-        Button { isCollapsed.toggle() } label: {
+        Button(action: toggleCollapsed) {
             Image(systemName: isCollapsed
-                ? (dock.isLeading ? "chevron.compact.right" : "chevron.compact.left")
-                : (dock.isLeading ? "chevron.compact.left" : "chevron.compact.right"))
-                .frame(width: 44, height: 44).contentShape(Rectangle())
+                ? (dock.isLeading ? "chevron.right" : "chevron.left")
+                : (dock.isLeading ? "chevron.left" : "chevron.right"))
+                .font(.body.weight(.semibold))
         }
+        .buttonStyle(StripButtonStyle())
         .accessibilityLabel(isCollapsed ? "Expand controls" : "Collapse controls")
         .accessibilityIdentifier("session.toolbar.collapse")
         .accessibilityHint("Drag the controls to move them to another corner.")
     }
 
+    private var sessionMenu: some View {
+        Menu {
+            Picker("Touch", selection: $touchMode) {
+                ForEach(InputController.TouchMode.allCases) { mode in
+                    Label(mode.label, systemImage: mode.symbol).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+
+            Section {
+                Button(action: onSendClipboard) {
+                    Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
+                }
+            }
+
+            Section {
+                Menu {
+                    Picker("Corner", selection: Binding(get: { dock }, set: { move(to: $0) })) {
+                        ForEach(ToolbarDock.allCases) { position in
+                            Label(position.label, systemImage: position.symbol).tag(position)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label("Move Controls", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+                Button(action: toggleCollapsed) {
+                    Label("Collapse Controls", systemImage: "rectangle.compress.vertical")
+                }
+            }
+
+            Section {
+                Button(role: .destructive, action: onDisconnect) {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuOrder(.fixed)
+        .buttonStyle(StripButtonStyle())
+        .accessibilityLabel("Session Options")
+    }
+
     private func modifierButton(_ title: String, _ symbol: String, _ modifier: KeyModifiers) -> some View {
-        Button {
-            if stickyModifiers.contains(modifier) { stickyModifiers.remove(modifier) }
-            else { stickyModifiers.insert(modifier) }
+        let isOn = stickyModifiers.contains(modifier)
+        return Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                if isOn { stickyModifiers.remove(modifier) } else { stickyModifiers.insert(modifier) }
+            }
         } label: {
             Image(systemName: symbol)
-                .foregroundStyle(stickyModifiers.contains(modifier) ? Color.accentColor : .primary)
-                .frame(width: 44, height: 44).contentShape(Rectangle())
-                .background(stickyModifiers.contains(modifier) ? Color.accentColor.opacity(0.18) : .clear, in: .circle)
         }
+        .buttonStyle(StripButtonStyle(isActive: isOn))
         .accessibilityLabel(title)
-        .accessibilityValue(stickyModifiers.contains(modifier) ? "On" : "Off")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private func keyButton(_ title: String, _ symbol: String, _ keyCode: UInt16) -> some View {
         Button {
             onKey(keyCode, stickyModifiers)
-            stickyModifiers = []
+            withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
         } label: {
-            Image(systemName: symbol).frame(width: 44, height: 44).contentShape(Rectangle())
+            Image(systemName: symbol)
         }
+        .buttonStyle(StripButtonStyle())
         .accessibilityLabel(title)
+    }
+
+    // MARK: Actions
+
+    /// Expanding gets a lively spring; collapsing settles quietly. Reduce Motion keeps both short.
+    private func toggleCollapsed() {
+        let animation: Animation = isCollapsed
+            ? .spring(duration: 0.5, bounce: 0.28)
+            : .smooth(duration: 0.34)
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : animation) {
+            isCollapsed.toggle()
+        }
+    }
+
+    private func move(to position: ToolbarDock) {
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.55, bounce: 0.2)) {
+            dock = position
+        }
+    }
+}
+
+/// A 44-point glyph button that lives on glass: no chrome of its own, a soft press highlight,
+/// and a tinted ring when the key is held (sticky modifiers).
+private struct StripButtonStyle: ButtonStyle {
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(isActive ? Color.accentColor : Color.primary)
+            .frame(width: 44, height: 44)
+            .background {
+                Circle()
+                    .fill(isActive ? Color.accentColor.opacity(0.2) : Color.primary.opacity(configuration.isPressed ? 0.12 : 0))
+                    .padding(4)
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+            .animation(.snappy(duration: 0.2), value: isActive)
     }
 }

@@ -13,16 +13,20 @@ struct RemoteSessionScreen: View {
     @State private var video = VideoStreamController()
     @State private var input = InputController()
     @State private var stickyModifiers: KeyModifiers = []
-    @State private var touchMode: InputController.TouchMode = .trackpad
     @State private var showKeyboard = false
+    @State private var hasVideo = false
     @State private var viewportSize = CGSize(width: 1210, height: 834)
     @Environment(\.displayScale) private var displayScale
     @AppStorage("vantage.trackpadSensitivity") private var trackpadSensitivity = 1.5
+    @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
+    @AppStorage("vantage.softwareKeyboardMode") private var keyboardMode = SoftwareKeyboardMode.unicode
     @State private var toolbarCollapsed = UserDefaults.standard.bool(forKey: "vantage.toolbarCollapsed")
     @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var toolbarTranslation = CGSize.zero
     @State private var feedbackTask: Task<Void, Never>?
+
+    private var isLive: Bool { session.state == .connected && hasVideo }
 
     var body: some View {
         ZStack {
@@ -35,8 +39,9 @@ struct RemoteSessionScreen: View {
             }
             #endif
 
-            if session.state != .connected {
+            if !isLive {
                 connectionOverlay
+                    .transition(.opacity)
             }
 
             VStack {
@@ -70,20 +75,30 @@ struct RemoteSessionScreen: View {
                             translation = CGSize(width: max(-geometry.size.width / 2, min(geometry.size.width / 2, value.translation.width)),
                                                  height: max(-geometry.size.height / 2, min(geometry.size.height / 2, value.translation.height)))
                         }
-                        .onEnded { value in toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation) })
+                        .onEnded { value in
+                            withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.55, bounce: 0.2)) {
+                                toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation)
+                            }
+                        })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
                     .padding(12)
                     .padding(.top, 32) // Keep drags below iPadOS window-management gestures.
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: toolbarDock)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: toolbarCollapsed)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: toolbarTranslation == .zero)
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        .animation(.smooth(duration: 0.35), value: isLive)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
         .onChange(of: session.state) { _, state in
-            if state == .connected { store.markConnected(device) }
+            if state == .connected {
+                store.markConnected(device)
+            } else {
+                hasVideo = false
+                video.resetFirstFrame()
+            }
         }
         .onChange(of: session.activeConfig) { _, config in
             if let config {
@@ -108,9 +123,11 @@ struct RemoteSessionScreen: View {
     private var connectionOverlay: some View {
         VStack(spacing: 16) {
             switch session.state {
-            case .connecting, .authenticating:
+            case .connecting, .authenticating, .connected:
                 ProgressView().controlSize(.large).tint(.white)
-                Text("Connecting to \(device.name)…").foregroundStyle(.white)
+                Text(session.state == .connected ? "Starting screen capture…" : "Connecting to \(device.name)…")
+                    .foregroundStyle(.white)
+                    .contentTransition(.opacity)
             case .reconnecting, .suspended:
                 ProgressView().controlSize(.large).tint(.white)
                 Text("Reconnecting…").foregroundStyle(.white)
@@ -121,7 +138,7 @@ struct RemoteSessionScreen: View {
             case .failed(let message):
                 VStack(spacing: 12) {
                     Image(systemName: "wifi.exclamationmark").font(.largeTitle).foregroundStyle(.white)
-                    Text(message).foregroundStyle(.white)
+                    Text(message).foregroundStyle(.white).multilineTextAlignment(.center)
                     Button("Retry") { Task { await startSession() } }.buttonStyle(.glassProminent)
                     Button("Close") { disconnect() }.buttonStyle(.glass)
                 }
@@ -133,6 +150,7 @@ struct RemoteSessionScreen: View {
             }
         }
         .padding(32)
+        .frame(maxWidth: 420)
         .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
         .preferredColorScheme(.dark)
     }
@@ -149,12 +167,23 @@ struct RemoteSessionScreen: View {
     @ViewBuilder
     private var hiddenKeyboardField: some View {
         if showKeyboard {
-            RemoteKeyboardField(isPresented: $showKeyboard, onText: input.typeText, onKey: { keyCode in
+            RemoteKeyboardField(isPresented: $showKeyboard, onText: typeFromSoftwareKeyboard, onKey: { keyCode in
                 input.tapChord(keyCode: keyCode, modifiers: stickyModifiers)
                 stickyModifiers = []
             })
             .frame(width: 1, height: 1)
             .opacity(0.01)
+        }
+    }
+
+    /// Unicode text is the default. Keystrokes mode, or any held ⌘/⌥/⌃, sends real key presses so
+    /// shortcuts like ⌘C work from the software keyboard.
+    private func typeFromSoftwareKeyboard(_ text: String) {
+        if keyboardMode == .keystrokes || !stickyModifiers.isEmpty {
+            input.typeCharacters(text, modifiers: stickyModifiers)
+            stickyModifiers = []
+        } else {
+            input.typeText(text)
         }
     }
 
@@ -167,6 +196,9 @@ struct RemoteSessionScreen: View {
         }
         video.onNeedsKeyframe = {
             Task { @MainActor in session.send(.requestKeyframe) }
+        }
+        video.onFirstFrame = {
+            Task { @MainActor in hasVideo = true }
         }
         input.send = { message in session.send(message) }
         input.mode = touchMode

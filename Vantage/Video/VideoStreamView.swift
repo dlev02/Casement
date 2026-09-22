@@ -21,6 +21,9 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     private var lastDecodeMillis: Double = 0
 
     var onNeedsKeyframe: (() -> Void)?
+    /// Fires once per stream when the first frame has been handed to the renderer.
+    var onFirstFrame: (@Sendable () -> Void)?
+    private var deliveredFirstFrame = false
 
     init() {
         displayLayer.videoGravity = .resizeAspect
@@ -96,6 +99,15 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
         renderer.enqueue(sampleBuffer)
         lastDecodeMillis = Double(DispatchTime.now().uptimeNanoseconds &- start) / 1_000_000
         framesReceived &+= 1
+        if !deliveredFirstFrame {
+            deliveredFirstFrame = true
+            onFirstFrame?()
+        }
+    }
+
+    /// Call when a new connection starts so the next frame counts as the first again.
+    func resetFirstFrame() {
+        queue.async { self.deliveredFirstFrame = false }
     }
 
     private func observeFailures() {
