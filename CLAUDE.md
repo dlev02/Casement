@@ -43,7 +43,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
 
 ```
 # Shared core (fast, no simulator)
-cd Packages/VantageCore && swift test
+xcrun swift test --package-path Packages/VantageCore
+
+# Client session regression tests (actual source, loopback mock host)
+xcrun swift test
 
 # Host (macOS)
 xcodebuild build -project Vantage.xcodeproj -scheme VantageHost -destination 'platform=macOS' -derivedDataPath .deriveddata
@@ -52,7 +55,7 @@ xcodebuild build -project Vantage.xcodeproj -scheme VantageHost -destination 'pl
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=iOS Simulator' -derivedDataPath .deriveddata
 ```
 
-Reuse `.deriveddata`; do not create per-task DerivedData trees. The active toolchain is Xcode 27.
+Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites and both builds.
 
 ## Running for real
 
@@ -79,7 +82,9 @@ xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0
 ```
 
 `--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the
-whole encode → transport → decode → display path runs without Screen Recording access. Client debug
+whole encode → transport → decode → display path runs without Screen Recording access. Synthetic mode
+disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
+and fixed-code arguments are DEBUG-only. Quit the synthetic host before a real-device test. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
 `log` in Drew's profile).
@@ -99,8 +104,8 @@ are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a she
 
 ## Known v1 limitations
 
-- Software-keyboard backspace/return currently go through the Unicode-text path (imperfect); the
-  hardware keyboard path is exact.
+- Software-keyboard Backspace and Return send virtual key events; other text uses Unicode input.
+  Hardware behavior still needs a physical-device check.
 - File transfer is not implemented; clipboard carries text, RTF, and PNG images both ways.
 - Virtual-display provisioning is wired but falls back to the main display if BetterDisplay's CLI
   isn't available. Live capture/input on a real display is still unverified pending the two TCC
