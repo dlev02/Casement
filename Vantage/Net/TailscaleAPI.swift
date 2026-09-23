@@ -111,10 +111,13 @@ nonisolated enum TailscaleAPIError: LocalizedError, Equatable {
 @MainActor
 @Observable
 final class TailscaleAccount {
-    private static let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
+    static let keychainService = "com.benjaminlevinson.vantage.client"
     private static let tokenAccount = "tailscale-api-token"
     private static let oauthIDAccount = "tailscale-oauth-id"
     private static let oauthSecretAccount = "tailscale-oauth-secret"
+    static var keychainAccounts: [String] { [tokenAccount, oauthIDAccount, oauthSecretAccount] }
+    /// Local or iCloud Keychain, depending on whether sync is on.
+    private static var keychain: KeychainStore { CloudSync.secretsStore(service: keychainService) }
 
     private(set) var credential: TailscaleCredential?
     private(set) var cachedDevices: [TailscaleDevice] = []
@@ -127,9 +130,11 @@ final class TailscaleAccount {
     }
 
     private static func loadCredential() -> TailscaleCredential? {
-        if let token = try? keychain.string(for: tokenAccount), !token.isEmpty { return .accessToken(token) }
-        if let id = try? keychain.string(for: oauthIDAccount), let secret = try? keychain.string(for: oauthSecretAccount),
-           !id.isEmpty, !secret.isEmpty { return .oauthClient(id: id, secret: secret) }
+        if let token = CloudSync.secret(tokenAccount, service: keychainService) { return .accessToken(token) }
+        if let id = CloudSync.secret(oauthIDAccount, service: keychainService),
+           let secret = CloudSync.secret(oauthSecretAccount, service: keychainService) {
+            return .oauthClient(id: id, secret: secret)
+        }
         return nil
     }
 
@@ -141,12 +146,12 @@ final class TailscaleAccount {
         switch credential {
         case .accessToken(let token):
             try Self.keychain.set(token, for: Self.tokenAccount)
-            try? Self.keychain.remove(Self.oauthIDAccount)
-            try? Self.keychain.remove(Self.oauthSecretAccount)
+            CloudSync.removeSecret(Self.oauthIDAccount, service: Self.keychainService)
+            CloudSync.removeSecret(Self.oauthSecretAccount, service: Self.keychainService)
         case .oauthClient(let id, let secret):
             try Self.keychain.set(id, for: Self.oauthIDAccount)
             try Self.keychain.set(secret, for: Self.oauthSecretAccount)
-            try? Self.keychain.remove(Self.tokenAccount)
+            CloudSync.removeSecret(Self.tokenAccount, service: Self.keychainService)
         }
         self.credential = credential
         cachedDevices = devices
@@ -154,9 +159,7 @@ final class TailscaleAccount {
     }
 
     func signOut() {
-        try? Self.keychain.remove(Self.tokenAccount)
-        try? Self.keychain.remove(Self.oauthIDAccount)
-        try? Self.keychain.remove(Self.oauthSecretAccount)
+        for account in Self.keychainAccounts { CloudSync.removeSecret(account, service: Self.keychainService) }
         credential = nil
         bearer = nil
         cachedDevices = []

@@ -170,21 +170,41 @@ private struct ConnectionSettings: View {
     }
 }
 
-private struct SecuritySettings: View {
+struct SecuritySettings: View {
     @AppStorage("vantage.requireBiometrics") private var requireBiometrics = false
+    @Environment(DeviceStore.self) private var store
+
     var body: some View {
+        let cloud = store.cloud
         Form {
             Section {
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
             } footer: {
                 Text("Unlock Vantage with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
             }
+
+            Section {
+                Toggle("Sync with iCloud", isOn: Binding(
+                    get: { cloud.isEnabled },
+                    set: { store.setCloudSync($0) }
+                ))
+                if cloud.isEnabled, let explanation = cloud.deviceListAvailability.explanation {
+                    Label(explanation, systemImage: "info.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("iCloud")
+            } footer: {
+                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Vantage up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
+            }
         }
         .navigationTitle("Privacy & Security")
     }
 }
 
-private struct AboutScreen: View {
+struct AboutScreen: View {
+
     var body: some View {
         List {
             Section {

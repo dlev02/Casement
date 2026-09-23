@@ -1,12 +1,19 @@
+import AppIntents
 import Foundation
 import Observation
 import SwiftUI
 import VantageCore
+import WidgetKit
 
 /// Persists saved devices and user preferences for the client.
 @MainActor
 @Observable
 final class DeviceStore {
+    #if os(visionOS)
+    /// visionOS sessions live in their own windows and share the list's store.
+    static let shared = DeviceStore()
+    #endif
+
     private let defaultsKey = "vantage.savedDevices"
     private let defaults = UserDefaults.standard
 
@@ -18,6 +25,10 @@ final class DeviceStore {
         didSet { defaults.set(isGridLayout, forKey: "vantage.grid") }
     }
     var searchText: String = ""
+    /// Macs removed here, so a copy syncing back from iCloud doesn't resurrect them.
+    private var tombstones: [UUID: Date] = [:]
+    private let tombstonesKey = "vantage.deletedDevices"
+    let cloud = CloudSync.shared
 
     init() {
         isGridLayout = defaults.bool(forKey: "vantage.grid")
@@ -26,6 +37,48 @@ final class DeviceStore {
         }
         load()
         applyLaunchOptions()
+        publishCatalog()
+        cloud.onRemoteDevices = { [weak self] devices, tombstones in self?.merge(remote: devices, tombstones: tombstones) }
+        cloud.pullNow()
+    }
+
+    // MARK: iCloud
+
+    func setCloudSync(_ enabled: Bool) {
+        cloud.setEnabled(enabled, devices: devices)
+    }
+
+    /// Folds in the list from another device: newer copy of each Mac wins, removals win over
+    /// anything older than the removal, and Macs only known here are kept.
+    private func merge(remote: [SavedDevice], tombstones remoteTombstones: [UUID: Date]) {
+        var changed = false
+        for (id, date) in remoteTombstones where (tombstones[id] ?? .distantPast) < date {
+            tombstones[id] = date
+            if let index = devices.firstIndex(where: { $0.id == id }),
+               (devices[index].updatedAt ?? .distantPast) < date {
+                devices.remove(at: index)
+                DeviceSecrets.setPassword(nil, forID: id)
+                changed = true
+            }
+        }
+        for device in remote {
+            if let deleted = tombstones[device.id], (device.updatedAt ?? .distantPast) < deleted { continue }
+            if let index = devices.firstIndex(where: { $0.id == device.id }) {
+                if (devices[index].updatedAt ?? .distantPast) < (device.updatedAt ?? .distantPast) {
+                    devices[index] = device
+                    changed = true
+                }
+            } else if !devices.contains(where: { $0.host == device.host && $0.port == device.port }) {
+                devices.append(device)
+                changed = true
+            }
+        }
+        // A Mac added, renamed, or removed on another device has to reach Siri, Spotlight, and
+        // the widgets too, not just local storage.
+        if changed {
+            persist()
+            publishCatalog()
+        }
     }
 
     private func applyLaunchOptions() {
@@ -53,17 +106,28 @@ final class DeviceStore {
         }
     }
 
-    func add(_ device: SavedDevice) {
+    /// Returns the device as stored — adding a Mac that's already saved updates the existing entry
+    /// rather than duplicating it, so the caller gets back the id that secrets belong under.
+    @discardableResult
+    func add(_ device: SavedDevice) -> SavedDevice {
         if let index = devices.firstIndex(where: { $0.host == device.host && $0.port == device.port }) {
             devices[index].name = device.name
-        } else {
-            devices.append(device)
+            devices[index].updatedAt = Date()
+            save()
+            return devices[index]
         }
+        var device = device
+        device.updatedAt = Date()
+        tombstones[device.id] = nil
+        devices.append(device)
         save()
+        return device
     }
 
     func remove(_ device: SavedDevice) {
         devices.removeAll { $0.id == device.id }
+        tombstones[device.id] = Date()
+        DeviceSecrets.setPassword(nil, for: device)
         save()
     }
 
@@ -71,22 +135,65 @@ final class DeviceStore {
         guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
         devices[index].lastConnected = Date()
         devices[index].connectionCount += 1
+        devices[index].updatedAt = Date()
         save()
     }
 
     func update(_ device: SavedDevice) {
         guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
         devices[index] = device
+        devices[index].updatedAt = Date()
         save()
     }
 
     private func load() {
+        if let raw = defaults.dictionary(forKey: tombstonesKey) as? [String: Double] {
+            tombstones = raw.reduce(into: [:]) { result, entry in
+                if let id = UUID(uuidString: entry.key) { result[id] = Date(timeIntervalSince1970: entry.value) }
+            }
+        }
         guard let data = defaults.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([SavedDevice].self, from: data) else { return }
         devices = decoded
     }
 
+    /// Saves locally, hands the list to iCloud when sync is on, and refreshes what Siri and the
+    /// widgets know about.
     private func save() {
+        persist()
+        cloud.push(devices: devices, tombstones: tombstones)
+        publishCatalog()
+    }
+
+    /// Siri phrases, Spotlight, widgets, and the Control Center control read a small catalog
+    /// rather than the full device list.
+    private func publishCatalog() {
+        let previous = Set(DeviceCatalog.load().map(\.id))
+        let macs = catalogMacs
+        DeviceCatalog.save(macs)
+        WidgetCenter.shared.reloadTimelines(ofKind: DeviceCatalog.widgetKind)
+        #if !os(visionOS) // no Control Center controls on visionOS
+        ControlCenter.shared.reloadControls(ofKind: DeviceCatalog.controlKind)
+        #endif
+        VantageShortcuts.updateAppShortcutParameters()
+        let removed = Array(previous.subtracting(macs.map(\.id)))
+        Task { await MacSpotlight.sync(macs, removed: removed) }
+    }
+
+    private var catalogMacs: [DeviceCatalog.Mac] {
+        devices.map { DeviceCatalog.Mac(id: $0.id, name: $0.name, host: $0.host, lastConnected: $0.lastConnected) }
+    }
+
+    /// Re-applies the Spotlight policy after the app lock is switched on or off: locked means no
+    /// Macs in Spotlight at all.
+    func refreshSpotlight() {
+        let macs = catalogMacs
+        Task { await MacSpotlight.sync(macs, removed: [], replacingAll: true) }
+    }
+
+    private func persist() {
         defaults.set(try? JSONEncoder().encode(devices), forKey: defaultsKey)
+        let stamps = tombstones.reduce(into: [String: Double]()) { $0[$1.key.uuidString] = $1.value.timeIntervalSince1970 }
+        defaults.set(stamps, forKey: tombstonesKey)
     }
 }
