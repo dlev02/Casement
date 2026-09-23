@@ -43,7 +43,7 @@ struct HostSettingsView: View {
                 Button("Re-check") { controller.refreshReadiness() }
             }
             Section("Locked screen") {
-                Text("Typing into the macOS lock screen or any password field is blocked by the system for all third‑party apps (Secure Input). Vantage shows a banner on the iPad when that happens. Keep the Mac unlocked for unattended use, or unlock it in person.")
+                Text("macOS blocks typing from apps into the lock screen and password fields (Secure Input). When that happens, the iPad's key button types your saved password through this Mac's own Screen Sharing instead, so keep Screen Sharing on (System Settings → General → Sharing) and allow your account.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
