@@ -48,6 +48,8 @@ enum ClientOptions {
     static var dictationFixture: String? { value(for: "-VantageDictationFixture") }
     /// `-VantageDictationSpeak "text"` dictates synthesized speech to the Mac engine once connected.
     static var dictationSpeech: String? { value(for: "-VantageDictationSpeak") }
+    /// `-VantageMacAudio 1|0` overrides the saved Mac Audio choice for this launch (tests).
+    static var macAudio: Bool? { value(for: "-VantageMacAudio").map { $0 == "1" } }
 
     static var seedSampleDevices: Bool {
         #if DEBUG

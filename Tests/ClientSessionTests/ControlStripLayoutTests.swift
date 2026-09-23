@@ -8,7 +8,7 @@ import Testing
             .control, .option, .command, .shift,
             .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
             .spotlight, .missionControl, .typePassword,
-            .dictate, .keyboard, .disconnect,
+            .macAudio, .dictate, .keyboard, .disconnect,
         ])
         #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard])
     }
@@ -19,6 +19,7 @@ import Testing
         }
         #expect(StripItem.spotlight.detail == "⌘ Space")
         #expect(StripItem.disconnect.category == .actions)
+        #expect(StripItem.macAudio.label == "Mac Audio" && StripItem.macAudio.category == .actions)
     }
 
     @Test func addAppendsOnceAndRemoveHides() {
@@ -55,7 +56,7 @@ import Testing
     }
 
     @Test func decodingDropsUnknownControlsAndRepeats() throws {
-        let json = Data(#"["escape","macAudio","tab","escape","sendFile","disconnect"]"#.utf8)
+        let json = Data(#"["escape","holoDeck","tab","escape","sendFile","disconnect"]"#.utf8)
         let layout = try JSONDecoder().decode(ControlStripLayout.self, from: json)
         #expect(layout.items == [.escape, .tab, .disconnect])
         #expect(ControlStripLayout(items: [.tab, .tab, .shift]).items == [.tab, .shift])
@@ -78,9 +79,28 @@ import Testing
         let old = Data(#"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Studio Mac","host":"studio.ts.net","port":47820,"os":"macOS","connectionCount":3,"naturalScroll":true}"#.utf8)
         var device = try JSONDecoder().decode(SavedDevice.self, from: old)
         #expect(device.controlStrip == nil)
+        #expect(device.playMacAudio == nil) // Mac Audio stays off for Macs saved before it existed
         device.controlStrip = ControlStripLayout(items: [.escape, .disconnect])
+        device.playMacAudio = true
         let again = try JSONDecoder().decode(SavedDevice.self, from: JSONEncoder().encode(device))
         #expect(again.controlStrip?.items == [.escape, .disconnect])
+        #expect(again.playMacAudio == true)
+    }
+
+    @Test func layoutsSavedAsTheOldStandardPickUpMacAudioOnce() throws {
+        let defaults = try #require(UserDefaults(suiteName: "ControlStripLayoutTests.\(UUID())"))
+        let old = ControlStripLayout.standardHistory[0]
+        #expect(!old.contains(.macAudio) && ControlStripLayout.standardHistory.last == .standard)
+        defaults.set(old.rawValue, forKey: ControlStripLayout.defaultsKey)
+        let custom = ControlStripLayout(items: [.escape, .disconnect])
+        let perMac = ControlStripLayout.upgradeSavedLayouts(defaults: defaults, perMac: [old, custom, nil])
+        #expect(perMac == [nil, custom, nil])
+        #expect(ControlStripLayout(rawValue: defaults.string(forKey: ControlStripLayout.defaultsKey)!) == .standard)
+
+        // Only once: someone who then removes Mac Audio (back to the old list) keeps that choice.
+        defaults.set(old.rawValue, forKey: ControlStripLayout.defaultsKey)
+        #expect(ControlStripLayout.upgradeSavedLayouts(defaults: defaults, perMac: [old]) == [old])
+        #expect(ControlStripLayout(rawValue: defaults.string(forKey: ControlStripLayout.defaultsKey)!) == old)
     }
 
     // MARK: Wrapping
@@ -91,7 +111,7 @@ import Testing
         let items = ControlStripLayout.standard.items
         let rows = ControlStripLayout.rows(items, count: 3) { $0.category }
         #expect(rows.flatMap { $0 } == items)
-        #expect(widths(rows) == [4, 6, 6]) // modifiers | keys | shortcuts + actions
+        #expect(widths(rows) == [4, 6, 7]) // modifiers | keys | shortcuts + actions
         for row in rows.dropFirst() {
             let before = items[items.firstIndex(of: row[0])! - 1]
             #expect(before.category != row[0].category)
@@ -100,7 +120,7 @@ import Testing
 
     @Test func twoRowsAreAsEvenAsTheGroupsAllow() {
         let rows = ControlStripLayout.rows(ControlStripLayout.standard.items, count: 2) { $0.category }
-        #expect(widths(rows) == [10, 6])
+        #expect(widths(rows) == [10, 7])
     }
 
     @Test func oneRowAndTooFewControlsStayTogether() {

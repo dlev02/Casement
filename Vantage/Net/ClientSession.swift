@@ -48,9 +48,17 @@ final class ClientSession {
     var onCursor: ((CursorPosition) -> Void)?
     var onClipboard: ((ClipboardPayload) -> Void)?
     var onDictationResult: ((DictationResult) -> Void)?
+    /// Mac audio (`audioConfig`, then `audioPacket`s) for the player. Only flows after
+    /// `setMacAudio(true)` on a host that offers audio.
+    var onAudio: ((Message) -> Void)?
 
     /// Host transcription engines; nil for hosts that predate dictation (never send them its kinds).
     var dictationEngines: [DictationEngineID]? { capabilities?.dictationEngines }
+    /// The host can stream its audio. False for hosts that predate it: never send them `audioRequest`.
+    var hostOffersAudio: Bool { capabilities?.audio == true }
+    /// Whether this session wants the Mac's audio. Survives reconnects: every new connection asks
+    /// again once the host has said it can.
+    private(set) var wantsMacAudio = false
 
     init(identity: DeviceIdentity? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
@@ -129,6 +137,15 @@ final class ClientSession {
         send(.selectDisplay(SelectDisplay(selection: selection, targetFPS: targetFPS, quality: quality, preferredCodec: codec)))
     }
 
+    /// Turns the Mac's audio on or off for this session (and every reconnect). Sends nothing to a
+    /// host that doesn't offer audio.
+    func setMacAudio(_ enabled: Bool) {
+        let changed = wantsMacAudio != enabled
+        wantsMacAudio = enabled
+        guard changed || enabled, state == .connected, hostOffersAudio else { return }
+        send(.audioRequest(AudioRequest(enabled: enabled)))
+    }
+
     func sendFeedback(_ feedback: QualityFeedback) {
         send(.qualityFeedback(feedback))
     }
@@ -177,6 +194,9 @@ final class ClientSession {
                 try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
                     targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
                     useVirtualDisplay: device.useVirtualDisplay == true)))
+                if wantsMacAudio, hostOffersAudio {
+                    try await channel.send(.audioRequest(AudioRequest(enabled: true)))
+                }
                 state = .connected
                 reconnectAttempts = 0
                 while let message = try await channel.receive() {
@@ -218,7 +238,7 @@ final class ClientSession {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true))
+                          features: ClientFeatures(dictation: true, macAudio: true))
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -263,6 +283,8 @@ final class ClientSession {
             hostStatus = status
         case .dictationResult(let result):
             onDictationResult?(result)
+        case .audioConfig, .audioPacket:
+            onAudio?(message)
         case .displayList(let list):
             displays = list.displays
         case .pong(let pong):

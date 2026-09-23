@@ -73,8 +73,11 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// This Mac's own session controls. Nil uses the default from Settings → Controls. Optional
     /// so devices saved by earlier builds decode; syncs with the rest of the entry.
     var controlStrip: ControlStripLayout?
+    /// Play this Mac's sound on this device when a session starts (the strip's Mac Audio
+    /// toggle). Optional so devices saved by earlier builds decode; nil means off.
+    var playMacAudio: Bool?
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -88,6 +91,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.homeAddress = homeAddress
         self.controlStrip = controlStrip
+        self.playMacAudio = playMacAudio
     }
 }
 

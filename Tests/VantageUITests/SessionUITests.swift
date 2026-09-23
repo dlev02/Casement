@@ -100,6 +100,50 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    /// Mac Audio from the strip against the synthetic host's chime: the toggle turns on, packets
+    /// arrive and play with the buffer holding its depth, and it turns off again.
+    @MainActor func testMacAudioToggleStreamsTheMacsSound() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810", "-VantageMacAudio", "0",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let toggle = app.buttons["session.toolbar.macAudio"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertEqual(toggle.label, "Mac Audio")
+        XCTAssertEqual(toggle.value as? String, "Off")
+        XCTAssertTrue(toggle.isEnabled, "the synthetic host offers audio")
+        toggle.tap()
+        wait(for: [expectation(for: NSPredicate(format: "value == %@", "On"), evaluatedWith: toggle)], timeout: 3)
+
+        let probe = app.otherElements["session.macAudioStats"]
+        XCTAssertTrue(probe.waitForExistence(timeout: 5), app.debugDescription)
+        func stat(_ name: String) -> Int {
+            let words = probe.label.split(separator: " ")
+            guard let index = words.firstIndex(of: Substring(name)), index + 1 < words.count else { return -1 }
+            return Int(words[index + 1]) ?? -1
+        }
+        let playing = expectation(for: NSPredicate(format: "label BEGINSWITH %@", "playing 1"), evaluatedWith: probe)
+        wait(for: [playing], timeout: 10)
+        let pushedAtStart = stat("pushed")
+        // Twelve seconds: six chimes, and one of the player's 10 s stats lines in the log.
+        Thread.sleep(forTimeInterval: 12)
+        screenshot("Strip with Mac Audio on", app)
+        let pushed = stat("pushed"), played = stat("played")
+        print("mac audio probe: \(probe.label)")
+        XCTAssertGreaterThan(pushed - pushedAtStart, 48_000 * 10, "about 12 s of audio should have arrived")
+        XCTAssertGreaterThan(played, 48_000 * 10)
+        XCTAssertLessThanOrEqual(stat("underruns"), 1, probe.label)
+        XCTAssertEqual(stat("skips"), 0, probe.label)
+        let depth = stat("depth"), target = stat("target")
+        XCTAssertTrue((20...120).contains(depth) && (40...80).contains(target), probe.label)
+
+        toggle.tap()
+        wait(for: [expectation(for: NSPredicate(format: "value == %@", "Off"), evaluatedWith: toggle)], timeout: 3)
+        let stopped = expectation(for: NSPredicate(format: "label BEGINSWITH %@", "playing 0"), evaluatedWith: probe)
+        wait(for: [stopped], timeout: 5)
+        screenshot("Strip with Mac Audio off", app)
+    }
+
     /// Customize Controls… in the session menu gives this Mac its own strip, and the strip behind
     /// the sheet follows each edit.
     @MainActor func testCustomizeControlsFromTheSession() {

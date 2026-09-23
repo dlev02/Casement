@@ -33,6 +33,11 @@ actor HostSession {
     /// Dictation audio waiting for `commit`. Only filled for clients that asked for dictation.
     private var dictationClips = DictationClipStore()
     private var dictationEngines: [DictationEngineID] = []
+    /// The client said it understands `audioConfig`/`audioPacket`; audio kinds go to no one else.
+    private var clientTakesAudio = false
+    private var audioSource: (any AudioSource)?
+    private var audioEncoder: AudioEncoder?
+    private var audioStartedAt: UInt64 = 0
 
     init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, onEnded: @escaping @Sendable (HostSession) -> Void) {
         self.channel = channel
@@ -111,8 +116,12 @@ actor HostSession {
         let displays = try await DisplayEnumerator.availableDisplays()
         // Dictation kinds are new, so they're advertised only to a client that said it knows them.
         if hello.features?.dictation == true { dictationEngines = await HostTranscriber.availableEngines() }
+        clientTakesAudio = hello.features?.macAudio == true
+        // Audio rides on the Screen Recording grant checked above (synthetic mode sends a chime),
+        // so a session that got this far can always offer it.
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
-                                            dictationEngines: hello.features?.dictation == true ? dictationEngines : nil)
+                                            dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
+                                            audio: true)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: nil, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")
@@ -154,6 +163,9 @@ actor HostSession {
                 if dictationClips.append(audio) == .truncated {
                     log.error("dictation clip reached the length cap; dropping later audio")
                 }
+            case .audioRequest(let request):
+                guard clientTakesAudio else { break } // never send audio kinds to a client that didn't ask for them
+                if request.enabled { await startAudio() } else { await stopAudio() }
             case .disconnect:
                 return
             default:
@@ -348,6 +360,64 @@ actor HostSession {
         }
     }
 
+    // MARK: Mac audio
+
+    /// Starts the audio stream: `audioConfig` first (awaited, so it is on the wire before any
+    /// packet), then the source feeding the encoder, whose packets go out with `sendDetached`.
+    /// Any failure answers with `audioConfig.unavailable` instead.
+    private func startAudio() async {
+        guard audioSource == nil else { return }
+        let started = MonotonicClock.nanos()
+        guard let encoder = AudioEncoder(onPacket: { [channel] packet in channel.sendDetached(.audioPacket(packet)) }) else {
+            log.error("Opus encoder unavailable")
+            channel.sendDetached(.audioConfig(.unavailable("This Mac couldn't set up its audio encoder.")))
+            return
+        }
+        let synthetic = HostOptions.shared.syntheticCapture
+        let source: any AudioSource = synthetic ? SyntheticAudioSource() : AudioCapture()
+        audioSource = source
+        audioEncoder = encoder
+        do {
+            try await channel.send(.audioConfig(encoder.config))
+            try await source.start(onBlock: { encoder.encode($0) }, onStop: { [weak self] reason in
+                guard let self else { return }
+                Task { await self.audioStopped(source, reason: reason) }
+            })
+        } catch {
+            let reason = AudioCapture.message(for: error)
+            log.error("audio didn't start: \(error.localizedDescription, privacy: .public)")
+            if audioSource === source {
+                audioSource = nil
+                audioEncoder = nil
+                channel.sendDetached(.audioConfig(.unavailable(reason)))
+            }
+            await source.stop()
+            return
+        }
+        guard audioSource === source else { // stopped while starting
+            await source.stop()
+            return
+        }
+        audioStartedAt = MonotonicClock.nanos()
+        log.info("audio started (\(synthetic ? "synthetic chime" : "ScreenCaptureKit", privacy: .public)) in \((self.audioStartedAt - started) / 1_000_000, privacy: .public) ms")
+    }
+
+    private func stopAudio() async {
+        guard let source = audioSource else { return }
+        let packets = audioEncoder?.packetCount ?? 0
+        audioSource = nil
+        audioEncoder = nil
+        await source.stop()
+        log.info("audio stopped after \(packets, privacy: .public) packets")
+    }
+
+    /// Capture stopped on its own (SCK error): tell the client why.
+    private func audioStopped(_ source: any AudioSource, reason: String) async {
+        guard audioSource === source else { return }
+        await stopAudio()
+        channel.sendDetached(.audioConfig(.unavailable(reason)))
+    }
+
     private func handleViewportChange(_ viewport: Viewport) async {
         // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
         needsKeyframe = true
@@ -385,6 +455,7 @@ actor HostSession {
         guard state != .closed else { return }
         state = .closed
         dictationClips.removeAll()
+        await stopAudio()
         await stopStreaming()
         await channel.close()
         onEnded(self)

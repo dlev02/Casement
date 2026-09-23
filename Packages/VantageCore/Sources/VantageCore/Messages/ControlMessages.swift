@@ -148,13 +148,18 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// Engines that accept `dictationControl`/`micAudio`, best first. Nil from older hosts, which
     /// would drop the session on those kinds, so the client must not send them then.
     public var dictationEngines: [DictationEngineID]?
+    /// The host can stream the Mac's audio (`audioRequest` → `audioConfig`/`audioPacket`). Nil
+    /// from older hosts, which would drop the session on `audioRequest`.
+    public var audio: Bool?
 
-    public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil) {
+    public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
+                audio: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
         self.maxFPS = maxFPS
         self.dictationEngines = dictationEngines
+        self.audio = audio
     }
 }
 

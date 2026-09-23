@@ -26,6 +26,8 @@ struct ControlStrip: View {
     var items: [StripItem] = ControlStripLayout.standard.items
     /// Opens the controls editor from the session menu; nil leaves the menu item out.
     var onCustomize: (() -> Void)?
+    /// The Mac Audio toggle (the session owns the player and the per-Mac setting).
+    var macAudio = MacAudioToggle()
     /// A picture of the strip for the controls editor: plain glass, and nothing for VoiceOver
     /// (the editor describes it instead).
     var isPreview = false
@@ -207,6 +209,7 @@ struct ControlStrip: View {
         case .showDesktop: shortcutButton(.showDesktop)
         case .typePassword: passwordButton
         case .sendClipboard: clipboardButton
+        case .macAudio: macAudioButton
         case .dictate: dictationButton
         case .keyboard: keyboardButton
         case .disconnect: disconnectButton
@@ -222,6 +225,27 @@ struct ControlStrip: View {
         .buttonStyle(StripButtonStyle(tint: .red))
         .accessibilityLabel("Disconnect")
         .accessibilityIdentifier("session.toolbar.disconnect")
+    }
+
+    /// A toggle like the modifier keys: tinted and filled while the Mac's sound plays here. Dimmed,
+    /// with the reason as its VoiceOver hint, when the host can't send audio.
+    private var macAudioButton: some View {
+        let isOn = macAudio.isOn
+        return Button { guarded(toggleMacAudio) } label: {
+            Image(systemName: isOn ? "speaker.wave.2.fill" : StripItem.macAudio.symbol)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(StripButtonStyle(isActive: isOn, isDimmed: macAudio.unavailableReason != nil))
+        .disabled(macAudio.unavailableReason != nil)
+        .accessibilityLabel(StripItem.macAudio.label)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityHint(macAudio.unavailableReason ?? "Plays the Mac's sound on this iPad.")
+        .accessibilityIdentifier("session.toolbar.macAudio")
+    }
+
+    private func toggleMacAudio() {
+        withAnimation(.snappy(duration: 0.2)) { macAudio.onToggle() }
     }
 
     private var clipboardButton: some View {
@@ -299,6 +323,11 @@ struct ControlStrip: View {
             #endif
 
             Section {
+                Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
+                    Label(StripItem.macAudio.label, systemImage: StripItem.macAudio.symbol)
+                }
+                .disabled(macAudio.unavailableReason != nil)
+                .accessibilityIdentifier("session.menu.macAudio")
                 Button(action: onSendClipboard) {
                     Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
                 }
@@ -426,9 +455,19 @@ private struct StripButtonStyle: ButtonStyle {
     var isActive = false
     /// The glyph colour when it isn't active (Disconnect is red).
     var tint: Color?
+    /// Shown as unavailable (Mac Audio on a host that can't send it).
+    var isDimmed = false
+
+    init(isActive: Bool = false, tint: Color? = nil, isDimmed: Bool = false) {
+        self.isActive = isActive
+        self.tint = tint
+        self.isDimmed = isDimmed
+    }
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.modifier(StripGlyph(isActive: isActive, isPressed: configuration.isPressed, tint: tint))
+        configuration.label
+            .modifier(StripGlyph(isActive: isActive, isPressed: configuration.isPressed, tint: tint))
+            .opacity(isDimmed ? 0.35 : 1)
     }
 }
 
@@ -559,6 +598,15 @@ private struct DictationStripButton: View {
             .accessibilityAction { onPress(.toggle) }
             .accessibilityIdentifier("session.toolbar.dictate")
     }
+}
+
+/// What the strip needs to draw and flip the Mac Audio toggle.
+struct MacAudioToggle {
+    /// The user wants the Mac's sound here (and nothing has failed this session).
+    var isOn = false
+    /// Nil when the host can send audio; otherwise why the toggle is dimmed.
+    var unavailableReason: String?
+    var onToggle: () -> Void = {}
 }
 
 /// A place on the strip: one of the layout's controls, or a fixed trailing button.

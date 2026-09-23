@@ -41,9 +41,12 @@ public struct DictationEngineID: RawRepresentable, Codable, Sendable, Hashable, 
 public struct ClientFeatures: Codable, Sendable, Equatable {
     /// The client understands `dictationResult`.
     public var dictation: Bool?
+    /// The client understands `audioConfig` and `audioPacket` (it still has to ask for them).
+    public var macAudio: Bool?
 
-    public init(dictation: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil) {
         self.dictation = dictation
+        self.macAudio = macAudio
     }
 }
 

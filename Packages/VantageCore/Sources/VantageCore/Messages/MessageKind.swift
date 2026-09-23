@@ -24,17 +24,23 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case attachMedia = 60
     case textInput = 61
     case modifierState = 62
+    /// Capability-gated: only sent to hosts whose capabilities say `audio`.
+    case audioRequest = 63
     /// Capability-gated: only sent to hosts that list dictation engines.
     case dictationControl = 64
     case cursorShape = 70
     case videoConfig = 71
     case hostStatus = 72
+    /// Capability-gated: only sent to clients that asked for audio (`Hello.features.macAudio`).
+    case audioConfig = 73
     /// Capability-gated: only sent to clients whose `Hello.features` includes dictation.
     case dictationResult = 74
 
     // MARK: Hot path (binary)
     case videoFrame = 100
     case cursorPosition = 101
+    /// Capability-gated like `audioConfig`.
+    case audioPacket = 102
     case pointerEvent = 120
     case scrollEvent = 121
     case keyEvent = 122

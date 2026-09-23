@@ -33,6 +33,9 @@ public enum Message: Sendable {
     case dictationControl(DictationControl)
     case dictationResult(DictationResult)
     case micAudio(MicAudio)
+    case audioRequest(AudioRequest)
+    case audioConfig(AudioConfig)
+    case audioPacket(AudioPacket)
 
     public var kind: MessageKind {
         switch self {
@@ -67,6 +70,9 @@ public enum Message: Sendable {
         case .dictationControl: .dictationControl
         case .dictationResult: .dictationResult
         case .micAudio: .micAudio
+        case .audioRequest: .audioRequest
+        case .audioConfig: .audioConfig
+        case .audioPacket: .audioPacket
         }
     }
 }
@@ -130,6 +136,9 @@ extension Message {
         case .dictationControl(let value): try Self.json(value)
         case .dictationResult(let value): try Self.json(value)
         case .micAudio(let value): value.encode()
+        case .audioRequest(let value): try Self.json(value)
+        case .audioConfig(let value): try Self.json(value)
+        case .audioPacket(let value): value.encode()
         }
     }
 
@@ -171,6 +180,9 @@ extension Message {
         case .dictationControl: .dictationControl(try decodeJSON(DictationControl.self, payload))
         case .dictationResult: .dictationResult(try decodeJSON(DictationResult.self, payload))
         case .micAudio: .micAudio(try MicAudio.decode(payload))
+        case .audioRequest: .audioRequest(try decodeJSON(AudioRequest.self, payload))
+        case .audioConfig: .audioConfig(try decodeJSON(AudioConfig.self, payload))
+        case .audioPacket: .audioPacket(try AudioPacket.decode(payload))
         }
     }
 }

@@ -155,6 +155,15 @@ final class DeviceStore {
         save()
     }
 
+    /// Remembers whether this Mac's sound plays here. Stamped like any other edit, so it follows
+    /// the Mac to other devices through iCloud.
+    func setPlayMacAudio(_ on: Bool, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), (devices[index].playMacAudio ?? false) != on else { return }
+        devices[index].playMacAudio = on
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     private func load() {
         if let raw = defaults.dictionary(forKey: tombstonesKey) as? [String: Double] {
             tombstones = raw.reduce(into: [:]) { result, entry in
@@ -162,7 +171,15 @@ final class DeviceStore {
             }
         }
         guard let data = defaults.data(forKey: defaultsKey),
-              let decoded = try? JSONDecoder().decode([SavedDevice].self, from: data) else { return }
+              var decoded = try? JSONDecoder().decode([SavedDevice].self, from: data) else {
+            _ = ControlStripLayout.upgradeSavedLayouts(defaults: defaults, perMac: [])
+            return
+        }
+        // A strip saved as an older standard layout picks up controls added since.
+        let layouts = ControlStripLayout.upgradeSavedLayouts(defaults: defaults, perMac: decoded.map(\.controlStrip))
+        for index in decoded.indices where decoded[index].controlStrip != layouts[index] {
+            decoded[index].controlStrip = layouts[index]
+        }
         devices = decoded
     }
 

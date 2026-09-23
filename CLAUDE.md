@@ -166,6 +166,33 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `--open-settings dictation` (DEBUG) opens the host's Settings in a window for screenshots. Debug: `-VantageDictationFixture listening|review|macTranscribing|macReview|failed|download`
   shows the panel without the mic; `-VantageDictationSpeak "text"` sends TTS audio through the whole
   Mac path in the simulator (synthetic hosts advertise engines too, but never type).
+- **Mac audio** (design in `docs/research/audio-dictation-files.md` §A/§D): host `AudioCapture`
+  (its own SCK stream, not the video one, so resizes don't drop it; audio only, 2×2 video to a
+  no-op `.screen` output, own process excluded) → `AudioRepacketizer` (fixed 480-frame/10 ms
+  blocks; a timestamp jump starts a new timeline) → `AudioEncoder` (Opus via `AVAudioConverter`,
+  `mFramesPerPacket` 480, 128 kbps, own serial queue) → `sendDetached`. Kinds: `audioRequest` (63,
+  c→h), `audioConfig` (73, h→c; `unavailable` carries a user-facing reason), `audioPacket` (102,
+  `seq u64 | captureNanos u64 | frameCount u16 | opus`). Gated both ways: the client sends
+  `audioRequest` only when `HostCapabilities.audio == true`, the host answers only a client with
+  `Hello.features.macAudio`, and audio is off until asked. Client: `ClientSession.setMacAudio`
+  (re-asks on every reconnect) → `MacAudioPlayer` (decode queue → `AudioJitterBuffer`, a lock-free
+  SPSC ring pulled by an `AVAudioSourceNode`; target 40–80 ms, +10 ms per late underrun, −4 ms per
+  10 s clean; a host pause (timeline jump) isn't counted; one-frame stretch/squeeze outside target
+  ±15 ms; bursts > target+90 ms cut back with a crossfade; fades on dry-out). `.playback` +
+  `.mixWithOthers`; `DictationController.onMicrophoneActive` pauses output before the mic takes
+  `.playAndRecord` and resumes after it lets go. Per Mac: `SavedDevice.playMacAudio`
+  (`DeviceStore.setPlayMacAudio`); strip item `macAudio` + session-menu toggle; a failure shows
+  `MacAudioNotice` and the toggle retries. `ControlStripLayout.upgradeSavedLayouts` moves layouts
+  saved as an older standard (the editor saves the full list even on Reset) to the new one once;
+  add to `standardHistory` whenever the standard gains a control. Stats log every 10 s (`audio`
+  category, both sides). Debug: `-VantageMacAudio 1|0` overrides the saved choice and adds an
+  invisible `session.macAudioStats` element for `SessionUITests.testMacAudioToggleStreamsTheMacsSound`;
+  the synthetic host streams a −18 dBFS two-note chime (`SyntheticAudioSource`). Some simulators
+  can't reach CoreAudio ("there is no system object", engine start −10851); DEBUG simulator builds
+  then play into `NullAudioOutput` so the rest of the path still runs. Out of scope on purpose:
+  muting the Mac (needs a Core Audio process tap and its own TCC prompt), background audio (a
+  separate decision: `UIBackgroundModes` audio would keep the session alive and has App Review
+  implications), and UDP. Still needs hardware: real SCK audio, AirPods, drift over hours.
 
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share

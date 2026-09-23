@@ -761,6 +761,10 @@ var fileTransfer: Bool?
 | `micAudio` | 123 | c→h | bin | PCM16 16 kHz dictation audio |
 | `fileChunk` (c→h) | 124 | c→h | bin | §C.3 |
 
+As built (Mac audio): `audioConfig` also carries `bitrate` and an optional `unavailable` reason
+(capture failed, no permission), sent instead of packets; `audioPacket` is
+`sequence u64 | captureNanos u64 | frameCount u16 | opus`.
+
 The root `Package.swift` test target lists client sources one by one (`CLAUDE.md`). New
 `Model`/`Net` files for dictation and transfer must be added there, or the loopback regression tests
 won't see them. Add loopback tests for: dictation round-trip against a stub `mw`, and file offer →

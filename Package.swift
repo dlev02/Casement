@@ -11,12 +11,15 @@ let package = Package(
                 path: "Vantage", exclude: ["Assets.xcassets", "ContentView.swift", "VantageApp.swift", "UI", "Video",
                     "Input/RemoteInteractionView.swift", "Model/ClipboardSync.swift",
                     "Model/DeviceStore.swift", "Net/TailscaleReachability.swift"],
-                sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Dictation/AudioResampler.swift"],
+                sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Dictation/AudioResampler.swift",
+                    "Audio/OpusDecoder.swift", "Audio/AudioJitterBuffer.swift"],
                 swiftSettings: [.defaultIsolation(MainActor.self)]),
         .target(name: "VantageSynthetic", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Engine", exclude: ["AdaptiveController.swift", "DisplayEnumerator.swift", "HostController.swift",
-                    "HostOptions.swift", "HostSession.swift", "ScreenCapture.swift", "VideoEncoder.swift"],
-                sources: ["SyntheticFrameSource.swift", "FrameSource.swift", "MonotonicClock.swift"]),
+                    "HostOptions.swift", "HostSession.swift", "ScreenCapture.swift", "VideoEncoder.swift", "AudioCapture.swift"],
+                // Also the host's audio path minus ScreenCaptureKit, so loopback tests can stream the synthetic chime.
+                sources: ["SyntheticFrameSource.swift", "FrameSource.swift", "MonotonicClock.swift",
+                          "AudioSource.swift", "SyntheticAudioSource.swift", "AudioEncoder.swift"]),
         // Host dictation (clip buffering, WAV, MacWhisper `mw` and SpeechAnalyzer runners).
         .target(name: "VantageHostDictation", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Dictation"),

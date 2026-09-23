@@ -61,6 +61,9 @@ final class DictationController {
     var send: ((Message) -> Void)?
     /// Types final text on the Mac through the normal text path, optionally pressing Return.
     var deliver: ((String, Bool) -> Void)?
+    /// True right before the microphone takes the audio session (`.playAndRecord`), false right
+    /// after it has released it, so Mac audio can step aside instead of fighting over the category.
+    var onMicrophoneActive: ((Bool) -> Void)?
 
     private var clipID: UUID?
     private var packetizer: MicPacketizer?
@@ -338,7 +341,13 @@ final class DictationController {
             onAnalyzerBuffer: { [transcriber] buffer in transcriber?.feed(buffer) },
             onUplink: { chunk in continuation.yield(chunk) },
             onLevel: { [weak self] level in Task { @MainActor in self?.level = level } })
-        try capture.start()
+        onMicrophoneActive?(true)
+        do {
+            try capture.start()
+        } catch {
+            onMicrophoneActive?(false)
+            throw error
+        }
         self.capture = capture
         logStage("microphone started")
         observeInterruptions()
@@ -374,8 +383,7 @@ final class DictationController {
         if capture != nil { try? await Task.sleep(for: Self.captureTail) }
         guard attempt == self.attempt else { return } // Cancelled during the tail.
         // Stopping flushes the resamplers, so every captured sample has been handed out after this.
-        capture?.stop()
-        capture = nil
+        releaseMicrophone()
         switch route {
         case .iPad:
             await transcriber?.finish()
@@ -457,8 +465,7 @@ final class DictationController {
         previewBacklog = Data()
         resultTimeout?.cancel()
         resultTimeout = nil
-        capture?.stop()
-        capture = nil
+        releaseMicrophone()
         uplink?.finish()
         uplink = nil
         uplinkTask?.cancel()
@@ -477,6 +484,14 @@ final class DictationController {
             text = ""
             transcript = DictationTranscript()
         }
+    }
+
+    /// Stops the microphone (which deactivates the audio session) and says so.
+    private func releaseMicrophone() {
+        guard let capture else { return }
+        capture.stop()
+        self.capture = nil
+        onMicrophoneActive?(false)
     }
 
     // MARK: Permissions

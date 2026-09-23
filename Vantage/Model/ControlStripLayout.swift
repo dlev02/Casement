@@ -8,7 +8,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
     case control, option, command, shift
     case escape, tab, leftArrow, upArrow, downArrow, rightArrow
     case spotlight, missionControl, applicationWindows, showDesktop, typePassword, sendClipboard
-    case dictate, keyboard, disconnect
+    case macAudio, dictate, keyboard, disconnect
 
     /// Groups the strip separates with a thin divider, and the editor tints alike.
     enum Category: String, CaseIterable, Sendable {
@@ -35,6 +35,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "Show Desktop"
         case .typePassword: "Type Password"
         case .sendClipboard: "Send Clipboard"
+        case .macAudio: "Mac Audio"
         case .dictate: "Dictate"
         case .keyboard: "Keyboard"
         case .disconnect: "Disconnect"
@@ -59,6 +60,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "menubar.dock.rectangle"
         case .typePassword: "key.radiowaves.forward"
         case .sendClipboard: "doc.on.clipboard"
+        case .macAudio: "speaker.wave.2" // `.fill` while on
         case .dictate: "mic"
         case .keyboard: "keyboard"
         case .disconnect: "xmark.circle"
@@ -84,6 +86,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "F11"
         case .typePassword: "Types the saved password"
         case .sendClipboard: "Sends your clipboard to the Mac"
+        case .macAudio: "Hear the Mac's sound on this iPad"
         case .dictate: "Hold to talk, or tap to start and stop"
         case .keyboard: "Shows the on-screen keyboard"
         case .disconnect: "Ends the session right away"
@@ -95,7 +98,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .control, .option, .command, .shift: .modifiers
         case .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow: .keys
         case .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard: .shortcuts
-        case .dictate, .keyboard, .disconnect: .actions
+        case .macAudio, .dictate, .keyboard, .disconnect: .actions
         }
     }
 }
@@ -127,8 +130,48 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
         .control, .option, .command, .shift,
         .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
         .spotlight, .missionControl, .typePassword,
-        .dictate, .keyboard, .disconnect,
+        .macAudio, .dictate, .keyboard, .disconnect,
     ])
+
+    /// Every standard layout that has shipped, oldest first; the last is `standard`. Append the
+    /// new standard here whenever a control joins it.
+    static let standardHistory: [ControlStripLayout] = [
+        ControlStripLayout(items: [
+            .control, .option, .command, .shift,
+            .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
+            .spotlight, .missionControl, .typePassword,
+            .dictate, .keyboard, .disconnect,
+        ]),
+        standard,
+    ]
+
+    /// Where `upgradeSavedLayouts` records the standard it last brought layouts up to.
+    static let standardVersionKey = "vantage.controlStripStandardVersion"
+
+    /// A saved layout that is exactly an earlier standard was never really customized: the editor
+    /// saves the whole list even on Reset to Default. It moves to the current standard, so new
+    /// controls (Mac Audio) show up for people who opened the editor. Anything else is kept.
+    func upgraded(fromStandardVersion version: Int) -> ControlStripLayout {
+        let earlier = Self.standardHistory.prefix(Self.standardHistory.count - 1).dropFirst(max(0, version))
+        return earlier.contains(self) ? Self.standard : self
+    }
+
+    /// Runs once per new standard: brings the default layout in `defaults` forward, and returns
+    /// the per-Mac layouts brought forward (nil for "use the default").
+    @MainActor static func upgradeSavedLayouts(defaults: UserDefaults, perMac: [ControlStripLayout?]) -> [ControlStripLayout?] {
+        let current = standardHistory.count - 1
+        let version = defaults.object(forKey: standardVersionKey) as? Int ?? 0
+        guard version < current else { return perMac }
+        if let raw = defaults.string(forKey: defaultsKey), let saved = ControlStripLayout(rawValue: raw) {
+            let upgraded = saved.upgraded(fromStandardVersion: version)
+            if upgraded != saved { defaults.set(upgraded.rawValue, forKey: defaultsKey) }
+        }
+        defaults.set(current, forKey: standardVersionKey)
+        return perMac.map { layout in
+            guard let layout else { return nil }
+            return layout.upgraded(fromStandardVersion: version) == standard ? nil : layout
+        }
+    }
 
     /// Controls not on the strip, in their natural order.
     var hidden: [StripItem] { StripItem.allCases.filter { !items.contains($0) } }

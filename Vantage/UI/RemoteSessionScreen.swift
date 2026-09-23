@@ -45,7 +45,13 @@ struct RemoteSessionScreen: View {
     @State private var showStripEditor = false
     #if canImport(UIKit)
     @State private var dictation = DictationController()
+    @State private var macAudio = MacAudioPlayer()
     #endif
+    /// `-VantageMacAudio` (DEBUG) until the user flips the toggle.
+    @State private var macAudioOverride = ClientOptions.macAudio
+    /// A brief note when Mac audio stopped or couldn't start.
+    @State private var macAudioNotice: String?
+    @State private var macAudioNoticeTask: Task<Void, Never>?
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -75,6 +81,11 @@ struct RemoteSessionScreen: View {
                 }
                 if let screenSharingTyping {
                     ScreenSharingTypingBadge(state: screenSharingTyping)
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let macAudioNotice {
+                    MacAudioNotice(message: macAudioNotice)
                         .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -168,6 +179,7 @@ struct RemoteSessionScreen: View {
                 video.resetFirstFrame()
                 #if canImport(UIKit)
                 dictation.connectionLost()
+                macAudio.connectionLost()
                 #endif
             }
         }
@@ -190,7 +202,16 @@ struct RemoteSessionScreen: View {
             } else if phase == .active { session.retryNow() }
         }
         .overlay(alignment: .top) { hiddenKeyboardField }
+        #if DEBUG && canImport(UIKit)
+        .overlay(alignment: .bottomTrailing) { macAudioStatsProbe }
+        #endif
         .animation(.smooth(duration: 0.3), value: screenSharingTyping)
+        .animation(.smooth(duration: 0.3), value: macAudioNotice)
+        #if canImport(UIKit)
+        .onChange(of: macAudio.status) { _, status in
+            if case .unavailable(let reason) = status { showMacAudioNotice(reason) }
+        }
+        #endif
         .sheet(item: $passwordPrompt) { prompt in
             PasswordPromptSheet(prompt: prompt, password: $newPassword, username: $newUsername) { saved in
                 passwordPrompt = nil
@@ -243,8 +264,72 @@ struct RemoteSessionScreen: View {
             onDictation: handleDictationPress,
             tapGuard: stripTapGuard,
             items: stripItems,
-            onCustomize: { showStripEditor = true }
+            onCustomize: { showStripEditor = true },
+            macAudio: macAudioToggle
         )
+    }
+
+    // MARK: Mac audio
+
+    /// This Mac's saved choice (from the store, so it follows edits and iCloud), unless a debug
+    /// launch flag says otherwise.
+    private var wantsMacAudio: Bool {
+        macAudioOverride ?? store.devices.first { $0.id == device.id }?.playMacAudio ?? device.playMacAudio ?? false
+    }
+
+    private var macAudioFailed: Bool {
+        #if canImport(UIKit)
+        if case .unavailable = macAudio.status { return true }
+        #endif
+        return false
+    }
+
+    private var macAudioToggle: MacAudioToggle {
+        MacAudioToggle(
+            isOn: wantsMacAudio && !macAudioFailed,
+            unavailableReason: session.state == .connected && !session.hostOffersAudio
+                ? "This Mac's Vantage Host can't send sound. Update Vantage Host on the Mac." : nil,
+            onToggle: toggleMacAudio)
+    }
+
+    /// Off → on, on → off, and a failed stream → try again (the choice itself stays on).
+    private func toggleMacAudio() {
+        let on = macAudioFailed ? true : !wantsMacAudio
+        macAudioOverride = nil
+        store.setPlayMacAudio(on, for: device.id)
+        macAudioNotice = nil
+        #if canImport(UIKit)
+        if on, macAudioFailed { macAudio.setWanted(false) } // start over
+        macAudio.setWanted(on)
+        #endif
+        session.setMacAudio(on)
+    }
+
+    #if DEBUG && canImport(UIKit)
+    /// For UI tests launched with `-VantageMacAudio`: the player's numbers as an invisible
+    /// accessibility element (`session.macAudioStats`), refreshed every second.
+    @ViewBuilder private var macAudioStatsProbe: some View {
+        if ClientOptions.macAudio != nil {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let stats = macAudio.stats
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("session.macAudioStats")
+                    .accessibilityLabel("playing \(macAudio.status == .playing ? 1 : 0) pushed \(String(stats.framesPushed)) played \(String(stats.framesPlayed)) depth \(Int(stats.milliseconds(stats.depthFrames))) target \(Int(stats.milliseconds(stats.targetFrames))) underruns \(stats.underruns) skips \(stats.skips)")
+            }
+            .allowsHitTesting(false)
+        }
+    }
+    #endif
+
+    private func showMacAudioNotice(_ message: String) {
+        macAudioNotice = message
+        macAudioNoticeTask?.cancel()
+        macAudioNoticeTask = Task {
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            macAudioNotice = nil
+        }
     }
 
     /// This Mac's own layout if it has one, else the default. Read from the store rather than
@@ -470,7 +555,11 @@ struct RemoteSessionScreen: View {
             if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
         }
         session.onDictationResult = { result in dictation.handle(result) }
+        session.onAudio = { message in macAudio.handle(message) }
+        dictation.onMicrophoneActive = { active in macAudio.setMicrophoneActive(active) }
+        macAudio.setWanted(wantsMacAudio)
         #endif
+        session.setMacAudio(wantsMacAudio)
         input.mode = touchMode
         input.naturalScroll = device.naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
@@ -500,6 +589,10 @@ struct RemoteSessionScreen: View {
     private func teardown() {
         feedbackTask?.cancel()
         feedbackTask = nil
+        macAudioNoticeTask?.cancel()
+        #if canImport(UIKit)
+        macAudio.setWanted(false)
+        #endif
         session.disconnect()
     }
 
@@ -528,6 +621,25 @@ struct HostStatusBanner: View {
         .padding(.vertical, 10)
         .platformGlass(in: .capsule)
         .frame(maxWidth: 520)
+    }
+}
+
+/// Why the Mac's sound stopped or didn't start; clears itself after a few seconds.
+private struct MacAudioNotice: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.slash")
+            Text(message)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .platformGlass(in: .capsule)
+        .frame(maxWidth: 520)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session.macAudioNotice")
     }
 }
 
