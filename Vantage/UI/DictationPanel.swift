@@ -95,7 +95,7 @@ struct DictationPanel: View {
         case .preparing(let progress?): "Downloading speech model \(progress.formatted(.percent.precision(.fractionLength(0))))"
         case .preparing: "Getting ready…"
         case .listening: "Listening"
-        case .transcribing: "Transcribing on Mac…"
+        case .transcribing: dictation.route == .iPad ? "Transcribing…" : "Transcribing on Mac…"
         case .review: "Review"
         case .failed(let failure): failure.title
         }

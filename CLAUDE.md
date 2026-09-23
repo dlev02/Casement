@@ -122,7 +122,17 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   back to macOS SpeechAnalyzer. All three kinds are capability-gated: the client says
   `Hello.features.dictation`, the host lists `HostCapabilities.dictationEngines`, and the client
   uses the Mac only when that list contains `macwhisper` (older hosts drop the session on unknown
-  kinds). Text is typed through `textInput`. Never log transcripts except `.private`. Tests:
+  kinds). Text is typed through `textInput`. Never log transcripts except `.private`.
+  **Startup**: the Mac route sends `begin` and opens the mic as soon as mic permission is known;
+  the on-iPad preview prepares alongside and attaches when ready, fed from the 16 kHz uplink with
+  the audio so far replayed. Never make the Mac route wait for `LiveTranscriber.make` again: its
+  first call per launch can take many seconds on a device (the old 20 s "Getting ready…"). `make`
+  shares one in-flight preparation per locale, and a cancelled attempt leaves its transcriber as a
+  spare. Stage timings log as "dictation start (…)" and "speech transcriber …" (category
+  `dictation`). **Clip end**: the mic stays open `captureTail` (400 ms) after stop while the panel
+  already says Transcribing; `MicrophoneCapture.stop()` drains the `AudioResampler`s with
+  end-of-stream (a 48→16 kHz converter holds ~30 ms); the host appends 0.5 s of silence before any
+  engine (`HostTranscriber.paddedForTranscription`). Tests:
   `Tests/HostDictationTests` (stub `mw`; `VANTAGE_TEST_REAL_MW=1` runs real MacWhisper and Apple on
   `say` speech).
   **Built-in Parakeet** (optional, off by default): Vantage Host → Settings → Dictation toggles

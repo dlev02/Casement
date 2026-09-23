@@ -115,10 +115,18 @@ struct HostDictationTests {
         #expect(args.hasPrefix("transcribe --format txt --no-timestamps --language en "))
         #expect(!args.contains("--persist"))
         let seen = try Data(contentsOf: stub.directory.appendingPathComponent("seen.wav"))
-        #expect(seen.count == 44 + 16_000)
+        #expect(seen.count == 44 + 16_000 + 16_000) // 0.5 s of speech + 0.5 s of trailing silence
         #expect(String(decoding: seen.prefix(4), as: UTF8.self) == "RIFF")
         // The clip never outlives the run.
         #expect(try FileManager.default.contentsOfDirectory(atPath: stub.clipsDirectory.path).isEmpty)
+    }
+
+    @Test func clipsEndWithHalfASecondOfSilence() {
+        let speech = Data(repeating: 0x7F, count: 3_200)
+        let padded = HostTranscriber.paddedForTranscription(speech)
+        #expect(padded.count == speech.count + 16_000)
+        #expect(padded.prefix(speech.count) == speech)
+        #expect(padded.dropFirst(speech.count).allSatisfy { $0 == 0 })
     }
 
     @Test func languageIsSanitizedBeforeReachingTheCommandLine() {
@@ -176,7 +184,7 @@ struct HostDictationTests {
         let output = try await transcriber.transcribe(samples: samples, requested: .parakeet, language: "en")
         #expect(output == .init(text: "Open the pull request.", engine: .parakeet))
         #expect(parakeet.calls.count == 1)
-        #expect(parakeet.calls.first?.samples == samples)
+        #expect(parakeet.calls.first?.samples == HostTranscriber.paddedForTranscription(samples))
         #expect(parakeet.calls.first?.language == "en")
         #expect(stub.read("args") == nil) // MacWhisper never ran
         #expect(!FileManager.default.fileExists(atPath: stub.clipsDirectory.path))
@@ -242,6 +250,42 @@ struct HostDictationTests {
         #expect(apple.text.lowercased().contains("request"))
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty)
     }
+
+    /// A clip that ends right on the last word (as a push-to-talk clip does) keeps that word.
+    /// Prints the unpadded run for comparison: on `say` speech MacWhisper Large v3 Turbo kept the
+    /// last word even with 30–150 ms of it cut and no padding, so the padding is insurance, not
+    /// the fix. Opt-in: `VANTAGE_TEST_REAL_MW=1 swift test`.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["VANTAGE_TEST_REAL_MW"] == "1"), .timeLimit(.minutes(2)))
+    func realMacWhisperKeepsTheLastWordOfAClippedRecording() async throws {
+        guard let cli = MacWhisperCLI.locate(), await cli.version() != nil else { return }
+        let phrases = ["Please move the design review and invite Priyanka",
+                       "Send the build to the team before lunch on Thursday",
+                       "Open the pull request and assign it to Octavia"]
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mw-tail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for phrase in phrases {
+            let clipped = trimmingTrailingSilence(try synthesizeSpeech(phrase))
+            let lastWord = phrase.split(separator: " ").last!.lowercased()
+            let raw = directory.appendingPathComponent("raw.wav")
+            try WAVFile.pcm16Mono(clipped, sampleRate: 16_000).write(to: raw)
+            let unpadded = try await cli.transcribe(raw, language: "en", timeout: .seconds(60))
+            let padded = try await HostTranscriber(macWhisper: cli, appleEnabled: false, directory: directory)
+                .transcribe(samples: clipped, requested: .macWhisper, language: "en")
+            print("clip \(clipped.count / 32) ms | unpadded: \(unpadded) | padded: \(padded.text)")
+            #expect(padded.text.lowercased().contains(lastWord))
+        }
+    }
+}
+
+/// Drops trailing samples quieter than about −40 dBFS, so the clip ends on the last word.
+private func trimmingTrailingSilence(_ samples: Data) -> Data {
+    var end = samples.count / 2
+    samples.withUnsafeBytes { raw in
+        let values = raw.bindMemory(to: Int16.self)
+        while end > 0, abs(Int(values[end - 1])) < 330 { end -= 1 }
+    }
+    return samples.prefix(end * 2)
 }
 
 /// `say` → 16 kHz mono PCM16 samples (the WAV's data chunk).

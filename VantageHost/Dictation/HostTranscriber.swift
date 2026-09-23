@@ -87,10 +87,23 @@ nonisolated struct HostTranscriber: Sendable {
         }
     }
 
+    /// Silence appended to every clip before any engine sees it. Whisper-family models (and
+    /// Parakeet) tend to drop the final word when speech runs right up to the end of the audio,
+    /// which is exactly how a push-to-talk clip ends.
+    static let trailingSilence: Duration = .milliseconds(500)
+
+    /// `samples` (16 kHz mono PCM16) followed by `trailingSilence`.
+    static func paddedForTranscription(_ samples: Data) -> Data {
+        let silenceBytes = Int(trailingSilence / .seconds(1) * MicAudioFormat.pcm16LE16k.sampleRate) * 2
+        return samples + Data(count: silenceBytes)
+    }
+
     /// Transcribes 16 kHz mono PCM16. Tries the requested engine, then the others in
     /// `preferenceOrder`; the output names the engine that answered.
-    func transcribe(samples: Data, requested: DictationEngineID?, language: String?) async throws(Failure) -> Output {
-        guard !samples.isEmpty else { return Output(text: "", engine: requested ?? .macWhisper) }
+    func transcribe(samples recorded: Data, requested: DictationEngineID?, language: String?) async throws(Failure) -> Output {
+        guard !recorded.isEmpty else { return Output(text: "", engine: requested ?? .macWhisper) }
+        let seconds = Double(recorded.count) / (MicAudioFormat.pcm16LE16k.sampleRate * 2)
+        let samples = Self.paddedForTranscription(recorded)
         let usable = Self.order(requested: requested).filter(isUsable)
         guard !usable.isEmpty else {
             throw Failure(message: "This Mac has no speech engine. Install MacWhisper or turn on built-in transcription in Vantage Host, or transcribe on the iPad.")
@@ -111,7 +124,6 @@ nonisolated struct HostTranscriber: Sendable {
             }
         }
 
-        let seconds = Double(samples.count) / (MicAudioFormat.pcm16LE16k.sampleRate * 2)
         var lastFailure = Failure(message: "Transcription failed on the Mac.")
         for engine in usable {
             let started = ContinuousClock.now
@@ -272,6 +284,10 @@ nonisolated enum ProcessRunner {
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        // `waitUntilExit()` can miss an exit and block forever (seen with `mw` after a few dozen
+        // runs: the child was reaped, the waiter never woke), so wait for the termination handler.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         try process.run()
 
         let box = ProcessBox(process)
@@ -284,7 +300,7 @@ nonisolated enum ProcessRunner {
             DispatchQueue.global(qos: .userInitiated).async {
                 // EOF arrives when the process exits (or is terminated by the watchdog).
                 let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                box.process.waitUntilExit()
+                exited.wait()
                 continuation.resume(returning: Output(status: box.process.terminationStatus, stdout: data))
             }
         }

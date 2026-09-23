@@ -22,7 +22,7 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
     }
 
     /// 16 kHz mono PCM16: MacWhisper's input rate and the Speech models' native format.
-    static let uplinkFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+    static var uplinkFormat: AVAudioFormat { PCM16.format }
 
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "dictation")
     private let engine = AVAudioEngine()
@@ -31,9 +31,12 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
     private let onAnalyzerBuffer: @Sendable (AVAudioPCMBuffer) -> Void
     private let onUplink: @Sendable (Data) -> Void
     private let onLevel: @Sendable (Float) -> Void
-    private var analyzerConverter: AVAudioConverter?
-    private var uplinkConverter: AVAudioConverter?
+    /// Guards the resamplers and `isRunning`: the tap thread converts while `stop()` drains.
+    private let lock = NSLock()
+    private var analyzerResampler: AudioResampler?
+    private var uplinkResampler: AudioResampler?
     private var isRunning = false
+    private var loggedTapSize = false
 
     init(analyzerFormat: AVAudioFormat?, wantsUplink: Bool,
          onAnalyzerBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void,
@@ -58,66 +61,66 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw CaptureError.noInput }
         if let analyzerFormat {
-            guard let converter = AVAudioConverter(from: inputFormat, to: analyzerFormat) else { throw CaptureError.converterUnavailable }
-            analyzerConverter = converter
+            guard let resampler = AudioResampler(from: inputFormat, to: analyzerFormat) else { throw CaptureError.converterUnavailable }
+            analyzerResampler = resampler
         }
         if wantsUplink {
-            guard let converter = AVAudioConverter(from: inputFormat, to: Self.uplinkFormat) else { throw CaptureError.converterUnavailable }
-            uplinkConverter = converter
+            guard let resampler = AudioResampler(from: inputFormat, to: Self.uplinkFormat) else { throw CaptureError.converterUnavailable }
+            uplinkResampler = resampler
         }
 
         input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, _ in
             self?.process(buffer)
         }
+        lock.withLock { isRunning = true }
         engine.prepare()
         do {
             try engine.start()
         } catch {
+            lock.withLock { isRunning = false }
             input.removeTap(onBus: 0)
             throw error
         }
-        isRunning = true
         log.info("microphone started at \(inputFormat.sampleRate, privacy: .public) Hz")
     }
 
+    /// Stops the tap, then hands out what the resamplers still hold (the last ~30 ms), so the
+    /// callbacks have delivered every captured sample by the time this returns.
     func stop() {
-        guard isRunning else { return }
-        isRunning = false
+        let wasRunning = lock.withLock {
+            defer { isRunning = false }
+            return isRunning
+        }
+        guard wasRunning else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        // A tap callback already in flight finishes under the lock before the drain runs, and
+        // any later one sees `isRunning == false`.
+        lock.withLock {
+            if let tail = analyzerResampler?.finish() { onAnalyzerBuffer(tail) }
+            if let tail = uplinkResampler?.finish(), let data = PCM16.data(from: tail) { onUplink(data) }
+        }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: Audio thread
 
     private func process(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isRunning else { return }
+        if !loggedTapSize {
+            // What a stop can lose at most: the tap buffer that was still filling.
+            loggedTapSize = true
+            log.info("microphone tap delivers \(buffer.frameLength, privacy: .public) frames per buffer")
+        }
         onLevel(Self.level(of: buffer))
-        if let analyzerConverter, let analyzerFormat, let converted = Self.convert(buffer, with: analyzerConverter, to: analyzerFormat) {
+        if let converted = analyzerResampler?.convert(buffer) {
             onAnalyzerBuffer(converted)
         }
-        if let uplinkConverter, let converted = Self.convert(buffer, with: uplinkConverter, to: Self.uplinkFormat),
-           let samples = converted.int16ChannelData?[0] {
-            onUplink(Data(bytes: samples, count: Int(converted.frameLength) * MemoryLayout<Int16>.size))
+        if let converted = uplinkResampler?.convert(buffer), let data = PCM16.data(from: converted) {
+            onUplink(data)
         }
-    }
-
-    static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        let ratio = format.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
-        var consumed = false
-        var error: NSError?
-        let status = converter.convert(to: output, error: &error) { _, inputStatus in
-            if consumed {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            inputStatus.pointee = .haveData
-            return buffer
-        }
-        guard status != .error, output.frameLength > 0 else { return nil }
-        return output
     }
 
     /// RMS of the first channel mapped from −50…0 dBFS onto 0…1.

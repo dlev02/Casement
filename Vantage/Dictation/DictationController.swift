@@ -73,8 +73,25 @@ final class DictationController {
     private var startTask: Task<Void, Never>?
     private var resultTimeout: Task<Void, Never>?
     private var interruptionObserver: (any NSObjectProtocol)?
+    /// Bumped by every reset, so work that outlives its dictation (a preview that finished
+    /// preparing late, the tail after release) can tell it no longer applies.
+    private var attempt = 0
+    /// When the current dictation was requested, for the startup timing log.
+    private var requestedAt = ContinuousClock.now
+    /// Mac engine: the on-iPad preview transcriber still being prepared.
+    private var previewTask: Task<Void, Never>?
+    /// Mac engine: uplink audio recorded while the preview is getting ready, replayed into it
+    /// when it attaches so it doesn't miss the first words.
+    private var previewBacklog = Data()
     /// The press that is down began this dictation (hold to talk vs tap to toggle).
     private var pressStartedDictation = false
+
+    /// How long the microphone stays open after the user stops: push-to-talk fingers lift while
+    /// the last word is still sounding.
+    static let captureTail: Duration = .milliseconds(400)
+    /// Uplink audio held for a preview that isn't ready yet (60 s of 16 kHz PCM16); past this
+    /// the preview is skipped.
+    static let previewBacklogLimit = 60 * 16_000 * 2
 
     // MARK: Control-strip gesture
 
@@ -126,6 +143,7 @@ final class DictationController {
         text = keep
         completion = .review
         phase = .preparing(progress: nil)
+        requestedAt = .now
         startTask = Task { await begin() }
     }
 
@@ -198,30 +216,39 @@ final class DictationController {
     // MARK: Private
 
     private func begin() async {
+        let attempt = self.attempt
+        let signpost = LiveTranscriber.signposter.beginInterval("dictation start")
+        defer { LiveTranscriber.signposter.endInterval("dictation start", signpost) }
         guard await ensureMicrophonePermission() else { return }
+        logStage("microphone permission")
+        guard attempt == self.attempt, !Task.isCancelled else { return }
         do {
             switch route {
             case .iPad:
                 guard await ensureSpeechPermission() else { return }
                 let transcriber = try await LiveTranscriber.make(allowDownload: true) { [weak self] fraction in
-                    self?.phase = .preparing(progress: fraction)
+                    guard let self, self.attempt == attempt, self.isPreparing else { return }
+                    self.phase = .preparing(progress: fraction)
                 }
-                try Task.checkCancellation()
+                guard attempt == self.attempt, !Task.isCancelled else {
+                    LiveTranscriber.recycle(transcriber)
+                    return
+                }
+                logStage("speech transcriber")
                 try await startCapture(transcriber: transcriber, uplink: false)
             case .mac(let engine):
-                // The preview is a bonus: only when speech permission and the model already exist.
-                var preview: LiveTranscriber?
-                if SFSpeechRecognizer.authorizationStatus() == .authorized {
-                    preview = try? await LiveTranscriber.make(allowDownload: false) { _ in }
-                }
-                try Task.checkCancellation()
+                // Nothing to wait for: the Mac transcribes after the fact, so the mic opens and
+                // the clip begins right away. The on-iPad preview is a bonus that joins when its
+                // model is ready (the first preparation after launch can take many seconds).
                 let id = UUID()
                 clipID = id
                 packetizer = MicPacketizer(dictationID: id)
                 send?(.dictationControl(DictationControl(action: .begin, id: id, engine: engine,
                                                          language: DictationLanguage.code(), format: .pcm16LE16k)))
-                try await startCapture(transcriber: preview, uplink: true)
+                try await startCapture(transcriber: nil, uplink: true)
+                if SFSpeechRecognizer.authorizationStatus() == .authorized { attachPreview() }
             }
+            logStage("listening")
         } catch is CancellationError {
             return
         } catch let failure as LiveTranscriber.Failure {
@@ -230,6 +257,65 @@ final class DictationController {
             log.error("dictation couldn't start: \(error.localizedDescription, privacy: .public)")
             fail(Failure(title: "Dictation Unavailable", message: error.localizedDescription))
         }
+    }
+
+    /// Startup timing, measured from the tap (no transcript content).
+    private func logStage(_ stage: String) {
+        let route = switch route {
+        case .iPad: "iPad"
+        case .mac(let engine): engine.rawValue
+        }
+        log.info("dictation start (\(route, privacy: .public)): \(stage, privacy: .public) after \(LiveTranscriber.milliseconds(since: self.requestedAt), privacy: .public) ms")
+    }
+
+    /// Mac engine: prepares the on-iPad preview alongside the recording and attaches it when
+    /// ready, replaying what was already said. Never delays the recording itself.
+    private func attachPreview() {
+        let attempt = self.attempt
+        previewBacklog = Data()
+        previewTask = Task { [weak self] in
+            let transcriber: LiveTranscriber
+            do {
+                transcriber = try await LiveTranscriber.make(allowDownload: false) { _ in }
+            } catch {
+                // No model on this iPad (or not now): record without a preview.
+                self?.dropPreview(attempt: attempt)
+                return
+            }
+            guard let self, attempt == self.attempt, self.phase == .listening, self.previewTask != nil else {
+                LiveTranscriber.recycle(transcriber)
+                return
+            }
+            transcriber.onResult = { [weak self] text, isFinal in
+                self?.transcript.apply(text, isFinal: isFinal)
+            }
+            do {
+                try await transcriber.start()
+            } catch {
+                self.log.error("dictation preview couldn't start: \(error.localizedDescription, privacy: .public)")
+                await transcriber.cancel()
+                self.dropPreview(attempt: attempt)
+                return
+            }
+            guard attempt == self.attempt, self.previewTask != nil else {
+                await transcriber.cancel()
+                return
+            }
+            // Synchronous from here on: nothing else can reach `upload` until the preview owns the feed.
+            transcriber.feed(pcm16: self.previewBacklog)
+            self.log.info("dictation preview attached after \(LiveTranscriber.milliseconds(since: self.requestedAt), privacy: .public) ms, replaying \(self.previewBacklog.count, privacy: .public) bytes")
+            self.previewBacklog = Data()
+            self.previewTask = nil
+            self.transcriber = transcriber
+            self.hasLivePreview = true
+        }
+    }
+
+    private func dropPreview(attempt: Int) {
+        guard attempt == self.attempt else { return }
+        previewTask?.cancel()
+        previewTask = nil
+        previewBacklog = Data()
     }
 
     private func startCapture(transcriber: LiveTranscriber?, uplink: Bool) async throws {
@@ -247,13 +333,14 @@ final class DictationController {
             }
         }
         let capture = MicrophoneCapture(
-            analyzerFormat: transcriber?.audioFormat,
+            analyzerFormat: uplink ? nil : transcriber?.audioFormat,
             wantsUplink: uplink,
             onAnalyzerBuffer: { [transcriber] buffer in transcriber?.feed(buffer) },
             onUplink: { chunk in continuation.yield(chunk) },
             onLevel: { [weak self] level in Task { @MainActor in self?.level = level } })
         try capture.start()
         self.capture = capture
+        logStage("microphone started")
         observeInterruptions()
         startedAt = .now
         phase = .listening
@@ -266,33 +353,53 @@ final class DictationController {
         guard var packetizer else { return }
         for packet in packetizer.push(samples) { send?(.micAudio(packet)) }
         self.packetizer = packetizer
+        // The Mac route's preview listens to the same 16 kHz audio the Mac gets.
+        if let transcriber {
+            transcriber.feed(pcm16: samples)
+        } else if previewTask != nil {
+            previewBacklog.append(samples)
+            if previewBacklog.count > Self.previewBacklogLimit { dropPreview(attempt: attempt) }
+        }
     }
 
     private func finishListening() async {
-        capture?.stop()
-        capture = nil
+        let attempt = self.attempt
+        // Say so at once, but keep recording a moment: the finger lifts while the last word is
+        // still sounding.
+        phase = .transcribing
         level = 0
         #if !os(visionOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
+        if capture != nil { try? await Task.sleep(for: Self.captureTail) }
+        guard attempt == self.attempt else { return } // Cancelled during the tail.
+        // Stopping flushes the resamplers, so every captured sample has been handed out after this.
+        capture?.stop()
+        capture = nil
         switch route {
         case .iPad:
             await transcriber?.finish()
+            guard attempt == self.attempt else { return }
             transcriber = nil
             text = transcript.committed
             complete()
         case .mac:
+            // A preview that never got ready is no longer wanted; it stays prepared for next time.
+            previewTask?.cancel()
+            previewTask = nil
+            previewBacklog = Data()
             // Drain audio still queued behind the tap so the commit follows the last packet.
             uplink?.finish()
             uplink = nil
             await uplinkTask?.value
             uplinkTask = nil
+            guard attempt == self.attempt else { return }
             if var packetizer, let tail = packetizer.flush() {
                 send?(.micAudio(tail))
                 self.packetizer = packetizer
             }
             guard let clipID else { return }
-            phase = .transcribing
+            log.info("dictation clip sent: \(self.packetizer?.sequence ?? 0, privacy: .public) packets")
             send?(.dictationControl(DictationControl(action: .commit, id: clipID)))
             resultTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(90))
@@ -304,7 +411,7 @@ final class DictationController {
             // Keep the preview's last words on screen while the Mac works.
             if let transcriber {
                 await transcriber.finish()
-                self.transcriber = nil
+                if attempt == self.attempt { self.transcriber = nil }
             }
         }
     }
@@ -334,14 +441,20 @@ final class DictationController {
 
     private func fail(_ failure: Failure) {
         let keep = transcript.display
+        // The Mac already opened a clip for this attempt; don't leave it waiting.
+        if let clipID, case .mac = route { send?(.dictationControl(DictationControl(action: .cancel, id: clipID))) }
         reset(keepingPhase: false)
         phase = .failed(failure)
         text = keep
     }
 
     private func reset(keepingPhase: Bool) {
+        attempt += 1
         startTask?.cancel()
         startTask = nil
+        previewTask?.cancel()
+        previewTask = nil
+        previewBacklog = Data()
         resultTimeout?.cancel()
         resultTimeout = nil
         capture?.stop()
@@ -439,8 +552,12 @@ final class DictationController {
         packetizer = MicPacketizer(dictationID: id)
         send?(.dictationControl(DictationControl(action: .begin, id: id, engine: engine,
                                                  language: DictationLanguage.code(), format: .pcm16LE16k)))
+        requestedAt = .now
         startedAt = .now
         phase = .listening
+        // Exercises the preview's cold start too (its stage timings land in the log), without
+        // the speech-permission gate the simulator can't grant.
+        attachPreview()
         Task {
             let samples = await SyntheticSpeech.render(phrase)
             log.info("synthetic dictation: \(samples.count, privacy: .public) bytes of speech")
@@ -500,16 +617,15 @@ private nonisolated enum SyntheticSpeech {
 
     private final class Collector: @unchecked Sendable {
         let synthesizer = AVSpeechSynthesizer()
-        private var converter: AVAudioConverter?
+        private var resampler: AudioResampler?
         private var data = Data()
         private let lock = NSLock()
 
         func append(_ buffer: AVAudioPCMBuffer) {
             lock.withLock {
-                if converter == nil { converter = AVAudioConverter(from: buffer.format, to: MicrophoneCapture.uplinkFormat) }
-                guard let converter, let converted = MicrophoneCapture.convert(buffer, with: converter, to: MicrophoneCapture.uplinkFormat),
-                      let samples = converted.int16ChannelData?[0] else { return }
-                data.append(Data(bytes: samples, count: Int(converted.frameLength) * 2))
+                if resampler == nil { resampler = AudioResampler(from: buffer.format, to: PCM16.format) }
+                guard let converted = resampler?.convert(buffer), let samples = PCM16.data(from: converted) else { return }
+                data.append(samples)
             }
         }
 
@@ -519,6 +635,8 @@ private nonisolated enum SyntheticSpeech {
             lock.withLock {
                 guard !finished else { return nil }
                 finished = true
+                // The resampler holds the last ~55 ms of speech until told the input ended.
+                if let tail = resampler?.finish(), let samples = PCM16.data(from: tail) { data.append(samples) }
                 return data
             }
         }
