@@ -26,15 +26,25 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            #if os(visionOS)
             if lock.isLocked {
                 LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
             } else {
-                DeviceListScreen(selectedDevice: $selectedDevice)
-                    .environment(store)
-                    .environment(reachability)
-                    .environment(tailscaleAccount)
+                deviceList
             }
+            #else
+            // The list stays alive underneath the lock so an open sheet, and anything typed
+            // into it, survives a trip to another app (copying a Tailscale secret from Safari
+            // on iPhone). `LockCurtain` hides it, sheets included, until Face ID clears.
+            deviceList
+            if lock.isLocked {
+                LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+            }
+            #endif
         }
+        #if os(iOS)
+        .background(LockCurtain(lock: lock, appearance: appearance))
+        #endif
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         #if os(visionOS)
         .onChange(of: selectedDevice) { _, device in
@@ -93,6 +103,13 @@ struct ContentView: View {
             if !locked { openRequestedConnection(pending.requestedMacID) }
         }
         .onChange(of: requireBiometrics) { _, _ in store.refreshSpotlight() }
+    }
+
+    private var deviceList: some View {
+        DeviceListScreen(selectedDevice: $selectedDevice)
+            .environment(store)
+            .environment(reachability)
+            .environment(tailscaleAccount)
     }
 
     /// Siri, Shortcuts, Spotlight, controls, and widgets all land here. If the app is locked the
@@ -154,12 +171,95 @@ struct SessionWindow: View {
 }
 #endif
 
+#if os(iOS)
+/// Covers the whole scene — sheets and full-screen covers included — while the app is locked.
+///
+/// Swapping the root view for the lock screen would dismiss every presented sheet and discard
+/// what was typed into it, so instead the views stay put and a window above them all hides
+/// them. The system keyboard sits above every app window, so locking also ends editing.
+private struct LockCurtain: UIViewRepresentable {
+    let lock: AppLock
+    let appearance: AppAppearance
+
+    func makeUIView(context: Context) -> SceneProbe {
+        let probe = SceneProbe()
+        probe.onScene = { scene in context.coordinator.attach(to: scene) }
+        return probe
+    }
+
+    func updateUIView(_ uiView: SceneProbe, context: Context) {
+        context.coordinator.update(locked: lock.isLocked, appearance: appearance)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(lock: lock) }
+
+    @MainActor final class Coordinator {
+        private let lock: AppLock
+        private var window: UIWindow?
+        private var isLocked = false
+        private var appearance = AppAppearance.automatic
+
+        init(lock: AppLock) { self.lock = lock }
+
+        func attach(to scene: UIWindowScene) {
+            guard window?.windowScene !== scene else { return }
+            let window = UIWindow(windowScene: scene)
+            window.windowLevel = .alert + 1
+            window.rootViewController = UIHostingController(rootView: LockCurtainContent(lock: lock))
+            self.window = window
+            apply()
+        }
+
+        func update(locked: Bool, appearance: AppAppearance) {
+            isLocked = locked
+            self.appearance = appearance
+            apply()
+        }
+
+        private func apply() {
+            guard let window else { return }
+            window.overrideUserInterfaceStyle = switch appearance {
+            case .automatic: .unspecified
+            case .light: .light
+            case .dark: .dark
+            }
+            if isLocked {
+                // The keyboard would otherwise float over the lock screen. Typed text stays in
+                // its field; only the focus goes.
+                for other in window.windowScene?.windows ?? [] where other !== window { other.endEditing(true) }
+                window.makeKeyAndVisible()
+            } else if !window.isHidden {
+                window.isHidden = true
+                window.windowScene?.windows.first { $0 !== window && !$0.isHidden }?.makeKey()
+            }
+        }
+    }
+
+    /// Reports the window scene once the representable lands in a window.
+    final class SceneProbe: UIView {
+        var onScene: ((UIWindowScene) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let scene = window?.windowScene { onScene?(scene) }
+        }
+    }
+}
+
+private struct LockCurtainContent: View {
+    let lock: AppLock
+    var body: some View {
+        LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+    }
+}
+#endif
+
 private struct LockOverlay: View {
     let errorMessage: String?
     let onUnlock: () -> Void
     var body: some View {
         ZStack {
-            Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
+            // Opaque, not a material: whatever sits under the lock must not show through.
+            Rectangle().fill(.background).ignoresSafeArea()
             VStack(spacing: 16) {
                 Image(systemName: "lock.fill").font(.largeTitle)
                 Text("Vantage is locked").font(.headline)

@@ -62,6 +62,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `-VantageOpenTailscaleDevices 1` opens the picker on launch,
   `-VantageOpenScreen settings|controls|security|help|about|tailscale|addDevice` presents one
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do).
+- **App lock** (Face ID, Settings → Privacy & Security): on iOS the view tree stays alive while
+  locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and
+  cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
+  and threw away half-typed input whenever the user switched apps (e.g. copying a Tailscale
+  secret from Safari on iPhone). visionOS still swaps views.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.
