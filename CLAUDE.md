@@ -57,10 +57,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (`GET /api/v2/tailnet/-/devices`) with either an API access token or an OAuth client
   (`client_credentials` at `/api/v2/oauth/token`, tokens cached ~1 h). Tailscale has no end-user
   sign-in for third-party apps, so the user pastes a key from the admin console; it lives in the
-  Keychain. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
+  Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
   `-VantageOpenTailscaleDevices 1` opens the picker on launch,
-  `-VantageOpenScreen settings|controls|security|help|about|tailscale|addDevice` presents one
+  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice` presents one
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do).
 - **App lock** (Face ID, Settings → Privacy & Security): on iOS the view tree stays alive while
   locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and

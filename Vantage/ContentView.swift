@@ -134,6 +134,8 @@ struct ContentView: View {
         case .help: HelpScreen()
         case .about: AboutScreen()
         case .tailscale: TailscaleAccountScreen()
+        case .tailscaleOAuth: TailscaleOAuthSetup()
+        case .tailscaleToken: TailscaleTokenSetup()
         case .addDevice: AddDeviceSheet()
         case .widgets: WidgetGalleryScreen()
         }

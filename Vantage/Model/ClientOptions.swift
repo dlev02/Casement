@@ -70,6 +70,6 @@ enum ClientOptions {
 
 /// Screens that `-VantageOpenScreen` can present directly (DEBUG only).
 enum DebugScreen: String, Identifiable {
-    case settings, controls, security, help, about, tailscale, addDevice, widgets
+    case settings, controls, security, help, about, tailscale, tailscaleOAuth, tailscaleToken, addDevice, widgets
     var id: String { rawValue }
 }

@@ -140,7 +140,9 @@ final class TailscaleAccount {
 
     /// Verifies the credential by listing devices, then stores it in the Keychain.
     func signIn(_ credential: TailscaleCredential) async throws -> [TailscaleDevice] {
-        let result = try await Self.fetchDevices(credential: credential, cache: bearer)
+        // The fixture accepts any key, so the setup pages can be exercised without a real tailnet.
+        let result = if let fixture = ClientOptions.tailscaleFixture { (devices: fixture, cache: bearer) }
+                     else { try await Self.fetchDevices(credential: credential, cache: bearer) }
         bearer = result.cache
         let devices = result.devices
         switch credential {
