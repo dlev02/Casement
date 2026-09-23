@@ -60,7 +60,15 @@ final class ClientSession {
     /// again once the host has said it can.
     private(set) var wantsMacAudio = false
 
-    init(identity: DeviceIdentity? = nil) {
+    /// Files to and from the Mac. Lives as long as the session screen, across reconnects.
+    let files: FileTransferController
+    /// The host can take a file channel. False for hosts that predate file transfer.
+    var hostOffersFiles: Bool { capabilities?.fileTransfer == true }
+    private var fileEngine: FileTransferEngine?
+    private var fileChannelTask: Task<Void, Never>?
+
+    init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil) {
+        self.files = files ?? FileTransferController()
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
         self.identity = identity ?? (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
         #if canImport(UIKit)
@@ -118,6 +126,7 @@ final class ClientSession {
         connectionID = UUID()
         connectionTask?.cancel()
         connectionTask = nil
+        closeFileChannel()
         let oldChannel = channel
         channel = nil
         state = .idle
@@ -159,6 +168,7 @@ final class ClientSession {
     private func runConnection(id: UUID) async {
         guard let device else { return }
         while !Task.isCancelled, connectionID == id {
+            closeFileChannel() // a new primary connection gets a new file channel
             state = reconnectAttempts == 0 ? .connecting : .reconnecting
             activeConfig = nil
             hostStatus = nil
@@ -180,7 +190,7 @@ final class ClientSession {
                 guard connectionID == id, !Task.isCancelled else {
                     timeout.cancel(); await channel.close(); return
                 }
-                let authenticated = try await handshake(channel: channel, viewport: viewport, id: id)
+                let (authenticated, fileToken) = try await handshake(channel: channel, viewport: viewport, id: id)
                 timeout.cancel()
                 guard connectionID == id, !Task.isCancelled else {
                     await channel.close(); return
@@ -199,11 +209,15 @@ final class ClientSession {
                 }
                 state = .connected
                 reconnectAttempts = 0
+                if let fileToken, hostOffersFiles {
+                    openFileChannel(token: fileToken, host: device.host, port: port, id: id)
+                }
                 while let message = try await channel.receive() {
                     guard connectionID == id, !Task.isCancelled else { break }
                     if case .disconnect = message {
                         await channel.close()
                         self.channel = nil
+                        closeFileChannel()
                         state = .failed("The Mac ended the session.")
                         return
                     }
@@ -214,6 +228,7 @@ final class ClientSession {
                 await channel.close()
                 guard connectionID == id, !Task.isCancelled else { return }
                 self.channel = nil
+                closeFileChannel()
                 state = .failed(error.message)
                 return
             } catch {
@@ -223,6 +238,7 @@ final class ClientSession {
             await channel.close()
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
+            closeFileChannel() // files wait for the next connection's file channel
             reconnectAttempts += 1
             guard reconnectAttempts <= 40 else {
                 state = .failed("Couldn’t reach the Mac. Check that Vantage Host and Tailscale are running on both devices.")
@@ -234,11 +250,12 @@ final class ClientSession {
         }
     }
 
-    private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> Bool {
+    /// Returns whether the session is authenticated, and the host's file channel token if it gave one.
+    private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> (Bool, Data?) {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true, macAudio: true))
+                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true))
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -257,15 +274,66 @@ final class ClientSession {
         case .ok:
             displays = result.displays ?? []
             capabilities = result.capabilities
-            return true
+            return (true, result.sessionToken)
         case .pairingRequired, .badPairingCode:
             pairingError = result.status == .badPairingCode
                 ? "Incorrect pairing code. Check the code in Vantage Host on your Mac and try again."
                 : nil
             state = .pairingRequired
-            return false
+            return (false, nil)
         default:
             throw ProtocolErrorMessage(code: result.status.rawValue, message: result.message ?? "Authentication failed")
+        }
+    }
+
+    // MARK: File channel
+
+    /// Opens the session's second connection for files: same host and port, background service
+    /// class, `attachMedia` with the token first. It lives as long as this primary connection. If
+    /// it drops on its own after being up a while, the primary is dropped too so both come back
+    /// together; one refused straight away just leaves files unavailable until the next connect.
+    private func openFileChannel(token: Data, host: String, port: NWEndpoint.Port, id: UUID) {
+        let files = self.files
+        fileChannelTask = Task {
+            let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: VantageNetwork.bulkParameters())
+            let channel = MessageChannel(connection: connection, label: "vantage.client.files", maxBufferedMessages: 64)
+            do {
+                try await channel.start()
+                try await channel.send(.attachMedia(AttachMedia(sessionToken: token)))
+            } catch {
+                log.error("file channel didn't open: \(error.localizedDescription, privacy: .public)")
+                await channel.close()
+                return
+            }
+            guard connectionID == id, !Task.isCancelled else { await channel.close(); return }
+            let engine = FileTransferEngine(channel: channel, role: .client, configuration: files.configuration)
+            fileEngine = engine
+            files.attach(engine)
+            let opened = ContinuousClock.now
+            await withTaskCancellationHandler {
+                await engine.run()
+            } onCancel: {
+                Task { await engine.close() }
+            }
+            files.detach(engine)
+            if fileEngine === engine { fileEngine = nil }
+            guard connectionID == id, !Task.isCancelled, state == .connected else { return }
+            if ContinuousClock.now - opened > .seconds(10) {
+                log.error("file channel dropped mid-session; reconnecting")
+                await self.channel?.close()
+            } else {
+                log.error("the Mac closed the file channel; file transfer is off until the next connection")
+            }
+        }
+    }
+
+    private func closeFileChannel() {
+        fileChannelTask?.cancel()
+        fileChannelTask = nil
+        if let engine = fileEngine {
+            fileEngine = nil
+            files.detach(engine)
+            Task { await engine.close() }
         }
     }
 

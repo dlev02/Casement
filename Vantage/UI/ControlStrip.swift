@@ -28,6 +28,8 @@ struct ControlStrip: View {
     var onCustomize: (() -> Void)?
     /// The Mac Audio toggle (the session owns the player and the per-Mac setting).
     var macAudio = MacAudioToggle()
+    /// Send File and the Transfers list (the session owns the transfers).
+    var files = SendFileAction()
     /// A picture of the strip for the controls editor: plain glass, and nothing for VoiceOver
     /// (the editor describes it instead).
     var isPreview = false
@@ -209,6 +211,7 @@ struct ControlStrip: View {
         case .showDesktop: shortcutButton(.showDesktop)
         case .typePassword: passwordButton
         case .sendClipboard: clipboardButton
+        case .sendFile: sendFileButton
         case .macAudio: macAudioButton
         case .dictate: dictationButton
         case .keyboard: keyboardButton
@@ -242,6 +245,27 @@ struct ControlStrip: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(macAudio.unavailableReason ?? "Plays the Mac's sound on this iPad.")
         .accessibilityIdentifier("session.toolbar.macAudio")
+    }
+
+    /// Opens the Files picker. While files are moving, a thin ring round the glyph fills with
+    /// their progress. Dimmed, with the reason as its VoiceOver hint, when the Mac can't take files.
+    private var sendFileButton: some View {
+        Button { guarded(files.onSend) } label: {
+            Image(systemName: StripItem.sendFile.symbol)
+                .overlay {
+                    if let fraction = files.progress {
+                        SendFileProgressRing(fraction: fraction)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: files.progress == nil)
+        }
+        .buttonStyle(StripButtonStyle(isDimmed: files.unavailableReason != nil))
+        .disabled(files.unavailableReason != nil)
+        .accessibilityLabel(StripItem.sendFile.label)
+        .accessibilityValue(files.progress.map { "Sending, \(Int(($0 * 100).rounded())) percent" } ?? "")
+        .accessibilityHint(files.unavailableReason ?? "Choose files on this iPad to send to the Mac's Downloads folder.")
+        .accessibilityIdentifier("session.toolbar.sendFile")
     }
 
     private func toggleMacAudio() {
@@ -328,6 +352,17 @@ struct ControlStrip: View {
                 }
                 .disabled(macAudio.unavailableReason != nil)
                 .accessibilityIdentifier("session.menu.macAudio")
+                Button(action: files.onSend) {
+                    Label("Send File to Mac…", systemImage: StripItem.sendFile.symbol)
+                }
+                .disabled(files.unavailableReason != nil)
+                .accessibilityIdentifier("session.menu.sendFile")
+                if files.hasTransfers {
+                    Button(action: files.onShowTransfers) {
+                        Label("Transfers…", systemImage: "arrow.up.arrow.down")
+                    }
+                    .accessibilityIdentifier("session.menu.transfers")
+                }
                 Button(action: onSendClipboard) {
                     Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
                 }
@@ -607,6 +642,38 @@ struct MacAudioToggle {
     /// Nil when the host can send audio; otherwise why the toggle is dimmed.
     var unavailableReason: String?
     var onToggle: () -> Void = {}
+}
+
+/// What the strip needs for Send File and the Transfers list.
+struct SendFileAction {
+    /// Nil when the Mac can take files; otherwise why Send File is dimmed.
+    var unavailableReason: String?
+    /// Progress of the files moving now (0…1), or nil when nothing is.
+    var progress: Double?
+    /// Something has moved (or is moving) this session, so Transfers… is worth offering.
+    var hasTransfers = false
+    var onSend: () -> Void = {}
+    var onShowTransfers: () -> Void = {}
+}
+
+/// A hairline ring hugging the Send File glyph, filled to the transfer's progress.
+private struct SendFileProgressRing: View {
+    let fraction: Double
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.primary.opacity(0.12), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: max(0.02, fraction))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                // Progress arrives every tenth of a second; linear over the same span reads as
+                // one continuous fill instead of steps.
+                .animation(.linear(duration: 0.12), value: fraction)
+        }
+        .frame(width: 34, height: 34)
+        .accessibilityHidden(true)
+    }
 }
 
 /// A place on the strip: one of the layout's controls, or a fixed trailing button.

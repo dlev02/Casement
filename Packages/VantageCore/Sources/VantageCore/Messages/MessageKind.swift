@@ -35,17 +35,28 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case audioConfig = 73
     /// Capability-gated: only sent to clients whose `Hello.features` includes dictation.
     case dictationResult = 74
+    /// File transfer (§C.3). Only on the file channel, which only a client that said
+    /// `Hello.features.fileTransfer` opens to a host that advertised `HostCapabilities.fileTransfer`.
+    case fileOffer = 80
+    case fileAccept = 81
+    case fileComplete = 82
+    case fileResult = 83
+    case fileCancel = 84
 
     // MARK: Hot path (binary)
     case videoFrame = 100
     case cursorPosition = 101
     /// Capability-gated like `audioConfig`.
     case audioPacket = 102
+    /// A file chunk from the host (file channel only).
+    case fileChunkToClient = 103
     case pointerEvent = 120
     case scrollEvent = 121
     case keyEvent = 122
     /// Capability-gated like `dictationControl`.
     case micAudio = 123
+    /// A file chunk from the client (file channel only).
+    case fileChunkToHost = 124
 
     public var isBinary: Bool { rawValue >= 100 }
 }

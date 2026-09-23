@@ -144,6 +144,118 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Strip with Mac Audio off", app)
     }
 
+    /// Files both ways against the synthetic host started with
+    /// `--send-file-on-connect "…/Quarterly Report.pdf"`: the app queues a 3 MiB test file for the
+    /// Mac (`-VantageSendTestFile`) while the Mac sends its file here. Both finish, the received
+    /// notice appears, and the Transfers sheet lists both.
+    @MainActor func testFilesMoveBothWays() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+                               "-VantageSendTestFile", "3145728",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let send = app.buttons["session.toolbar.sendFile"]
+        XCTAssertTrue(send.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertEqual(send.label, "Send File")
+        XCTAssertTrue(send.isEnabled, "the synthetic host takes files")
+
+        let notice = app.descendants(matching: .any)["session.receivedNotice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 20), app.debugDescription)
+        // "Quarterly Report 2.pdf" and so on when an earlier run already received one.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Received Quarterly Report")).firstMatch.exists,
+                      app.debugDescription)
+        screenshot("Received notice and Send File", app)
+
+        let menu = app.buttons["Session Options"]
+        menu.tap()
+        let transfers = app.buttons["Transfers…"]
+        XCTAssertTrue(transfers.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.buttons["Send File to Mac…"].exists)
+        screenshot("Session menu with Transfers", app)
+        transfers.tap()
+
+        func row(_ name: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        }
+        let sent = row("Vantage Test.bin")
+        XCTAssertTrue(sent.waitForExistence(timeout: 10), app.debugDescription)
+        wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent"), evaluatedWith: sent)], timeout: 30)
+        let received = row("Quarterly Report")
+        XCTAssertTrue(received.exists, app.debugDescription)
+        XCTAssertTrue((received.value as? String)?.hasPrefix("Received") == true, "\(String(describing: received.value))")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Share Quarterly Report")).firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show Quarterly Report")).firstMatch.exists)
+        screenshot("Transfers after both directions", app)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+    }
+
+    /// Disconnect while a file is moving asks first; Cancel keeps the session, Disconnect ends it.
+    /// `-VantageSlowFiles 8000` holds each 256 KiB chunk for 8 s: the file stays in flight for the
+    /// whole test, and the UI goes quiet between chunks (XCUITest waits for an idle app before
+    /// every tap, so steady progress updates would stall it until the file finished).
+    @MainActor func testDisconnectAsksWhileFilesAreMoving() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+                               "-VantageSendTestFile", "3145728", "-VantageSlowFiles", "8000",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let send = app.buttons["session.toolbar.sendFile"]
+        XCTAssertTrue(send.waitForExistence(timeout: 20), app.debugDescription)
+        wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sending"), evaluatedWith: send)], timeout: 10)
+        screenshot("Send File with progress", app)
+
+        app.buttons["Session Options"].tap()
+        app.buttons["Transfers…"].tap()
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue((row.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: row.value))")
+        XCTAssertTrue(app.buttons["Cancel Vantage Test.bin"].exists)
+        screenshot("Transfers with a file moving", app)
+        app.buttons["Done"].tap()
+
+        let disconnect = app.buttons["session.toolbar.disconnect"]
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
+        disconnect.tap()
+        let guardAlert = app.alerts["Files are still transferring. Disconnect anyway?"]
+        XCTAssertTrue(guardAlert.waitForExistence(timeout: 3), app.debugDescription)
+        screenshot("Disconnect guard", app)
+        guardAlert.buttons["Cancel"].tap()
+        XCTAssertTrue(guardAlert.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(disconnect.exists, "Cancel keeps the session")
+
+        disconnect.tap()
+        XCTAssertTrue(guardAlert.waitForExistence(timeout: 3))
+        guardAlert.buttons["Disconnect"].tap()
+        XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// The "Drop to send" hint, forced on for a screenshot (a drag can't be scripted here).
+    @MainActor func testDropHint() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810", "-VantageDropHint", "1",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let hint = app.descendants(matching: .any)["session.dropHint"]
+        XCTAssertTrue(hint.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(hint.label.hasPrefix("Drop to send to "), hint.label)
+        screenshot("Drop hint", app)
+    }
+
+    /// `-VantageOpenScreen transfers`: one row in each state, light and dark.
+    @MainActor func testTransfersSheetScreens() {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-VantageOpenScreen", "transfers", "-vantage.appearance", appearance, "-vantage.requireBiometrics", "NO"]
+            app.launch()
+            XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15), app.debugDescription)
+            XCTAssertTrue(app.buttons["Cancel Quarterly Report.pdf"].exists)
+            XCTAssertTrue(app.buttons["Share Invoice 1042.pdf"].exists)
+            screenshot("Transfers sheet (\(appearance))", app)
+            app.terminate()
+        }
+    }
+
     /// Customize Controls… in the session menu gives this Mac its own strip, and the strip behind
     /// the sheet follows each edit.
     @MainActor func testCustomizeControlsFromTheSession() {

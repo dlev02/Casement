@@ -60,7 +60,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
   `-VantageOpenTailscaleDevices 1` opens the picker on launch,
-  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac` presents one
+  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac|transfers` presents one
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
   `controlStripMac` edits the first saved Mac, so pair it with `-VantageSeedSamples 1`).
 - **App lock** (Face ID, Settings → Privacy & Security): on iOS the view tree stays alive while
@@ -194,6 +194,53 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   separate decision: `UIBackgroundModes` audio would keep the session alive and has App Review
   implications), and UDP. Still needs hardware: real SCK audio, AirPods, drift over hours.
 
+- **File transfer** (design in `docs/research/audio-dictation-files.md` §C/§D; no Taildrop, no
+  Blip): a second TCP connection per session, the **file channel**. A client with
+  `Hello.features.fileTransfer` gets a 32-byte `AuthResult.sessionToken` and
+  `HostCapabilities.fileTransfer`; it opens connection #2 to the same host/port
+  (`VantageNetwork.bulkParameters()`, `.background` service class) and sends `attachMedia{token}`
+  first. `HostController.accept` reads every connection's first message: `hello` starts a
+  `HostSession`, `attachMedia` goes through `AttachTokenRegistry` (VantageCore: constant-time
+  compare, single use, same peer address, 60 s, revoked when the session ends) to
+  `HostSession.attachFileChannel`; anything else is closed. Kinds (file channel only): `fileOffer`
+  80, `fileAccept` 81 (`resumeOffset` always 0, or `rejected`), `fileComplete` 82 (SHA-256),
+  `fileResult` 83, `fileCancel` 84, `fileChunkToClient` 103 / `fileChunkToHost` 124
+  (`id 16 B | offset u64 | bytes`, 256 KiB). Both ends run `FileTransferEngine` (VantageCore): one
+  send at a time per direction (FIFO), 4 chunks in flight through `MessageChannel.send(_:completion:)`,
+  incremental SHA-256 on both sides, receives into a hidden `.vantage-<id>.partial` renamed to a
+  Finder-style unique name (`FileNames.sanitize`/`uniqueURL`: last path component only, no
+  control/bidi characters or leading dots, ≤ 200 UTF-8 bytes); the file channel uses
+  `maxBufferedMessages` 64 so a slow disk pushes back through TCP. Host: `~/Downloads`
+  (`NSDownloadsFolderUsageDescription`; macOS asks once), `com.apple.quarantine` set per file via
+  `URLResourceValues.quarantineProperties` (not `LSFileQuarantineEnabled`, which would also
+  quarantine dictation WAVs and the Parakeet model), `HostNotifications` ("Received … from ⟨iPad⟩"
+  with Show in Finder), menu Files section with "Send File to ⟨iPad⟩…" (`NSOpenPanel`), progress
+  and cancel. The iPad's name comes from `tailscale whois` (iOS only reports "iPad"). Synthetic
+  hosts save to `$TMPDIR/VantageSynthetic/Received` and skip notifications. Client:
+  `FileTransferController` (`session.files`, outlives reconnects: queued files wait, one cut off
+  by a drop restarts from zero up to twice) → `Documents/Received` (`UIFileSharingEnabled` +
+  `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
+  `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts),
+  session menu "Send File to Mac…" / "Transfers…", drop onto the Mac's screen (`FileDropDelegate`,
+  copies out of the drag into `tmp/Outbox`, "Drop to send to ⟨Mac⟩" hint), `ReceivedFileNotice`
+  (Show / Share), `TransfersView` sheet, and "Open in Vantage" from other apps
+  (`CFBundleDocumentTypes` public.data/public.content, rank Alternate → `onOpenURL` →
+  `SharedFileInbox` copies it out, then the open session queues it, or the most recent Mac is
+  opened; waits for Face ID). Disconnect with files moving asks "Files are still
+  transferring. Disconnect anyway?" (the only Disconnect confirmation). If the file channel drops
+  after 10 s while the primary lives, the client drops the primary so both reconnect. Debug:
+  `-VantageSendTestFile <bytes>` queues random bytes once the channel is up, `-VantageSlowFiles <ms>`
+  pauses before each chunk the app sends (`FileTransferConfiguration.chunkDelay`; keep it in the
+  seconds for UI tests, since XCUITest waits for an idle app and steady progress never is), `-VantageDropHint 1`
+  shows the hint, `-VantageOpenScreen transfers` shows the sheet with fixture rows, host
+  `--send-file-on-connect <path>` sends a file to each client that attaches. Tests:
+  `FileTransferTests` (VantageCore), `FileTransferSessionTests` (loopback `ClientSession` + mock
+  host), `SessionUITests.testFilesMoveBothWays` (needs the synthetic host started with
+  `--send-file-on-connect`), `testDisconnectAsksWhileFilesAreMoving`, `testDropHint`,
+  `testTransfersSheetScreens`. Each engine logs "sent/received N bytes in M ms (X MiB/s)" (category
+  `files`). Out of scope: resume
+  (the offer/accept already carry `id` + `resumeOffset`), a share extension (needs an App Group),
+  background transfers (`BGContinuedProcessingTask`), folders, Taildrop.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display
@@ -304,7 +351,7 @@ are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a she
 
 - Software-keyboard Backspace and Return send virtual key events; other text uses Unicode input.
   Hardware behavior still needs a physical-device check.
-- File transfer is not implemented; clipboard carries text, RTF, and PNG images both ways.
+- Clipboard carries text, RTF, and PNG images both ways; files go over the file channel (above).
 - Virtual-display provisioning is wired but falls back to the main display if BetterDisplay's CLI
   isn't available. Drew verified real Mac video, pointer/clicks, and software-keyboard typing on the physical iPad.
   Clipboard, hardware keyboard, BetterDisplay, and biometric session recovery still need device checks.

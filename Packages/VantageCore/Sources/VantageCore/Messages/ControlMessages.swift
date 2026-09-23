@@ -151,22 +151,28 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// The host can stream the Mac's audio (`audioRequest` → `audioConfig`/`audioPacket`). Nil
     /// from older hosts, which would drop the session on `audioRequest`.
     public var audio: Bool?
+    /// The host accepts a file channel (`attachMedia` with the session token) and the file
+    /// transfer kinds on it. Nil from older hosts.
+    public var fileTransfer: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
-                audio: Bool? = nil) {
+                audio: Bool? = nil, fileTransfer: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
         self.maxFPS = maxFPS
         self.dictationEngines = dictationEngines
         self.audio = audio
+        self.fileTransfer = fileTransfer
     }
 }
 
 public struct AuthResult: Codable, Sendable {
     public var status: AuthStatus
     public var message: String?
-    /// Opaque token used by the media connection to attach to this session.
+    /// Opaque token the client's file channel presents in `attachMedia` to join this session.
+    /// Single use, bound to this connection's peer address, and gone when the session ends. Only
+    /// sent to a client whose `Hello.features.fileTransfer` is true.
     public var sessionToken: Data?
     public var displays: [DisplayInfo]?
     public var capabilities: HostCapabilities?

@@ -1,5 +1,7 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import VantageCore
+import os
 
 /// Full-screen remote session: shows the video, hosts input capture, overlays the control strip
 /// and connection status, and runs the periodic feedback/ping loop.
@@ -23,6 +25,7 @@ struct RemoteSessionScreen: View {
     @State private var toolbarCollapsed = UserDefaults.standard.bool(forKey: "vantage.toolbarCollapsed")
     @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     /// Where the finger has dragged the strip from its corner. Plain state rather than
     /// `@GestureState`, so the release can animate it back in the same transaction that moves
     /// the corner and the strip travels one path instead of two competing springs.
@@ -52,6 +55,16 @@ struct RemoteSessionScreen: View {
     /// A brief note when Mac audio stopped or couldn't start.
     @State private var macAudioNotice: String?
     @State private var macAudioNoticeTask: Task<Void, Never>?
+    // File transfer
+    @State private var showFileImporter = false
+    @State private var showTransfers = false
+    @State private var showDisconnectGuard = false
+    /// The file just received, for the notice at the top; clears itself.
+    @State private var receivedNotice: FileTransferController.Transfer?
+    @State private var receivedNoticeTask: Task<Void, Never>?
+    /// Files are being dragged over the Mac's screen.
+    @State private var isDropTargeted = ClientOptions.dropHintFixture
+    @State private var queuedTestFile = false
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -88,6 +101,17 @@ struct RemoteSessionScreen: View {
                     MacAudioNotice(message: macAudioNotice)
                         .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if isDropTargeted && canSendFiles {
+                    DropToSendHint(macName: device.name)
+                        .padding(.top, 12)
+                        .transition(noticeTransition)
+                }
+                if let receivedNotice {
+                    ReceivedFileNotice(transfer: receivedNotice)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 16)
+                        .transition(noticeTransition)
                 }
                 Spacer()
             }
@@ -207,6 +231,43 @@ struct RemoteSessionScreen: View {
         #endif
         .animation(.smooth(duration: 0.3), value: screenSharingTyping)
         .animation(.smooth(duration: 0.3), value: macAudioNotice)
+        // Hints and notices: in quickly with ease-out, out a little faster.
+        .animation(.easeOut(duration: isDropTargeted ? 0.2 : 0.15), value: isDropTargeted && canSendFiles)
+        .animation(.easeOut(duration: receivedNotice == nil ? 0.18 : 0.25), value: receivedNotice?.id)
+        .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: canSendFiles, isTargeted: $isDropTargeted,
+                                                        files: session.files))
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { session.files.send(urls, securityScoped: true) }
+        }
+        .sheet(isPresented: $showTransfers) {
+            NavigationStack {
+                TransfersView(files: session.files, macName: device.name, canSend: canSendFiles)
+            }
+        }
+        .alert("Files are still transferring. Disconnect anyway?", isPresented: $showDisconnectGuard) {
+            Button("Disconnect", role: .destructive) { endSession() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Files that haven't finished won't arrive.")
+        }
+        // Files opened in Vantage from other apps join this session's queue.
+        .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
+            guard count > 0 else { return }
+            for copy in SharedFileInbox.shared.take() { session.files.sendOutboxCopy(copy) }
+        }
+        .onChange(of: session.state) { _, state in
+            if state == .connected, !session.hostOffersFiles {
+                session.files.failWaiting("This Mac's Vantage Host can't receive files. Update Vantage Host on the Mac.")
+            }
+        }
+        #if DEBUG
+        .onChange(of: session.files.isConnected) { _, connected in
+            if connected, !queuedTestFile, let bytes = ClientOptions.sendTestFileBytes {
+                queuedTestFile = true
+                session.files.queueTestFile(bytes: bytes)
+            }
+        }
+        #endif
         #if canImport(UIKit)
         .onChange(of: macAudio.status) { _, status in
             if case .unavailable(let reason) = status { showMacAudioNotice(reason) }
@@ -265,8 +326,53 @@ struct RemoteSessionScreen: View {
             tapGuard: stripTapGuard,
             items: stripItems,
             onCustomize: { showStripEditor = true },
-            macAudio: macAudioToggle
+            macAudio: macAudioToggle,
+            files: sendFileAction
         )
+    }
+
+    // MARK: Files
+
+    /// The Mac can take files right now.
+    private var canSendFiles: Bool { session.state == .connected && session.files.isConnected }
+
+    private var sendFileAction: SendFileAction {
+        let active = session.files.transfers.filter { $0.state == .active }
+        let progress: Double? = active.isEmpty ? nil
+            : Double(active.reduce(0) { $0 + $1.bytesDone }) / Double(max(1, active.reduce(0) { $0 + $1.byteCount }))
+        return SendFileAction(
+            unavailableReason: session.state == .connected && !session.hostOffersFiles
+                ? "This Mac's Vantage Host can't receive files. Update Vantage Host on the Mac." : nil,
+            progress: progress,
+            hasTransfers: session.files.hasTransfers,
+            onSend: { showFileImporter = true },
+            onShowTransfers: { showTransfers = true })
+    }
+
+    private var noticeTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .offset(y: -6))
+    }
+
+    /// Shows "Received …" for a few seconds (long enough to reach its buttons with VoiceOver)
+    /// and says it aloud, since the notice appears without focus moving to it.
+    private func showReceived(_ transfer: FileTransferController.Transfer) {
+        receivedNotice = transfer
+        AccessibilityNotification.Announcement("Received \(transfer.name) from \(device.name)").post()
+        receivedNoticeTask?.cancel()
+        receivedNoticeTask = Task {
+            do { try await Task.sleep(for: .seconds(voiceOverEnabled ? 15 : 6)) } catch { return }
+            receivedNotice = nil
+        }
+    }
+
+    /// Sends finish out of sight (the Transfers sheet is usually closed), so VoiceOver hears how
+    /// each one ended.
+    private func announceSendOutcome(_ transfer: FileTransferController.Transfer) {
+        switch transfer.state {
+        case .done: AccessibilityNotification.Announcement("Sent \(transfer.name) to \(device.name)").post()
+        case .failed(let reason): AccessibilityNotification.Announcement("Couldn't send \(transfer.name). \(reason)").post()
+        default: break
+        }
     }
 
     // MARK: Mac audio
@@ -536,6 +642,11 @@ struct RemoteSessionScreen: View {
     private func startSession() async {
 
         session.onVideo = { message in video.consume(message) }
+        session.files.onReceived = { transfer in showReceived(transfer) }
+        session.files.onSendFinished = { transfer in announceSendOutcome(transfer) }
+        #if DEBUG
+        if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
+        #endif
         session.onClipboard = { payload in
             #if canImport(UIKit)
             ClipboardSync.apply(payload)
@@ -581,7 +692,17 @@ struct RemoteSessionScreen: View {
         }
     }
 
+    /// Disconnect from the strip, the menu, or the overlay. The one confirmation Disconnect
+    /// ever asks for: files still moving would be lost.
     private func disconnect() {
+        if session.files.hasActiveTransfers {
+            showDisconnectGuard = true
+        } else {
+            endSession()
+        }
+    }
+
+    private func endSession() {
         teardown()
         dismiss()
     }
@@ -590,6 +711,7 @@ struct RemoteSessionScreen: View {
         feedbackTask?.cancel()
         feedbackTask = nil
         macAudioNoticeTask?.cancel()
+        receivedNoticeTask?.cancel()
         #if canImport(UIKit)
         macAudio.setWanted(false)
         #endif
@@ -621,6 +743,45 @@ struct HostStatusBanner: View {
         .padding(.vertical, 10)
         .platformGlass(in: .capsule)
         .frame(maxWidth: 520)
+    }
+}
+
+/// Files dragged onto the Mac's screen: copied out of the drag (its files only live for the
+/// callback) and queued for the Mac's Downloads.
+private struct FileDropDelegate: DropDelegate {
+    let isEnabled: Bool
+    @Binding var isTargeted: Bool
+    let files: FileTransferController
+
+    func validateDrop(info: DropInfo) -> Bool { isEnabled && info.hasItemsConforming(to: [.item]) }
+    func dropEntered(info: DropInfo) { if validateDrop(info: info) { isTargeted = true } }
+    func dropExited(info: DropInfo) { isTargeted = false }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: isEnabled ? .copy : .forbidden) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        guard isEnabled else { return false }
+        let providers = info.itemProviders(for: [.item])
+        for provider in providers {
+            // The file's own type (a JPEG, a PDF), not a private or text flavour of it.
+            let type = provider.registeredContentTypes.first { $0.conforms(to: .data) || $0.conforms(to: .package) } ?? .item
+            let files = self.files
+            _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
+                guard let url else {
+                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
+                        .error("dropped item had no file: \(error?.localizedDescription ?? "?", privacy: .public)")
+                    return
+                }
+                do {
+                    let copy = try FileTransferController.copyToOutbox(url)
+                    Task { @MainActor in files.sendOutboxCopy(copy) }
+                } catch {
+                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
+                        .error("couldn't copy a dropped file: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+        return !providers.isEmpty
     }
 }
 

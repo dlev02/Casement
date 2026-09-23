@@ -19,6 +19,14 @@ public enum VantageNetwork {
         return parameters
     }
 
+    /// The session's file channel: the same TCP tuning, but marked as bulk background traffic so
+    /// the stack (and any DSCP-aware hop) favours the main stream's video and input over it.
+    public static func bulkParameters() -> NWParameters {
+        let parameters = tcpParameters()
+        parameters.serviceClass = .background
+        return parameters
+    }
+
     /// Tailscale's IPv4 range (CGNAT 100.64.0.0/10).
     public static func isTailscaleIPv4(_ address: IPv4Address) -> Bool {
         let bytes = address.rawValue

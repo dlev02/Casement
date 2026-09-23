@@ -43,10 +43,13 @@ public struct ClientFeatures: Codable, Sendable, Equatable {
     public var dictation: Bool?
     /// The client understands `audioConfig` and `audioPacket` (it still has to ask for them).
     public var macAudio: Bool?
+    /// The client can open a file channel and speaks the file transfer kinds on it.
+    public var fileTransfer: Bool?
 
-    public init(dictation: Bool? = nil, macAudio: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil) {
         self.dictation = dictation
         self.macAudio = macAudio
+        self.fileTransfer = fileTransfer
     }
 }
 

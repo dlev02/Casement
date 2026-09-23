@@ -20,6 +20,7 @@ struct ContentView: View {
     /// The app lock also decides whether Macs are listed in Spotlight.
     @AppStorage(MacSpotlight.appLockKey) private var requireBiometrics = false
     private let pending = PendingConnection.shared
+    private let sharedFiles = SharedFileInbox.shared
     #if DEBUG
     @State private var debugScreen: DebugScreen?
     #endif
@@ -94,13 +95,21 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
-            if let id = DeviceCatalog.macID(from: url) { pending.requestedMacID = id }
+            if url.isFileURL {
+                sharedFiles.accept(url)
+                openSessionForSharedFiles()
+            } else if let id = DeviceCatalog.macID(from: url) {
+                pending.requestedMacID = id
+            }
         }
         // `initial: true` catches a request that arrived before this view existed — a cold
         // launch from Siri, a shortcut, or the Control Center control sets the slot first.
         .onChange(of: pending.requestedMacID, initial: true) { _, id in openRequestedConnection(id) }
         .onChange(of: lock.isLocked) { _, locked in
-            if !locked { openRequestedConnection(pending.requestedMacID) }
+            if !locked {
+                openRequestedConnection(pending.requestedMacID)
+                openSessionForSharedFiles()
+            }
         }
         .onChange(of: requireBiometrics) { _, _ in store.refreshSpotlight() }
     }
@@ -123,6 +132,18 @@ struct ContentView: View {
         selectedDevice = device
     }
 
+    /// A file opened in Vantage from another app goes to the Mac in the open session, or else
+    /// to the Mac used most recently, connecting to it. Waits for Face ID like any other request.
+    private func openSessionForSharedFiles() {
+        guard !sharedFiles.pending.isEmpty, !lock.isLocked else { return }
+        #if !os(visionOS)
+        guard selectedDevice == nil else { return } // the open session takes them
+        #endif
+        let recent = store.devices.max { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) }
+        guard let device = recent else { return }
+        selectedDevice = device
+    }
+
     #if DEBUG
     /// Opens one screen straight from a launch argument so screenshots don't depend on driving
     /// the UI. Never compiled into a release build.
@@ -138,6 +159,7 @@ struct ContentView: View {
         case .tailscaleToken: TailscaleTokenSetup()
         case .addDevice: AddDeviceSheet()
         case .widgets: WidgetGalleryScreen()
+        case .transfers: TransfersFixtureScreen()
         case .controlStrip: ControlStripEditor()
         case .controlStripMac: MacControlStripEditor(deviceID: store.devices.first?.id ?? UUID())
         }

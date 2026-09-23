@@ -22,6 +22,12 @@ final class HostController {
     let trust = TrustStore()
     private let listener = TailscaleListener(port: HostOptions.shared.port)
     private var sessions: [HostSession] = []
+    /// Tokens a session's second (file) connection presents to join it.
+    private let attachTokens = AttachTokenRegistry<HostSession>()
+    /// Connected clients with a file channel, most recent last.
+    private(set) var fileChannels: [HostFileChannel] = []
+    /// Files moving this run (both ways), newest last, for the menu.
+    private(set) var transfers: [HostTransfer] = []
     let loginItem = LoginItem()
     private var displayObservers: [any NSObjectProtocol] = []
 
@@ -144,21 +150,168 @@ final class HostController {
         NSWorkspace.shared.open(TailscaleCLI.adminConsoleURL)
     }
 
+    /// Every connection starts by saying what it is: a `hello` opens a session; an
+    /// `attachMedia` with a live token from the same address becomes that session's file channel.
+    /// Anything else, or silence for 15 s, is dropped.
     private func accept(_ connection: NWConnection) {
         let peer = Self.describe(connection.endpoint)
-        let channel = MessageChannel(connection: connection, label: "vantage.host.session")
-        let session = HostSession(channel: channel, identity: identity, trust: trust, peerDescription: peer) { [weak self] ended in
-            Task { @MainActor in self?.remove(ended) }
+        let peerHost = Self.hostPart(connection.endpoint)
+        // Bounded so a file arriving faster than the disk takes it pushes back through TCP.
+        let channel = MessageChannel(connection: connection, label: "vantage.host.session", maxBufferedMessages: 64)
+        Task {
+            let timeout = Task {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                await channel.close()
+            }
+            defer { timeout.cancel() }
+            let first: Message?
+            do {
+                try await channel.start()
+                first = try await channel.receive()
+            } catch {
+                log.error("connection from \(peer, privacy: .public) ended before it said anything")
+                await channel.close()
+                return
+            }
+            timeout.cancel()
+            switch first {
+            case .hello(let hello):
+                startSession(hello: hello, channel: channel, peer: peer, peerHost: peerHost)
+            case .attachMedia(let attach):
+                guard let session = attachTokens.claim(attach.sessionToken, peer: peerHost) else {
+                    log.error("refusing a file channel from \(peer, privacy: .public): unknown, used, or foreign token")
+                    await channel.close()
+                    return
+                }
+                log.info("file channel from \(peer, privacy: .public)")
+                await session.attachFileChannel(channel)
+            default:
+                log.error("refusing a connection from \(peer, privacy: .public) that opened with \(String(describing: first?.kind), privacy: .public)")
+                await channel.close()
+            }
         }
+    }
+
+    private func startSession(hello: Hello, channel: MessageChannel, peer: String, peerHost: String) {
+        let session = HostSession(channel: channel, identity: identity, trust: trust, peerDescription: peer, peerHost: peerHost,
+                                  attachTokens: attachTokens,
+                                  onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
+                                  onEnded: { [weak self] ended in Task { @MainActor in self?.remove(ended) } })
         sessions.append(session)
         status = .connected(clientCount: sessions.count)
         log.info("session created for \(peer, privacy: .public)")
-        Task { await session.run() }
+        Task { await session.run(hello: hello) }
     }
 
     private func remove(_ session: HostSession) {
         sessions.removeAll { $0 === session }
+        fileChannels.removeAll { $0.session === session }
         status = sessions.isEmpty ? .listening : .connected(clientCount: sessions.count)
+    }
+
+    // MARK: File transfer
+
+    private func fileChannelOpened(_ fileChannel: HostFileChannel) {
+        guard sessions.contains(where: { $0 === fileChannel.session }) else { return }
+        fileChannels.removeAll { $0.session === fileChannel.session }
+        fileChannels.append(fileChannel)
+        let engine = fileChannel.engine
+        Task {
+            for await event in engine.events { handle(event, on: fileChannel) }
+            fileChannels.removeAll { $0.engine === engine }
+        }
+        #if DEBUG
+        if let path = HostOptions.shared.sendFileOnConnect {
+            send([URL(fileURLWithPath: path)], to: fileChannel)
+        }
+        #endif
+    }
+
+    private func handle(_ event: FileTransferEvent, on channel: HostFileChannel) {
+        switch event {
+        case .started(let item):
+            if let index = transfers.firstIndex(where: { $0.id == item.id }) {
+                transfers[index].state = .active
+            } else {
+                transfers.append(HostTransfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction,
+                                              deviceName: channel.clientName, state: .active))
+            }
+        case .progress(let id, let bytes):
+            if let index = transfers.firstIndex(where: { $0.id == id }) { transfers[index].bytesDone = bytes }
+        case .finished(let id, let outcome):
+            guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
+            transfers[index].finish(outcome)
+            let transfer = transfers[index]
+            guard !HostFileStore.current.isSynthetic else {
+                if case .received(let url) = outcome { log.info("synthetic host saved a received file at \(url.path(percentEncoded: false), privacy: .public)") }
+                return
+            }
+            switch outcome {
+            case .received(let url): HostNotifications.shared.received(url, from: transfer.deviceName)
+            case .sent: HostNotifications.shared.sent(transfer.name, to: transfer.deviceName)
+            case .failed(let reason): HostNotifications.shared.failed(transfer.name, sending: transfer.direction == .sending, device: transfer.deviceName, reason: reason)
+            case .cancelled: break
+            }
+        }
+        trimTransfers()
+    }
+
+    /// Queues files for the iPad; they go one at a time, in order.
+    func send(_ urls: [URL], to fileChannel: HostFileChannel) {
+        let queued = urls.map { url in
+            HostTransfer(id: UUID(), name: url.lastPathComponent, byteCount: Self.size(of: url), direction: .sending,
+                         deviceName: fileChannel.clientName, state: .waiting, source: url)
+        }
+        transfers.append(contentsOf: queued)
+        let engine = fileChannel.engine
+        Task {
+            for transfer in queued {
+                let outcome = await engine.send(fileAt: transfer.source!, id: transfer.id)
+                // A closed channel ends its event stream, so settle the row here too.
+                if let index = transfers.firstIndex(where: { $0.id == transfer.id }), transfers[index].isActive {
+                    transfers[index].finish(outcome)
+                }
+            }
+        }
+    }
+
+    func cancelTransfer(_ id: UUID) {
+        guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].isActive else { return }
+        // One still waiting its turn is settled now; the engine skips it when the turn comes.
+        if transfers[index].state == .waiting { transfers[index].finish(.cancelled(byPeer: false)) }
+        for channel in fileChannels { Task { await channel.engine.cancel(id) } }
+    }
+
+    /// "Send File to ⟨iPad⟩…": an open panel, then the queue.
+    func chooseFilesToSend(to fileChannel: HostFileChannel) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.resolvesAliases = true
+        panel.title = "Send to \(fileChannel.clientName)"
+        panel.message = "Choose files to send to \(fileChannel.clientName). They'll be in Files, in the Vantage folder."
+        panel.prompt = "Send"
+        NSApp.activate()
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        // The session may have ended while the panel was open.
+        guard let live = fileChannels.first(where: { $0.session === fileChannel.session }) else { return }
+        send(panel.urls, to: live)
+    }
+
+    /// Keeps finished rows for a minute, and never more than a handful.
+    private func trimTransfers() {
+        let cutoff = Date.now.addingTimeInterval(-60)
+        transfers.removeAll { !$0.isActive && ($0.finishedAt ?? .now) < cutoff }
+        let finished = transfers.filter { !$0.isActive }
+        if finished.count > 5 {
+            let drop = Set(finished.prefix(finished.count - 5).map(\.id))
+            transfers.removeAll { drop.contains($0.id) }
+        }
+    }
+
+    private static func size(of url: URL) -> UInt64 {
+        UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
     }
 
     private func handleListenerState(_ state: NWListener.State) {
@@ -193,6 +346,18 @@ final class HostController {
                 self.tailscaleRunning = running
                 self.tailscaleSelfName = name.hasSuffix(".") ? String(name.dropLast()) : name
             }
+        }
+    }
+
+    /// The address alone ("100.101.1.40", "fd7a:…", "127.0.0.1"): what the file channel's peer
+    /// must match.
+    private static func hostPart(_ endpoint: NWEndpoint) -> String {
+        guard case let .hostPort(host, _) = endpoint else { return String(describing: endpoint) }
+        switch host {
+        case .ipv4(let address): return address.debugDescription
+        case .ipv6(let address): return address.debugDescription
+        case .name(let name, _): return name
+        @unknown default: return String(describing: host)
         }
     }
 

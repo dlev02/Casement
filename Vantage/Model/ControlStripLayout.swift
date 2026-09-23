@@ -8,7 +8,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
     case control, option, command, shift
     case escape, tab, leftArrow, upArrow, downArrow, rightArrow
     case spotlight, missionControl, applicationWindows, showDesktop, typePassword, sendClipboard
-    case macAudio, dictate, keyboard, disconnect
+    case sendFile, macAudio, dictate, keyboard, disconnect
 
     /// Groups the strip separates with a thin divider, and the editor tints alike.
     enum Category: String, CaseIterable, Sendable {
@@ -35,6 +35,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "Show Desktop"
         case .typePassword: "Type Password"
         case .sendClipboard: "Send Clipboard"
+        case .sendFile: "Send File"
         case .macAudio: "Mac Audio"
         case .dictate: "Dictate"
         case .keyboard: "Keyboard"
@@ -60,6 +61,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "menubar.dock.rectangle"
         case .typePassword: "key.radiowaves.forward"
         case .sendClipboard: "doc.on.clipboard"
+        case .sendFile: "arrow.up.doc"
         case .macAudio: "speaker.wave.2" // `.fill` while on
         case .dictate: "mic"
         case .keyboard: "keyboard"
@@ -86,6 +88,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "F11"
         case .typePassword: "Types the saved password"
         case .sendClipboard: "Sends your clipboard to the Mac"
+        case .sendFile: "Sends a file from this iPad to the Mac"
         case .macAudio: "Hear the Mac's sound on this iPad"
         case .dictate: "Hold to talk, or tap to start and stop"
         case .keyboard: "Shows the on-screen keyboard"
@@ -98,7 +101,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .control, .option, .command, .shift: .modifiers
         case .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow: .keys
         case .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard: .shortcuts
-        case .macAudio, .dictate, .keyboard, .disconnect: .actions
+        case .sendFile, .macAudio, .dictate, .keyboard, .disconnect: .actions
         }
     }
 }
@@ -130,7 +133,7 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
         .control, .option, .command, .shift,
         .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
         .spotlight, .missionControl, .typePassword,
-        .macAudio, .dictate, .keyboard, .disconnect,
+        .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
     ])
 
     /// Every standard layout that has shipped, oldest first; the last is `standard`. Append the
@@ -142,7 +145,13 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
             .spotlight, .missionControl, .typePassword,
             .dictate, .keyboard, .disconnect,
         ]),
-        standard,
+        ControlStripLayout(items: [ // + Mac Audio
+            .control, .option, .command, .shift,
+            .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
+            .spotlight, .missionControl, .typePassword,
+            .macAudio, .dictate, .keyboard, .disconnect,
+        ]),
+        standard, // + Send File
     ]
 
     /// Where `upgradeSavedLayouts` records the standard it last brought layouts up to.
@@ -150,7 +159,7 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
 
     /// A saved layout that is exactly an earlier standard was never really customized: the editor
     /// saves the whole list even on Reset to Default. It moves to the current standard, so new
-    /// controls (Mac Audio) show up for people who opened the editor. Anything else is kept.
+    /// controls (Mac Audio, Send File) show up for people who opened the editor. Anything else is kept.
     func upgraded(fromStandardVersion version: Int) -> ControlStripLayout {
         let earlier = Self.standardHistory.prefix(Self.standardHistory.count - 1).dropFirst(max(0, version))
         return earlier.contains(self) ? Self.standard : self

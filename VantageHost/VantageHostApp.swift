@@ -35,6 +35,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.start()
+        HostNotifications.shared.install()
         ParakeetModel.shared.start() // Warms the built-in engine only if the user turned it on.
         if HostOptions.shared.fixedPairingCode != nil {
             controller.generatePairingCode()

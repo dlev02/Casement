@@ -765,6 +765,17 @@ As built (Mac audio): `audioConfig` also carries `bitrate` and an optional `unav
 (capture failed, no permission), sent instead of packets; `audioPacket` is
 `sequence u64 | captureNanos u64 | frameCount u16 | opus`.
 
+As built (file transfer), where it differs from §C.3: the chunk kinds are `fileChunkToClient`
+(103) and `fileChunkToHost` (124); a refusal is `fileAccept.rejected: String?` on the same message;
+`fileCancel` carries only the id. The file channel's peer check compares the IP address with the
+primary connection's (one address per tailnet node, so it's the same test as whois, without a CLI
+call on the accept path); tokens also expire after 60 s. Partial files are hidden
+`.vantage-<id>.partial` files next to the destination with no sidecar (resume isn't built), and
+ones older than an hour are deleted when a file channel opens. Both sides bound the file channel's
+inbound queue (`MessageChannel.maxBufferedMessages`), so the receiver's disk pushes back through
+TCP. "Send File to ⟨iPad⟩…" only uses a live session; there is no Taildrop fallback. Quarantine is
+set per file with `URLResourceValues.quarantineProperties`, not `LSFileQuarantineEnabled`.
+
 The root `Package.swift` test target lists client sources one by one (`CLAUDE.md`). New
 `Model`/`Net` files for dictation and transfer must be added there, or the loopback regression tests
 won't see them. Add loopback tests for: dictation round-trip against a stub `mw`, and file offer →

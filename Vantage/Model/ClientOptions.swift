@@ -50,6 +50,13 @@ enum ClientOptions {
     static var dictationSpeech: String? { value(for: "-VantageDictationSpeak") }
     /// `-VantageMacAudio 1|0` overrides the saved Mac Audio choice for this launch (tests).
     static var macAudio: Bool? { value(for: "-VantageMacAudio").map { $0 == "1" } }
+    /// `-VantageSendTestFile <bytes>` queues a file of random bytes for the Mac once the file
+    /// channel is up (the Files picker can't be scripted in UI tests).
+    static var sendTestFileBytes: Int? { value(for: "-VantageSendTestFile").flatMap(Int.init) }
+    /// `-VantageSlowFiles <ms>` pauses that long before each 256 KiB chunk the app sends.
+    static var slowFilesMillis: Int? { value(for: "-VantageSlowFiles").flatMap(Int.init) }
+    /// `-VantageDropHint 1` shows the "Drop to send" hint without a drag (screenshots).
+    static var dropHintFixture: Bool { value(for: "-VantageDropHint") == "1" }
 
     static var seedSampleDevices: Bool {
         #if DEBUG
@@ -75,5 +82,7 @@ enum DebugScreen: String, Identifiable {
     case settings, controls, security, help, about, tailscale, tailscaleOAuth, tailscaleToken, addDevice, widgets
     /// The controls editor for the default layout, and for the first saved Mac.
     case controlStrip, controlStripMac
+    /// The Transfers sheet with one row in each state.
+    case transfers
     var id: String { rawValue }
 }

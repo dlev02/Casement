@@ -8,7 +8,7 @@ import Testing
             .control, .option, .command, .shift,
             .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
             .spotlight, .missionControl, .typePassword,
-            .macAudio, .dictate, .keyboard, .disconnect,
+            .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
         ])
         #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard])
     }
@@ -20,6 +20,8 @@ import Testing
         #expect(StripItem.spotlight.detail == "⌘ Space")
         #expect(StripItem.disconnect.category == .actions)
         #expect(StripItem.macAudio.label == "Mac Audio" && StripItem.macAudio.category == .actions)
+        #expect(StripItem.sendFile.label == "Send File" && StripItem.sendFile.symbol == "arrow.up.doc")
+        #expect(StripItem.sendFile.category == .actions)
     }
 
     @Test func addAppendsOnceAndRemoveHides() {
@@ -56,7 +58,7 @@ import Testing
     }
 
     @Test func decodingDropsUnknownControlsAndRepeats() throws {
-        let json = Data(#"["escape","holoDeck","tab","escape","sendFile","disconnect"]"#.utf8)
+        let json = Data(#"["escape","holoDeck","tab","escape","teleport","disconnect"]"#.utf8)
         let layout = try JSONDecoder().decode(ControlStripLayout.self, from: json)
         #expect(layout.items == [.escape, .tab, .disconnect])
         #expect(ControlStripLayout(items: [.tab, .tab, .shift]).items == [.tab, .shift])
@@ -103,6 +105,22 @@ import Testing
         #expect(ControlStripLayout(rawValue: defaults.string(forKey: ControlStripLayout.defaultsKey)!) == old)
     }
 
+    /// Someone who got the Mac Audio standard (and saved it from the editor) picks up Send
+    /// File the same way, once.
+    @Test func layoutsSavedAsTheMacAudioStandardPickUpSendFileOnce() throws {
+        let defaults = try #require(UserDefaults(suiteName: "ControlStripLayoutTests.\(UUID())"))
+        #expect(ControlStripLayout.standardHistory.count == 3)
+        let macAudioStandard = ControlStripLayout.standardHistory[1]
+        #expect(macAudioStandard.contains(.macAudio) && !macAudioStandard.contains(.sendFile))
+        defaults.set(1, forKey: ControlStripLayout.standardVersionKey)
+        defaults.set(macAudioStandard.rawValue, forKey: ControlStripLayout.defaultsKey)
+        let perMac = ControlStripLayout.upgradeSavedLayouts(defaults: defaults, perMac: [macAudioStandard, ControlStripLayout.standardHistory[0]])
+        // Version 1 had already moved the oldest standard; a layout still equal to it was chosen.
+        #expect(perMac == [nil, ControlStripLayout.standardHistory[0]])
+        #expect(ControlStripLayout(rawValue: defaults.string(forKey: ControlStripLayout.defaultsKey)!) == .standard)
+        #expect(defaults.integer(forKey: ControlStripLayout.standardVersionKey) == 2)
+    }
+
     // MARK: Wrapping
 
     private func widths(_ rows: [[StripItem]]) -> [Int] { rows.map(\.count) }
@@ -111,7 +129,7 @@ import Testing
         let items = ControlStripLayout.standard.items
         let rows = ControlStripLayout.rows(items, count: 3) { $0.category }
         #expect(rows.flatMap { $0 } == items)
-        #expect(widths(rows) == [4, 6, 7]) // modifiers | keys | shortcuts + actions
+        #expect(widths(rows) == [4, 6, 8]) // modifiers | keys | shortcuts + actions
         for row in rows.dropFirst() {
             let before = items[items.firstIndex(of: row[0])! - 1]
             #expect(before.category != row[0].category)
@@ -120,7 +138,7 @@ import Testing
 
     @Test func twoRowsAreAsEvenAsTheGroupsAllow() {
         let rows = ControlStripLayout.rows(ControlStripLayout.standard.items, count: 2) { $0.category }
-        #expect(widths(rows) == [10, 7])
+        #expect(widths(rows) == [10, 8])
     }
 
     @Test func oneRowAndTooFewControlsStayTogether() {

@@ -15,6 +15,8 @@ struct HostMenuView: View {
                 permissionsSection
             }
             Divider()
+            HostFilesSection(controller: controller)
+            Divider()
             pairingSection
             Divider()
             footer

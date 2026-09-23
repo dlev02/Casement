@@ -38,21 +38,35 @@ actor HostSession {
     private var audioSource: (any AudioSource)?
     private var audioEncoder: AudioEncoder?
     private var audioStartedAt: UInt64 = 0
+    /// The client said it can open a file channel; only then is a token issued.
+    private var clientTakesFiles = false
+    private let attachTokens: AttachTokenRegistry<HostSession>
+    /// The address the session came from; the file channel must come from the same one.
+    let peerHost: String
+    private var fileEngine: FileTransferEngine?
+    private var clientName = "iPad"
+    /// Tells the controller a file channel is up (for the menu, notifications, and sending).
+    private let onFileChannel: @Sendable (HostFileChannel) -> Void
 
-    init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, onEnded: @escaping @Sendable (HostSession) -> Void) {
+    init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, peerHost: String,
+         attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
+         onEnded: @escaping @Sendable (HostSession) -> Void) {
         self.channel = channel
         self.identity = identity
         self.trust = trust
         self.peerDescription = peerDescription
+        self.peerHost = peerHost
+        self.attachTokens = attachTokens
+        self.onFileChannel = onFileChannel
         self.onEnded = onEnded
     }
 
-    func run() async {
+    /// Runs the session on a started channel whose first message, `hello`, the controller has
+    /// already read (it reads one message to tell sessions from file channels).
+    func run(hello: Hello) async {
         do {
-            log.info("session starting channel")
-            try await channel.start()
             log.info("channel ready; handshaking")
-            if try await handshake() { try await receiveLoop() }
+            if try await handshake(hello) { try await receiveLoop() }
         } catch {
             log.error("session error: \(error.localizedDescription, privacy: .public)")
         }
@@ -61,8 +75,7 @@ actor HostSession {
 
     // MARK: Handshake
 
-    private func handshake() async throws -> Bool {
-        guard case let .hello(hello)? = try await channel.receive() else { throw SessionError.badHandshake }
+    private func handshake(_ hello: Hello) async throws -> Bool {
         guard hello.protocolVersion == VantageProtocol.version else {
             try await channel.send(.authResult(AuthResult(status: .versionMismatch, message: "Protocol \(VantageProtocol.version) required")))
             throw SessionError.versionMismatch
@@ -117,12 +130,16 @@ actor HostSession {
         // Dictation kinds are new, so they're advertised only to a client that said it knows them.
         if hello.features?.dictation == true { dictationEngines = await HostTranscriber.availableEngines() }
         clientTakesAudio = hello.features?.macAudio == true
+        clientTakesFiles = hello.features?.fileTransfer == true
+        clientName = hello.clientName
+        // The file channel's ticket in: single use, from this address only, gone with the session.
+        let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
         // Audio rides on the Screen Recording grant checked above (synthetic mode sends a chime),
         // so a session that got this far can always offer it.
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
                                             dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
-                                            audio: true)
-        try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: nil, displays: displays, capabilities: capabilities)))
+                                            audio: true, fileTransfer: clientTakesFiles ? true : nil)
+        try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")
         return true
@@ -418,6 +435,34 @@ actor HostSession {
         channel.sendDetached(.audioConfig(.unavailable(reason)))
     }
 
+    // MARK: Files
+
+    /// A second connection presented this session's token: run file transfers on it. Anything
+    /// but a live, file-capable session with no file channel yet closes it.
+    func attachFileChannel(_ fileChannel: MessageChannel) async {
+        guard state == .streaming, clientTakesFiles, fileEngine == nil else {
+            log.error("refusing a file channel (session \(String(describing: self.state), privacy: .public), files \(self.clientTakesFiles, privacy: .public))")
+            await fileChannel.close()
+            return
+        }
+        let store = HostFileStore.current
+        let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: store.configuration)
+        fileEngine = engine
+        log.info("file channel attached; receiving into \(store.directory.path(percentEncoded: false), privacy: .public)")
+        let host = peerHost, fallback = clientName
+        Task { [weak self] in
+            await engine.run()
+            await self?.fileChannelEnded(engine)
+        }
+        // The tailnet knows the device's real name; the app only gets "iPad" from iOS.
+        let name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback
+        onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name))
+    }
+
+    private func fileChannelEnded(_ engine: FileTransferEngine) {
+        if fileEngine === engine { fileEngine = nil }
+    }
+
     private func handleViewportChange(_ viewport: Viewport) async {
         // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
         needsKeyframe = true
@@ -454,6 +499,11 @@ actor HostSession {
     private func teardown() async {
         guard state != .closed else { return }
         state = .closed
+        attachTokens.revoke(owner: self)
+        if let fileEngine {
+            self.fileEngine = nil
+            await fileEngine.close()
+        }
         dictationClips.removeAll()
         await stopAudio()
         await stopStreaming()
@@ -466,6 +516,15 @@ actor HostSession {
         let bits = Double(pixels) * Double(fps) * 0.08
         return Int(min(60_000, max(4_000, bits / 1000)))
     }
+}
+
+/// A session's live file channel, as the controller and menu see it.
+struct HostFileChannel: Sendable, Identifiable {
+    let session: HostSession
+    let engine: FileTransferEngine
+    /// Who is on the other end ("Drew's iPad Pro").
+    let clientName: String
+    var id: ObjectIdentifier { ObjectIdentifier(session) }
 }
 
 enum SessionError: Error {

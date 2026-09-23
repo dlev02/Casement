@@ -36,6 +36,13 @@ public enum Message: Sendable {
     case audioRequest(AudioRequest)
     case audioConfig(AudioConfig)
     case audioPacket(AudioPacket)
+    case fileOffer(FileOffer)
+    case fileAccept(FileAccept)
+    case fileComplete(FileComplete)
+    case fileResult(FileResult)
+    case fileCancel(FileCancel)
+    case fileChunkToClient(FileChunk)
+    case fileChunkToHost(FileChunk)
 
     public var kind: MessageKind {
         switch self {
@@ -73,6 +80,13 @@ public enum Message: Sendable {
         case .audioRequest: .audioRequest
         case .audioConfig: .audioConfig
         case .audioPacket: .audioPacket
+        case .fileOffer: .fileOffer
+        case .fileAccept: .fileAccept
+        case .fileComplete: .fileComplete
+        case .fileResult: .fileResult
+        case .fileCancel: .fileCancel
+        case .fileChunkToClient: .fileChunkToClient
+        case .fileChunkToHost: .fileChunkToHost
         }
     }
 }
@@ -139,6 +153,12 @@ extension Message {
         case .audioRequest(let value): try Self.json(value)
         case .audioConfig(let value): try Self.json(value)
         case .audioPacket(let value): value.encode()
+        case .fileOffer(let value): try Self.json(value)
+        case .fileAccept(let value): try Self.json(value)
+        case .fileComplete(let value): try Self.json(value)
+        case .fileResult(let value): try Self.json(value)
+        case .fileCancel(let value): try Self.json(value)
+        case .fileChunkToClient(let value), .fileChunkToHost(let value): value.encode()
         }
     }
 
@@ -183,6 +203,13 @@ extension Message {
         case .audioRequest: .audioRequest(try decodeJSON(AudioRequest.self, payload))
         case .audioConfig: .audioConfig(try decodeJSON(AudioConfig.self, payload))
         case .audioPacket: .audioPacket(try AudioPacket.decode(payload))
+        case .fileOffer: .fileOffer(try decodeJSON(FileOffer.self, payload))
+        case .fileAccept: .fileAccept(try decodeJSON(FileAccept.self, payload))
+        case .fileComplete: .fileComplete(try decodeJSON(FileComplete.self, payload))
+        case .fileResult: .fileResult(try decodeJSON(FileResult.self, payload))
+        case .fileCancel: .fileCancel(try decodeJSON(FileCancel.self, payload))
+        case .fileChunkToClient: .fileChunkToClient(try FileChunk.decode(payload))
+        case .fileChunkToHost: .fileChunkToHost(try FileChunk.decode(payload))
         }
     }
 }

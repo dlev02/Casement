@@ -24,13 +24,18 @@ public actor MessageChannel {
     private var pending: [Message] = []
     private var waiter: CheckedContinuation<Message?, any Error>?
     private var terminalError: (any Error)?
+    /// When set, the receive loop stops reading once this many messages wait unread, so a slow
+    /// consumer (a file being written to disk) pushes back through TCP instead of buffering.
+    private let maxBufferedMessages: Int?
+    private var drainWaiter: CheckedContinuation<Void, Never>?
 
     public nonisolated var remoteEndpoint: NWEndpoint? { connection.currentPath?.remoteEndpoint }
     public nonisolated var endpoint: NWEndpoint { connection.endpoint }
 
-    public init(connection: NWConnection, label: String = "vantage.channel") {
+    public init(connection: NWConnection, label: String = "vantage.channel", maxBufferedMessages: Int? = nil) {
         self.connection = connection
         self.queue = DispatchQueue(label: label, qos: .userInteractive)
+        self.maxBufferedMessages = maxBufferedMessages
     }
 
     /// Opens the connection and starts the receive loop. Resolves once the connection is ready.
@@ -64,7 +69,14 @@ public actor MessageChannel {
     /// Returns the next message from the peer, or `nil` once the channel has closed cleanly.
     /// Single consumer: callers must not overlap `receive()` calls.
     public func receive() async throws -> Message? {
-        if !pending.isEmpty { return pending.removeFirst() }
+        if !pending.isEmpty {
+            let message = pending.removeFirst()
+            if let drainWaiter, pending.count < (maxBufferedMessages ?? .max) {
+                self.drainWaiter = nil
+                drainWaiter.resume()
+            }
+            return message
+        }
         if let terminalError { throw terminalError }
         if isClosed { return nil }
         precondition(waiter == nil, "MessageChannel.receive() called concurrently")
@@ -97,6 +109,17 @@ public actor MessageChannel {
         }
     }
 
+    /// Hands a message to the connection now, in call order, and reports when the network stack
+    /// has taken it (`.contentProcessed`) or failed. Lets a bulk sender keep a few messages in
+    /// flight while still pacing to the link.
+    public nonisolated func send(_ message: Message, completion: @escaping @Sendable ((any Error)?) -> Void) {
+        let frame: Data
+        do { frame = try message.encodedFrame() } catch { completion(error); return }
+        connection.send(content: frame, completion: .contentProcessed { error in
+            completion(error.map { ChannelError.connectionFailed($0.localizedDescription) })
+        })
+    }
+
     /// Fire-and-forget send for hot-path messages (video, cursor, input). Safe to call from any
     /// isolation; a send failure is surfaced by the receive loop ending, so it is ignored here.
     public nonisolated func sendDetached(_ message: Message) {
@@ -116,6 +139,10 @@ public actor MessageChannel {
             self.waiter = nil
             if let error { waiter.resume(throwing: error) } else { waiter.resume(returning: nil) }
         }
+        if let drainWaiter {
+            self.drainWaiter = nil
+            drainWaiter.resume()
+        }
         connection.cancel()
     }
 
@@ -127,6 +154,9 @@ public actor MessageChannel {
                 let payload = header.length == 0 ? Data() : try await receiveExactly(Int(header.length))
                 let message = try Message.decode(kind: header.kind, payload: payload)
                 deliver(message)
+                if let maxBufferedMessages, pending.count >= maxBufferedMessages, !isClosed {
+                    await withCheckedContinuation { drainWaiter = $0 }
+                }
             }
         } catch {
             if !isClosed {

@@ -12,7 +12,7 @@ let package = Package(
                     "Input/RemoteInteractionView.swift", "Model/ClipboardSync.swift",
                     "Model/DeviceStore.swift", "Net/TailscaleReachability.swift"],
                 sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Dictation/AudioResampler.swift",
-                    "Audio/OpusDecoder.swift", "Audio/AudioJitterBuffer.swift"],
+                    "Audio/OpusDecoder.swift", "Audio/AudioJitterBuffer.swift", "Transfer/FileTransferController.swift", "Transfer/SharedFileInbox.swift"],
                 swiftSettings: [.defaultIsolation(MainActor.self)]),
         .target(name: "VantageSynthetic", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Engine", exclude: ["AdaptiveController.swift", "DisplayEnumerator.swift", "HostController.swift",
