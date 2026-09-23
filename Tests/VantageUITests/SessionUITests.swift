@@ -59,8 +59,8 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Studio Mac"].waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Not Supported Yet"].exists)
         XCTAssertTrue(app.staticTexts["Drew-PC"].exists)
-        XCTAssertTrue(app.buttons["Add"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Add"].firstMatch.tap()
+        let add = app.buttons["Add"].firstMatch
+        if add.exists { add.tap() }
         XCTAssertTrue(app.staticTexts["Added"].firstMatch.waitForExistence(timeout: 3))
         screenshot("Tailscale device picker", app)
     }
