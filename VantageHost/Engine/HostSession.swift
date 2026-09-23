@@ -76,8 +76,17 @@ actor HostSession {
                 try await channel.send(.authResult(AuthResult(status: .pairingRequired, message: "Enter the pairing code shown on the Mac")))
                 return false
             }
-            guard trust.consumePairingCode(code) else {
+            switch trust.consumePairingCode(code) {
+            case .accepted:
+                break
+            case .incorrect:
+                // Slow down guessing; the code is also burned after a few misses.
+                try? await Task.sleep(for: .seconds(1))
                 try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "Incorrect pairing code. Try the code shown on the Mac.")))
+                return false
+            case .unavailable:
+                try? await Task.sleep(for: .seconds(1))
+                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "That pairing code has expired. On the Mac, choose Show pairing code and enter the new one.")))
                 return false
             }
             trust.trust(hello.clientPublicKey, name: hello.clientName)

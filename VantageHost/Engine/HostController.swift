@@ -42,6 +42,9 @@ final class HostController {
         trust.onChange = { [weak self] in
             Task { @MainActor in self?.refreshTrusted() }
         }
+        trust.onPairingCodeCleared = { [weak self] in
+            Task { @MainActor in self?.pairingCode = nil }
+        }
         refreshTrusted()
         refreshPermissions()
         refreshTailscale()

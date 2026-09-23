@@ -25,7 +25,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   100). See `Packages/VantageCore/Sources/VantageCore/Wire` and `Messages`.
 - **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
   domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
-  that the key is trusted. The listener also rejects any peer outside Tailscale's CGNAT/ULA ranges.
+  that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
+  guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
+  rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
 - **Host pipeline**: `ScreenCapture` (ScreenCaptureKit, `'420v'`, sRGB, dirty-rect ratio) →
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held

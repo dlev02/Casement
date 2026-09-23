@@ -8,19 +8,41 @@ public enum KeychainError: Error, Sendable {
 /// Minimal generic-password Keychain wrapper shared by host and client.
 public struct KeychainStore: Sendable {
     public let service: String
+    /// Synchronizable items ride iCloud Keychain to the user's other devices. They can't be
+    /// "this device only", so they get the plain after-first-unlock protection class instead.
+    public let synchronizable: Bool
+    /// Secrets only used while someone is actively using the app (passwords, API keys) are
+    /// readable only while the device is unlocked, not merely after the first unlock since boot.
+    public let unlockedOnly: Bool
 
-    public init(service: String = "com.benjaminlevinson.vantage") {
+    public init(service: String = "com.benjaminlevinson.vantage", synchronizable: Bool = false, unlockedOnly: Bool = false) {
         self.service = service
+        self.synchronizable = synchronizable
+        self.unlockedOnly = unlockedOnly
+    }
+
+    private var accessibility: CFString {
+        switch (synchronizable, unlockedOnly) {
+        case (true, true): kSecAttrAccessibleWhenUnlocked
+        case (true, false): kSecAttrAccessibleAfterFirstUnlock
+        case (false, true): kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        case (false, false): kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
+    }
+
+    private var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrSynchronizable as String: synchronizable,
+        ]
     }
 
     public func data(for account: String) throws -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        var query = baseQuery
+        query[kSecAttrAccount as String] = account
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         switch status {
@@ -31,14 +53,11 @@ public struct KeychainStore: Sendable {
     }
 
     public func set(_ value: Data, for account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
+        var query = baseQuery
+        query[kSecAttrAccount as String] = account
         let attributes: [String: Any] = [
             kSecValueData as String: value,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccessible as String: accessibility,
         ]
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecItemNotFound {
@@ -50,11 +69,8 @@ public struct KeychainStore: Sendable {
     }
 
     public func remove(_ account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
+        var query = baseQuery
+        query[kSecAttrAccount as String] = account
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.unexpectedStatus(status)

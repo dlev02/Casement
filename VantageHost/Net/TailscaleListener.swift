@@ -51,6 +51,12 @@ nonisolated final class TailscaleListener: @unchecked Sendable {
 
     private func isTailnetPeer(_ endpoint: NWEndpoint) -> Bool {
         guard case let .hostPort(host, _) = endpoint else { return false }
+        #if DEBUG
         return VantageNetwork.isAcceptablePeer(host)
+        #else
+        // Release builds only talk to the tailnet: a local process must not be able to reach the
+        // pairing prompt over loopback.
+        return VantageNetwork.isTailscaleAddress(host)
+        #endif
     }
 }
