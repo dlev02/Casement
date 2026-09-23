@@ -34,7 +34,7 @@ struct HostSettingsView: View {
                     LabeledContent("Remote Login (SSH)") { statusBadge(report.remoteLoginEnabled) }
                     LabeledContent("Screen Sharing") { statusBadge(report.screenSharingEnabled) }
                     if report.fileVaultOn == true {
-                        Text("With FileVault on, a cold boot waits at the pre-boot unlock screen. Tailscale is not running there, so Vantage cannot reach the Mac until someone unlocks it (macOS 26+ can unlock over SSH from the local network only). A restart that keeps the disk unlocked, or a Mac left logged in, reconnects on its own.")
+                        Text("With FileVault on, an unexpected restart waits at the FileVault screen, where Tailscale isn't running. To recover from afar, keep Remote Login on and a Tailscale subnet router at home, then SSH to this Mac's home address to unlock it. For restarts you start yourself, use Restart Safely.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {

@@ -450,6 +450,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Vantage Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Vantage Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -479,6 +480,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Vantage Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Vantage Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

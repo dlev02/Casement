@@ -106,6 +106,10 @@ struct HostMenuView: View {
                 Label("Settings", systemImage: "gearshape")
             }
             Spacer()
+            if controller.canRestartSafely {
+                Button("Restart Safely…") { controller.restartSafely() }
+                    .help("Restart without stopping at the FileVault screen")
+            }
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
     }

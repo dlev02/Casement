@@ -33,8 +33,11 @@ final class HostController {
     private(set) var trustedClients: [TrustStore.TrustedClient] = []
     private(set) var readiness: Readiness.Report?
     var pairingCode: String?
+    /// A FileVault unlock key is waiting for the next restart, so don't ask again.
+    private(set) var safeRestartStaged = false
 
     var fingerprint: String { identity.fingerprint }
+    var hasConnectedClients: Bool { !sessions.isEmpty }
 
     init() {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
@@ -99,6 +102,24 @@ final class HostController {
         for session in sessions {
             Task { await session.restartCapture() }
         }
+    }
+
+    var canRestartSafely: Bool {
+        readiness?.fileVaultOn == true && readiness?.authRestartSupported == true
+    }
+
+    /// Menu-bar "Restart Safely…": stage the unlock key, then let the user restart the usual way so
+    /// every app gets to save first.
+    func restartSafely() {
+        guard SafeRestartPrompt.run(explanation: SafeRestart.promptExplanation) else { return }
+        safeRestartStaged = true
+        if SafeRestart.requestRestart() { return }
+        let done = NSAlert()
+        done.messageText = "Ready to Restart"
+        done.informativeText = "Choose Restart from the Apple menu now. FileVault will unlock by itself for this one restart, and the Mac will come back at the login window."
+        done.addButton(withTitle: "OK")
+        NSApp.activate()
+        done.runModal()
     }
 
     func generatePairingCode() {

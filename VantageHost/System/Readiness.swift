@@ -6,12 +6,14 @@ nonisolated enum Readiness {
         var fileVaultOn: Bool?
         var remoteLoginEnabled: Bool
         var screenSharingEnabled: Bool
+        var authRestartSupported: Bool
     }
 
     static func probe() -> Report {
         Report(fileVaultOn: fileVaultStatus(),
                remoteLoginEnabled: portOpen(22),
-               screenSharingEnabled: portOpen(5900))
+               screenSharingEnabled: portOpen(5900),
+               authRestartSupported: SafeRestart.isSupported())
     }
 
     /// `fdesetup status` works for standard users and prints "FileVault is On." / "Off.".
