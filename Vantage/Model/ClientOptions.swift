@@ -33,6 +33,22 @@ enum ClientOptions {
         #endif
     }
 
+    /// `-VantageOpenScreen settings|controls|security|help|about|tailscale|addDevice|widgets` presents that screen
+    /// on launch so it can be screenshotted without driving the UI.
+    static var openScreen: DebugScreen? {
+        #if DEBUG
+        value(for: "-VantageOpenScreen").flatMap(DebugScreen.init(rawValue:))
+        #else
+        nil
+        #endif
+    }
+
+    /// `-VantageDictationFixture listening|review|macTranscribing|macReview|failed|download` shows the
+    /// dictation panel in that state once connected, without opening the microphone (screenshots).
+    static var dictationFixture: String? { value(for: "-VantageDictationFixture") }
+    /// `-VantageDictationSpeak "text"` dictates synthesized speech to the Mac engine once connected.
+    static var dictationSpeech: String? { value(for: "-VantageDictationSpeak") }
+
     static var seedSampleDevices: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("-VantageSeedSamples")
@@ -50,4 +66,10 @@ enum ClientOptions {
         return nil
         #endif
     }
+}
+
+/// Screens that `-VantageOpenScreen` can present directly (DEBUG only).
+enum DebugScreen: String, Identifiable {
+    case settings, controls, security, help, about, tailscale, addDevice, widgets
+    var id: String { rawValue }
 }

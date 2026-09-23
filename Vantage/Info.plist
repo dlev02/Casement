@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the generated Info.plist. vantage://connect/<device-id> opens a session;
+	     widgets and Shortcuts use it. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.benjaminlevinson.vantage</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vantage</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vantage uses the microphone when you dictate text to your Mac.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Vantage turns your speech into text on this device before sending it to your Mac.</string>
+</dict>
+</plist>

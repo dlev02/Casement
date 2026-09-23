@@ -32,21 +32,106 @@ struct ContentView: View {
             }
             .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         }
+        #endif
+        #if DEBUG
+        .sheet(item: $debugScreen) { screen in
+            NavigationStack { debugView(screen) }
+                .environment(store)
+                .environment(reachability)
+                .environment(tailscaleAccount)
+        }
+        #endif
         .task {
             reachability.start()
             lock.authenticate()
+            #if DEBUG
+            debugScreen = ClientOptions.openScreen
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 reachability.refresh()
                 lock.authenticate()
-            case .background: lock.lockIfNeeded()
+            case .background:
+                #if os(visionOS)
+                break // `VantageApp` locks once every window has gone, not when the list closes
+                #else
+                lock.lockIfNeeded()
+                #endif
             default: break
             }
         }
+        .onOpenURL { url in
+            if let id = DeviceCatalog.macID(from: url) { pending.requestedMacID = id }
+        }
+        // `initial: true` catches a request that arrived before this view existed — a cold
+        // launch from Siri, a shortcut, or the Control Center control sets the slot first.
+        .onChange(of: pending.requestedMacID, initial: true) { _, id in openRequestedConnection(id) }
+        .onChange(of: lock.isLocked) { _, locked in
+            if !locked { openRequestedConnection(pending.requestedMacID) }
+        }
+        .onChange(of: requireBiometrics) { _, _ in store.refreshSpotlight() }
+    }
+
+    /// Siri, Shortcuts, Spotlight, controls, and widgets all land here. If the app is locked the
+    /// request waits until Face ID clears it, so a Home Screen tap can't skip the lock.
+    private func openRequestedConnection(_ id: UUID?) {
+        guard let id, !lock.isLocked else { return }
+        // Handled either way from here: a Mac that no longer exists (a stale widget or link) is
+        // dropped rather than left to fire later, and a session that's already open stays put.
+        pending.requestedMacID = nil
+        guard let device = store.devices.first(where: { $0.id == id }), selectedDevice?.id != id else { return }
+        selectedDevice = device
+    }
+
+    #if DEBUG
+    /// Opens one screen straight from a launch argument so screenshots don't depend on driving
+    /// the UI. Never compiled into a release build.
+    @ViewBuilder private func debugView(_ screen: DebugScreen) -> some View {
+        switch screen {
+        case .settings: SettingsScreen()
+        case .controls: ControlSettings()
+        case .security: SecuritySettings()
+        case .help: HelpScreen()
+        case .about: AboutScreen()
+        case .tailscale: TailscaleAccountScreen()
+        case .addDevice: AddDeviceSheet()
+        case .widgets: WidgetGalleryScreen()
+        }
+    }
+    #endif
+}
+
+#if os(visionOS)
+/// visionOS opens each Mac in a window of its own, which the session shapes to the Mac's display.
+struct SessionWindow: View {
+    static let sceneID = "session"
+    let deviceID: UUID?
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
+    private let store = DeviceStore.shared
+    private let lock = AppLock.shared
+
+    var body: some View {
+        Group {
+            if lock.isLocked {
+                LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+            } else if let device = store.devices.first(where: { $0.id == deviceID }) {
+                RemoteSessionScreen(device: device).environment(store)
+            } else {
+                ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
+                                       description: Text("This Mac is no longer in your device list."))
+            }
+        }
+        .frame(minWidth: 480, minHeight: 300)
+        .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { lock.authenticate() }
+        }
     }
 }
+#endif
 
 private struct LockOverlay: View {
     let errorMessage: String?
