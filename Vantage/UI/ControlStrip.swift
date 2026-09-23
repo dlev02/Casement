@@ -2,8 +2,8 @@ import SwiftUI
 import VantageCore
 
 /// Floating session controls: modifier keys, navigation keys, keyboard, and a session menu.
-/// Collapses to a compact pill. Both states share one glass identity so the surface morphs
-/// between them instead of cutting.
+/// Collapses to a compact pill. Both states sit on one glass surface that resizes between them
+/// instead of cutting.
 struct ControlStrip: View {
     @Binding var isCollapsed: Bool
     @Binding var dock: ToolbarDock
@@ -19,7 +19,6 @@ struct ControlStrip: View {
     var isDictating = false
     var onDictation: (DictationPress) -> Void = { _ in }
 
-    @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -62,20 +61,30 @@ struct ControlStrip: View {
         }
     }
     #else
+    /// One glass surface that changes size, rather than two glass shapes asked to morph: the
+    /// morph swapped shapes in a single frame, which is what made opening and closing feel
+    /// abrupt. The surface is sized by the current buttons only (the outgoing set is already
+    /// out of layout), so its frame animates from one size to the other, and the clip lets the
+    /// closing edge sweep over the buttons that are leaving.
     private var glassSurface: some View {
-        GlassEffectContainer(spacing: 16) {
+        ZStack(alignment: dock.alignment) {
             if isCollapsed {
-                compact
-                    .transition(.blurReplace)
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                    .glassEffectID("controls", in: glassNamespace)
+                compact.transition(contentTransition)
             } else {
-                expanded
-                    .transition(.blurReplace)
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
-                    .glassEffectID("controls", in: glassNamespace)
+                expanded.transition(contentTransition)
             }
         }
+        .clipShape(.rect(cornerRadius: 26))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
+    }
+
+    private var contentTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: AnyTransition(StripContentTransition(anchor: dock.anchor))
+                .animation(.smooth(duration: 0.26).delay(0.07)),
+            removal: AnyTransition(StripContentTransition(anchor: dock.anchor))
+                .animation(.easeOut(duration: 0.12)))
     }
     #endif
 
@@ -299,11 +308,12 @@ struct ControlStrip: View {
 
     // MARK: Actions
 
-    /// Expanding gets a lively spring; collapsing settles quietly. Reduce Motion keeps both short.
+    /// One family of spring both ways so opening and closing feel like the same object: a touch
+    /// of life on the way out, none on the way back. Reduce Motion keeps both short.
     private func toggleCollapsed() {
         let animation: Animation = isCollapsed
-            ? .spring(duration: 0.5, bounce: 0.28)
-            : .smooth(duration: 0.34)
+            ? .spring(duration: 0.38, bounce: 0.12)
+            : .spring(duration: 0.32, bounce: 0)
         withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : animation) {
             isCollapsed.toggle()
         }
@@ -357,6 +367,40 @@ private struct StripGlyph: ViewModifier {
             .scaleEffect(isPressed ? 0.88 : 1)
             .animation(.snappy(duration: 0.18), value: isPressed)
             .animation(.snappy(duration: 0.2), value: isActive)
+    }
+}
+
+extension ToolbarDock {
+    var alignment: Alignment {
+        switch self {
+        case .topLeft: .topLeading
+        case .topRight: .topTrailing
+        case .bottomLeft: .bottomLeading
+        case .bottomRight: .bottomTrailing
+        }
+    }
+
+    /// The corner the strip grows from.
+    var anchor: UnitPoint {
+        switch self {
+        case .topLeft: .topLeading
+        case .topRight: .topTrailing
+        case .bottomLeft: .bottomLeading
+        case .bottomRight: .bottomTrailing
+        }
+    }
+}
+
+/// The strip's buttons fading, shrinking slightly toward the docked corner, and softening as
+/// they go. Never from nothing: 0.94 scale and a 3-point blur are enough to read as motion.
+private struct StripContentTransition: Transition {
+    var anchor: UnitPoint
+
+    func body(content: Content, phase: TransitionPhase) -> some View {
+        content
+            .opacity(phase.isIdentity ? 1 : 0)
+            .scaleEffect(phase.isIdentity ? 1 : 0.94, anchor: anchor)
+            .blur(radius: phase.isIdentity ? 0 : 3)
     }
 }
 
