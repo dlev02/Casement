@@ -305,123 +305,150 @@ struct AboutScreen: View {
 }
 
 /// Answers the questions that come up when setting Vantage up or living with its limits.
-/// Kept as plain text so it reads the same on iPhone, iPad, and Vision Pro.
+/// Kept as plain text so it reads the same on iPhone, iPad, and Vision Pro. Searching matches
+/// questions and answers and opens every match, since the words you type are often in the answer.
 struct HelpScreen: View {
+    @State private var query = ""
+
     var body: some View {
         List {
-            Section("Getting Connected") {
-                FAQRow("What do I need on the Mac?") {
-                    "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."
-                }
-                FAQRow("Why did it ask me to pair?") {
-                    "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."
-                }
-                FAQRow("Can I connect from Siri, Shortcuts, or a widget?") {
-                    "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock."
-                }
-                FAQRow("Does Vantage work away from home?") {
-                    "Yes. Vantage connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."
-                }
-                FAQRow("Why does Vantage want a Tailscale key?") {
-                    "Only to read your device list, so it can offer your Macs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding Macs by name or IP by hand works without one."
-                }
-            }
-
-            Section("Controlling the Mac") {
-                FAQRow("Trackpad or Direct Touch?") {
-                    "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."
-                }
-                FAQRow("How does it work on Apple Vision Pro?") {
-                    "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."
-                }
-                FAQRow("How do I right-click or middle-click?") {
-                    "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."
-                }
-                FAQRow("Unicode Text or Keystrokes for the keyboard?") {
-                    "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."
-                }
-                FAQRow("Why can't I type into a password box?") {
-                    "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."
-                }
-                FAQRow("How does the key button type into password fields?") {
-                    "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."
-                }
-                FAQRow("Can I dictate to the Mac?") {
-                    "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."
-                }
-            }
-
-            Section("Video & Displays") {
-                FAQRow("HEVC or H.264?") {
-                    "HEVC looks better at the same bandwidth and is the default. Choose H.264 only if something in the path can't decode HEVC."
-                }
-                FAQRow("What does Virtual Display do?") {
-                    "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Vantage streams the Mac's main display, which connects fastest."
-                }
-                FAQRow("Do I need BetterDisplay or MacWhisper?") {
-                    "No. Without BetterDisplay, Vantage streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Vantage Host's optional built-in Parakeet model. Both are optional extras that Vantage uses when they're there."
-                }
-                FAQRow("The picture went soft for a moment.") {
-                    "Vantage drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."
-                }
-            }
-
-            Section("Restarts & Locked Macs") {
-                FAQRow("What happens if my Mac restarts while I'm away?") {
-                    "Vantage Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."
-                }
-                FAQRow("Can Vantage stop an accidental restart?") {
-                    "Yes. While a device is connected, Vantage Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Vantage Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."
-                }
-                FAQRow("Can I unlock a locked Mac?") {
-                    "If the Mac is asleep at its lock screen, tap the key button: Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."
-                }
-                FAQRow("How do I log in after a restart?") {
-                    "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then long-press the Mac in the list and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."
-                }
-                FAQRow("What does Restart Safely do?") {
-                    "It's in Vantage Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."
-                }
-            }
-
-            Section("Privacy") {
-                FAQRow("Does my screen go through a server?") {
-                    "No. There is no Vantage account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel."
-                }
-                FAQRow("Can someone else connect to my Mac?") {
-                    "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Vantage Host refuses connections from any address outside Tailscale's range."
-                }
-                FAQRow("What does Vantage store on this device?") {
-                    "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."
-                }
-                FAQRow("What does iCloud sync share?") {
-                    "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."
+            ForEach(results) { section in
+                Section(section.title) {
+                    ForEach(section.entries) { entry in
+                        // A new identity when search starts or ends, so rows open for results
+                        // and fold back up afterwards.
+                        FAQRow(entry, expanded: isSearching).id("\(entry.id)|\(isSearching)")
+                    }
                 }
             }
         }
+        .overlay {
+            if isSearching && results.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .searchable(text: $query, prompt: "Search Help")
         .navigationTitle("Help & FAQ")
+    }
+
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Every word of the query must appear somewhere in the question or answer, ignoring case
+    /// and accents, so "password restart" finds the restart answers that mention passwords.
+    private var results: [FAQSection] {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return Self.sections }
+        return Self.sections.compactMap { section in
+            let matches = section.entries.filter { entry in
+                let text = entry.question + " " + entry.answer
+                return words.allSatisfy { text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+            }
+            return matches.isEmpty ? nil : FAQSection(section.title, matches)
+        }
+    }
+
+    static let sections: [FAQSection] = [
+        FAQSection("Getting Connected", [
+            FAQEntry("What do I need on the Mac?",
+                     "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
+            FAQEntry("Why did it ask me to pair?",
+                     "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
+            FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
+                     "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock."),
+            FAQEntry("Does Vantage work away from home?",
+                     "Yes. Vantage connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
+            FAQEntry("Why does Vantage want a Tailscale key?",
+                     "Only to read your device list, so it can offer your Macs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding Macs by name or IP by hand works without one."),
+        ]),
+        FAQSection("Controlling the Mac", [
+            FAQEntry("Trackpad or Direct Touch?",
+                     "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
+            FAQEntry("How does it work on Apple Vision Pro?",
+                     "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."),
+            FAQEntry("How do I right-click or middle-click?",
+                     "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+            FAQEntry("Unicode Text or Keystrokes for the keyboard?",
+                     "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
+            FAQEntry("Why can't I type into a password box?",
+                     "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+            FAQEntry("How does the key button type into password fields?",
+                     "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+            FAQEntry("Can I dictate to the Mac?",
+                     "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+        ]),
+        FAQSection("Video & Displays", [
+            FAQEntry("HEVC or H.264?",
+                     "HEVC looks better at the same bandwidth and is the default. Choose H.264 only if something in the path can't decode HEVC."),
+            FAQEntry("What does Virtual Display do?",
+                     "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Vantage streams the Mac's main display, which connects fastest."),
+            FAQEntry("Do I need BetterDisplay or MacWhisper?",
+                     "No. Without BetterDisplay, Vantage streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Vantage Host's optional built-in Parakeet model. Both are optional extras that Vantage uses when they're there."),
+            FAQEntry("The picture went soft for a moment.",
+                     "Vantage drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."),
+        ]),
+        FAQSection("Restarts & Locked Macs", [
+            FAQEntry("What happens if my Mac restarts while I'm away?",
+                     "Vantage Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."),
+            FAQEntry("Can Vantage stop an accidental restart?",
+                     "Yes. While a device is connected, Vantage Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Vantage Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
+            FAQEntry("Can I unlock a locked Mac?",
+                     "If the Mac is asleep at its lock screen, tap the key button: Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
+            FAQEntry("How do I log in after a restart?",
+                     "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then long-press the Mac in the list and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."),
+            FAQEntry("What does Restart Safely do?",
+                     "It's in Vantage Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
+        ]),
+        FAQSection("Privacy", [
+            FAQEntry("Does my screen go through a server?",
+                     "No. There is no Vantage account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel."),
+            FAQEntry("Can someone else connect to my Mac?",
+                     "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Vantage Host refuses connections from any address outside Tailscale's range."),
+            FAQEntry("What does Vantage store on this device?",
+                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."),
+            FAQEntry("What does iCloud sync share?",
+                     "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
+        ]),
+    ]
+}
+
+struct FAQSection: Identifiable {
+    let title: String
+    let entries: [FAQEntry]
+    var id: String { title }
+    init(_ title: String, _ entries: [FAQEntry]) {
+        self.title = title
+        self.entries = entries
+    }
+}
+
+struct FAQEntry: Identifiable {
+    let question: String
+    let answer: String
+    var id: String { question }
+    init(_ question: String, _ answer: String) {
+        self.question = question
+        self.answer = answer
     }
 }
 
 /// A question that expands to its answer. Collapsed by default so the list stays scannable.
 private struct FAQRow: View {
-    let question: String
-    let answer: String
-    @State private var isExpanded = false
+    let entry: FAQEntry
+    @State private var isExpanded: Bool
 
-    init(_ question: String, answer: () -> String) {
-        self.question = question
-        self.answer = answer()
+    init(_ entry: FAQEntry, expanded: Bool) {
+        self.entry = entry
+        _isExpanded = State(initialValue: expanded)
     }
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            Text(answer)
+            Text(entry.answer)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 2)
         } label: {
-            Text(question).font(.body)
+            Text(entry.question).font(.body)
         }
     }
 }
