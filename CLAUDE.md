@@ -10,8 +10,16 @@ groups). Read this before working here.
 | Target | Path | Product |
 | --- | --- | --- |
 | `VantageHost` | `VantageHost/` | macOS 26+ menu-bar app (LSUIElement), unsandboxed, Developer ID intended |
-| `Vantage` | `Vantage/` | iPadOS/iOS 26+ client (universal) |
+| `Vantage` | `Vantage/` | iPadOS/iOS 26+ client (universal), also native visionOS 26+ |
 | `VantageCore` | `Packages/VantageCore/` | Local SPM package shared by both: wire protocol, transport, identity |
+| `VantageWidgets` | `VantageWidgets/` | iOS widget extension (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
+| — | `Shared/` | Synced folder compiled into both `Vantage` and `VantageWidgets`: `DeviceCatalog`, `MacEntity`, widget views |
+
+The pbxproj is edited by hand: new targets need a `PBXNativeTarget`, build phases, config list,
+product reference, and a `PBXFileSystemSynchronizedBuildFileExceptionSet` for any `Info.plist`
+inside a synced folder (otherwise it lands in Copy Bundle Resources and the build fails with
+"multiple commands produce Info.plist"). Extensions are embedded through the app's
+"Embed Foundation Extensions" copy-files phase plus a target dependency.
 
 Signing: `DEVELOPMENT_TEAM = PMX23WPLM5` (Drew's team; the only non-revoked cert on this Mac).
 Bundle ids: host `com.benjaminlevinson.vantage.host`, client `com.benjaminlevinson.vantage`.
@@ -138,12 +146,17 @@ xcrun swift test --package-path Packages/VantageCore
 
 # Client session regression tests (actual source, loopback mock host)
 xcrun swift test
+# The root Package.swift lists client sources one by one; add new Model/Net files there or the
+# test target won't see them.
 
 # Host (macOS)
 xcodebuild build -project Vantage.xcodeproj -scheme VantageHost -destination 'platform=macOS' -derivedDataPath .deriveddata
 
 # Client (iOS Simulator)
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=iOS Simulator' -derivedDataPath .deriveddata
+
+# Client (visionOS Simulator; test on the "Vantage Vision Pro" simulator)
+xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=visionOS Simulator' -derivedDataPath .deriveddata
 ```
 
 Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites and both builds.

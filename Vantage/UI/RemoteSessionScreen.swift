@@ -111,17 +111,45 @@ struct RemoteSessionScreen: View {
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
+            #endif
         }
         .animation(.smooth(duration: 0.35), value: isLive)
+        #if os(visionOS)
+        // Keep the window bar: it's how the session window is moved and closed.
+        .ornament(visibility: session.state == .connected ? .visible : .hidden,
+                  attachmentAnchor: .scene(.bottom), contentAlignment: .top) {
+            controlStrip
+                .padding(.top, 20)
+        }
+        .background {
+            WindowAspectMatcher(displaySize: session.activeConfig.map {
+                CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
+            })
+        }
+        #else
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        #endif
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
         .onChange(of: session.state) { _, state in
             if state == .connected {
                 store.markConnected(device)
+                if session.dictationEngines?.contains(.parakeet) == true {
+                    // Lets Settings → Controls offer Parakeet once any Mac has advertised it.
+                    UserDefaults.standard.set(true, forKey: DictationEnginePreference.macOffersParakeetKey)
+                }
+                #if DEBUG && canImport(UIKit)
+                if let fixture = ClientOptions.dictationFixture { dictation.showFixture(fixture) }
+                if let phrase = ClientOptions.dictationSpeech, !dictation.isActive {
+                    dictation.speakForTesting(phrase, route: dictationRoute)
+                }
+                #endif
             } else {
                 hasVideo = false
                 video.resetFirstFrame()
+                #if canImport(UIKit)
+                dictation.connectionLost()
+                #endif
             }
         }
         .onChange(of: session.activeConfig) { _, config in
@@ -436,7 +464,101 @@ struct HostStatusBanner: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .glassEffect(in: .capsule)
+        .platformGlass(in: .capsule)
         .frame(maxWidth: 520)
+    }
+}
+
+/// Progress of a password typed through the Mac's Screen Sharing server.
+enum ScreenSharingTypingState: Equatable {
+    case typing, sent
+}
+
+private struct ScreenSharingTypingBadge: View {
+    let state: ScreenSharingTypingState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if state == .typing {
+                ProgressView().controlSize(.small)
+                Text("Typing password with Screen Sharing…")
+            } else {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Password sent")
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .platformGlass(in: .capsule)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Why the key button couldn't just type the password.
+enum PasswordPrompt: String, Identifiable {
+    /// No password saved for this Mac yet — offer to save one without leaving the session.
+    case missing
+    /// macOS is blocking ordinary keystrokes; Screen Sharing can type it but needs the account name.
+    case needsAccount
+    var id: String { rawValue }
+}
+
+/// Saves a Mac's password (and the account name Screen Sharing needs) mid-session.
+private struct PasswordPromptSheet: View {
+    let prompt: PasswordPrompt
+    @Binding var password: String
+    @Binding var username: String
+    /// Called with true to save and type, false to just close.
+    let onFinish: (Bool) -> Void
+
+    private var canSave: Bool {
+        switch prompt {
+        case .missing: !password.isEmpty
+        case .needsAccount: !username.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if prompt == .needsAccount {
+                    Section {
+                        Label("macOS is blocking ordinary typing", systemImage: "lock.shield")
+                            .font(.headline)
+                    } footer: {
+                        Text("A password field, an authentication dialog, or the lock screen has focus, so macOS ignores keystrokes from apps. Vantage can type the password through the Mac's own Screen Sharing instead. It signs in with your Mac account, so it needs the account name that goes with this password.")
+                    }
+                }
+                Section {
+                    TextField("Account name", text: $username)
+                        .textContentType(.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if prompt == .missing {
+                        SecureField("Mac Password", text: $password)
+                            .textContentType(.password)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                } footer: {
+                    Text(prompt == .missing
+                         ? "Vantage keeps these in the Keychain and types the password when you tap the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
+                         : "Your short account name or full name, as shown in System Settings → Users & Groups. Screen Sharing must be on for this account (System Settings → General → Sharing).")
+                }
+            }
+            .navigationTitle(prompt == .missing ? "Save Password" : "Mac Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onFinish(false) }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save & Type") { onFinish(true) }
+                        .disabled(!canSave)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

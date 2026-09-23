@@ -211,7 +211,7 @@ struct DeviceListScreen: View {
             }
             .font(.callout)
             .padding(12)
-            .glassEffect(in: .rect(cornerRadius: 16))
+            .platformGlass(in: .rect(cornerRadius: 16))
             .padding(.horizontal)
         }
     }
@@ -271,7 +271,7 @@ struct DeviceCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .glassEffect(in: .rect(cornerRadius: 20))
+        .platformGlass(in: .rect(cornerRadius: 20))
         .accessibilityElement(children: .combine)
     }
 }

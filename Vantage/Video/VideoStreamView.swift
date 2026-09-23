@@ -9,6 +9,9 @@ import os
 /// recovers from decode failures by flushing and requesting a keyframe from the host.
 nonisolated final class VideoStreamController: @unchecked Sendable {
     let displayLayer = AVSampleBufferDisplayLayer()
+    /// The layer's renderer, looked up once on the main actor. The renderer itself is built for
+    /// feeding from a background queue; the layer (main-actor isolated on visionOS) is not.
+    private let renderer: AVSampleBufferVideoRenderer
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "video")
     private var formatDescription: CMFormatDescription?
     private var currentConfig: VideoConfig?
@@ -25,7 +28,8 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     var onFirstFrame: (@Sendable () -> Void)?
     private var deliveredFirstFrame = false
 
-    init() {
+    @MainActor init() {
+        renderer = displayLayer.sampleBufferRenderer
         displayLayer.videoGravity = .resizeAspect
         #if canImport(UIKit)
         displayLayer.backgroundColor = UIColor.black.cgColor
@@ -91,7 +95,6 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
         }
 
         let start = DispatchTime.now().uptimeNanoseconds
-        let renderer = displayLayer.sampleBufferRenderer
         if renderer.status == .failed {
             renderer.flush()
             onNeedsKeyframe?()
@@ -111,15 +114,15 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     }
 
     private func observeFailures() {
-        NotificationCenter.default.addObserver(forName: Notification.Name("AVSampleBufferVideoRendererDidFailToDecodeNotification"), object: displayLayer.sampleBufferRenderer, queue: nil) { [weak self] _ in
+        NotificationCenter.default.addObserver(forName: Notification.Name("AVSampleBufferVideoRendererDidFailToDecodeNotification"), object: renderer, queue: nil) { [weak self] _ in
             self?.queue.async {
-                self?.displayLayer.sampleBufferRenderer.flush()
+                self?.renderer.flush()
                 self?.onNeedsKeyframe?()
             }
         }
-        NotificationCenter.default.addObserver(forName: Notification.Name("AVSampleBufferVideoRendererRequiresFlushToResumeDecodingDidChangeNotification"), object: displayLayer.sampleBufferRenderer, queue: nil) { [weak self] _ in
+        NotificationCenter.default.addObserver(forName: Notification.Name("AVSampleBufferVideoRendererRequiresFlushToResumeDecodingDidChangeNotification"), object: renderer, queue: nil) { [weak self] _ in
             self?.queue.async {
-                self?.displayLayer.sampleBufferRenderer.flush()
+                self?.renderer.flush()
                 self?.onNeedsKeyframe?()
             }
         }

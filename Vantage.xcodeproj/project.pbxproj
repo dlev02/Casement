@@ -11,6 +11,8 @@
         B10000000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
         B10000000000000000000005 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = A10000000000000000000051; remoteInfo = Vantage; };
         B10000000000000000000006 = {isa = PBXTargetDependency; target = A10000000000000000000051; targetProxy = B10000000000000000000005; };
+        C10000000000000000000013 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = C10000000000000000000007; remoteInfo = VantageWidgets; };
+        C10000000000000000000014 = {isa = PBXTargetDependency; platformFilters = (ios, ); target = C10000000000000000000007; targetProxy = C10000000000000000000013; };
         B10000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = B10000000000000000000008; buildPhases = (B10000000000000000000003, B10000000000000000000004); buildRules = (); dependencies = (B10000000000000000000006); fileSystemSynchronizedGroups = (B10000000000000000000002); name = VantageUITests; productName = VantageUITests; productReference = B10000000000000000000001; productType = "com.apple.product-type.bundle.ui-testing"; };
         B10000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000009, B10000000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
         B10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Vantage;}; name = Debug; };
@@ -446,9 +448,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
@@ -481,9 +484,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.0;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;

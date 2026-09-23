@@ -38,12 +38,16 @@ final class RemoteInteractionView: UIView {
         layer.addSublayer(displayLayer)
         setupGestures()
         setupPointer()
+        #if !os(visionOS)
+        addInteraction(UIPencilInteraction(delegate: self))
+        #endif
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var canBecomeFirstResponder: Bool { true }
 
+    #if !os(visionOS)
     /// Suppress the iPadOS hardware-keyboard shortcut bar; Vantage provides its own control strip.
     override var inputAssistantItem: UITextInputAssistantItem {
         let item = super.inputAssistantItem
@@ -51,6 +55,7 @@ final class RemoteInteractionView: UIView {
         item.trailingBarButtonGroups = []
         return item
     }
+    #endif
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -205,38 +210,129 @@ final class RemoteInteractionView: UIView {
 
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         let location = recognizer.location(in: self)
+        #if os(visionOS)
+        // A held pinch is visionOS's secondary action, and there's no two-finger tap, so it's the
+        // right-click. Pinch and drag still drags, through the pan recognizer.
+        if recognizer.state == .began {
+            input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
+            input.click(button: .right, modifiers: heldModifiers)
+        }
+        #else
         switch recognizer.state {
         case .began:
-            if input.mode == .direct {
+            if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .down, modifiers: heldModifiers)
             } else {
                 input.click(button: .left, clickCount: 1, modifiers: heldModifiers) // long-press acts as press-and-hold
             }
-        case .changed where input.mode == .direct:
+        case .changed where pointsAbsolutely:
             input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
         case .ended, .cancelled:
-            if input.mode == .direct {
+            if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .up, modifiers: heldModifiers)
             }
         default:
             break
         }
+        #endif
     }
 
     // MARK: Pointer (Magic Keyboard trackpad / Bluetooth mouse)
+
+    private var discreteScrollRecognizer: UIPanGestureRecognizer?
+    private var lastButtonMask: UIEvent.ButtonMask = []
+
+    /// Buttons UIKit actually delivers to third-party apps. Side buttons (4 and 5) never arrive
+    /// through `buttonMask`, so they aren't listed.
+    private static let pointerButtons: [(PointerButton, UIEvent.ButtonMask)] = [
+        (.left, .primary), (.right, .secondary), (.middle, .button(3)),
+    ]
 
     private func setupPointer() {
         let interaction = UIPointerInteraction(delegate: self)
         addInteraction(interaction)
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover))
+        hover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         addGestureRecognizer(hover)
+
+        // Apple Pencil Pro hovers too, and following it means the Mac's pointer is already where
+        // you're about to tap.
+        let pencilHover = UIHoverGestureRecognizer(target: self, action: #selector(handlePencilHover))
+        pencilHover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        addGestureRecognizer(pencilHover)
     }
 
+    @objc private func handlePencilHover(_ recognizer: UIHoverGestureRecognizer) {
+        guard recognizer.state == .began || recognizer.state == .changed else { return }
+        input.moveAbsolute(viewPoint: recognizer.location(in: self), action: .move, modifiers: heldModifiers)
+    }
+
+    /// A trackpad or mouse always positions the Mac's pointer absolutely — you can see where the
+    /// iPad's pointer is, so a relative mapping would only fight you. The touch mode setting is
+    /// about fingers.
     @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
-        let location = recognizer.location(in: self)
-        if input.mode == .direct {
-            input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
+        guard lastButtonMask.isEmpty else { return } // a drag is in progress; touchesMoved owns it
+        input.moveAbsolute(viewPoint: recognizer.location(in: self), action: .move, modifiers: heldModifiers)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first(where: { $0.type == .indirectPointer }), let event else {
+            if touches.contains(where: { $0.type == .pencil }) { isPencilTouch = true }
+            super.touchesBegan(touches, with: event)
+            return
         }
+        updateButtons(mask: event.buttonMask, touch: touch)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first(where: { $0.type == .indirectPointer }), let event else {
+            super.touchesMoved(touches, with: event)
+            return
+        }
+        updateButtons(mask: event.buttonMask, touch: touch)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first(where: { $0.type == .indirectPointer }) else {
+            // Cleared after the gesture recognizers have run, so the whole stroke stays absolute.
+            if touches.contains(where: { $0.type == .pencil }) {
+                DispatchQueue.main.async { self.isPencilTouch = false }
+            }
+            super.touchesEnded(touches, with: event)
+            return
+        }
+
+        // An indirect-pointer touch runs from the first button press to the last release, and iOS
+        // still reports the released button in the mask here — so treat the end as "nothing held".
+        updateButtons(mask: [], touch: touch)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first(where: { $0.type == .indirectPointer }) else {
+            if touches.contains(where: { $0.type == .pencil }) {
+                DispatchQueue.main.async { self.isPencilTouch = false }
+            }
+            super.touchesCancelled(touches, with: event)
+            return
+        }
+
+        updateButtons(mask: [], touch: touch)
+    }
+
+    /// Moves the pointer, then emits a down or up for every button whose state changed. Motion with
+    /// a button held only arrives here, which is what makes right- and middle-button drags work.
+    private func updateButtons(mask: UIEvent.ButtonMask, touch: UITouch) {
+        let location = touch.location(in: self)
+        let clickCount = max(1, touch.tapCount)
+        input.moveAbsolute(viewPoint: location, action: .move, button: .left, clickCount: 1, modifiers: heldModifiers)
+        for (button, flag) in Self.pointerButtons {
+            let isDown = mask.contains(flag)
+            let wasDown = lastButtonMask.contains(flag)
+            guard isDown != wasDown else { continue }
+            input.moveAbsolute(viewPoint: location, action: isDown ? .down : .up,
+                               button: button, clickCount: clickCount, modifiers: heldModifiers)
+        }
+        lastButtonMask = mask
     }
 
     // MARK: Hardware keyboard
@@ -290,4 +386,35 @@ extension RemoteInteractionView: UIPointerInteractionDelegate {
         .hidden()
     }
 }
+
+#if !os(visionOS)
+extension RemoteInteractionView: UIPencilInteractionDelegate {
+    /// Both gestures report several phases; act once, on the end, so a squeeze doesn't fire twice.
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+        guard squeeze.phase == .ended else { return }
+        perform(pencilSqueezeAction, at: squeeze.hoverPose?.location)
+    }
+
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        perform(pencilDoubleTapAction, at: tap.hoverPose?.location)
+    }
+
+    /// Clicks land wherever the Pencil is hovering when the iPad can see it, and otherwise at the
+    /// pointer's last position — the same place the Pencil last touched.
+    private func perform(_ action: PencilAction, at location: CGPoint?) {
+        switch action {
+        case .none:
+            return
+        case .rightClick, .middleClick:
+            let button: PointerButton = action == .rightClick ? .right : .middle
+            if let location {
+                input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
+            }
+            input.click(button: button, modifiers: heldModifiers)
+        case .collapseControls, .hideControls, .showKeyboard:
+            onPencilAction?(action)
+        }
+    }
+}
+#endif
 #endif

@@ -210,19 +210,37 @@ struct ControlStrip: View {
 
     private var sessionMenu: some View {
         Menu {
+            #if !os(visionOS) // look and pinch always points absolutely
             Picker("Touch", selection: $touchMode) {
                 ForEach(InputController.TouchMode.allCases) { mode in
                     Label(mode.label, systemImage: mode.symbol).tag(mode)
                 }
             }
             .pickerStyle(.inline)
+            #endif
 
             Section {
                 Button(action: onSendClipboard) {
                     Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
                 }
+                Button(action: onSendPassword) {
+                    Label("Type Password", systemImage: "key.radiowaves.forward")
+                }
             }
 
+            Section("Mac") {
+                ForEach(MacShortcut.menuOrder) { shortcut in
+                    Button { send(shortcut) } label: { Label(shortcut.label, systemImage: shortcut.symbol) }
+                }
+                Button { onHostCommand(.sleepDisplay) } label: {
+                    Label("Sleep Display", systemImage: "moon")
+                }
+                Button { onHostCommand(.lockScreen) } label: {
+                    Label("Lock Mac", systemImage: "lock")
+                }
+            }
+
+            #if !os(visionOS)
             Section {
                 Menu {
                     Picker("Corner", selection: Binding(get: { dock }, set: { move(to: $0) })) {
@@ -238,6 +256,7 @@ struct ControlStrip: View {
                     Label("Collapse Controls", systemImage: "rectangle.compress.vertical")
                 }
             }
+            #endif
 
             Section {
                 Button(role: .destructive, action: onDisconnect) {
@@ -297,24 +316,106 @@ struct ControlStrip: View {
     }
 }
 
+#if os(visionOS)
+/// Look and pinch needs roomier targets than a finger on glass (the HIG asks for about 60 points
+/// per control, spacing included).
+private let stripButtonSide: CGFloat = 56
+#else
+private let stripButtonSide: CGFloat = 44
+#endif
+
 /// A 44-point glyph button that lives on glass: no chrome of its own, a soft press highlight,
 /// and a tinted ring when the key is held (sticky modifiers).
 private struct StripButtonStyle: ButtonStyle {
     var isActive = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        configuration.label.modifier(StripGlyph(isActive: isActive, isPressed: configuration.isPressed))
+    }
+}
+
+/// The strip button look, shared by `StripButtonStyle` and controls that track their own press.
+private struct StripGlyph: ViewModifier {
+    var isActive: Bool
+    var isPressed: Bool
+
+    func body(content: Content) -> some View {
+        content
             .font(.system(size: 17, weight: .medium))
             .foregroundStyle(isActive ? Color.accentColor : Color.primary)
-            .frame(width: 44, height: 44)
+            .frame(width: stripButtonSide, height: stripButtonSide)
             .background {
                 Circle()
-                    .fill(isActive ? Color.accentColor.opacity(0.2) : Color.primary.opacity(configuration.isPressed ? 0.12 : 0))
+                    .fill(isActive ? Color.accentColor.opacity(0.2) : Color.primary.opacity(isPressed ? 0.12 : 0))
                     .padding(4)
             }
             .contentShape(Rectangle())
-            .scaleEffect(configuration.isPressed ? 0.88 : 1)
-            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+            #if os(visionOS)
+            .contentShape(.hoverEffect, Circle().inset(by: 4))
+            .hoverEffect()
+            #endif
+            .scaleEffect(isPressed ? 0.88 : 1)
+            .animation(.snappy(duration: 0.18), value: isPressed)
             .animation(.snappy(duration: 0.2), value: isActive)
     }
+}
+
+/// A press on the control strip's mic button.
+enum DictationPress {
+    case began
+    /// `held` is true for a press of ~0.3 s or more (push-to-talk).
+    case ended(held: Bool)
+    /// VoiceOver / Full Keyboard Access: start or stop in one action.
+    case toggle
+}
+
+private struct DictationStripButton: View {
+    let isActive: Bool
+    let onPress: (DictationPress) -> Void
+    @State private var pressedAt: Date?
+
+    var body: some View {
+        Image(systemName: isActive ? "mic.fill" : "mic")
+            .contentTransition(.symbolEffect(.replace))
+            .symbolEffect(.pulse, isActive: isActive)
+            .modifier(StripGlyph(isActive: isActive, isPressed: pressedAt != nil))
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard pressedAt == nil else { return }
+                    pressedAt = .now
+                    onPress(.began)
+                }
+                .onEnded { _ in
+                    let held = pressedAt.map { Date.now.timeIntervalSince($0) >= 0.3 } ?? false
+                    pressedAt = nil
+                    onPress(.ended(held: held))
+                })
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(isActive ? "Stop Dictation" : "Dictate")
+            .accessibilityHint("Hold to talk, or tap to start and tap again to stop.")
+            .accessibilityAction { onPress(.toggle) }
+            .accessibilityIdentifier("session.toolbar.dictate")
+    }
+}
+
+/// A macOS keyboard shortcut Vantage can send as one tap. These are the system defaults; a Mac
+/// with remapped shortcuts in System Settings → Keyboard will do whatever it was remapped to.
+struct MacShortcut: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let symbol: String
+    let keyCode: UInt16
+    let modifiers: KeyModifiers
+
+    static let spotlight = MacShortcut(id: "spotlight", label: "Spotlight", symbol: "magnifyingglass",
+                                       keyCode: 0x31, modifiers: .command)
+    static let missionControl = MacShortcut(id: "missionControl", label: "Mission Control", symbol: "rectangle.3.group",
+                                            keyCode: 0x7E, modifiers: .control)
+    static let applicationWindows = MacShortcut(id: "appWindows", label: "Application Windows", symbol: "rectangle.on.rectangle",
+                                                keyCode: 0x7D, modifiers: .control)
+    static let showDesktop = MacShortcut(id: "showDesktop", label: "Show Desktop", symbol: "menubar.dock.rectangle",
+                                         keyCode: 0x67, modifiers: [])
+
+    static let menuOrder: [MacShortcut] = [spotlight, missionControl, applicationWindows, showDesktop]
 }

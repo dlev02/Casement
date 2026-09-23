@@ -98,6 +98,7 @@ struct ControlSettings: View {
             } footer: {
                 Text("Trackpad moves the Mac's pointer like a laptop trackpad and taps to click. Direct Touch clicks exactly where you tap.")
             }
+            #endif
 
             Section {
                 Picker("On-Screen Keyboard", selection: $keyboardMode) {

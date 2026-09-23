@@ -3,12 +3,26 @@ import VantageCore
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    #if os(visionOS)
+    // Sessions open in windows of their own, so the list and every session share one store and lock.
+    @State private var store = DeviceStore.shared
+    @State private var reachability = TailscaleReachability()
+    @State private var lock = AppLock.shared
+    @Environment(\.openWindow) private var openWindow
+    #else
     @State private var store = DeviceStore()
     @State private var reachability = TailscaleReachability()
     @State private var lock = AppLock()
+    #endif
     @State private var tailscaleAccount = TailscaleAccount()
     @State private var selectedDevice: SavedDevice?
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
+    /// The app lock also decides whether Macs are listed in Spotlight.
+    @AppStorage(MacSpotlight.appLockKey) private var requireBiometrics = false
+    private let pending = PendingConnection.shared
+    #if DEBUG
+    @State private var debugScreen: DebugScreen?
+    #endif
 
     var body: some View {
         ZStack {
@@ -22,6 +36,13 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+        #if os(visionOS)
+        .onChange(of: selectedDevice) { _, device in
+            guard let device else { return }
+            openWindow(id: SessionWindow.sceneID, value: device.id)
+            selectedDevice = nil
+        }
+        #else
         .fullScreenCover(item: $selectedDevice) { device in
             Group {
                 if lock.isLocked {
