@@ -67,6 +67,15 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
   and threw away half-typed input whenever the user switched apps (e.g. copying a Tailscale
   secret from Safari on iPhone). visionOS still swaps views.
+- **Control strip motion** (`ControlStrip`, `ToolbarPlacement` in `SessionPreferences.swift`): the
+  pill and the full strip share one glass surface that resizes; don't go back to two
+  `glassEffectID` shapes, which swapped in a single frame instead of morphing. Dragging uses
+  plain `@State` offset settled in the same spring as the corner change; the corner is the
+  quadrant the strip's centre is thrown into, with a mostly-horizontal (or vertical) throw
+  moving only along that axis. The strip moves with the finger, so a drag started on a button
+  would also "tap" it on release: every strip button goes through `StripTapGuard`, and the mic
+  cancels the dictation it began once the finger travels. Covered by `ToolbarDockTests` and
+  `SessionUITests.testToolbarThrowsLandInTheIntendedCorner`.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.

@@ -18,6 +18,9 @@ struct ControlStrip: View {
     /// Dictation is listening (the mic button shows as active).
     var isDictating = false
     var onDictation: (DictationPress) -> Void = { _ in }
+    /// Set while the strip is being dragged between corners, so the button under the finger
+    /// doesn't also fire when it's let go.
+    var tapGuard: StripTapGuard?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -163,7 +166,7 @@ struct ControlStrip: View {
     }
 
     private var passwordButton: some View {
-        Button(action: onSendPassword) {
+        Button { guarded(onSendPassword) } label: {
             Image(systemName: "key.radiowaves.forward")
         }
         .buttonStyle(StripButtonStyle())
@@ -172,7 +175,7 @@ struct ControlStrip: View {
     }
 
     private func shortcutButton(_ shortcut: MacShortcut) -> some View {
-        Button { send(shortcut) } label: {
+        Button { guarded { send(shortcut) } } label: {
             Image(systemName: shortcut.symbol)
         }
         .buttonStyle(StripButtonStyle())
@@ -197,7 +200,7 @@ struct ControlStrip: View {
     }
 
     private var keyboardButton: some View {
-        Button(action: onShowKeyboard) {
+        Button { guarded(onShowKeyboard) } label: {
             Image(systemName: "keyboard")
         }
         .buttonStyle(StripButtonStyle())
@@ -205,7 +208,7 @@ struct ControlStrip: View {
     }
 
     private var collapseButton: some View {
-        Button(action: toggleCollapsed) {
+        Button { guarded(toggleCollapsed) } label: {
             Image(systemName: isCollapsed
                 ? (dock.isLeading ? "chevron.right" : "chevron.left")
                 : (dock.isLeading ? "chevron.left" : "chevron.right"))
@@ -277,14 +280,17 @@ struct ControlStrip: View {
         }
         .menuOrder(.fixed)
         .buttonStyle(StripButtonStyle())
+        .disabled(tapGuard?.isDragging == true) // a drag that starts here mustn't open the menu
         .accessibilityLabel("Session Options")
     }
 
     private func modifierButton(_ title: String, _ symbol: String, _ modifier: KeyModifiers) -> some View {
         let isOn = stickyModifiers.contains(modifier)
         return Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                if isOn { stickyModifiers.remove(modifier) } else { stickyModifiers.insert(modifier) }
+            guarded {
+                withAnimation(.snappy(duration: 0.2)) {
+                    if isOn { stickyModifiers.remove(modifier) } else { stickyModifiers.insert(modifier) }
+                }
             }
         } label: {
             Image(systemName: symbol)
@@ -297,8 +303,10 @@ struct ControlStrip: View {
 
     private func keyButton(_ title: String, _ symbol: String, _ keyCode: UInt16) -> some View {
         Button {
-            onKey(keyCode, stickyModifiers)
-            withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
+            guarded {
+                onKey(keyCode, stickyModifiers)
+                withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
+            }
         } label: {
             Image(systemName: symbol)
         }
@@ -307,6 +315,10 @@ struct ControlStrip: View {
     }
 
     // MARK: Actions
+
+    private func guarded(_ action: () -> Void) {
+        if tapGuard?.allowsTap ?? true { action() }
+    }
 
     /// One family of spring both ways so opening and closing feel like the same object: a touch
     /// of life on the way out, none on the way back. Reduce Motion keeps both short.
@@ -391,6 +403,26 @@ extension ToolbarDock {
     }
 }
 
+/// Tells the strip's buttons a drag is moving the strip. SwiftUI still counts the release as a
+/// tap, since the button travels along under the finger, so the buttons check this first. Taps
+/// stay blocked for a moment after the drag, whichever of the two callbacks arrives first.
+@MainActor @Observable
+final class StripTapGuard {
+    private(set) var isDragging = false
+    @ObservationIgnored private var blockedUntil = Date.distantPast
+
+    var allowsTap: Bool { !isDragging && Date.now >= blockedUntil }
+
+    func dragMoved() {
+        if !isDragging { isDragging = true }
+    }
+
+    func dragEnded() {
+        isDragging = false
+        blockedUntil = .now.addingTimeInterval(0.3)
+    }
+}
+
 /// The strip's buttons fading, shrinking slightly toward the docked corner, and softening as
 /// they go. Never from nothing: 0.94 scale and a 3-point blur are enough to read as motion.
 private struct StripContentTransition: Transition {
@@ -409,6 +441,8 @@ enum DictationPress {
     case began
     /// `held` is true for a press of ~0.3 s or more (push-to-talk).
     case ended(held: Bool)
+    /// The finger moved off as the start of a drag of the whole strip: undo what `began` did.
+    case cancelled
     /// VoiceOver / Full Keyboard Access: start or stop in one action.
     case toggle
 }
@@ -417,6 +451,7 @@ private struct DictationStripButton: View {
     let isActive: Bool
     let onPress: (DictationPress) -> Void
     @State private var pressedAt: Date?
+    @State private var cancelled = false
 
     var body: some View {
         Image(systemName: isActive ? "mic.fill" : "mic")
@@ -424,15 +459,21 @@ private struct DictationStripButton: View {
             .symbolEffect(.pulse, isActive: isActive)
             .modifier(StripGlyph(isActive: isActive, isPressed: pressedAt != nil))
             .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard pressedAt == nil else { return }
-                    pressedAt = .now
-                    onPress(.began)
+                .onChanged { value in
+                    if pressedAt == nil {
+                        pressedAt = .now
+                        cancelled = false
+                        onPress(.began)
+                    } else if !cancelled, hypot(value.translation.width, value.translation.height) > 12 {
+                        // The strip moves with the finger, so the finger never leaves this button.
+                        cancelled = true
+                        onPress(.cancelled)
+                    }
                 }
                 .onEnded { _ in
                     let held = pressedAt.map { Date.now.timeIntervalSince($0) >= 0.3 } ?? false
                     pressedAt = nil
-                    onPress(.ended(held: held))
+                    if !cancelled { onPress(.ended(held: held)) }
                 })
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)

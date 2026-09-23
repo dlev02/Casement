@@ -100,6 +100,12 @@ final class DictationController {
         }
     }
 
+    /// The press turned into a drag of the control strip: drop the dictation it started.
+    func pressCancelled() {
+        if pressStartedDictation { cancel() }
+        pressStartedDictation = false
+    }
+
     /// VoiceOver and keyboard: one action that starts or stops.
     func toggle(route: DictationRoute) {
         if phase == .listening || isPreparing { stop(then: .review) } else { start(route: route) }

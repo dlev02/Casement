@@ -37,6 +37,54 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Session resumed", app)
     }
 
+    /// The throws that used to misfire: a fast sideways flick that drifts vertically, a vertical
+    /// flick, and a slow drag all the way across (it used to stop at half the screen).
+    @MainActor func testToolbarThrowsLandInTheIntendedCorner() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+                               "-vantage.toolbarCollapsed", "YES", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let toggle = app.buttons["session.toolbar.collapse"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 20))
+        func throwStrip(to point: CGVector, velocity: XCUIGestureVelocity) {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: point),
+                       withVelocity: velocity, thenHoldForDuration: 0)
+            _ = toggle.waitForNonExistence(timeout: 0.8) // let the spring settle
+        }
+
+        // Sideways flick from the bottom left, rising ~15° as a thumb does: stays on the bottom.
+        let start = toggle.frame
+        let rise = (app.frame.width * 0.45) * 0.27 / app.frame.height
+        throwStrip(to: CGVector(dx: start.midX / app.frame.width + 0.45,
+                                dy: start.midY / app.frame.height - rise), velocity: .fast)
+        XCTAssertGreaterThan(toggle.frame.midX, app.frame.midX, "flick should reach the right")
+        XCTAssertGreaterThan(toggle.frame.midY, app.frame.midY, "flick should stay on the bottom")
+        screenshot("Flicked to bottom right", app)
+
+        // Upward flick that leans left: only goes up.
+        throwStrip(to: CGVector(dx: toggle.frame.midX / app.frame.width - 0.06, dy: 0.45), velocity: .fast)
+        XCTAssertGreaterThan(toggle.frame.midX, app.frame.midX, "vertical flick should stay right")
+        XCTAssertLessThan(toggle.frame.midY, app.frame.midY, "vertical flick should reach the top")
+        screenshot("Flicked to top right", app)
+
+        // Slow drag right across to the far side, released without a throw.
+        throwStrip(to: CGVector(dx: 0.08, dy: 0.1), velocity: .slow)
+        XCTAssertLessThan(toggle.frame.midX, app.frame.midX, "slow drag should reach the left")
+        XCTAssertLessThan(toggle.frame.midY, app.frame.midY)
+        screenshot("Dragged to top left", app)
+
+        // Expand and collapse a few times for the recording.
+        for _ in 0..<2 {
+            toggle.tap()
+            XCTAssertTrue(app.buttons["Command"].waitForExistence(timeout: 3))
+            _ = toggle.waitForNonExistence(timeout: 0.8)
+            toggle.tap()
+            _ = toggle.waitForNonExistence(timeout: 0.8)
+        }
+        XCTAssertEqual(toggle.label, "Expand controls")
+    }
+
     @MainActor func testAvailabilityAndAppearanceNavigation() {
         let app = XCUIApplication()
         app.launchArguments = ["-VantageSeedHost", "127.0.0.1:47821", "-vantage.requireBiometrics", "NO"]

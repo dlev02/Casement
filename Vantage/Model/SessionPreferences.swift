@@ -42,10 +42,46 @@ enum ToolbarDock: String, CaseIterable, Identifiable {
         }
     }
 
-    func moved(by translation: CGSize) -> Self {
-        let top = abs(translation.height) > 50 ? translation.height < 0 : isTop
-        let left = abs(translation.width) > 50 ? translation.width < 0 : isLeading
-        return top ? (left ? .topLeft : .topRight) : (left ? .bottomLeft : .bottomRight)
+    init(top: Bool, leading: Bool) {
+        self = top ? (leading ? .topLeft : .topRight) : (leading ? .bottomLeft : .bottomRight)
+    }
+}
+
+/// The geometry of dragging the control strip between corners: how far it may go while the
+/// finger holds it, and which corner a release lands in.
+struct ToolbarPlacement {
+    /// Where the strip may sit, in the same space as `frame`.
+    var area: CGRect
+    /// The strip's resting frame in its current corner.
+    var frame: CGRect
+
+    /// The strip follows the finger anywhere inside the area, with a rubber-band past the edges
+    /// instead of a hard stop.
+    func constrained(_ translation: CGSize) -> CGSize {
+        CGSize(width: Self.rubberBand(translation.width, min: area.minX - frame.minX, max: area.maxX - frame.maxX),
+               height: Self.rubberBand(translation.height, min: area.minY - frame.minY, max: area.maxY - frame.maxY))
+    }
+
+    /// The corner whose quadrant the strip's centre is thrown into. A throw that runs mostly
+    /// along one axis only moves along that axis, so a sideways flick that drifts a little
+    /// down doesn't also swap top for bottom; the other axis goes by where the finger actually
+    /// left the strip.
+    func corner(translation: CGSize, predicted: CGSize) -> ToolbarDock {
+        var projected = predicted
+        let angle = atan2(abs(predicted.height), abs(predicted.width)) * 180 / .pi
+        if angle < 25 { projected.height = translation.height }
+        if angle > 65 { projected.width = translation.width }
+        let centre = CGPoint(x: frame.midX + projected.width, y: frame.midY + projected.height)
+        return ToolbarDock(top: centre.y < area.midY, leading: centre.x < area.midX)
+    }
+
+    /// iOS scroll-view style resistance: the further past the edge, the less it gives.
+    static func rubberBand(_ value: CGFloat, min lower: CGFloat, max upper: CGFloat, dimension: CGFloat = 120) -> CGFloat {
+        guard lower <= upper else { return value }
+        func resist(_ excess: CGFloat) -> CGFloat { (1 - 1 / (excess * 0.55 / dimension + 1)) * dimension }
+        if value < lower { return lower - resist(lower - value) }
+        if value > upper { return upper + resist(value - upper) }
+        return value
     }
 }
 

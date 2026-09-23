@@ -23,7 +23,14 @@ struct RemoteSessionScreen: View {
     @State private var toolbarCollapsed = UserDefaults.standard.bool(forKey: "vantage.toolbarCollapsed")
     @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @GestureState private var toolbarTranslation = CGSize.zero
+    /// Where the finger has dragged the strip from its corner. Plain state rather than
+    /// `@GestureState`, so the release can animate it back in the same transaction that moves
+    /// the corner and the strip travels one path instead of two competing springs.
+    @State private var toolbarOffset = CGSize.zero
+    /// The strip's resting frame in `toolbarSpace`, measured whenever it isn't being dragged.
+    @State private var toolbarFrame = CGRect.zero
+    @GestureState private var isDraggingToolbar = false
+    @State private var stripTapGuard = StripTapGuard()
     @State private var feedbackTask: Task<Void, Never>?
     @State private var passwordPrompt: PasswordPrompt?
     @State private var newPassword = ""
@@ -89,26 +96,36 @@ struct RemoteSessionScreen: View {
                         if !toolbarDock.isTop { dictationPanel }
                         if !controlsHidden {
                             controlStrip
-                                .offset(toolbarTranslation)
-                                .simultaneousGesture(DragGesture(minimumDistance: 18)
-                                    .updating($toolbarTranslation) { value, translation, _ in
-                                        translation = CGSize(width: max(-geometry.size.width / 2, min(geometry.size.width / 2, value.translation.width)),
-                                                             height: max(-geometry.size.height / 2, min(geometry.size.height / 2, value.translation.height)))
+                                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.toolbarSpace)) } action: { frame in
+                                    if toolbarOffset == .zero { toolbarFrame = frame }
+                                }
+                                .offset(toolbarOffset)
+                                .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .named(Self.toolbarSpace))
+                                    .updating($isDraggingToolbar) { _, dragging, _ in dragging = true }
+                                    .onChanged { value in
+                                        stripTapGuard.dragMoved()
+                                        toolbarOffset = ToolbarPlacement(area: toolbarArea(in: geometry.size), frame: toolbarFrame)
+                                            .constrained(value.translation)
                                     }
                                     .onEnded { value in
-                                        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.55, bounce: 0.2)) {
-                                            toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation)
-                                        }
+                                        settleToolbar(translation: value.translation,
+                                                      predicted: value.predictedEndTranslation, in: geometry.size)
                                     })
                         }
                         if toolbarDock.isTop { dictationPanel }
                     }
                     .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
-                    .padding(12)
-                    .padding(.top, 32) // Keep drags below iPadOS window-management gestures.
-                    .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: toolbarTranslation == .zero)
+                    .padding(Self.toolbarInsets)
+                    // A drag the system cancels (a notification, a system gesture) never ends, so
+                    // settle from wherever the strip was left.
+                    .onChange(of: isDraggingToolbar) { _, dragging in
+                        if !dragging && toolbarOffset != .zero {
+                            settleToolbar(translation: toolbarOffset, predicted: toolbarOffset, in: geometry.size)
+                        }
+                    }
                 }
+                .coordinateSpace(.named(Self.toolbarSpace))
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
             #endif
@@ -210,7 +227,8 @@ struct RemoteSessionScreen: View {
             onHostCommand: { session.send(.hostCommand(HostCommandMessage(command: $0))) },
             onDisconnect: disconnect,
             isDictating: isDictationListening,
-            onDictation: handleDictationPress
+            onDictation: handleDictationPress,
+            tapGuard: stripTapGuard
         )
     }
 
@@ -290,8 +308,31 @@ struct RemoteSessionScreen: View {
         case .began: dictation.pressBegan(route: dictationRoute)
         case .ended(let held): dictation.pressEnded(held: held)
         case .toggle: dictation.toggle(route: dictationRoute)
+        case .cancelled: dictation.pressCancelled()
         }
         #endif
+    }
+
+    private static let toolbarSpace = "toolbarArea"
+    /// The top inset keeps drags below iPadOS window-management gestures.
+    private static let toolbarInsets = EdgeInsets(top: 44, leading: 12, bottom: 12, trailing: 12)
+
+    private func toolbarArea(in size: CGSize) -> CGRect {
+        CGRect(x: Self.toolbarInsets.leading, y: Self.toolbarInsets.top,
+               width: size.width - Self.toolbarInsets.leading - Self.toolbarInsets.trailing,
+               height: size.height - Self.toolbarInsets.top - Self.toolbarInsets.bottom)
+    }
+
+    /// Picks the corner from where the throw would carry the strip, then glides there in one
+    /// spring that starts from wherever the finger left it.
+    private func settleToolbar(translation: CGSize, predicted: CGSize, in size: CGSize) {
+        stripTapGuard.dragEnded()
+        let placement = ToolbarPlacement(area: toolbarArea(in: size), frame: toolbarFrame)
+        let corner = placement.corner(translation: translation, predicted: predicted)
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.45, bounce: 0.12)) {
+            toolbarDock = corner
+            toolbarOffset = .zero
+        }
     }
 
     private var toolbarAlignment: Alignment {
