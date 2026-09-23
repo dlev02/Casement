@@ -63,8 +63,15 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// Ask the Mac for a BetterDisplay virtual display sized to this device. Optional so devices
     /// saved by earlier builds still decode; nil means off.
     var useVirtualDisplay: Bool?
+    /// When this entry last changed, so two devices syncing through iCloud can agree on the
+    /// newer copy. Optional so devices saved by earlier builds still decode.
+    var updatedAt: Date?
+    /// The Mac's address on its home network (e.g. 192.168.1.20). At the login window Tailscale
+    /// isn't running on the Mac yet, so logging in with Screen Sharing has to go through a Tailscale
+    /// subnet router to this address instead. Optional so devices saved by earlier builds decode.
+    var homeAddress: String?
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -75,6 +82,8 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.preferredCodec = preferredCodec
         self.naturalScroll = naturalScroll
         self.useVirtualDisplay = useVirtualDisplay
+        self.updatedAt = updatedAt
+        self.homeAddress = homeAddress
     }
 }
 

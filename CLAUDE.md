@@ -120,14 +120,31 @@ are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a she
 
 - **Reboot**: enable "Start Vantage Host at login" (Settings → Reboot). After login the host relaunches
   and the client reconnects on its own (it retries for ~10 minutes and again when foregrounded).
+- **Restart guard**: `RestartGuard` (host) inspects the quit Apple event's `kAEQuitReason`; while a
+  device is connected, a restart/shutdown/logout (including Software Update's) gets a confirmation
+  alert and `.terminateCancel` aborts it. `sudo reboot` and panics can't be caught. Toggle in host
+  Settings → Reboot.
 - **FileVault** is on for this Mac and auto-login is off, so a cold boot waits at the pre-boot unlock
-  screen. Tailscale is not running there; nothing user-space can pass it. macOS 26+ can unlock over
-  SSH from the local network only (Remote Login is enabled here).
-- **Lock screen / login window**: Secure Event Input blocks synthesized keyboard events from every
-  third-party app, so typing a password remotely is impossible. The host detects lock and
-  secure-input state (`LockMonitor`) and the client shows a banner. The only shipping technique
-  is bridging through Apple's `screensharingd` (enabled on this Mac, ARD auth type 30); that is a
-  future subproject (see `docs/research/input.md` A.1b), not built.
+  screen. Tailscale (the standalone System Extension variant here) only starts after login; nothing
+  user-space can pass pre-boot. macOS 26+ can unlock over SSH (`man apple_ssh_and_filevault`), which
+  from afar needs a Tailscale subnet router on the home LAN. `fdesetup authrestart` works here for
+  planned restarts: **Restart Safely** (`SafeRestart`, host menu / Settings → Reboot / a button in
+  the restart guard) prompts for the password, runs `fdesetup authrestart -delayminutes -1
+  -inputplist` via `do shell script … with administrator privileges` (plist fed through a FIFO in
+  a 0700 temp dir, never argv or disk), then asks loginwindow for a normal restart with a
+  `kAERestart` Apple event (entitlement `com.apple.security.automation.apple-events` +
+  `NSAppleEventsUsageDescription`); if that's refused the user restarts from the Apple menu. Only
+  the wrong-password path has been exercised; a real staged restart still needs a check. See
+  `docs/research/secure-input-and-reboot.md` §5.
+- **Login window**: `SavedDevice.homeAddress` (optional LAN IP) + device-list "Log In with Screen
+  Sharing" (`ScreenSharingPassword.logIn`) types the password via screensharingd, trying the
+  tailnet host then the home address, which is reachable pre-login only through a Tailscale subnet
+  router on the home LAN.
+- **Lock screen / password fields**: Secure Event Input blocks CGEvent keystrokes from every
+  third-party app. The host detects lock and secure-input state (`LockMonitor`) and the client shows
+  a banner; the key button then types the saved password through Apple's `screensharingd` (see Mac
+  shortcuts and password above). That also works at a logged-out login window if the Mac is
+  reachable, but not at FileVault pre-boot.
 
 ## Known v1 limitations
 

@@ -13,6 +13,9 @@ struct AddDeviceSheet: View {
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
     @State private var useVirtualDisplay = false
+    @State private var password = ""
+    @State private var username = ""
+    @State private var homeAddress = ""
     @State private var validationError: String?
 
     var body: some View {
@@ -34,17 +37,49 @@ struct AddDeviceSheet: View {
                         Text(validationError).foregroundStyle(.red)
                     }
                 }
-                Section("Preferences") {
+                Section {
                     Picker("Codec", selection: $codec) {
-                        Text("HEVC (better quality)").tag(VideoCodec.hevc)
-                        Text("H.264 (max compatibility)").tag(VideoCodec.h264)
+                        Text("HEVC").tag(VideoCodec.hevc)
+                        Text("H.264").tag(VideoCodec.h264)
                     }
                     Toggle("Natural Scrolling", isOn: $naturalScroll)
+                } header: {
+                    Text("Preferences")
+                } footer: {
+                    Text(codec == .hevc
+                         ? "HEVC looks better at the same bandwidth. Switch to H.264 if this Mac's video ever fails to decode."
+                         : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
                 }
+
                 Section {
                     Toggle("Virtual Display", isOn: $useVirtualDisplay)
                 } footer: {
                     Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Vantage connects only over your Tailscale network.")
+                }
+
+                Section {
+                    TextField("Account Name", text: $username)
+                        .textContentType(.username)
+                        #if canImport(UIKit)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                    SecureField("Mac Password", text: $password)
+                        .textContentType(.password)
+                        #if canImport(UIKit)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                    TextField("Home Network Address (optional)", text: $homeAddress)
+                        #if canImport(UIKit)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.numbersAndPunctuation)
+                        #endif
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Mac Sign-In")
+                } footer: {
+                    Text("Optional, kept in this device's Keychain. The key button types the password and Return. Where macOS blocks typing (password fields, the lock screen), Vantage types it through the Mac's Screen Sharing instead, so turn that on for this account. The home network address, like 192.168.1.20, lets Log In reach the Mac at its login window after a restart, through a Tailscale subnet router.")
                 }
             }
             .navigationTitle(existing == nil ? "Add Device" : "Edit Device")
@@ -66,6 +101,9 @@ struct AddDeviceSheet: View {
         codec = existing.preferredCodec ?? .hevc
         naturalScroll = existing.naturalScroll
         useVirtualDisplay = existing.useVirtualDisplay == true
+        password = DeviceSecrets.password(for: existing) ?? ""
+        username = DeviceSecrets.username(for: existing) ?? ""
+        homeAddress = existing.homeAddress ?? ""
     }
 
     private func save() {
@@ -83,7 +121,15 @@ struct AddDeviceSheet: View {
         device.preferredCodec = codec
         device.naturalScroll = naturalScroll
         device.useVirtualDisplay = useVirtualDisplay
-        if existing != nil { store.update(device) } else { store.add(device) }
+        let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        device.homeAddress = home.isEmpty ? nil : home
+        if existing != nil {
+            store.update(device)
+        } else {
+            device = store.add(device)
+        }
+        DeviceSecrets.setPassword(password, for: device)
+        if !password.isEmpty { DeviceSecrets.setUsername(username, for: device) }
         dismiss()
     }
 }

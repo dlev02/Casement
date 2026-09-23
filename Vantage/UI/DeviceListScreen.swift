@@ -9,6 +9,8 @@ struct DeviceListScreen: View {
     @State private var showTailscaleDevices = false
     @State private var editingDevice: SavedDevice?
     @State private var deviceToDelete: SavedDevice?
+    @State private var deviceToLogIn: SavedDevice?
+    @State private var logInStatus: LogInStatus?
     @Binding var selectedDevice: SavedDevice?
     @Environment(\.scenePhase) private var scenePhase
     @State private var availability = HostAvailabilityStore()
@@ -52,6 +54,25 @@ struct DeviceListScreen: View {
             } message: { device in
                 Text("\(device.host) will be removed from this device list. The Mac itself is not affected, and you can add it again later.")
             }
+            .confirmationDialog(
+                deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
+                isPresented: Binding(get: { deviceToLogIn != nil }, set: { if !$0 { deviceToLogIn = nil } }),
+                titleVisibility: .visible,
+                presenting: deviceToLogIn
+            ) { device in
+                Button("Type Password") { logIn(to: device) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Vantage signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
+            }
+            .overlay(alignment: .bottom) {
+                if let logInStatus {
+                    LogInStatusBadge(status: logInStatus)
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.smooth(duration: 0.3), value: logInStatus)
             .task {
                 if let host = ClientOptions.autoConnectHost, selectedDevice == nil {
                     selectedDevice = store.devices.first { $0.host == host }
@@ -75,7 +96,11 @@ struct DeviceListScreen: View {
                 .swipeActions {
                     Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
                     Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
+                    if ScreenSharingPassword.canLogIn(device) {
+                        Button { deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
+                    }
                 }
+                .contextMenu { deviceMenu(for: device) }
             }
         }
     }
@@ -88,13 +113,41 @@ struct DeviceListScreen: View {
                         DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking)
                     }
                     .buttonStyle(.plain)
-                    .contextMenu {
-                        Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
-                        Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
-                    }
+                    #if os(visionOS)
+                    .contentShape(.hoverEffect, .rect(cornerRadius: 20))
+                    .hoverEffect()
+                    #endif
+                    .contextMenu { deviceMenu(for: device) }
                 }
             }
             .padding()
+            #if os(visionOS)
+            .padding(.horizontal, 8) // line the cards up with the window's toolbar and list insets
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private func deviceMenu(for device: SavedDevice) -> some View {
+        Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
+        if ScreenSharingPassword.canLogIn(device) {
+            Button { deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
+        }
+        Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    private func logIn(to device: SavedDevice) {
+        logInStatus = .typing(device.name)
+        Task {
+            do {
+                try await ScreenSharingPassword.logIn(to: device)
+                logInStatus = .sent(device.name)
+                try? await Task.sleep(for: .seconds(3))
+            } catch {
+                logInStatus = .failed(ScreenSharingPassword.message(for: error))
+                try? await Task.sleep(for: .seconds(6))
+            }
+            logInStatus = nil
         }
     }
 
@@ -286,5 +339,38 @@ func osSymbol(_ os: String) -> String {
     case let value where value.contains("windows"): "pc"
     case let value where value.contains("ios"): "ipad"
     default: "display"
+    }
+}
+
+/// Progress of "Log In with Screen Sharing" from the device list.
+enum LogInStatus: Equatable {
+    case typing(String), sent(String), failed(String)
+}
+
+private struct LogInStatusBadge: View {
+    let status: LogInStatus
+
+    var body: some View {
+        HStack(spacing: 10) {
+            switch status {
+            case .typing(let name):
+                ProgressView().controlSize(.small)
+                Text("Logging in to \(name)…")
+            case .sent(let name):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Password sent to \(name). Connect once it finishes logging in.")
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(message)
+            }
+        }
+        .font(.callout)
+        .multilineTextAlignment(.leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .platformGlass(in: .rect(cornerRadius: 22))
+        .frame(maxWidth: 560)
+        .padding(.horizontal)
+        .accessibilityElement(children: .combine)
     }
 }
