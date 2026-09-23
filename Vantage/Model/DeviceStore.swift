@@ -146,6 +146,15 @@ final class DeviceStore {
         save()
     }
 
+    /// Gives one Mac its own session controls (nil goes back to the default). Stamped like any
+    /// other edit, so the layout follows the Mac to other devices through iCloud.
+    func setControlStrip(_ layout: ControlStripLayout?, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].controlStrip != layout else { return }
+        devices[index].controlStrip = layout
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     private func load() {
         if let raw = defaults.dictionary(forKey: tombstonesKey) as? [String: Double] {
             tombstones = raw.reduce(into: [:]) { result, entry in

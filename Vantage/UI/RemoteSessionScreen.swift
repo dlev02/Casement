@@ -41,6 +41,8 @@ struct RemoteSessionScreen: View {
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
+    @AppStorage(ControlStripLayout.defaultsKey) private var defaultStripLayout = ControlStripLayout.standard
+    @State private var showStripEditor = false
     #if canImport(UIKit)
     @State private var dictation = DictationController()
     #endif
@@ -199,6 +201,17 @@ struct RemoteSessionScreen: View {
                 sendPassword()
             }
         }
+        .sheet(isPresented: $showStripEditor) {
+            NavigationStack {
+                MacControlStripEditor(deviceID: device.id)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showStripEditor = false }
+                        }
+                    }
+            }
+            .environment(store)
+        }
         .alert("Couldn't Type the Password", isPresented: Binding(get: { screenSharingError != nil },
                                                                 set: { if !$0 { screenSharingError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -228,8 +241,16 @@ struct RemoteSessionScreen: View {
             onDisconnect: disconnect,
             isDictating: isDictationListening,
             onDictation: handleDictationPress,
-            tapGuard: stripTapGuard
+            tapGuard: stripTapGuard,
+            items: stripItems,
+            onCustomize: { showStripEditor = true }
         )
+    }
+
+    /// This Mac's own layout if it has one, else the default. Read from the store rather than
+    /// `device` so edits made mid-session (or synced in) show up straight away.
+    private var stripItems: [StripItem] {
+        (store.devices.first { $0.id == device.id }?.controlStrip ?? defaultStripLayout).items
     }
 
     private var connectionOverlay: some View {

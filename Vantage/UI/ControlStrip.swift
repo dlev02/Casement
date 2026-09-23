@@ -1,9 +1,9 @@
 import SwiftUI
 import VantageCore
 
-/// Floating session controls: modifier keys, navigation keys, keyboard, and a session menu.
-/// Collapses to a compact pill. Both states sit on one glass surface that resizes between them
-/// instead of cutting.
+/// Floating session controls: the controls in the Mac's `ControlStripLayout`, then the session
+/// menu and the collapse button. Collapses to a compact pill. Both states sit on one glass
+/// surface that resizes between them instead of cutting.
 struct ControlStrip: View {
     @Binding var isCollapsed: Bool
     @Binding var dock: ToolbarDock
@@ -21,10 +21,26 @@ struct ControlStrip: View {
     /// Set while the strip is being dragged between corners, so the button under the finger
     /// doesn't also fire when it's let go.
     var tapGuard: StripTapGuard?
+    /// The controls to show, in order (the session resolves the Mac's own layout or the
+    /// default). The session menu and the collapse button always follow them.
+    var items: [StripItem] = ControlStripLayout.standard.items
+    /// Opens the controls editor from the session menu; nil leaves the menu item out.
+    var onCustomize: (() -> Void)?
+    /// A picture of the strip for the controls editor: plain glass, and nothing for VoiceOver
+    /// (the editor describes it instead).
+    var isPreview = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        if isPreview {
+            glassSurface // its buttons are hidden inside the glass, see `expanded`
+        } else {
+            liveSurface
+        }
+    }
+
+    @ViewBuilder private var liveSurface: some View {
         #if os(visionOS)
         // On visionOS the strip sits in an ornament under the window, so there are no corners to
         // move it between; it only collapses.
@@ -78,7 +94,7 @@ struct ControlStrip: View {
             }
         }
         .clipShape(.rect(cornerRadius: 26))
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
+        .glassEffect(isPreview ? .regular : .regular.interactive(), in: .rect(cornerRadius: 26))
     }
 
     private var contentTransition: AnyTransition {
@@ -93,37 +109,67 @@ struct ControlStrip: View {
 
     // MARK: States
 
+    /// Dictate and Keyboard stay reachable while collapsed, if the layout has them.
     private var compact: some View {
         HStack(spacing: 0) {
-            dictationButton
-            keyboardButton
+            ForEach(items.filter { $0 == .dictate || $0 == .keyboard }) { item in
+                itemView(item)
+            }
             collapseButton
         }
         .padding(4)
     }
 
+    /// The layout in one row where it fits, otherwise in two to five rows split where the
+    /// category changes (see `ControlStripLayout.rows`).
     private var expanded: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 0) {
-                modifiers
-                separator
-                keys
-                separator
-                shortcuts
-                separator
-                actions
-            }
-            VStack(spacing: 0) {
-                HStack(spacing: 0) { modifiers; separator; shortcuts }
-                HStack(spacing: 0) { keys; separator; actions }
-            }
-            VStack(spacing: 0) {
-                HStack(spacing: 0) { modifiers }
-                HStack(spacing: 0) { keys }
-                HStack(spacing: 0) { shortcuts; separator; actions }
+            ForEach(rowLayouts, id: \.count) { rows in
+                rowsView(rows)
             }
         }
         .padding(4)
+        // Glass hosts its content in a view of its own, so hiding the preview has to happen in
+        // here: an `accessibilityHidden` outside the glass doesn't reach these buttons.
+        .accessibilityHidden(isPreview)
+    }
+
+    /// The layout followed by the fixed trailing buttons.
+    private var slots: [StripSlot] { items.map(StripSlot.item) + [.menu, .collapse] }
+
+    /// One candidate per row count, dropping counts that can't be filled.
+    private var rowLayouts: [[[StripSlot]]] {
+        let slots = self.slots
+        var layouts: [[[StripSlot]]] = []
+        for count in 1...5 {
+            let rows = ControlStripLayout.rows(slots, count: count, separatorWeight: 9 / stripButtonSide) { $0.category }
+            if rows.count > (layouts.last?.count ?? 0) { layouts.append(rows) }
+        }
+        return layouts
+    }
+
+    private func rowsView(_ rows: [[StripSlot]]) -> some View {
+        VStack(alignment: rowAlignment, spacing: 0) {
+            ForEach(rows, id: \.first) { row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.element) { index, slot in
+                        HStack(spacing: 0) {
+                            if index > 0, row[index - 1].category != slot.category { separator }
+                            slotView(slot)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Short rows line up with the docked edge, so the collapse button stays in the corner.
+    private var rowAlignment: HorizontalAlignment {
+        #if os(visionOS)
+        .center
+        #else
+        dock.isLeading ? .leading : .trailing
+        #endif
     }
 
     private var separator: some View {
@@ -133,36 +179,57 @@ struct ControlStrip: View {
             .padding(.horizontal, 4)
     }
 
-    // MARK: Groups
+    // MARK: Items
 
-    @ViewBuilder private var modifiers: some View {
-        modifierButton("Control", "control", .control)
-        modifierButton("Option", "option", .option)
-        modifierButton("Command", "command", .command)
-        modifierButton("Shift", "shift", .shift)
+    @ViewBuilder private func slotView(_ slot: StripSlot) -> some View {
+        switch slot {
+        case .item(let item): itemView(item)
+        case .menu: sessionMenu
+        case .collapse: collapseButton
+        }
     }
 
-    @ViewBuilder private var keys: some View {
-        keyButton("Escape", "escape", 0x35)
-        keyButton("Tab", "arrow.right.to.line", 0x30)
-        keyButton("Left Arrow", "chevron.left", 0x7B)
-        keyButton("Up Arrow", "chevron.up", 0x7E)
-        keyButton("Down Arrow", "chevron.down", 0x7D)
-        keyButton("Right Arrow", "chevron.right", 0x7C)
+    @ViewBuilder private func itemView(_ item: StripItem) -> some View {
+        switch item {
+        case .control: modifierButton(item, .control)
+        case .option: modifierButton(item, .option)
+        case .command: modifierButton(item, .command)
+        case .shift: modifierButton(item, .shift)
+        case .escape: keyButton(item, 0x35)
+        case .tab: keyButton(item, 0x30)
+        case .leftArrow: keyButton(item, 0x7B)
+        case .upArrow: keyButton(item, 0x7E)
+        case .downArrow: keyButton(item, 0x7D)
+        case .rightArrow: keyButton(item, 0x7C)
+        case .spotlight: shortcutButton(.spotlight)
+        case .missionControl: shortcutButton(.missionControl)
+        case .applicationWindows: shortcutButton(.applicationWindows)
+        case .showDesktop: shortcutButton(.showDesktop)
+        case .typePassword: passwordButton
+        case .sendClipboard: clipboardButton
+        case .dictate: dictationButton
+        case .keyboard: keyboardButton
+        case .disconnect: disconnectButton
+        }
     }
 
-    /// The Mac shortcuts worth a button of their own. Everything else lives in the session menu.
-    @ViewBuilder private var shortcuts: some View {
-        shortcutButton(MacShortcut.spotlight)
-        shortcutButton(MacShortcut.missionControl)
-        passwordButton
+    /// Red so it reads as the way out. No confirmation: reconnecting is one tap, and the tap
+    /// guard already keeps a drag of the strip from landing here.
+    private var disconnectButton: some View {
+        Button { guarded(onDisconnect) } label: {
+            Image(systemName: StripItem.disconnect.symbol)
+        }
+        .buttonStyle(StripButtonStyle(tint: .red))
+        .accessibilityLabel("Disconnect")
+        .accessibilityIdentifier("session.toolbar.disconnect")
     }
 
-    @ViewBuilder private var actions: some View {
-        dictationButton
-        keyboardButton
-        sessionMenu
-        collapseButton
+    private var clipboardButton: some View {
+        Button { guarded(onSendClipboard) } label: {
+            Image(systemName: StripItem.sendClipboard.symbol)
+        }
+        .buttonStyle(StripButtonStyle())
+        .accessibilityLabel("Send Clipboard to Mac")
     }
 
     private var passwordButton: some View {
@@ -212,7 +279,7 @@ struct ControlStrip: View {
             Image(systemName: isCollapsed
                 ? (dock.isLeading ? "chevron.right" : "chevron.left")
                 : (dock.isLeading ? "chevron.left" : "chevron.right"))
-                .font(.body.weight(.semibold))
+                .font(.system(size: 17, weight: .semibold)) // fixed like the other glyphs; it outgrew its 44 pt at large text sizes
         }
         .buttonStyle(StripButtonStyle())
         .accessibilityLabel(isCollapsed ? "Expand controls" : "Collapse controls")
@@ -252,8 +319,8 @@ struct ControlStrip: View {
                 }
             }
 
-            #if !os(visionOS)
             Section {
+                #if !os(visionOS)
                 Menu {
                     Picker("Corner", selection: Binding(get: { dock }, set: { move(to: $0) })) {
                         ForEach(ToolbarDock.allCases) { position in
@@ -264,11 +331,18 @@ struct ControlStrip: View {
                 } label: {
                     Label("Move Controls", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
+                #endif
+                if let onCustomize {
+                    Button(action: onCustomize) {
+                        Label("Customize Controls…", systemImage: "slider.horizontal.3")
+                    }
+                }
+                #if !os(visionOS)
                 Button(action: toggleCollapsed) {
                     Label("Collapse Controls", systemImage: "rectangle.compress.vertical")
                 }
+                #endif
             }
-            #endif
 
             Section {
                 Button(role: .destructive, action: onDisconnect) {
@@ -284,7 +358,7 @@ struct ControlStrip: View {
         .accessibilityLabel("Session Options")
     }
 
-    private func modifierButton(_ title: String, _ symbol: String, _ modifier: KeyModifiers) -> some View {
+    private func modifierButton(_ item: StripItem, _ modifier: KeyModifiers) -> some View {
         let isOn = stickyModifiers.contains(modifier)
         return Button {
             guarded {
@@ -293,25 +367,25 @@ struct ControlStrip: View {
                 }
             }
         } label: {
-            Image(systemName: symbol)
+            Image(systemName: item.symbol)
         }
         .buttonStyle(StripButtonStyle(isActive: isOn))
-        .accessibilityLabel(title)
+        .accessibilityLabel(item.label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
-    private func keyButton(_ title: String, _ symbol: String, _ keyCode: UInt16) -> some View {
+    private func keyButton(_ item: StripItem, _ keyCode: UInt16) -> some View {
         Button {
             guarded {
                 onKey(keyCode, stickyModifiers)
                 withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
             }
         } label: {
-            Image(systemName: symbol)
+            Image(systemName: item.symbol)
         }
         .buttonStyle(StripButtonStyle())
-        .accessibilityLabel(title)
+        .accessibilityLabel(item.label)
     }
 
     // MARK: Actions
@@ -350,9 +424,11 @@ private let stripButtonSide: CGFloat = 44
 /// and a tinted ring when the key is held (sticky modifiers).
 private struct StripButtonStyle: ButtonStyle {
     var isActive = false
+    /// The glyph colour when it isn't active (Disconnect is red).
+    var tint: Color?
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.modifier(StripGlyph(isActive: isActive, isPressed: configuration.isPressed))
+        configuration.label.modifier(StripGlyph(isActive: isActive, isPressed: configuration.isPressed, tint: tint))
     }
 }
 
@@ -360,11 +436,12 @@ private struct StripButtonStyle: ButtonStyle {
 private struct StripGlyph: ViewModifier {
     var isActive: Bool
     var isPressed: Bool
+    var tint: Color?
 
     func body(content: Content) -> some View {
         content
             .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(isActive ? Color.accentColor : Color.primary)
+            .foregroundStyle(isActive ? Color.accentColor : (tint ?? Color.primary))
             .frame(width: stripButtonSide, height: stripButtonSide)
             .background {
                 Circle()
@@ -481,6 +558,18 @@ private struct DictationStripButton: View {
             .accessibilityHint("Hold to talk, or tap to start and tap again to stop.")
             .accessibilityAction { onPress(.toggle) }
             .accessibilityIdentifier("session.toolbar.dictate")
+    }
+}
+
+/// A place on the strip: one of the layout's controls, or a fixed trailing button.
+private enum StripSlot: Hashable {
+    case item(StripItem)
+    case menu
+    case collapse
+
+    /// The fixed buttons group with the actions, so no separator splits them from Disconnect.
+    var category: StripItem.Category {
+        if case .item(let item) = self { item.category } else { .actions }
     }
 }
 

@@ -127,14 +127,16 @@ struct ControlSettings: View {
 
             #if os(visionOS)
             Section {
+                customizeLink
                 Toggle("Start Collapsed", isOn: $collapsed)
             } header: {
                 Text("Session Controls")
             } footer: {
-                Text("The controls sit below the session window.")
+                Text("The controls sit below the session window. Choose which ones show, and give a Mac its own set from its settings.")
             }
             #else
             Section {
+                customizeLink
                 Picker("Position", selection: $dock) {
                     ForEach(ToolbarDock.allCases) { position in
                         Label(position.label, systemImage: position.symbol).tag(position)
@@ -144,7 +146,7 @@ struct ControlSettings: View {
             } header: {
                 Text("Session Controls")
             } footer: {
-                Text("You can also drag the controls to any corner during a session.")
+                Text("Choose which controls show and in what order. A Mac can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
             }
 
             Section {
@@ -166,6 +168,12 @@ struct ControlSettings: View {
             #endif
         }
         .navigationTitle("Controls")
+    }
+
+    private var customizeLink: some View {
+        NavigationLink { ControlStripEditor() } label: {
+            Text("Customize Controls")
+        }
     }
 }
 
@@ -373,6 +381,8 @@ struct HelpScreen: View {
                      "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
             FAQEntry("How does the key button type into password fields?",
                      "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+            FAQEntry("Can I change the buttons in the session controls?",
+                     "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
             FAQEntry("Can I dictate to the Mac?",
                      "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
         ]),

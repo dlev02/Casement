@@ -70,8 +70,11 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// isn't running on the Mac yet, so logging in with Screen Sharing has to go through a Tailscale
     /// subnet router to this address instead. Optional so devices saved by earlier builds decode.
     var homeAddress: String?
+    /// This Mac's own session controls. Nil uses the default from Settings → Controls. Optional
+    /// so devices saved by earlier builds decode; syncs with the rest of the entry.
+    var controlStrip: ControlStripLayout?
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -84,6 +87,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.useVirtualDisplay = useVirtualDisplay
         self.updatedAt = updatedAt
         self.homeAddress = homeAddress
+        self.controlStrip = controlStrip
     }
 }
 

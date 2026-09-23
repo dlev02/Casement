@@ -33,7 +33,7 @@ enum ClientOptions {
         #endif
     }
 
-    /// `-VantageOpenScreen settings|controls|security|help|about|tailscale|addDevice|widgets` presents that screen
+    /// `-VantageOpenScreen settings|controls|…|widgets|controlStrip|controlStripMac` presents that screen
     /// on launch so it can be screenshotted without driving the UI.
     static var openScreen: DebugScreen? {
         #if DEBUG
@@ -71,5 +71,7 @@ enum ClientOptions {
 /// Screens that `-VantageOpenScreen` can present directly (DEBUG only).
 enum DebugScreen: String, Identifiable {
     case settings, controls, security, help, about, tailscale, tailscaleOAuth, tailscaleToken, addDevice, widgets
+    /// The controls editor for the default layout, and for the first saved Mac.
+    case controlStrip, controlStripMac
     var id: String { rawValue }
 }

@@ -16,6 +16,8 @@ struct AddDeviceSheet: View {
     @State private var password = ""
     @State private var username = ""
     @State private var homeAddress = ""
+    /// Kept here and saved with the rest, so Cancel also discards a controls change.
+    @State private var controlStrip: ControlStripLayout?
     @State private var validationError: String?
 
     var body: some View {
@@ -43,6 +45,11 @@ struct AddDeviceSheet: View {
                         Text("H.264").tag(VideoCodec.h264)
                     }
                     Toggle("Natural Scrolling", isOn: $naturalScroll)
+                    NavigationLink {
+                        ControlStripEditor(macName: name.isEmpty ? "This Mac" : name, layout: $controlStrip)
+                    } label: {
+                        LabeledContent("Controls", value: controlStrip == nil ? "Default" : "Custom")
+                    }
                 } header: {
                     Text("Preferences")
                 } footer: {
@@ -104,6 +111,7 @@ struct AddDeviceSheet: View {
         password = DeviceSecrets.password(for: existing) ?? ""
         username = DeviceSecrets.username(for: existing) ?? ""
         homeAddress = existing.homeAddress ?? ""
+        controlStrip = existing.controlStrip
     }
 
     private func save() {
@@ -123,6 +131,7 @@ struct AddDeviceSheet: View {
         device.useVirtualDisplay = useVirtualDisplay
         let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         device.homeAddress = home.isEmpty ? nil : home
+        device.controlStrip = controlStrip
         if existing != nil {
             store.update(device)
         } else {

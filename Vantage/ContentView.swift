@@ -138,6 +138,8 @@ struct ContentView: View {
         case .tailscaleToken: TailscaleTokenSetup()
         case .addDevice: AddDeviceSheet()
         case .widgets: WidgetGalleryScreen()
+        case .controlStrip: ControlStripEditor()
+        case .controlStripMac: MacControlStripEditor(deviceID: store.devices.first?.id ?? UUID())
         }
     }
     #endif

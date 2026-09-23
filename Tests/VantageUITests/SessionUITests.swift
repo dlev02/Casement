@@ -85,6 +85,108 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertEqual(toggle.label, "Expand controls")
     }
 
+    /// The strip's own Disconnect button ends the session straight away, no confirmation.
+    @MainActor func testDisconnectButtonReturnsToDeviceList() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let disconnect = app.buttons["session.toolbar.disconnect"]
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertEqual(disconnect.label, "Disconnect")
+        screenshot("Strip with Disconnect", app)
+        disconnect.tap()
+        XCTAssertTrue(disconnect.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// Customize Controls… in the session menu gives this Mac its own strip, and the strip behind
+    /// the sheet follows each edit.
+    @MainActor func testCustomizeControlsFromTheSession() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        XCTAssertTrue(app.buttons["session.toolbar.collapse"].waitForExistence(timeout: 20))
+        openSessionEditor(app)
+        let customize = app.switches["Customize for This Mac"]
+        XCTAssertTrue(customize.waitForExistence(timeout: 5), app.debugDescription)
+        if (customize.value as? String) == "1" { flip(customize) } // start from the default
+        XCTAssertFalse(app.buttons["Remove Option"].exists, "the default layout is read-only here")
+        screenshot("Per-Mac editor using the default", app)
+        flip(customize)
+        XCTAssertTrue(app.buttons["Remove Option"].waitForExistence(timeout: 3), app.debugDescription)
+        // The session keeps drawing video behind the sheet, and XCUITest never calls this row
+        // hittable there, so tap where it is.
+        app.buttons["Remove Option"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Remove Option"].waitForNonExistence(timeout: 3))
+        screenshot("Per-Mac editor customized", app)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Command"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Option"].exists, "the strip should follow this Mac's layout")
+        screenshot("Strip without Option", app)
+
+        openSessionEditor(app)
+        flip(customize)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Option"].waitForExistence(timeout: 5), "back on the default layout")
+    }
+
+    /// The editor opened straight from a launch argument, for screenshots: remove, add, reorder
+    /// by drag, then back to the default.
+    @MainActor func testControlStripEditorScreens() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageOpenScreen", "controlStrip", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        XCTAssertTrue(app.otherElements["Preview of the session controls"].waitForExistence(timeout: 15), app.debugDescription)
+        resetDefaultLayout(app)
+        XCTAssertTrue(app.buttons["Remove Escape"].waitForExistence(timeout: 3))
+        screenshot("Editor", app)
+
+        app.buttons["Remove Escape"].tap()
+        XCTAssertTrue(app.buttons["Remove Escape"].waitForNonExistence(timeout: 3))
+        let addDesktop = app.buttons["Add Show Desktop"]
+        for _ in 0..<8 where !(addDesktop.exists && addDesktop.isHittable) { app.swipeUp() }
+        XCTAssertTrue(app.buttons["Add Escape"].exists, "Escape should move to More Controls")
+        addDesktop.tap()
+        XCTAssertTrue(app.buttons["Remove Show Desktop"].waitForExistence(timeout: 3))
+        screenshot("More Controls", app)
+
+        // Drag Tab by its reorder handle to the top of the list.
+        for _ in 0..<8 where !app.buttons["Remove Control"].isHittable { app.swipeDown() }
+        let handles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder"))
+        let tab = app.buttons["Reorder Tab"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 3), app.debugDescription)
+        tab.press(forDuration: 0.6, thenDragTo: app.buttons["Reorder Control"])
+        XCTAssertEqual(handles.firstMatch.label, "Reorder Tab")
+        screenshot("Tab moved first", app)
+
+        resetDefaultLayout(app)
+    }
+
+    /// Scrolls to Reset to Default and taps it if the layout isn't already the default.
+    @MainActor private func resetDefaultLayout(_ app: XCUIApplication) {
+        let reset = app.buttons["Reset to Default"]
+        for _ in 0..<8 where !(reset.exists && reset.isHittable) { app.swipeUp() }
+        if reset.isEnabled { reset.tap() }
+        XCTAssertFalse(reset.isEnabled)
+        for _ in 0..<8 where !app.buttons["Remove Control"].isHittable { app.swipeDown() }
+    }
+
+    /// Taps the switch itself: a SwiftUI toggle row doesn't flip when its label is tapped.
+    @MainActor private func flip(_ toggle: XCUIElement) {
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+    }
+
+    @MainActor private func openSessionEditor(_ app: XCUIApplication) {
+        let menu = app.buttons["Session Options"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        let item = app.buttons["Customize Controls…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 3), app.debugDescription)
+        item.tap()
+    }
+
     @MainActor func testAvailabilityAndAppearanceNavigation() {
         let app = XCUIApplication()
         app.launchArguments = ["-VantageSeedHost", "127.0.0.1:47821", "-vantage.requireBiometrics", "NO"]

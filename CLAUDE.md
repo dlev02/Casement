@@ -60,8 +60,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
   `-VantageOpenTailscaleDevices 1` opens the picker on launch,
-  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice` presents one
-  screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do).
+  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac` presents one
+  screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
+  `controlStripMac` edits the first saved Mac, so pair it with `-VantageSeedSamples 1`).
 - **App lock** (Face ID, Settings → Privacy & Security): on iOS the view tree stays alive while
   locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
@@ -76,6 +77,21 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   would also "tap" it on release: every strip button goes through `StripTapGuard`, and the mic
   cancels the dictation it began once the finger travels. Covered by `ToolbarDockTests` and
   `SessionUITests.testToolbarThrowsLandInTheIntendedCorner`.
+- **Control strip layout** (`ControlStripLayout.swift`, `ControlStripEditor.swift`): the strip
+  renders a `ControlStripLayout` (ordered `StripItem`s; each case carries label, symbol, detail,
+  category) followed by the always-present session menu and collapse button. Separators go
+  wherever the category changes; narrow widths wrap via `ViewThatFits` into 2–5 rows cut at those
+  boundaries (`ControlStripLayout.rows`, most even split). The pill shows Dictate/Keyboard only if
+  the layout has them. Default layout: `@AppStorage("vantage.controlStrip")` (JSON array via
+  `RawRepresentable`); per Mac: `SavedDevice.controlStrip` (nil = default), set through
+  `DeviceStore.setControlStrip`, which bumps `updatedAt` so it syncs with the list. Decoding drops
+  unknown raw values and repeats, so a new case needs only its `StripItem` rows and a button in
+  `ControlStrip.itemView`. The editor (live scaled preview, reorder, add/remove, reset) opens from
+  Settings → Controls → Customize Controls (default), the Edit Device sheet's Controls row (saved
+  with the sheet), and the session menu's Customize Controls… (writes the store live; the strip
+  behind follows). Disconnect (`session.toolbar.disconnect`) is a standard item: immediate, no
+  confirmation. Tests: `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
+  `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.
