@@ -34,7 +34,9 @@ struct RemoteSessionScreen: View {
 
             #if canImport(UIKit)
             if session.state == .connected {
-                RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers)
+                RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers,
+                                           pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
+                                           onPencilAction: performPencilAction)
                     .ignoresSafeArea()
             }
             #endif
@@ -187,7 +189,68 @@ struct RemoteSessionScreen: View {
         }
     }
 
+    /// Runs the Pencil action that needs the session's own state rather than the pointer.
+    private func performPencilAction(_ action: PencilAction) {
+        let animation: Animation? = reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.2)
+        switch action {
+        case .collapseControls:
+            withAnimation(animation) {
+                if controlsHidden { controlsHidden = false } else { toolbarCollapsed.toggle() }
+            }
+        case .hideControls:
+            withAnimation(animation) { controlsHidden.toggle() }
+        case .showKeyboard:
+            showKeyboard.toggle()
+        case .none, .rightClick, .middleClick:
+            break // handled where the pointer is
+        }
+    }
+
+    /// Types the saved password for this Mac and presses Return. macOS drops Vantage Host's
+    /// keystrokes while a password field, auth dialog, or the lock screen holds Secure Event Input,
+    /// so those go through the Mac's own Screen Sharing server instead (it needs the account name).
+    private func sendPassword() {
+        guard let password = DeviceSecrets.password(for: device) else {
+            passwordPrompt = .missing
+            return
+        }
+        let blocked = session.hostStatus.map { $0.isSecureInputActive || $0.isScreenLocked } ?? false
+        guard blocked else {
+            typePassword(password)
+            return
+        }
+        guard DeviceSecrets.username(for: device) != nil else {
+            passwordPrompt = .needsAccount
+            return
+        }
+        typeThroughScreenSharing()
+    }
+
+    private func typeThroughScreenSharing() {
+        guard screenSharingTyping != .typing else { return }
+        stickyModifiers = []
+        screenSharingTyping = .typing
+        Task {
+            do {
+                try await ScreenSharingPassword.type(for: device)
+                screenSharingTyping = .sent
+                try? await Task.sleep(for: .seconds(1.6))
+                if screenSharingTyping == .sent { screenSharingTyping = nil }
+            } catch {
+                screenSharingTyping = nil
+                screenSharingError = ScreenSharingPassword.message(for: error)
+            }
+        }
+    }
+
+    private func typePassword(_ password: String) {
+        stickyModifiers = []
+        input.typeCharacters(password)
+        input.tapChord(keyCode: 0x24, modifiers: []) // Return
+    }
+
     private func startSession() async {
+
         session.onVideo = { message in video.consume(message) }
         session.onClipboard = { payload in
             #if canImport(UIKit)

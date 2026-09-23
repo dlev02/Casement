@@ -61,10 +61,17 @@ nonisolated final class InputInjector: @unchecked Sendable {
         let flags = combinedFlags(with: event.modifiers)
 
         let type: CGEventType
-        let button = cgButton(event.button)
+        // A move while a button is held is a drag, and the drag has to name the button that is
+        // actually down — the client sends moves without one.
+        var effectiveButton = event.button
         switch event.action {
         case .move:
-            type = heldButtons.isEmpty ? .mouseMoved : dragType(for: heldButtons.first ?? .left)
+            if let held = heldButtons.first {
+                effectiveButton = held
+                type = dragType(for: held)
+            } else {
+                type = .mouseMoved
+            }
         case .down:
             heldButtons.insert(event.button)
             type = downType(for: event.button)
@@ -72,6 +79,8 @@ nonisolated final class InputInjector: @unchecked Sendable {
             heldButtons.remove(event.button)
             type = upType(for: event.button)
         }
+        let button = cgButton(effectiveButton)
+
         guard let cgEvent = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button) else {
             log.error("could not create pointer event")
             return
@@ -80,9 +89,10 @@ nonisolated final class InputInjector: @unchecked Sendable {
         if event.action != .move {
             cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(max(1, event.clickCount)))
         }
-        if event.button.rawValue >= 3 {
-            cgEvent.setIntegerValueField(.mouseEventButtonNumber, value: Int64(event.button.rawValue))
+        if effectiveButton.rawValue >= 2 {
+            cgEvent.setIntegerValueField(.mouseEventButtonNumber, value: Int64(effectiveButton.rawValue))
         }
+
         cgEvent.post(tap: tap)
         pointerEventCount += 1
         if event.action != .move || pointerEventCount == 1 {

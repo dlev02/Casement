@@ -52,15 +52,30 @@ private struct AppearanceSettings: View {
     }
 }
 
-private struct ControlSettings: View {
+struct ControlSettings: View {
     @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
     @AppStorage("vantage.trackpadSensitivity") private var sensitivity = 1.5
     @AppStorage("vantage.softwareKeyboardMode") private var keyboardMode = SoftwareKeyboardMode.unicode
     @AppStorage("vantage.toolbarDock") private var dock = ToolbarDock.bottomLeft
     @AppStorage("vantage.toolbarCollapsed") private var collapsed = false
+    @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
+    @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
+    @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
+    @AppStorage(DictationEnginePreference.macOffersParakeetKey) private var macOffersParakeet = false
 
     var body: some View {
         Form {
+            #if os(visionOS)
+            Section {
+                LabeledContent("Click", value: "Look and pinch")
+                LabeledContent("Drag", value: "Pinch and move")
+                LabeledContent("Right-Click", value: "Pinch and hold")
+            } header: {
+                Text("Pointer")
+            } footer: {
+                Text("The Mac's pointer goes where you were looking when you pinch.")
+            }
+            #else
             Section {
                 Picker("Touch", selection: $touchMode) {
                     ForEach(InputController.TouchMode.allCases) { mode in
@@ -106,6 +121,24 @@ private struct ControlSettings: View {
             } footer: {
                 Text("You can also drag the controls to any corner during a session.")
             }
+
+            Section {
+                Picker("Squeeze", selection: $pencilSqueeze) {
+                    ForEach(PencilAction.allCases) { action in
+                        Label(action.label, systemImage: action.symbol).tag(action)
+                    }
+                }
+                Picker("Double-Tap", selection: $pencilDoubleTap) {
+                    ForEach(PencilAction.allCases) { action in
+                        Label(action.label, systemImage: action.symbol).tag(action)
+                    }
+                }
+            } header: {
+                Text("Apple Pencil")
+            } footer: {
+                Text("The Pencil always clicks exactly where it touches, and Pencil Pro moves the Mac's pointer while hovering. Squeeze needs Pencil Pro; double-tap works on Pencil (2nd generation) and later. Collapse Controls also brings hidden controls back.")
+            }
+            #endif
         }
         .navigationTitle("Controls")
     }

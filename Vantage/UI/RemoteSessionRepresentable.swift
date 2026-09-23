@@ -9,13 +9,20 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
     let input: InputController
     let video: VideoStreamController
     let stickyModifiers: KeyModifiers
+    var pencilSqueeze: PencilAction = .collapseControls
+    var pencilDoubleTap: PencilAction = .rightClick
+    var onPencilAction: (PencilAction) -> Void = { _ in }
 
     func makeUIViewController(context: Context) -> RemoteSessionViewController {
         RemoteSessionViewController(input: input, video: video)
     }
 
     func updateUIViewController(_ controller: RemoteSessionViewController, context: Context) {
-        controller.interactionView.setStickyModifiers(stickyModifiers)
+        let view = controller.interactionView
+        view.setStickyModifiers(stickyModifiers)
+        view.pencilSqueezeAction = pencilSqueeze
+        view.pencilDoubleTapAction = pencilDoubleTap
+        view.onPencilAction = onPencilAction
     }
 }
 

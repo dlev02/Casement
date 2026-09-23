@@ -48,3 +48,40 @@ enum ToolbarDock: String, CaseIterable, Identifiable {
         return top ? (left ? .topLeft : .topRight) : (left ? .bottomLeft : .bottomRight)
     }
 }
+
+/// What an Apple Pencil squeeze or double-tap does during a session.
+///
+/// The Pencil is always an absolute pointer — it points at the thing you want — so these are the
+/// actions you otherwise have to reach the control strip for.
+enum PencilAction: String, CaseIterable, Identifiable, Sendable {
+    case none
+    case rightClick
+    case middleClick
+    case collapseControls
+    case hideControls
+    case showKeyboard
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .none: "Nothing"
+        case .rightClick: "Secondary Click"
+        case .middleClick: "Middle Click"
+        case .collapseControls: "Collapse Controls"
+        case .hideControls: "Hide Controls"
+        case .showKeyboard: "Show Keyboard"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .none: "nosign"
+        case .rightClick: "contextualmenu.and.pointer.arrow"
+        case .middleClick: "pointer.arrow.click"
+        case .collapseControls: "rectangle.compress.vertical"
+        case .hideControls: "eye.slash"
+        case .showKeyboard: "keyboard"
+        }
+    }
+}

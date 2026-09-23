@@ -12,6 +12,24 @@ final class RemoteInteractionView: UIView {
     private var stickyModifiers: KeyModifiers = []
     private var heldModifiers: KeyModifiers { hardwareModifiers.union(stickyModifiers) }
 
+    /// Runs the action the user assigned to an Apple Pencil squeeze or double-tap.
+    var onPencilAction: ((PencilAction) -> Void)?
+    var pencilSqueezeAction: PencilAction = .collapseControls
+    var pencilDoubleTapAction: PencilAction = .rightClick
+
+    /// A Pencil points at what you mean, so it always positions the pointer absolutely no matter
+    /// which touch mode fingers are using.
+    private var isPencilTouch = false
+    private var pointsAbsolutely: Bool {
+        #if os(visionOS)
+        // Look and pinch lands where you looked, so a relative trackpad mapping would only fight
+        // you. The touch mode setting is an iPad concept.
+        true
+        #else
+        input.mode == .direct || isPencilTouch
+        #endif
+    }
+
     init(input: InputController, displayLayer: AVSampleBufferDisplayLayer) {
         self.input = input
         self.displayLayer = displayLayer
@@ -47,33 +65,64 @@ final class RemoteInteractionView: UIView {
 
     // MARK: Gestures
 
+    /// Finger and Pencil gestures only. Trackpad and mouse input is handled in `touchesBegan` and
+    /// friends so that button state can be diffed off `UIEvent.buttonMask` — a gesture recognizer
+    /// can't tell a right-button drag from a left-button one.
     private func setupGestures() {
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        singleTap.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(singleTap)
 
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap))
         twoFingerTap.numberOfTouchesRequired = 2
+        twoFingerTap.allowedTouchTypes = Self.fingerTouchTypes
         addGestureRecognizer(twoFingerTap)
+
+        let threeFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleThreeFingerTap))
+        threeFingerTap.numberOfTouchesRequired = 3
+        threeFingerTap.allowedTouchTypes = Self.fingerTouchTypes
+        addGestureRecognizer(threeFingerTap)
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         pan.minimumNumberOfTouches = 1
         pan.maximumNumberOfTouches = 1
-        pan.allowedScrollTypesMask = [.continuous, .discrete]
+        pan.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(pan)
 
         let twoFingerPan = UIPanGestureRecognizer(target: self, action: #selector(handleScroll))
         twoFingerPan.minimumNumberOfTouches = 2
         twoFingerPan.maximumNumberOfTouches = 2
+        twoFingerPan.allowedTouchTypes = Self.fingerTouchTypes
         addGestureRecognizer(twoFingerPan)
 
+        // Trackpad and wheel scrolling arrive as scroll events rather than touches, and there is no
+        // way to ask an update which kind produced it — so one recognizer per scroll type.
+        for mask in [UIScrollTypeMask.continuous, .discrete] {
+            let scroll = UIPanGestureRecognizer(target: self, action: #selector(handleIndirectScroll))
+            scroll.allowedScrollTypesMask = mask
+            scroll.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+            scroll.maximumNumberOfTouches = 0
+            addGestureRecognizer(scroll)
+            if mask == .discrete { discreteScrollRecognizer = scroll }
+        }
+
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
+        #if os(visionOS)
+        longPress.minimumPressDuration = 0.5 // a pinch held still for a beat, not a drag that starts slowly
+        #else
         longPress.minimumPressDuration = 0.35
+        #endif
+        longPress.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(longPress)
     }
 
+    private static let fingerTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    private static let directTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
+                                           NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
         let location = recognizer.location(in: self)
-        if input.mode == .direct {
+        if pointsAbsolutely {
             input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
         }
         input.click(button: .left, clickCount: 1, modifiers: heldModifiers)
@@ -83,6 +132,10 @@ final class RemoteInteractionView: UIView {
         input.click(button: .right, modifiers: heldModifiers)
     }
 
+    @objc private func handleThreeFingerTap(_ recognizer: UITapGestureRecognizer) {
+        input.click(button: .middle, modifiers: heldModifiers)
+    }
+
     private var lastPanPoint: CGPoint = .zero
 
     @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
@@ -90,11 +143,11 @@ final class RemoteInteractionView: UIView {
         switch recognizer.state {
         case .began:
             lastPanPoint = location
-            if input.mode == .direct {
+            if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .down, modifiers: heldModifiers)
             }
         case .changed:
-            if input.mode == .direct {
+            if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
             } else {
                 let translation = CGSize(width: location.x - lastPanPoint.x, height: location.y - lastPanPoint.y)
@@ -102,7 +155,7 @@ final class RemoteInteractionView: UIView {
                 lastPanPoint = location
             }
         case .ended, .cancelled:
-            if input.mode == .direct {
+            if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .up, modifiers: heldModifiers)
             }
         default:
@@ -110,7 +163,28 @@ final class RemoteInteractionView: UIView {
         }
     }
 
+    /// Trackpad and wheel scrolling. Continuous scrolls carry pixel deltas and gesture phases like
+    /// a finger scroll; wheel notches are discrete, so they go over as line deltas with no phase.
+    @objc private func handleIndirectScroll(_ recognizer: UIPanGestureRecognizer) {
+        guard recognizer !== discreteScrollRecognizer else {
+            let translation = recognizer.translation(in: self)
+            guard recognizer.state == .changed || recognizer.state == .began else { return }
+            recognizer.setTranslation(.zero, in: self)
+            let sign: Double = input.naturalScroll ? 1 : -1
+            let lines = (x: (translation.x / Self.pointsPerScrollLine) * sign,
+                         y: (translation.y / Self.pointsPerScrollLine) * sign)
+            guard lines.x != 0 || lines.y != 0 else { return }
+            input.scroll(deltaX: lines.x, deltaY: lines.y, phase: .none, continuous: false)
+            return
+        }
+        handleScroll(recognizer)
+    }
+
+    /// One wheel notch on a Logitech mouse arrives as roughly this much translation.
+    private static let pointsPerScrollLine: Double = 10
+
     @objc private func handleScroll(_ recognizer: UIPanGestureRecognizer) {
+
         let translation = recognizer.translation(in: self)
         let velocity = recognizer.velocity(in: self)
         let sign: Double = input.naturalScroll ? 1 : -1

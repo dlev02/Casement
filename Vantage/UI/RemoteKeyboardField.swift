@@ -42,18 +42,24 @@ final class RemoteKeyboardView: UIView, UIKeyInput {
     var smartQuotesType: UITextSmartQuotesType = .no
     var smartDashesType: UITextSmartDashesType = .no
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    override init(frame: CGRect) { super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    #if !os(visionOS) // no keyboard accessory views on visionOS
+    /// iPadOS puts a hide-keyboard key on its own keyboard, and the control strip toggles
+    /// the keyboard too, so an accessory bar there only covers more of the Mac and can't line
+    /// up with the floating controls. iPhone's keyboard has no dismiss key, so it keeps one.
+    private lazy var accessory: UIView? = {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return nil }
         let toolbar = UIToolbar()
         toolbar.items = [UIBarButtonItem(systemItem: .flexibleSpace),
                          UIBarButtonItem(title: "Done", style: .prominent, target: self, action: #selector(dismissKeyboard))]
         toolbar.sizeToFit()
-        accessory = toolbar
-    }
+        return toolbar
+    }()
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    private var accessory: UIView?
     override var inputAccessoryView: UIView? { accessory }
+    #endif
 
     func insertText(_ text: String) {
         if text == "\n" || text == "\r" { onKey?(0x24) }
