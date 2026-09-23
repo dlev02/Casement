@@ -31,8 +31,11 @@ struct TailscaleDevicesSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
                 if account.isSignedIn || ClientOptions.tailscaleFixture != nil {
                     ToolbarItem(placement: .primaryAction) {
-                        Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                            .disabled(isLoading)
+                        if isLoading {
+                            ProgressView().accessibilityLabel("Refreshing")
+                        } else {
+                            Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                        }
                     }
                 }
             }
@@ -79,9 +82,7 @@ struct TailscaleDevicesSheet: View {
                     }
                 }
             }
-            .overlay(alignment: .top) {
-                if isLoading { ProgressView().padding(8).glassEffect().padding(.top, 8) }
-            }
+            .refreshable { await load() }
         }
     }
 

@@ -54,23 +54,33 @@ struct TailscaleAccountScreen: View {
                 }
             } else {
                 Section {
-                    Text("Tailscale doesn't offer a sign-in flow for third-party apps, so Vantage uses a read-only key from your admin console to see which of your devices are Macs it can connect to.")
+                    Text("Tailscale has no sign-in for third-party apps. Instead you create a read-only key in the Tailscale admin console and paste it here — then Vantage can list your tailnet and add Macs with one tap.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
                 Section {
-                    SecureField("tskey-api-…", text: $accessToken)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        #if canImport(UIKit)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                    Link("Generate an Access Token", destination: Self.keysURL)
+                    SetupStep(1) { Text("Open the OAuth clients page and sign in to Tailscale.") }
+                    Link(destination: Self.oauthURL) {
+                        Label("Open Tailscale OAuth Clients", systemImage: "arrow.up.right.square")
+                    }
+                    SetupStep(2) { Text("Tap **Generate OAuth client…**") }
+                    SetupStep(3) { Text("Give it a description — \(Text("Vantage").bold()) works.") }
+                    SetupStep(4) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Under **Scopes**, find the **Devices** row and turn on **Read** under **Core**.")
+                            Text("That is the only permission Vantage needs. Leave every other scope off — it can't change anything on your tailnet.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    SetupStep(5) { Text("Tap **Generate client**, then copy the client ID and secret into the fields below. Tailscale shows the secret only once.") }
                 } header: {
-                    Text("Option 1: API Access Token")
+                    Text("Recommended: OAuth Client")
                 } footer: {
-                    Text("Admin console → Settings → Keys → Generate access token. Tokens last up to 90 days.")
+                    Text("OAuth clients never expire, so you only do this once.")
                 }
+
                 Section {
                     TextField("Client ID", text: $clientID)
                         .autocorrectionDisabled()
@@ -82,12 +92,8 @@ struct TailscaleAccountScreen: View {
                         #if canImport(UIKit)
                         .textInputAutocapitalization(.never)
                         #endif
-                    Link("Create an OAuth Client", destination: Self.oauthURL)
-                } header: {
-                    Text("Option 2: OAuth Client")
-                } footer: {
-                    Text("Admin console → Settings → OAuth clients. Choose the devices:core:read scope. OAuth clients don't expire.")
                 }
+
                 Section {
                     Button {
                         Task { await signIn() }
@@ -103,6 +109,24 @@ struct TailscaleAccountScreen: View {
                     }
                 } footer: {
                     Text("The key is stored in this device's Keychain and sent only to api.tailscale.com.")
+                }
+
+                Section {
+                    SetupStep(1) { Text("Open the keys page, then tap **Generate access token…**") }
+                    Link(destination: Self.keysURL) {
+                        Label("Open Tailscale Keys", systemImage: "arrow.up.right.square")
+                    }
+                    SetupStep(2) { Text("Copy the token that starts with `tskey-api-` and paste it here.") }
+                    SecureField("tskey-api-…", text: $accessToken)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        #if canImport(UIKit)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } header: {
+                    Text("Or Use an Access Token")
+                } footer: {
+                    Text("Simpler to create, but Tailscale expires access tokens after 90 days at most, and you'll have to repeat this when it does.")
                 }
             }
         }
@@ -133,5 +157,33 @@ struct TailscaleAccountScreen: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// One numbered line of setup directions. The number badge keeps a long list of steps scannable
+/// without turning the form row into a paragraph.
+private struct SetupStep<Content: View>: View {
+    let number: Int
+    @ViewBuilder var content: Content
+
+    init(_ number: Int, @ViewBuilder content: () -> Content) {
+        self.number = number
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(number, format: .number)
+                .font(.footnote.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.accentColor, in: .circle)
+            content
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }
