@@ -131,6 +131,11 @@ public struct BinaryReader {
         return string
     }
 
+    /// Reads exactly `count` bytes with no length prefix.
+    public mutating func readRaw(_ count: Int) throws -> Data {
+        Data(try take(count))
+    }
+
     public mutating func readRemaining() -> Data {
         let slice = data[offset...]
         offset = data.endIndex

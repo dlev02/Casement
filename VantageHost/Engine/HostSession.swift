@@ -30,6 +30,9 @@ actor HostSession {
     private var encodesInFlight = 0
     private var needsKeyframe = true
     private var framesSent: UInt64 = 0
+    /// Dictation audio waiting for `commit`. Only filled for clients that asked for dictation.
+    private var dictationClips = DictationClipStore()
+    private var dictationEngines: [DictationEngineID] = []
 
     init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, onEnded: @escaping @Sendable (HostSession) -> Void) {
         self.channel = channel
@@ -106,7 +109,10 @@ actor HostSession {
             throw SessionError.authFailed
         }
         let displays = try await DisplayEnumerator.availableDisplays()
-        let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60)
+        // Dictation kinds are new, so they're advertised only to a client that said it knows them.
+        if hello.features?.dictation == true { dictationEngines = await HostTranscriber.availableEngines() }
+        let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
+                                            dictationEngines: hello.features?.dictation == true ? dictationEngines : nil)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: nil, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")
@@ -142,6 +148,12 @@ actor HostSession {
                 await handleViewportChange(change.viewport)
             case .ping(let ping):
                 channel.sendDetached(.pong(Pong(echoNanos: ping.sentAtNanos)))
+            case .dictationControl(let control):
+                handleDictation(control)
+            case .micAudio(let audio):
+                if dictationClips.append(audio) == .truncated {
+                    log.error("dictation clip reached the length cap; dropping later audio")
+                }
             case .disconnect:
                 return
             default:
@@ -306,6 +318,36 @@ actor HostSession {
         }
     }
 
+    // MARK: Dictation
+
+    private func handleDictation(_ control: DictationControl) {
+        guard !dictationEngines.isEmpty else { return } // Never advertised, so never answer.
+        switch control.action {
+        case .begin:
+            dictationClips.begin(control)
+        case .cancel:
+            dictationClips.cancel(control.id)
+        case .commit:
+            guard let clip = dictationClips.commit(control.id) else {
+                channel.sendDetached(.dictationResult(DictationResult(id: control.id, text: "", error: "The Mac didn't receive that recording. Try again.")))
+                return
+            }
+            log.info("dictation clip committed: \(clip.samples.count, privacy: .public) bytes, \(clip.droppedPackets, privacy: .public) packets missing")
+            // Transcription takes seconds; run it off the session so input keeps flowing.
+            Task.detached { [channel, log] in
+                let result: DictationResult
+                do {
+                    let output = try await HostTranscriber.live().transcribe(samples: clip.samples, requested: clip.engine, language: clip.language)
+                    result = DictationResult(id: control.id, text: output.text, engine: output.engine)
+                    log.debug("dictation result: \(output.text, privacy: .private)")
+                } catch {
+                    result = DictationResult(id: control.id, text: "", error: (error as? HostTranscriber.Failure)?.message ?? "Transcription failed on the Mac.")
+                }
+                channel.sendDetached(.dictationResult(result))
+            }
+        }
+    }
+
     private func handleViewportChange(_ viewport: Viewport) async {
         // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
         needsKeyframe = true
@@ -342,6 +384,7 @@ actor HostSession {
     private func teardown() async {
         guard state != .closed else { return }
         state = .closed
+        dictationClips.removeAll()
         await stopStreaming()
         await channel.close()
         onEnded(self)

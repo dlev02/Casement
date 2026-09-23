@@ -80,8 +80,10 @@ public struct Hello: Codable, Sendable {
     public var viewport: Viewport?
     /// Optional for compatibility with hosts/clients predating readiness checks.
     public var isReadinessProbe: Bool?
+    /// Optional client abilities (dictation results, …). Absent from older clients.
+    public var features: ClientFeatures?
 
-    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil) {
+    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil, features: ClientFeatures? = nil) {
         self.protocolVersion = protocolVersion
         self.clientName = clientName
         self.deviceModel = deviceModel
@@ -92,6 +94,7 @@ public struct Hello: Codable, Sendable {
         self.maxDecodeHeight = maxDecodeHeight
         self.viewport = viewport
         self.isReadinessProbe = isReadinessProbe
+        self.features = features
     }
 }
 
@@ -142,12 +145,16 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     public var canManageVirtualDisplay: Bool
     public var clipboard: Bool
     public var maxFPS: Int
+    /// Engines that accept `dictationControl`/`micAudio`, best first. Nil from older hosts, which
+    /// would drop the session on those kinds, so the client must not send them then.
+    public var dictationEngines: [DictationEngineID]?
 
-    public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int) {
+    public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
         self.maxFPS = maxFPS
+        self.dictationEngines = dictationEngines
     }
 }
 

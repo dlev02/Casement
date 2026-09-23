@@ -24,9 +24,13 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case attachMedia = 60
     case textInput = 61
     case modifierState = 62
+    /// Capability-gated: only sent to hosts that list dictation engines.
+    case dictationControl = 64
     case cursorShape = 70
     case videoConfig = 71
     case hostStatus = 72
+    /// Capability-gated: only sent to clients whose `Hello.features` includes dictation.
+    case dictationResult = 74
 
     // MARK: Hot path (binary)
     case videoFrame = 100
@@ -34,6 +38,8 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case pointerEvent = 120
     case scrollEvent = 121
     case keyEvent = 122
+    /// Capability-gated like `dictationControl`.
+    case micAudio = 123
 
     public var isBinary: Bool { rawValue >= 100 }
 }

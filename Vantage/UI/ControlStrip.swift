@@ -12,12 +12,57 @@ struct ControlStrip: View {
     let onKey: (UInt16, KeyModifiers) -> Void
     let onShowKeyboard: () -> Void
     let onSendClipboard: () -> Void
+    let onSendPassword: () -> Void
+    let onHostCommand: (HostCommand) -> Void
     let onDisconnect: () -> Void
+    /// Dictation is listening (the mic button shows as active).
+    var isDictating = false
+    var onDictation: (DictationPress) -> Void = { _ in }
 
     @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        #if os(visionOS)
+        // On visionOS the strip sits in an ornament under the window, so there are no corners to
+        // move it between; it only collapses.
+        glassSurface
+            .accessibilityElement(children: .contain)
+            .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
+        #else
+        glassSurface
+            .accessibilityElement(children: .contain)
+            .accessibilityValue(dock.label)
+            .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
+            .accessibilityAction(named: "Move to top left") { move(to: .topLeft) }
+            .accessibilityAction(named: "Move to top right") { move(to: .topRight) }
+            .accessibilityAction(named: "Move to bottom left") { move(to: .bottomLeft) }
+            .accessibilityAction(named: "Move to bottom right") { move(to: .bottomRight) }
+            .contextMenu {
+                Section("Move Controls") {
+                    ForEach(ToolbarDock.allCases) { position in
+                        Button { move(to: position) } label: { Label(position.label, systemImage: position.symbol) }
+                    }
+                }
+            }
+        #endif
+    }
+
+    #if os(visionOS)
+    /// visionOS has no Liquid Glass; the ornament gets the system glass material instead.
+    @ViewBuilder private var glassSurface: some View {
+        if isCollapsed {
+            compact
+                .transition(.blurReplace)
+                .glassBackgroundEffect(in: .capsule)
+        } else {
+            expanded
+                .transition(.blurReplace)
+                .glassBackgroundEffect(in: .rect(cornerRadius: stripButtonSide / 2 + 4))
+        }
+    }
+    #else
+    private var glassSurface: some View {
         GlassEffectContainer(spacing: 16) {
             if isCollapsed {
                 compact

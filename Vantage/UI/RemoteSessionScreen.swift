@@ -25,6 +25,18 @@ struct RemoteSessionScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var toolbarTranslation = CGSize.zero
     @State private var feedbackTask: Task<Void, Never>?
+    @State private var passwordPrompt: PasswordPrompt?
+    @State private var newPassword = ""
+    @State private var newUsername = ""
+    @State private var screenSharingTyping: ScreenSharingTypingState?
+    @State private var screenSharingError: String?
+    @State private var controlsHidden = false
+    @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
+    @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
+    @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
+    #if canImport(UIKit)
+    @State private var dictation = DictationController()
+    #endif
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -52,36 +64,46 @@ struct RemoteSessionScreen: View {
                         .padding(.top, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if let screenSharingTyping {
+                    ScreenSharingTypingBadge(state: screenSharingTyping)
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 Spacer()
             }
+            #if os(visionOS)
+            // The control strip is an ornament under the window; the dictation panel floats over
+            // the bottom of the Mac, just above it.
             if session.state == .connected {
+                dictationPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(24)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
+            }
+            #else
+            if session.state == .connected && (!controlsHidden || isDictationActive) {
                 GeometryReader { geometry in
-                    ControlStrip(
-                        isCollapsed: $toolbarCollapsed,
-                        dock: $toolbarDock,
-                        stickyModifiers: $stickyModifiers,
-                        touchMode: $touchMode,
-                        onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
-                        onShowKeyboard: { showKeyboard.toggle() },
-                        onSendClipboard: {
-                            #if canImport(UIKit)
-                            let payload = ClipboardSync.currentPayload()
-                            if !payload.isEmpty { session.send(.clipboard(payload)) }
-                            #endif
-                        },
-                        onDisconnect: disconnect
-                    )
-                    .offset(toolbarTranslation)
-                    .simultaneousGesture(DragGesture(minimumDistance: 18)
-                        .updating($toolbarTranslation) { value, translation, _ in
-                            translation = CGSize(width: max(-geometry.size.width / 2, min(geometry.size.width / 2, value.translation.width)),
-                                                 height: max(-geometry.size.height / 2, min(geometry.size.height / 2, value.translation.height)))
+                    // The dictation panel stacks on the strip's inner side, so it stays in the
+                    // corner the user chose and keeps the middle of the Mac visible.
+                    VStack(alignment: toolbarAlignment.horizontal, spacing: 12) {
+                        if !toolbarDock.isTop { dictationPanel }
+                        if !controlsHidden {
+                            controlStrip
+                                .offset(toolbarTranslation)
+                                .simultaneousGesture(DragGesture(minimumDistance: 18)
+                                    .updating($toolbarTranslation) { value, translation, _ in
+                                        translation = CGSize(width: max(-geometry.size.width / 2, min(geometry.size.width / 2, value.translation.width)),
+                                                             height: max(-geometry.size.height / 2, min(geometry.size.height / 2, value.translation.height)))
+                                    }
+                                    .onEnded { value in
+                                        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.55, bounce: 0.2)) {
+                                            toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation)
+                                        }
+                                    })
                         }
-                        .onEnded { value in
-                            withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.55, bounce: 0.2)) {
-                                toolbarDock = toolbarDock.moved(by: value.predictedEndTranslation)
-                            }
-                        })
+                        if toolbarDock.isTop { dictationPanel }
+                    }
+                    .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
                     .padding(12)
                     .padding(.top, 32) // Keep drags below iPadOS window-management gestures.
@@ -112,14 +134,56 @@ struct RemoteSessionScreen: View {
         .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
+                #if canImport(UIKit)
+                if dictation.isListening { dictation.stop(then: .review) }
+                #endif
                 showKeyboard = false
                 stickyModifiers = []
                 session.suspendForBackground()
             } else if phase == .active { session.retryNow() }
         }
         .overlay(alignment: .top) { hiddenKeyboardField }
+        .animation(.smooth(duration: 0.3), value: screenSharingTyping)
+        .sheet(item: $passwordPrompt) { prompt in
+            PasswordPromptSheet(prompt: prompt, password: $newPassword, username: $newUsername) { saved in
+                passwordPrompt = nil
+                defer { newPassword = ""; newUsername = "" }
+                guard saved else { return }
+                if prompt == .missing { DeviceSecrets.setPassword(newPassword, for: device) }
+                if !newUsername.isEmpty { DeviceSecrets.setUsername(newUsername, for: device) }
+                sendPassword()
+            }
+        }
+        .alert("Couldn't Type the Password", isPresented: Binding(get: { screenSharingError != nil },
+                                                                set: { if !$0 { screenSharingError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(screenSharingError ?? "")
+        }
         .task { await startSession() }
         .onDisappear { teardown() }
+    }
+
+    private var controlStrip: some View {
+        ControlStrip(
+            isCollapsed: $toolbarCollapsed,
+            dock: $toolbarDock,
+            stickyModifiers: $stickyModifiers,
+            touchMode: $touchMode,
+            onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
+            onShowKeyboard: { showKeyboard.toggle() },
+            onSendClipboard: {
+                #if canImport(UIKit)
+                let payload = ClipboardSync.currentPayload()
+                if !payload.isEmpty { session.send(.clipboard(payload)) }
+                #endif
+            },
+            onSendPassword: sendPassword,
+            onHostCommand: { session.send(.hostCommand(HostCommandMessage(command: $0))) },
+            onDisconnect: disconnect,
+            isDictating: isDictationListening,
+            onDictation: handleDictationPress
+        )
     }
 
     private var connectionOverlay: some View {
@@ -155,6 +219,51 @@ struct RemoteSessionScreen: View {
         .frame(maxWidth: 420)
         .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: Dictation
+
+    private var isDictationActive: Bool {
+        #if canImport(UIKit)
+        dictation.isActive
+        #else
+        false
+        #endif
+    }
+
+    private var isDictationListening: Bool {
+        #if canImport(UIKit)
+        dictation.isListening
+        #else
+        false
+        #endif
+    }
+
+    /// Mac (MacWhisper) when the host advertised it and Settings allows it; otherwise the iPad.
+    private var dictationRoute: DictationRoute {
+        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines)
+    }
+
+    @ViewBuilder private var dictationPanel: some View {
+        #if canImport(UIKit)
+        if dictation.isActive {
+            DictationPanel(dictation: dictation,
+                           isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
+                           onCopy: { UIPasteboard.general.string = $0 })
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
+        }
+        #endif
+    }
+
+    private func handleDictationPress(_ press: DictationPress) {
+        #if canImport(UIKit)
+        stickyModifiers = []
+        switch press {
+        case .began: dictation.pressBegan(route: dictationRoute)
+        case .ended(let held): dictation.pressEnded(held: held)
+        case .toggle: dictation.toggle(route: dictationRoute)
+        }
+        #endif
     }
 
     private var toolbarAlignment: Alignment {
@@ -264,6 +373,14 @@ struct RemoteSessionScreen: View {
             Task { @MainActor in hasVideo = true }
         }
         input.send = { message in session.send(message) }
+        #if canImport(UIKit)
+        dictation.send = { message in session.send(message) }
+        dictation.deliver = { text, pressReturn in
+            input.typeText(text)
+            if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
+        }
+        session.onDictationResult = { result in dictation.handle(result) }
+        #endif
         input.mode = touchMode
         input.naturalScroll = device.naturalScroll
         input.trackpadSensitivity = trackpadSensitivity

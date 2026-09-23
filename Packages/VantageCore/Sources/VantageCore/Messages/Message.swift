@@ -30,6 +30,9 @@ public enum Message: Sendable {
     case pointerEvent(PointerEvent)
     case scrollEvent(ScrollEvent)
     case keyEvent(KeyEvent)
+    case dictationControl(DictationControl)
+    case dictationResult(DictationResult)
+    case micAudio(MicAudio)
 
     public var kind: MessageKind {
         switch self {
@@ -61,6 +64,9 @@ public enum Message: Sendable {
         case .pointerEvent: .pointerEvent
         case .scrollEvent: .scrollEvent
         case .keyEvent: .keyEvent
+        case .dictationControl: .dictationControl
+        case .dictationResult: .dictationResult
+        case .micAudio: .micAudio
         }
     }
 }
@@ -121,6 +127,9 @@ extension Message {
         case .pointerEvent(let value): value.encode()
         case .scrollEvent(let value): value.encode()
         case .keyEvent(let value): value.encode()
+        case .dictationControl(let value): try Self.json(value)
+        case .dictationResult(let value): try Self.json(value)
+        case .micAudio(let value): value.encode()
         }
     }
 
@@ -159,6 +168,9 @@ extension Message {
         case .pointerEvent: .pointerEvent(try PointerEvent.decode(payload))
         case .scrollEvent: .scrollEvent(try ScrollEvent.decode(payload))
         case .keyEvent: .keyEvent(try KeyEvent.decode(payload))
+        case .dictationControl: .dictationControl(try decodeJSON(DictationControl.self, payload))
+        case .dictationResult: .dictationResult(try decodeJSON(DictationResult.self, payload))
+        case .micAudio: .micAudio(try MicAudio.decode(payload))
         }
     }
 }

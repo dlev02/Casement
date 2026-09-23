@@ -110,6 +110,29 @@ struct ControlSettings: View {
             }
 
             Section {
+                Picker("Transcribe", selection: $dictationEngine) {
+                    ForEach(DictationEnginePreference.choices(macOffersParakeet: macOffersParakeet, selection: dictationEngine)) { engine in
+                        Text(engine.label).tag(engine)
+                    }
+                }
+            } header: {
+                Text("Dictation")
+            } footer: {
+                Text(macOffersParakeet
+                     ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the Mac doesn't have the one you pick, Vantage uses the other, then this iPad. On this iPad works offline and shows words as you speak."
+                     : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
+            }
+
+            #if os(visionOS)
+            Section {
+                Toggle("Start Collapsed", isOn: $collapsed)
+            } header: {
+                Text("Session Controls")
+            } footer: {
+                Text("The controls sit below the session window.")
+            }
+            #else
+            Section {
                 Picker("Position", selection: $dock) {
                     ForEach(ToolbarDock.allCases) { position in
                         Label(position.label, systemImage: position.symbol).tag(position)

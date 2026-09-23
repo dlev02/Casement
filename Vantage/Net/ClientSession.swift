@@ -47,6 +47,10 @@ final class ClientSession {
     var onVideo: ((Message) -> Void)?
     var onCursor: ((CursorPosition) -> Void)?
     var onClipboard: ((ClipboardPayload) -> Void)?
+    var onDictationResult: ((DictationResult) -> Void)?
+
+    /// Host transcription engines; nil for hosts that predate dictation (never send them its kinds).
+    var dictationEngines: [DictationEngineID]? { capabilities?.dictationEngines }
 
     init(identity: DeviceIdentity? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
@@ -213,7 +217,8 @@ final class ClientSession {
     private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> Bool {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
-                          maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport)
+                          maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
+                          features: ClientFeatures(dictation: true))
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -256,6 +261,8 @@ final class ClientSession {
             activeConfig = config
         case .hostStatus(let status):
             hostStatus = status
+        case .dictationResult(let result):
+            onDictationResult?(result)
         case .displayList(let list):
             displays = list.displays
         case .pong(let pong):
