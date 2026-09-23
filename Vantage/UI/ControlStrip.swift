@@ -31,26 +31,14 @@ struct ControlStrip: View {
                     .glassEffectID("controls", in: glassNamespace)
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityValue(dock.label)
-        .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
-        .accessibilityAction(named: "Move to top left") { move(to: .topLeft) }
-        .accessibilityAction(named: "Move to top right") { move(to: .topRight) }
-        .accessibilityAction(named: "Move to bottom left") { move(to: .bottomLeft) }
-        .accessibilityAction(named: "Move to bottom right") { move(to: .bottomRight) }
-        .contextMenu {
-            Section("Move Controls") {
-                ForEach(ToolbarDock.allCases) { position in
-                    Button { move(to: position) } label: { Label(position.label, systemImage: position.symbol) }
-                }
-            }
-        }
     }
+    #endif
 
     // MARK: States
 
     private var compact: some View {
         HStack(spacing: 0) {
+            dictationButton
             keyboardButton
             collapseButton
         }
@@ -64,16 +52,18 @@ struct ControlStrip: View {
                 separator
                 keys
                 separator
+                shortcuts
+                separator
                 actions
             }
             VStack(spacing: 0) {
-                HStack(spacing: 0) { modifiers; separator; actions }
-                HStack(spacing: 0) { keys }
+                HStack(spacing: 0) { modifiers; separator; shortcuts }
+                HStack(spacing: 0) { keys; separator; actions }
             }
             VStack(spacing: 0) {
                 HStack(spacing: 0) { modifiers }
                 HStack(spacing: 0) { keys }
-                HStack(spacing: 0) { actions }
+                HStack(spacing: 0) { shortcuts; separator; actions }
             }
         }
         .padding(4)
@@ -104,13 +94,53 @@ struct ControlStrip: View {
         keyButton("Right Arrow", "chevron.right", 0x7C)
     }
 
+    /// The Mac shortcuts worth a button of their own. Everything else lives in the session menu.
+    @ViewBuilder private var shortcuts: some View {
+        shortcutButton(MacShortcut.spotlight)
+        shortcutButton(MacShortcut.missionControl)
+        passwordButton
+    }
+
     @ViewBuilder private var actions: some View {
+        dictationButton
         keyboardButton
         sessionMenu
         collapseButton
     }
 
+    private var passwordButton: some View {
+        Button(action: onSendPassword) {
+            Image(systemName: "key.radiowaves.forward")
+        }
+        .buttonStyle(StripButtonStyle())
+        .accessibilityLabel("Type Password")
+        .accessibilityHint("Types this Mac's saved password and presses Return.")
+    }
+
+    private func shortcutButton(_ shortcut: MacShortcut) -> some View {
+        Button { send(shortcut) } label: {
+            Image(systemName: shortcut.symbol)
+        }
+        .buttonStyle(StripButtonStyle())
+        .accessibilityLabel(shortcut.label)
+    }
+
+    /// Mac shortcuts ignore whatever modifiers are being held — ⌃↑ means Mission Control, not
+    /// ⇧⌃↑ — and clear them, the same as tapping a key.
+    private func send(_ shortcut: MacShortcut) {
+        onKey(shortcut.keyCode, shortcut.modifiers)
+        if !stickyModifiers.isEmpty {
+            withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
+        }
+    }
+
     // MARK: Buttons
+
+    /// Hold to talk (release stops), or tap to start and tap again to stop. A drag gesture
+    /// rather than a Button so the press and the release are both visible.
+    private var dictationButton: some View {
+        DictationStripButton(isActive: isDictating, onPress: onDictation)
+    }
 
     private var keyboardButton: some View {
         Button(action: onShowKeyboard) {
