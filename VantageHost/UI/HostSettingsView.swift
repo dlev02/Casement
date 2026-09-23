@@ -3,21 +3,39 @@ import VantageCore
 
 struct HostSettingsView: View {
     @Bindable var controller: HostController
+    @AppStorage(RestartGuard.defaultsKey) private var confirmRestart = true
+    @State private var tab = HostOptions.shared.openSettingsTab ?? "general"
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             generalTab
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag("general")
             devicesTab
                 .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
+                .tag("devices")
             readinessTab
                 .tabItem { Label("Reboot", systemImage: "power.circle") }
+                .tag("reboot")
+            DictationSettingsTab(parakeet: ParakeetModel.shared)
+                .tabItem { Label("Dictation", systemImage: "waveform") }
+                .tag("dictation")
         }
-        .frame(width: 500, height: 420)
+        .frame(width: 500, height: 500)
     }
 
     private var readinessTab: some View {
         Form {
+            Section("While connected") {
+                Toggle("Ask before restarting, shutting down, or logging out", isOn: $confirmRestart)
+                Text("If a device is connected when macOS starts a restart (including one from Software Update), Vantage Host asks first and can cancel it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if controller.canRestartSafely {
+                    Button("Restart Safely…") { controller.restartSafely() }
+                    Text("Restart Safely unlocks FileVault by itself for one restart, so the Mac comes back at the login window instead of stopping at the FileVault screen. It's also offered when you restart while connected.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section("After a reboot") {
                 Toggle("Start Vantage Host at login", isOn: Binding(
                     get: { controller.loginItem.isEnabled },

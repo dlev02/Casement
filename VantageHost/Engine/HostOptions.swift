@@ -4,12 +4,15 @@ import Foundation
 ///
 /// - `--synthetic-capture`: stream a rendered test pattern instead of the real display.
 /// - `--pairing-code 123456`: use a fixed pairing code instead of a random one.
+/// - `--open-settings dictation`: open the Settings window on that tab at launch (screenshots).
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
     let syntheticCapture: Bool
     let fixedPairingCode: String?
     let port: UInt16
+    /// Settings tab to show at launch (DEBUG only).
+    let openSettingsTab: String?
 
     private init() {
         #if DEBUG
@@ -23,10 +26,16 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             fixedPairingCode = nil
         }
+        if let index = args.firstIndex(of: "--open-settings"), index + 1 < args.count {
+            openSettingsTab = args[index + 1]
+        } else {
+            openSettingsTab = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
         port = 47820
+        openSettingsTab = nil
         #endif
     }
 }

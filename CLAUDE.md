@@ -51,10 +51,84 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   sign-in for third-party apps, so the user pastes a key from the admin console; it lives in the
   Keychain. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
-  `-VantageOpenTailscaleDevices 1` opens the picker on launch.
+  `-VantageOpenTailscaleDevices 1` opens the picker on launch,
+  `-VantageOpenScreen settings|controls|security|help|about|tailscale|addDevice` presents one
+  screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do).
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.
+- **Input routing** (`RemoteInteractionView`): finger and Pencil gestures go through gesture
+  recognizers restricted by `allowedTouchTypes`; trackpad/mouse input goes through
+  `touchesBegan/Moved/Ended`, diffing `UIEvent.buttonMask` so right- and middle-button drags work.
+  Indirect pointers and the Pencil always position absolutely regardless of the touch mode; the
+  touch mode only governs fingers. Wheel/trackpad scrolling uses two dedicated pan recognizers
+  (continuous vs discrete) — never put `allowedScrollTypesMask` back on the movement pan, it turns
+  scrolling into pointer motion. Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+- **Mac shortcuts and password**: `MacShortcut` sends system-default chords (⌘Space, ⌃↑, ⌃↓, F11).
+  `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
+  Keychain (when-unlocked class); the key button types it plus Return through the host. When
+  `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
+  Screen Sharing (`ScreenSharingTyper` in VantageCore: RFB 3.889, ARD auth type 30 — DH with a
+  256-bit exponent over the server's 4096-bit prime, MD5, AES-128-ECB — then KeyEvents only, no
+  framebuffer) directly at `<device.host>:5900` and types there; screensharingd is exempt from
+  Secure Input. Shifted characters get an explicit Shift_L. The live handshake test is opt-in:
+  `VANTAGE_LIVE_SCREEN_SHARING=1 xcrun swift test --package-path Packages/VantageCore` (a bogus
+  account, expects a clean rejection). A real sign-in still needs a device check.
+- **Siri / Shortcuts / Spotlight / widgets**: `ConnectToMacIntent` (+ `VantageShortcuts` phrases
+  like "Connect to ⟨Mac⟩ in Vantage") runs in-app and drops the id into `PendingConnection`;
+  `ContentView` opens the session once the app is unlocked. Widgets tap through
+  `vantage://connect/<uuid>` (URL scheme declared in `Vantage/Info.plist`, merged into the
+  generated plist). Both read `DeviceCatalog`, a small JSON the store rewrites on every save
+  (`Application Support/Vantage/catalog.json`, plus the App Group container
+  `group.com.benjaminlevinson.vantage` when the entitlement exists). A personal team can't sign
+  App Groups, so on Drew's sideloads the widget shows "No Macs yet" until the paid team adds the
+  capability to both targets; the simulator ignores the entitlement, so verify widgets there with
+  `-VantageOpenScreen widgets` (renders every family from the live catalog).
+- **iCloud sync** (`CloudSync`): secrets flip between local and `kSecAttrSynchronizable` Keychain
+  stores (`KeychainStore(synchronizable:)`), no entitlement needed. The device list goes through
+  `NSUbiquitousKeyValueStore` with `updatedAt` last-writer-wins and tombstones, but only when the
+  embedded provisioning profile carries `com.apple.developer.ubiquity-kvstore-identifier` — a
+  personal team can't sign for it, so the capability is deliberately not in the project yet. Add
+  the iCloud Key-Value Storage capability once a paid team is active and the list half turns on
+  by itself.
+- **Dictation** (`Vantage/Dictation`, `VantageHost/Dictation`, design in
+  `docs/research/audio-dictation-files.md` §B/§D): the strip's mic button (hold to talk, tap to
+  toggle) opens `DictationPanel`. "On this iPad" runs `SpeechAnalyzer` (`LiveTranscriber`,
+  downloads the locale model via `AssetInventory`); "On the Mac (MacWhisper)" streams 16 kHz PCM16
+  as `micAudio` (123) between `dictationControl` (64) begin/commit, and the host writes a temp WAV,
+  runs `mw transcribe --language xx`, deletes the WAV, and answers `dictationResult` (74), falling
+  back to macOS SpeechAnalyzer. All three kinds are capability-gated: the client says
+  `Hello.features.dictation`, the host lists `HostCapabilities.dictationEngines`, and the client
+  uses the Mac only when that list contains `macwhisper` (older hosts drop the session on unknown
+  kinds). Text is typed through `textInput`. Never log transcripts except `.private`. Tests:
+  `Tests/HostDictationTests` (stub `mw`; `VANTAGE_TEST_REAL_MW=1` runs real MacWhisper and Apple on
+  `say` speech).
+  **Built-in Parakeet** (optional, off by default): Vantage Host → Settings → Dictation toggles
+  `ParakeetModel` (`VantageHost/Parakeet`, FluidAudio 0.16.x, Parakeet TDT v3 on Core ML; the
+  package is linked into the host target only). Turning it on downloads ~490 MB to
+  `~/Library/Application Support/Vantage Host/Models/parakeet-tdt-0.6b-v3` (Remove deletes it and
+  the ~40 MB Core ML cache); nothing touches the network while it's off, and loading uses
+  `AsrModels.loadLocal`. The host advertises `parakeet` only while it's on and downloaded
+  (`BuiltInSpeechEngines.shared`), warms it at launch/after download (first-ever load compiles
+  for the ANE, ~18 s; later ~0.4 s), and a clip that arrives mid-warm-up waits ≤20 s, then falls
+  back. Engine order: the client's `DictationControl.engine`, then MacWhisper → Parakeet → Apple;
+  the result names the engine and the panel labels it. Client: "On the Mac (Parakeet)" appears in
+  Settings → Controls once a Mac has advertised it. `ParakeetRuntime` sits behind
+  `BuiltInSpeechEngine`, which the SPM host tests stub (the root package never builds FluidAudio).
+  `--open-settings dictation` (DEBUG) opens the host's Settings in a window for screenshots. Debug: `-VantageDictationFixture listening|review|macTranscribing|macReview|failed|download`
+  shows the panel without the mic; `-VantageDictationSpeak "text"` sends TTS audio through the whole
+  Mac path in the simulator (synthetic hosts advertise engines too, but never type).
+
+- **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
+  "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
+  `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display
+  with uniform resizing. The `ControlStrip` lives in a bottom `.ornament`; there is no dock/corner or
+  touch mode there. Look and pinch always points absolutely (tap = click, pinch-drag = drag, pinch
+  and hold = right-click). Liquid Glass is unavailable: use `platformGlass(in:)`, and `.glass` /
+  `.glassProminent` button styles map to bordered styles in `PlatformGlass.swift`. No Pencil
+  interaction, haptics, keyboard accessory, Control Center controls, or widgets on visionOS. The
+  visionOS app icon (a layered `.solidimagestack`) doesn't exist yet. The simulator can't take
+  AXe/xcui input, so pinch mapping still needs a headset check.
 
 ## Build & test
 

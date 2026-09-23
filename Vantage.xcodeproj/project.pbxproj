@@ -20,17 +20,39 @@
 /* Begin PBXBuildFile section */
 		A100000000000000000000B1 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D1 /* VantageCore */; };
 		A100000000000000000000B2 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D2 /* VantageCore */; };
+		A100000000000000000000B3 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D3 /* FluidAudio */; };
+		C10000000000000000000011 /* VantageWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* VantageWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A100000000000000000000A1 /* Vantage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vantage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A100000000000000000000A2 /* VantageHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VantageHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10000000000000000000001 /* VantageWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VantageWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A100000000000000000000C1 /* Vantage */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Vantage; sourceTree = "<group>"; };
+		A100000000000000000000C1 /* Vantage */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C10000000000000000000015 /* Exceptions for "Vantage" folder in "Vantage" target */, ); path = Vantage; sourceTree = "<group>"; };
 		A100000000000000000000C2 /* VantageHost */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VantageHost; sourceTree = "<group>"; };
+		C10000000000000000000002 /* VantageWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C10000000000000000000016 /* Exceptions for "VantageWidgets" folder in "VantageWidgets" target */, ); path = VantageWidgets; sourceTree = "<group>"; };
+		C10000000000000000000003 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C10000000000000000000015 /* Exceptions for "Vantage" folder in "Vantage" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000051 /* Vantage */;
+		};
+		C10000000000000000000016 /* Exceptions for "VantageWidgets" folder in "VantageWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C10000000000000000000007 /* VantageWidgets */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A100000000000000000000F1 /* Frameworks */ = {
@@ -46,6 +68,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000000000000000000B2 /* VantageCore in Frameworks */,
+				A100000000000000000000B3 /* FluidAudio in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,10 +152,32 @@
 			name = VantageHost;
 			packageProductDependencies = (
 				A100000000000000000000D2 /* VantageCore */,
+				A100000000000000000000D3 /* FluidAudio */,
 			);
 			productName = VantageHost;
 			productReference = A100000000000000000000A2 /* VantageHost.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C10000000000000000000007 /* VantageWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C10000000000000000000008 /* Build configuration list for PBXNativeTarget "VantageWidgets" */;
+			buildPhases = (
+				C10000000000000000000004 /* Sources */,
+				C10000000000000000000005 /* Frameworks */,
+				C10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C10000000000000000000002 /* VantageWidgets */,
+				C10000000000000000000003 /* Shared */,
+			);
+			name = VantageWidgets;
+			productName = VantageWidgets;
+			productReference = C10000000000000000000001 /* VantageWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -159,6 +211,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A100000000000000000000E9 /* XCLocalSwiftPackageReference "Packages/VantageCore" */,
+				A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A100000000000000000000E1 /* Products */;
@@ -600,6 +653,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.16.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A100000000000000000000D1 /* VantageCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -608,6 +672,11 @@
 		A100000000000000000000D2 /* VantageCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VantageCore;
+		};
+		A100000000000000000000D3 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
