@@ -13,6 +13,38 @@ import Testing
         #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard])
     }
 
+    @Test func macStartsWithWhatAKeyboardCantDo() {
+        #expect(ControlStripLayout.macStandard.items == [
+            .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard, .dictate,
+        ])
+        #expect(!ControlStripLayout.macStandard.contains(.keyboard))
+    }
+
+    @Test func controlsADeviceCantUseAreSkippedNotRemoved() {
+        let fromIPad = ControlStripLayout(items: [.escape, .keyboard, .dictate, .disconnect])
+        #expect(fromIPad.visibleItems(excluding: [.keyboard]) == [.escape, .dictate, .disconnect])
+        #expect(!fromIPad.hiddenItems(excluding: [.keyboard]).contains(.keyboard))
+        #expect(ControlStripLayout(items: [.escape]).hiddenItems(excluding: [.keyboard]).contains(.keyboard) == false)
+        #expect(fromIPad.visibleItems(excluding: []) == fromIPad.items)
+    }
+
+    @Test func editingOnTheMacKeepsTheIPadsKeyboardInPlace() {
+        let fromIPad = ControlStripLayout(items: [.escape, .keyboard, .dictate, .disconnect])
+        // Reordered: Keyboard stays right after Escape, wherever Escape went.
+        #expect(fromIPad.replacingVisible(with: [.dictate, .escape, .disconnect], unavailable: [.keyboard]).items
+                == [.dictate, .escape, .keyboard, .disconnect])
+        // Escape removed: Keyboard falls back to the control before it, here the start.
+        #expect(fromIPad.replacingVisible(with: [.dictate, .disconnect], unavailable: [.keyboard]).items
+                == [.keyboard, .dictate, .disconnect])
+        // Added controls go where they were put, and nothing changes where nothing is hidden.
+        #expect(fromIPad.replacingVisible(with: [.escape, .dictate, .disconnect, .tab], unavailable: [.keyboard]).items
+                == [.escape, .keyboard, .dictate, .disconnect, .tab])
+        #expect(fromIPad.replacingVisible(with: [.tab], unavailable: []).items == [.tab])
+        // Leading and consecutive hidden controls keep their order.
+        let leading = ControlStripLayout(items: [.keyboard, .shift, .escape])
+        #expect(leading.replacingVisible(with: [.escape], unavailable: [.keyboard, .shift]).items == [.keyboard, .shift, .escape])
+    }
+
     @Test func everyItemDescribesItself() {
         for item in StripItem.allCases {
             #expect(!item.label.isEmpty && !item.symbol.isEmpty && !item.detail.isEmpty)

@@ -104,6 +104,16 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .sendFile, .macAudio, .dictate, .keyboard, .disconnect: .actions
         }
     }
+
+    /// Controls this device can't use, so neither the strip nor the editor shows them: a Mac
+    /// types on its own keyboard, so it has no on-screen one to show.
+    static var unavailableHere: Set<StripItem> {
+        #if os(macOS)
+        [.keyboard]
+        #else
+        []
+        #endif
+    }
 }
 
 /// Which controls the session strip shows, in order. Stored as the global default
@@ -135,6 +145,22 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
         .spotlight, .missionControl, .typePassword,
         .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
     ])
+
+    /// What the strip shows on a Mac until someone customizes it. The Mac has a keyboard (and
+    /// the menu bar and ⌃⌥⌘ shortcuts), so it starts with only what a keyboard can't easily do.
+    static let macStandard = ControlStripLayout(items: [
+        .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard,
+        .dictate,
+    ])
+
+    /// The standard layout for the device this runs on.
+    static var platformStandard: ControlStripLayout {
+        #if os(macOS)
+        macStandard
+        #else
+        standard
+        #endif
+    }
 
     /// Every standard layout that has shipped, oldest first; the last is `standard`. Append the
     /// new standard here whenever a control joins it.
@@ -186,6 +212,35 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
     var hidden: [StripItem] { StripItem.allCases.filter { !items.contains($0) } }
 
     func contains(_ item: StripItem) -> Bool { items.contains(item) }
+
+    /// The controls this device shows, in order. A Mac's layout can come from an iPad through
+    /// iCloud, so it may hold controls a Mac can't use; they're skipped here, never removed.
+    func visibleItems(excluding unavailable: Set<StripItem> = StripItem.unavailableHere) -> [StripItem] {
+        items.filter { !unavailable.contains($0) }
+    }
+
+    /// `hidden`, less the controls this device can't use.
+    func hiddenItems(excluding unavailable: Set<StripItem> = StripItem.unavailableHere) -> [StripItem] {
+        hidden.filter { !unavailable.contains($0) }
+    }
+
+    /// Takes `edited` as the new order of the controls this device shows, and keeps each one it
+    /// can't show right after the control it followed before (or at the start), so editing a
+    /// synced layout on the Mac leaves the iPad's Keyboard button where it was.
+    func replacingVisible(with edited: [StripItem], unavailable: Set<StripItem> = StripItem.unavailableHere) -> ControlStripLayout {
+        var result = edited.filter { !unavailable.contains($0) }
+        var anchor: StripItem?
+        for item in items {
+            if unavailable.contains(item) {
+                let index = anchor.flatMap { result.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+                result.insert(item, at: index)
+                anchor = item
+            } else if result.contains(item) {
+                anchor = item
+            }
+        }
+        return ControlStripLayout(items: result)
+    }
 
     /// Appends to the end; an item already shown stays where it is.
     mutating func add(_ item: StripItem) {

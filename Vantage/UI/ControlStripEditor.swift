@@ -8,7 +8,7 @@ import VantageCore
 struct ControlStripEditor: View {
     private let mac: MacTarget?
 
-    @AppStorage(ControlStripLayout.defaultsKey) private var defaultLayout = ControlStripLayout.standard
+    @AppStorage(ControlStripLayout.defaultsKey) private var defaultLayout = ControlStripLayout.platformStandard
     @AppStorage("vantage.toolbarDock") private var dock = ToolbarDock.bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if !os(macOS)
@@ -79,7 +79,12 @@ struct ControlStripEditor: View {
     private var isEditable: Bool { mac.map { $0.layout.wrappedValue != nil } ?? true }
 
     /// A Mac resets to the default layout; the default resets to the standard one.
-    private var resetTarget: ControlStripLayout { mac == nil ? .standard : defaultLayout }
+    private var resetTarget: ControlStripLayout { mac == nil ? .platformStandard : defaultLayout }
+
+    /// What this device shows of the layout. A Mac skips controls it can't use (the on-screen
+    /// keyboard), and every edit goes through `replacingVisible`, so a layout synced from an
+    /// iPad keeps them.
+    private var visible: ControlStripLayout { ControlStripLayout(items: layout.visibleItems()) }
 
     /// Pinned above the list so it stays in view while editing further down, except where there
     /// isn't the height for it (iPhone in landscape) and on visionOS, where it scrolls with the list.
@@ -106,8 +111,9 @@ struct ControlStripEditor: View {
     }
 
     private func update(_ change: (inout ControlStripLayout) -> Void) {
-        var next = layout
-        change(&next)
+        var edited = visible
+        change(&edited)
+        let next = layout.replacingVisible(with: edited.items)
         guard next != layout else { return }
         withAnimation(motion) {
             if let mac { mac.layout.wrappedValue = next } else { defaultLayout = next }
@@ -117,8 +123,8 @@ struct ControlStripEditor: View {
     // MARK: Sections
 
     private var preview: some View {
-        ControlStripPreview(items: layout.items, dock: dock)
-            .id(reduceMotion ? layout.rawValue : "")
+        ControlStripPreview(items: visible.items, dock: dock)
+            .id(reduceMotion ? visible.rawValue : "")
             .transition(.opacity)
     }
 
@@ -147,21 +153,22 @@ struct ControlStripEditor: View {
             Text(isEditable
                  ? "Only \(mac.name) uses these controls. Other Macs keep the default layout."
                  : "Uses the layout from Settings → Controls.")
+                .wrapsInFooter()
         }
     }
 
     private var shownSection: some View {
         Section {
-            ForEach(layout.items) { item in
-                StripItemRow(item: item, control: isEditable ? .remove : .none) {
+            ForEach(visible.items) { item in
+                StripItemRow(item: item, control: isEditable ? .remove : .none, reorderable: isEditable) {
                     update { $0.remove(item) }
                 }
                 .accessibilityActions {
                     if isEditable {
-                        if item != layout.items.first {
+                        if item != visible.items.first {
                             Button("Move Up") { update { $0.move(item, by: -1) } }
                         }
-                        if item != layout.items.last {
+                        if item != visible.items.last {
                             Button("Move Down") { update { $0.move(item, by: 1) } }
                         }
                     }
@@ -170,7 +177,7 @@ struct ControlStripEditor: View {
             .onMove(perform: isEditable ? { source, destination in
                 update { $0.move(fromOffsets: source, toOffset: destination) }
             } : nil)
-            if layout.items.isEmpty {
+            if visible.items.isEmpty {
                 Text("No controls. Add some from More Controls.")
                     .foregroundStyle(.secondary)
             }
@@ -180,18 +187,19 @@ struct ControlStripEditor: View {
             Text(mac == nil
                  ? "The menu and the collapse button are always at the end. Macs you've customized keep their own controls."
                  : "The menu and the collapse button are always at the end.")
+                .wrapsInFooter()
         }
         .disabled(!isEditable)
     }
 
     private var moreSection: some View {
         Section("More Controls") {
-            ForEach(layout.hidden) { item in
-                StripItemRow(item: item, control: isEditable ? .add : .none) {
+            ForEach(visible.hiddenItems()) { item in
+                StripItemRow(item: item, control: isEditable ? .add : .none, reorderable: false) {
                     update { $0.add(item) }
                 }
             }
-            if layout.hidden.isEmpty {
+            if visible.hiddenItems().isEmpty {
                 Text("Every control is shown.")
                     .foregroundStyle(.secondary)
             }
@@ -206,8 +214,20 @@ struct ControlStripEditor: View {
         } footer: {
             if mac != nil && isEditable {
                 Text("Resetting matches the default layout from Settings → Controls.")
+                    .wrapsInFooter()
             }
         }
+    }
+}
+
+private extension Text {
+    /// A Mac List keeps a section footer to one line and cuts it off; let it wrap.
+    @ViewBuilder func wrapsInFooter() -> some View {
+        #if os(macOS)
+        fixedSize(horizontal: false, vertical: true)
+        #else
+        self
+        #endif
     }
 }
 
@@ -247,6 +267,8 @@ private struct StripItemRow: View {
 
     let item: StripItem
     let control: Control
+    /// Shows a grip on the Mac, where rows reorder by dragging with no edit mode to show handles.
+    var reorderable = false
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -268,6 +290,13 @@ private struct StripItemRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                #if os(macOS)
+                if reorderable {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.tertiary)
+                        .help("Drag to reorder")
+                }
+                #endif
             }
             // The name is the label and what it sends the value ("Escape, Esc key"). The system
             // reorder handle takes its name from the row's label, so a description folded into
@@ -282,13 +311,19 @@ private struct StripItemRow: View {
         .opacity(isEnabled ? 1 : 0.45)
     }
 
+    #if os(macOS)
+    private static let buttonHeight: CGFloat = 28 // a pointer needs less than a finger
+    #else
+    private static let buttonHeight: CGFloat = 44
+    #endif
+
     private func circleButton(_ symbol: String, tint: Color, label: String) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.title3)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, tint)
-                .frame(minWidth: 36, minHeight: 44, alignment: .leading)
+                .frame(minWidth: 36, minHeight: Self.buttonHeight, alignment: .leading)
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
