@@ -19,12 +19,15 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
     private var fps: Int
     private var onFrame: (@Sendable (Frame) -> Void)?
     private var onStop: (@Sendable ((any Error)?) -> Void)?
+    /// Apps left out of the picture (the Vantage client when it runs on this Mac).
+    private let excludedBundleIDs: [String]
 
-    init(displayID: CGDirectDisplayID, pixelWidth: Int, pixelHeight: Int, fps: Int) {
+    init(displayID: CGDirectDisplayID, pixelWidth: Int, pixelHeight: Int, fps: Int, excludingBundleIDs: [String] = []) {
         self.displayID = displayID
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.fps = fps
+        self.excludedBundleIDs = excludingBundleIDs
     }
 
     static func preflightPermission() -> Bool { CGPreflightScreenCaptureAccess() }
@@ -38,7 +41,10 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
             log.error("display \(self.displayID) isn't shareable (listed: \(content.displays.map(\.displayID), privacy: .public))")
             throw CaptureError.displayNotFound
         }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let excluded = content.applications.filter { excludedBundleIDs.contains($0.bundleIdentifier) }
+        let filter = excluded.isEmpty
+            ? SCContentFilter(display: display, excludingWindows: [])
+            : SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
         let config = makeConfiguration()
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)

@@ -75,6 +75,16 @@ actor HostSession {
     private var captureFailsUntil: ContinuousClock.Instant?
     private var monitoring = false
     private var displayAsleep = false
+    /// A client on this same Mac (loopback, DEBUG builds only) is left out of the picture, or its
+    /// window would show itself showing itself.
+    private var excludedFromPicture: [String] {
+        #if DEBUG
+        peerHost == "::1" || peerHost.hasPrefix("127.") ? [AudioCapture.clientBundleID] : []
+        #else
+        []
+        #endif
+    }
+
     /// When this session put the display to sleep; input in the next moment doesn't wake it.
     private var sleptAt: ContinuousClock.Instant?
 
@@ -353,7 +363,8 @@ actor HostSession {
 
         let capture: any FrameSource = HostOptions.shared.syntheticCapture
             ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
-            : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
+            : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
+                            excludingBundleIDs: excludedFromPicture)
         let captureID = ObjectIdentifier(capture)
         try await capture.start(onFrame: { [weak self] frame in
             guard let self else { return }

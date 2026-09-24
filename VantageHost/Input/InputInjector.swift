@@ -7,7 +7,9 @@ import os
 
 /// Injects pointer, scroll, and keyboard events onto the host using CGEvent.
 ///
-/// All events are posted to `.cgSessionEventTap`. The injector tracks held buttons, modifier
+/// All events are posted to `.cgSessionEventTap`, each stamped with
+/// `VantageProtocol.injectedEventMarker` so a client on this same Mac can tell them from the
+/// user's own input and never sends them back. The injector tracks held buttons, modifier
 /// flags, and pressed keys so it can release everything on disconnect (no stuck ⌘). Requires the
 /// Post Event / Accessibility permission; the app must be unsandboxed.
 nonisolated final class InputInjector: @unchecked Sendable {
@@ -284,7 +286,9 @@ nonisolated final class InputInjector: @unchecked Sendable {
 
     // MARK: Helpers
 
+    /// Posts `event` stamped as Vantage's own (see `VantageProtocol.injectedEventMarker`).
     private func post(_ event: CGEvent) {
+        event.setIntegerValueField(.eventSourceUserData, value: VantageProtocol.injectedEventMarker)
         event.post(tap: tap)
     }
 
