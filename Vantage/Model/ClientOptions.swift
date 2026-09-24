@@ -61,6 +61,13 @@ enum ClientOptions {
     /// `-VantageSendTestFile <bytes>` queues a file of random bytes for the Mac once the file
     /// channel is up (the Files picker can't be scripted in UI tests).
     static var sendTestFileBytes: Int? { value(for: "-VantageSendTestFile").flatMap(Int.init) }
+    /// `sendTestFileBytes` once per launch (the device list queues it when there's no session).
+    static func takeSendTestFileBytes() -> Int? {
+        guard !sendTestFileTaken else { return nil }
+        sendTestFileTaken = true
+        return sendTestFileBytes
+    }
+    private static var sendTestFileTaken = false
     /// `-VantageSlowFiles <ms>` pauses that long before each 256 KiB chunk the app sends.
     static var slowFilesMillis: Int? { value(for: "-VantageSlowFiles").flatMap(Int.init) }
     /// `-VantageDropHint 1` shows the "Drop to send" hint without a drag (screenshots).

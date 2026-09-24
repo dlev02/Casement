@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import VantageCore
+import os
 
 /// Files sent to and received from the Mac this session: what's moving (with a ring that fills
 /// as it goes, the rate, and time left), then how the rest ended. Received files can be shared or
@@ -326,6 +327,46 @@ struct DropToSendHint: View {
         .platformGlass(in: .capsule)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("session.dropHint")
+    }
+}
+
+/// Files dragged onto the Mac's screen, or onto its row in the device list: copied out of the
+/// drag (its files only live for the callback) and queued for the Mac's Downloads.
+struct FileDropDelegate: DropDelegate {
+    let isEnabled: Bool
+    @Binding var isTargeted: Bool
+    /// Asked only when something is dropped, so a row needn't make its Mac's link to be a target.
+    let files: () -> FileTransferController
+
+    func validateDrop(info: DropInfo) -> Bool { isEnabled && info.hasItemsConforming(to: [.item]) }
+    func dropEntered(info: DropInfo) { if validateDrop(info: info) { isTargeted = true } }
+    func dropExited(info: DropInfo) { isTargeted = false }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: isEnabled ? .copy : .forbidden) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        guard isEnabled else { return false }
+        let providers = info.itemProviders(for: [.item])
+        for provider in providers {
+            // The file's own type (a JPEG, a PDF), not a private or text flavour of it.
+            let type = provider.registeredContentTypes.first { $0.conforms(to: .data) || $0.conforms(to: .package) } ?? .item
+            let files = self.files()
+            _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
+                guard let url else {
+                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
+                        .error("dropped item had no file: \(error?.localizedDescription ?? "?", privacy: .public)")
+                    return
+                }
+                do {
+                    let copy = try FileTransferController.copyToOutbox(url)
+                    Task { @MainActor in files.sendOutboxCopy(copy) }
+                } catch {
+                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
+                        .error("couldn't copy a dropped file: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+        return !providers.isEmpty
     }
 }
 

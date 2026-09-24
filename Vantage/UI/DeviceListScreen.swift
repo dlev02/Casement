@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import VantageCore
 
 /// Home screen: a searchable, sortable list/grid of saved devices with Tailscale status.
@@ -18,6 +19,9 @@ struct DeviceListScreen: View {
     /// Files keep moving with a Mac after its session closes; its row shows them.
     private let transfers = FileTransferCenter.shared
     @State private var transfersDevice: SavedDevice?
+    /// Send Files… picks files for this Mac without opening its screen.
+    @State private var sendFilesDevice: SavedDevice?
+    @State private var showSendFiles = false
 
     var body: some View {
         @Bindable var store = store
@@ -50,6 +54,10 @@ struct DeviceListScreen: View {
                 NavigationStack {
                     TransfersView(files: transfers.link(for: device).files, macName: device.name)
                 }
+            }
+            .fileImporter(isPresented: $showSendFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                guard case .success(let urls) = result, !urls.isEmpty, let device = sendFilesDevice else { return }
+                transfers.link(for: device).files.send(urls, securityScoped: true)
             }
             .confirmationDialog(
                 deviceToDelete.map { "Remove “\($0.name)”?" } ?? "",
@@ -85,6 +93,13 @@ struct DeviceListScreen: View {
                 if selectedDevice == nil, let host = ClientOptions.takeAutoConnectHost() {
                     selectedDevice = store.devices.first { $0.host == host }
                 }
+                #if DEBUG
+                // `-VantageSendTestFile` without a session: as if picked with Send Files… on the first Mac.
+                if ClientOptions.autoConnectHost == nil, let bytes = ClientOptions.takeSendTestFileBytes(),
+                   let device = store.devices.first {
+                    transfers.link(for: device).files.queueTestFile(bytes: bytes)
+                }
+                #endif
                 if ClientOptions.openTailscaleDevices { showTailscaleDevices = true }
             }
             .task(id: availabilityKey) {
@@ -99,7 +114,8 @@ struct DeviceListScreen: View {
             ForEach(store.sortedDevices) { device in
                 DeviceListItem(device: device, availability: availability.statuses[device.id] ?? .checking,
                                files: transfers.files(for: device.id),
-                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device })
+                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device },
+                               onSendFiles: { sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
                 .swipeActions {
                     Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
                     Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
@@ -118,7 +134,8 @@ struct DeviceListScreen: View {
                 ForEach(store.sortedDevices) { device in
                     DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking,
                                files: transfers.files(for: device.id),
-                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device })
+                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device },
+                               onSendFiles: { sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
                     #if os(visionOS)
                     .contentShape(.hoverEffect, .rect(cornerRadius: 20))
                     .hoverEffect()
@@ -135,14 +152,24 @@ struct DeviceListScreen: View {
 
     @ViewBuilder
     private func deviceMenu(for device: SavedDevice) -> some View {
-        if transfers.files(for: device.id)?.hasTransfers == true {
-            Button { transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
+        Section {
+            Button { sendFiles(to: device) } label: { Label("Send Files…", systemImage: StripItem.sendFile.symbol) }
+            if transfers.files(for: device.id)?.hasTransfers == true {
+                Button { transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
+            }
         }
         Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
         if ScreenSharingPassword.canLogIn(device) {
             Button { deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
         }
         Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    /// Files for this Mac, straight from the Files picker: they go over a files-only session, and
+    /// the Mac's row shows them moving.
+    private func sendFiles(to device: SavedDevice) {
+        sendFilesDevice = device
+        showSendFiles = true
     }
 
     private func logIn(to device: SavedDevice) {
@@ -266,6 +293,10 @@ private struct DeviceListItem: View {
     let files: FileTransferController?
     let onOpen: () -> Void
     let onShowTransfers: () -> Void
+    let onSendFiles: () -> Void
+    /// Files dropped on the row go to this Mac's queue.
+    let dropFiles: () -> FileTransferController
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -273,6 +304,7 @@ private struct DeviceListItem: View {
                 DeviceRow(device: device, availability: availability)
             }
             .buttonStyle(.plain)
+            .accessibilityAction(named: "Send Files") { onSendFiles() }
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
                     .padding(.leading, 58) // under the name, past the 44 pt icon and its spacing
@@ -281,6 +313,26 @@ private struct DeviceListItem: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: files?.hasActiveTransfers == true)
+        .overlay(alignment: .trailing) {
+            if isDropTargeted { DropTargetHint(macName: device.name).transition(.opacity) }
+        }
+        .animation(.easeOut(duration: isDropTargeted ? 0.2 : 0.15), value: isDropTargeted)
+        .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: true, isTargeted: $isDropTargeted, files: dropFiles))
+    }
+}
+
+/// "Drop to send to ⟨Mac⟩" at the end of a row or the foot of a card while files hover over it.
+private struct DropTargetHint: View {
+    let macName: String
+
+    var body: some View {
+        Label("Drop to send", systemImage: StripItem.sendFile.symbol)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.accentColor, in: .capsule)
+            .accessibilityLabel("Drop to send to \(macName)")
     }
 }
 
@@ -292,6 +344,9 @@ struct DeviceCard: View {
     var files: FileTransferController?
     var onOpen: () -> Void = {}
     var onShowTransfers: () -> Void = {}
+    var onSendFiles: () -> Void = {}
+    var dropFiles: (() -> FileTransferController)?
+    @State private var isDropTargeted = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button(action: onOpen) {
@@ -316,6 +371,7 @@ struct DeviceCard: View {
                 .accessibilityElement(children: .combine)
             }
             .buttonStyle(.plain)
+            .accessibilityAction(named: "Send Files") { onSendFiles() }
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
                     .transition(.opacity)
@@ -324,7 +380,18 @@ struct DeviceCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .platformGlass(in: .rect(cornerRadius: 20))
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .overlay(alignment: .bottomTrailing) { DropTargetHint(macName: device.name).padding(12) }
+                    .transition(.opacity)
+            }
+        }
         .animation(.easeOut(duration: 0.2), value: files?.hasActiveTransfers == true)
+        .animation(.easeOut(duration: isDropTargeted ? 0.2 : 0.15), value: isDropTargeted)
+        .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: dropFiles != nil, isTargeted: $isDropTargeted,
+                                                        files: { dropFiles?() ?? FileTransferController() }))
     }
 }
 

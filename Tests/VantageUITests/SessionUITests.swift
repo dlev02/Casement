@@ -231,6 +231,42 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(badge.waitForNonExistence(timeout: 5), "nothing moving, so the row is plain again")
     }
 
+    /// Send Files from the device list, no screen: the Mac's menu offers it (the Files picker
+    /// opens), and a file queued without a session (`-VantageSendTestFile` with no auto-connect,
+    /// as if picked there) goes over a files-only session while the row shows it, then lands.
+    @MainActor func testSendFilesFromTheDeviceList() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageSeedHost", Self.host, "-VantageSendTestFile", "3145728", "-VantageSlowFiles", "1500",
+                               "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let badge = app.buttons["devices.transfers"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue((badge.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: badge.value))")
+        XCTAssertFalse(app.buttons["session.toolbar.disconnect"].exists, "no screen session")
+        screenshot("Sending from the device list", app)
+
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "My Mac")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        row.press(forDuration: 1.2)
+        let sendFiles = app.buttons["Send Files…"]
+        XCTAssertTrue(sendFiles.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["Transfers…"].exists)
+        screenshot("Mac menu with Send Files", app)
+        sendFiles.tap()
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "the Files picker opens: \(app.debugDescription)")
+        screenshot("Files picker for the Mac", app)
+        cancel.tap()
+
+        XCTAssertTrue(badge.waitForExistence(timeout: 10))
+        badge.tap()
+        let transfer = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
+        XCTAssertTrue(transfer.waitForExistence(timeout: 5), app.debugDescription)
+        wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent"), evaluatedWith: transfer)], timeout: 60)
+        screenshot("Sent without opening the screen", app)
+        app.buttons["Done"].tap()
+    }
+
     /// The "Drop to send" hint, forced on for a screenshot (a drag can't be scripted here).
     @MainActor func testDropHint() {
         let app = XCUIApplication()

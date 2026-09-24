@@ -338,23 +338,29 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts),
   session menu "Send File to Mac…" / "Transfers…", drop onto the Mac's screen (`FileDropDelegate`,
   copies out of the drag into `tmp/Outbox`, "Drop to send to ⟨Mac⟩" hint), `ReceivedFileNotice`
-  (Show / Share), `TransfersView` sheet, and "Open in Vantage" from other apps
-  (`CFBundleDocumentTypes` public.data/public.content, rank Alternate → `onOpenURL` →
-  `SharedFileInbox` copies it out, then the open session queues it, or the most recent Mac is
-  opened; waits for Face ID). Disconnect never asks on a current Mac: the screen goes and the
+  (Show / Share), `TransfersView` sheet, **without the screen** from the device list: the Mac's
+  context menu (and a VoiceOver action) "Send Files…" opens the Files picker for that Mac, and
+  files dropped on its row or card go to it (accent "Drop to send" hint), both over a files-only
+  session; and "Open in Vantage" from other apps (`CFBundleDocumentTypes`
+  public.data/public.content, rank Alternate → `onOpenURL` → `SharedFileInbox` copies it out,
+  then the open session queues it, or it goes files-only to the most recent Mac, whose row shows
+  it; a Mac known to predate files-only sessions is opened instead; waits for Face ID). Disconnect never asks on a current Mac: the screen goes and the
   files keep moving; the device list then shows them on the Mac's row/card
   (`DeviceTransferBadge`, "Sending 3 of 12 · 45% · 2 min", tap → Transfers; also the context menu's
   Transfers…). Only an older Mac, which would stop them, gets "Files are still transferring.
   Disconnect anyway?". Returning to the foreground retries every waiting file
   (`FileTransferCenter.retryAll`). Debug:
-  `-VantageSendTestFile <bytes>` queues random bytes once the channel is up, `-VantageSlowFiles <ms>`
+  `-VantageSendTestFile <bytes>` queues random bytes once the channel is up (without
+  `-VantageAutoConnect`, on the first saved Mac from the device list, as if picked with Send
+  Files…), `-VantageAutoConnect` opens its session once per launch, `-VantageSlowFiles <ms>`
   pauses before each chunk the app sends (`FileTransferConfiguration.chunkDelay`; keep it in the
   seconds for UI tests, since XCUITest waits for an idle app and steady progress never is), `-VantageDropHint 1`
   shows the hint, `-VantageOpenScreen transfers` shows the sheet with fixture rows, host
   `--send-file-on-connect <path>` sends a file to each client that attaches. Tests:
   `FileTransferTests` (VantageCore), `FileTransferSessionTests` (loopback `ClientSession` + mock
   host), `SessionUITests.testFilesMoveBothWays` (needs the synthetic host started with
-  `--send-file-on-connect`), `testDisconnectKeepsFilesMovingAndTheListShowsThem`, `testDropHint`,
+  `--send-file-on-connect`), `testDisconnectKeepsFilesMovingAndTheListShowsThem`,
+  `testSendFilesFromTheDeviceList`, `testDropHint`,
   `testTransfersSheetScreens`; resume in `FileTransferTests` (`interruptedFileResumesOnANewConnection`
   both ways, `resumedFileThatDoesntMatchIsRefusedThenSentWhole`, `newChannelTakesOverAPartialFromAStaleOne`)
   and `FileTransferSessionTests.interruptedUploadResumesWhereItStopped`; without the screen in

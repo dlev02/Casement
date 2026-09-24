@@ -135,7 +135,9 @@ struct ContentView: View {
     }
 
     /// A file opened in Vantage from another app goes to the Mac in the open session, or else
-    /// to the Mac used most recently, connecting to it. Waits for Face ID like any other request.
+    /// straight to the Mac used most recently without opening its screen (its row in the list
+    /// shows it moving). A Mac too old for that is opened as before. Waits for Face ID like any
+    /// other request.
     private func openSessionForSharedFiles() {
         guard !sharedFiles.pending.isEmpty, !lock.isLocked else { return }
         #if !os(visionOS)
@@ -143,7 +145,12 @@ struct ContentView: View {
         #endif
         let recent = store.devices.max { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) }
         guard let device = recent else { return }
-        selectedDevice = device
+        let link = FileTransferCenter.shared.link(for: device)
+        guard link.canSendWithoutScreen else {
+            selectedDevice = device
+            return
+        }
+        for copy in sharedFiles.take() { link.files.sendOutboxCopy(copy) }
     }
 
     #if DEBUG

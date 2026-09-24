@@ -262,7 +262,7 @@ struct RemoteSessionScreen: View {
         .animation(.easeOut(duration: isDropTargeted ? 0.2 : 0.15), value: isDropTargeted && canSendFiles)
         .animation(.easeOut(duration: receivedNotice == nil ? 0.18 : 0.25), value: receivedNotice?.id)
         .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: canSendFiles, isTargeted: $isDropTargeted,
-                                                        files: session.files))
+                                                        files: { session.files }))
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { session.files.send(urls, securityScoped: true) }
         }
@@ -799,45 +799,6 @@ struct HostStatusBanner: View {
         .padding(.vertical, 10)
         .platformGlass(in: .capsule)
         .frame(maxWidth: 520)
-    }
-}
-
-/// Files dragged onto the Mac's screen: copied out of the drag (its files only live for the
-/// callback) and queued for the Mac's Downloads.
-private struct FileDropDelegate: DropDelegate {
-    let isEnabled: Bool
-    @Binding var isTargeted: Bool
-    let files: FileTransferController
-
-    func validateDrop(info: DropInfo) -> Bool { isEnabled && info.hasItemsConforming(to: [.item]) }
-    func dropEntered(info: DropInfo) { if validateDrop(info: info) { isTargeted = true } }
-    func dropExited(info: DropInfo) { isTargeted = false }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: isEnabled ? .copy : .forbidden) }
-
-    func performDrop(info: DropInfo) -> Bool {
-        isTargeted = false
-        guard isEnabled else { return false }
-        let providers = info.itemProviders(for: [.item])
-        for provider in providers {
-            // The file's own type (a JPEG, a PDF), not a private or text flavour of it.
-            let type = provider.registeredContentTypes.first { $0.conforms(to: .data) || $0.conforms(to: .package) } ?? .item
-            let files = self.files
-            _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
-                guard let url else {
-                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
-                        .error("dropped item had no file: \(error?.localizedDescription ?? "?", privacy: .public)")
-                    return
-                }
-                do {
-                    let copy = try FileTransferController.copyToOutbox(url)
-                    Task { @MainActor in files.sendOutboxCopy(copy) }
-                } catch {
-                    Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
-                        .error("couldn't copy a dropped file: \(error.localizedDescription, privacy: .public)")
-                }
-            }
-        }
-        return !providers.isEmpty
     }
 }
 
