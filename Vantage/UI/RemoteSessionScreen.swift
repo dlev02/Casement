@@ -246,6 +246,8 @@ struct RemoteSessionScreen: View {
             }
         }
         .onChange(of: touchMode) { _, newValue in input.mode = newValue }
+        .onChange(of: trackpadSensitivity) { _, newValue in input.trackpadSensitivity = newValue }
+        .onChange(of: naturalScroll) { _, newValue in input.naturalScroll = newValue }
         .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
         .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
         .onChange(of: scenePhase) { _, phase in
@@ -741,7 +743,7 @@ struct RemoteSessionScreen: View {
         #endif
         session.setMacAudio(wantsMacAudio)
         input.mode = touchMode
-        input.naturalScroll = device.naturalScroll
+        input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
 
         session.connect(to: device, viewport: currentViewport(), pairingCode: ClientOptions.pairingCode)
@@ -793,6 +795,11 @@ struct RemoteSessionScreen: View {
 
     private func currentViewport() -> Viewport {
         Viewport(widthPoints: Double(viewportSize.width), heightPoints: Double(viewportSize.height), scale: Double(displayScale))
+    }
+
+    /// This Mac's saved Natural Scrolling (from the store, so an edit mid-session applies).
+    private var naturalScroll: Bool {
+        store.devices.first { $0.id == device.id }?.naturalScroll ?? device.naturalScroll
     }
 }
 
