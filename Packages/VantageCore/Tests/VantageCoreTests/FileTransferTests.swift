@@ -571,6 +571,32 @@ struct FileTransferEngineTests {
         #expect(FileManager.default.fileExists(atPath: fresh.path))
     }
 
+    /// Both sides sending several big files at once, one side through a tiny buffer: every file
+    /// arrives intact in both directions.
+    @Test func bothWaysAtOnceNeverStall() async throws {
+        let (clientChannel, serverChannel, listener) = try await channelPair(serverBuffer: 2)
+        defer { listener.cancel() }
+        let clientDir = try temporaryDirectory("client"), hostDir = try temporaryDirectory("host")
+        defer { try? FileManager.default.removeItem(at: clientDir); try? FileManager.default.removeItem(at: hostDir) }
+        let client = FileTransferEngine(channel: clientChannel, role: .client, configuration: .init(receiveDirectory: clientDir))
+        let host = FileTransferEngine(channel: serverChannel, role: .host, configuration: .init(receiveDirectory: hostDir))
+        let runs = [Task { await client.run() }, Task { await host.run() }]
+        let ups = try (1...3).map { try randomFile(bytes: 6 << 20, in: clientDir, name: "Up \($0).bin") }
+        let downs = try (1...3).map { try randomFile(bytes: 6 << 20, in: hostDir, name: "Down \($0).bin") }
+        let outcomes = await withTaskGroup(of: FileTransferOutcome.self) { group in
+            for url in ups { group.addTask { await client.send(fileAt: url, name: "Got " + url.lastPathComponent) } }
+            for url in downs { group.addTask { await host.send(fileAt: url, name: "Got " + url.lastPathComponent) } }
+            var all: [FileTransferOutcome] = []
+            for await outcome in group { all.append(outcome) }
+            return all
+        }
+        #expect(outcomes.count == 6 && outcomes.allSatisfy(\.isSuccess), "\(outcomes)")
+        for url in ups { #expect(try Data(contentsOf: hostDir.appending(path: "Got " + url.lastPathComponent)) == Data(contentsOf: url)) }
+        for url in downs { #expect(try Data(contentsOf: clientDir.appending(path: "Got " + url.lastPathComponent)) == Data(contentsOf: url)) }
+        await client.close()
+        for run in runs { await run.value }
+    }
+
     /// Idle until a file is in flight, idle again after.
     @Test func busyWhileAFileMoves() async throws {
         let (clientChannel, serverChannel, listener) = try await channelPair()

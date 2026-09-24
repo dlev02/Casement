@@ -303,7 +303,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   incremental SHA-256 on both sides, receives into a hidden `.vantage-<id>.partial` renamed to a
   Finder-style unique name (`FileNames.sanitize`/`uniqueURL`: last path component only, no
   control/bidi characters or leading dots, ≤ 200 UTF-8 bytes); the file channel uses
-  `maxBufferedMessages` 64 so a slow disk pushes back through TCP. **Resume**: a lost connection
+  `maxBufferedMessages` 64 so a slow disk pushes back through TCP; the receive loop sends its answers
+  (accept, result) without waiting on the connection (`reply`, `sendDetached`), so two big files
+  crossing never leave both loops waiting on full pipes. **Resume**: a lost connection
   keeps the receiver's partial; the sender re-offers the same `id` and the receiver answers
   `resumeOffset` = the partial's size after re-hashing it (a SHA-256 state can't be saved), the
   sender hashes that prefix from disk and streams the rest; both hashes run off the actor

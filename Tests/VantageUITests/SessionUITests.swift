@@ -217,7 +217,7 @@ nonisolated final class SessionUITests: XCTestCase {
 
         let badge = app.buttons["devices.transfers"]
         XCTAssertTrue(badge.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue((badge.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: badge.value))")
+        XCTAssertTrue(Self.isMoving(badge.value), "\(String(describing: badge.value))")
         screenshot("Device list with the transfer carrying on", app)
         badge.tap()
 
@@ -241,7 +241,7 @@ nonisolated final class SessionUITests: XCTestCase {
         app.launch()
         let badge = app.buttons["devices.transfers"]
         XCTAssertTrue(badge.waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertTrue((badge.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: badge.value))")
+        XCTAssertTrue(Self.isMoving(badge.value), "\(String(describing: badge.value))")
         XCTAssertFalse(app.buttons["session.toolbar.disconnect"].exists, "no screen session")
         screenshot("Sending from the device list", app)
 
@@ -282,7 +282,7 @@ nonisolated final class SessionUITests: XCTestCase {
             app.launch()
             let capsule = app.buttons["session.transferCapsule"]
             XCTAssertTrue(capsule.waitForExistence(timeout: 20), app.debugDescription)
-            XCTAssertTrue((capsule.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: capsule.value))")
+            XCTAssertTrue(Self.isMoving(capsule.value), "\(String(describing: capsule.value))")
             let strip = app.buttons["session.toolbar.collapse"]
             XCTAssertTrue(strip.waitForExistence(timeout: 5))
             if dock.hasPrefix("bottom") {
@@ -298,11 +298,20 @@ nonisolated final class SessionUITests: XCTestCase {
                 XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 5), app.debugDescription)
                 app.buttons["Done"].tap()
             }
-            wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent to"), evaluatedWith: capsule)], timeout: 40)
+            // "Sent to My Mac", or "Moved 2 files" when the host also sends one (`--send-file-on-connect`).
+            wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@ OR value BEGINSWITH %@", "Sent to", "Moved"),
+                                   evaluatedWith: capsule)], timeout: 40)
             screenshot("Capsule done (strip \(dock))", app)
             XCTAssertTrue(capsule.waitForNonExistence(timeout: 10), "gets out of the way")
             app.terminate()
         }
+    }
+
+    /// A run on its way to the Mac: "Sending to My Mac, …", or "Moving files with My Mac, …" when
+    /// a host started with `--send-file-on-connect` is sending one back at the same time.
+    private static func isMoving(_ value: Any?) -> Bool {
+        guard let value = value as? String else { return false }
+        return value.hasPrefix("Sending to") || value.hasPrefix("Moving files with")
     }
 
     private static var appearanceArguments: [String] {

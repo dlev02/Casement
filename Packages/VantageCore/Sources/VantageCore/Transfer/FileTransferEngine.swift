@@ -356,7 +356,7 @@ public actor FileTransferEngine {
 
     private func receiveOffer(_ offer: FileOffer) async throws {
         guard !isClosed, incoming[offer.id] == nil, outgoing?.id != offer.id else {
-            try await channel.send(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
+            reply(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
             return
         }
         let name = FileNames.sanitize(offer.name)
@@ -383,14 +383,14 @@ public actor FileTransferEngine {
         guard !isClosed, incoming[offer.id] == nil else {
             PartialClaims.shared.release(partial, by: self)
             if isClosed { return }
-            try await channel.send(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
+            reply(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
             return
         }
         if let reason = rejection(for: offer, alreadyHave: resume?.offset ?? 0) {
             log.info("refusing incoming file (\(offer.byteCount, privacy: .public) bytes): \(reason, privacy: .public)")
             PartialClaims.shared.release(partial, by: self)
             try? FileManager.default.removeItem(at: partial)
-            try await channel.send(.fileAccept(.rejected(offer.id, reason: reason)))
+            reply(.fileAccept(.rejected(offer.id, reason: reason)))
             return
         }
         let handle: FileHandle
@@ -408,7 +408,7 @@ public actor FileTransferEngine {
         } catch {
             log.error("can't open partial file: \(error.localizedDescription, privacy: .public)")
             PartialClaims.shared.release(partial, by: self)
-            try await channel.send(.fileAccept(.rejected(offer.id, reason: "The file couldn't be saved on this device.")))
+            reply(.fileAccept(.rejected(offer.id, reason: "The file couldn't be saved on this device.")))
             return
         }
         let state = Incoming(offer: offer, name: name, partial: partial, handle: handle)
@@ -420,7 +420,15 @@ public actor FileTransferEngine {
         incoming[offer.id] = state
         eventSink.yield(.started(FileTransferItem(id: offer.id, name: name, byteCount: offer.byteCount, direction: .receiving)))
         if state.received > 0 || offer.byteCount == 0 { eventSink.yield(.progress(id: offer.id, bytes: state.received)) }
-        try await channel.send(.fileAccept(FileAccept(id: offer.id, resumeOffset: state.received)))
+        reply(.fileAccept(FileAccept(id: offer.id, resumeOffset: state.received)))
+    }
+
+    /// Answers from the receive loop never wait on the network. With big files going both ways,
+    /// a loop waiting to write into a full connection while the other side's loop did the same
+    /// would leave neither reading again. The connection keeps sends in order, and a failed one
+    /// ends the channel, which the loop notices.
+    private func reply(_ message: Message) {
+        channel.sendDetached(message)
     }
 
     /// Another engine took this file over (its sender reconnected on a new channel): let go of
@@ -477,7 +485,7 @@ public actor FileTransferEngine {
               constantTimeEquals(digest, complete.sha256) else {
             discard(state)
             log.error("incoming file failed its checksum (\(state.received, privacy: .public)/\(state.offer.byteCount, privacy: .public) bytes, resumed at \(state.resumedAt, privacy: .public))")
-            try await channel.send(.fileResult(FileResult(id: complete.id, ok: false, error: "The file arrived damaged. Try sending it again.")))
+            reply(.fileResult(FileResult(id: complete.id, ok: false, error: "The file arrived damaged. Try sending it again.")))
             eventSink.yield(.finished(id: complete.id, .failed("The file arrived damaged.")))
             return
         }
@@ -489,13 +497,13 @@ public actor FileTransferEngine {
             logRate("received", bytes: state.received - state.resumedAt, since: state.started, resumedAt: state.resumedAt)
             // It's saved here whether or not the answer reaches the sender.
             eventSink.yield(.finished(id: complete.id, .received(saved)))
-            try await channel.send(.fileResult(FileResult(id: complete.id, ok: true, savedName: saved.lastPathComponent)))
+            reply(.fileResult(FileResult(id: complete.id, ok: true, savedName: saved.lastPathComponent)))
         } catch let error as ChannelError {
             throw error
         } catch {
             discard(state)
             log.error("couldn't move received file into place: \(error.localizedDescription, privacy: .public)")
-            try await channel.send(.fileResult(FileResult(id: complete.id, ok: false, error: "The file couldn't be saved on the other device.")))
+            reply(.fileResult(FileResult(id: complete.id, ok: false, error: "The file couldn't be saved on the other device.")))
             eventSink.yield(.finished(id: complete.id, .failed("The file couldn't be saved.")))
         }
     }
