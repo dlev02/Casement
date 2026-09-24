@@ -26,11 +26,19 @@ nonisolated final class InputInjector: @unchecked Sendable {
     private var lastPointer: CGPoint = .zero
     private var naturalScroll: Bool
     private var pointerEventCount = 0
+    /// The glide after an iPad flick, one frame per tick of `momentumTimer` (see `ScrollMomentum`).
+    private var momentum: ScrollMomentum?
+    private var momentumTimer: DispatchSourceTimer?
+    private var momentumFlags: CGEventFlags = []
 
     init(displayFrame: CGRect, naturalScroll: Bool = false) {
         self.displayFrame = displayFrame
         self.naturalScroll = naturalScroll
         source?.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitLocalKeyboardEvents], state: .eventSuppressionStateSuppressionInterval)
+    }
+
+    deinit {
+        momentumTimer?.cancel() // an active dispatch source outlives its last reference
     }
 
     static func hasPermission() -> Bool {
@@ -76,6 +84,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 type = .mouseMoved
             }
         case .down:
+            stopMomentum() // a click stops a glide, as touching the trackpad does
             heldButtons.insert(event.button)
             type = downType(for: event.button)
         case .up:
@@ -96,7 +105,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
             cgEvent.setIntegerValueField(.mouseEventButtonNumber, value: Int64(effectiveButton.rawValue))
         }
 
-        cgEvent.post(tap: tap)
+        post(cgEvent)
         pointerEventCount += 1
         if event.action != .move || pointerEventCount == 1 {
             log.info("pointer \(String(describing: event.action), privacy: .public) \(String(describing: event.button), privacy: .public) at \(Int(point.x)),\(Int(point.y)) clicks=\(event.clickCount) trusted=\(AXIsProcessTrusted())")
@@ -109,24 +118,75 @@ nonisolated final class InputInjector: @unchecked Sendable {
         queue.async { self.injectScroll(event) }
     }
 
+    /// Continuous deltas are posted negated and line deltas as they come; clients send them
+    /// accordingly (the iPad its own way, the Mac client so the posted event equals its own).
+    /// Any scroll stops a glide still running.
     private func injectScroll(_ event: ScrollEvent) {
+        stopMomentum()
+        let flags = combinedFlags(with: event.modifiers)
+        if event.isContinuous, event.phase == .ended, event.momentum == .began {
+            // An iPad flick: end the gesture, then glide from the finger's velocity. A momentum
+            // phase on the `ended` event itself would break the one-phase-at-a-time rule.
+            postScroll(deltaX: Double(event.deltaX), deltaY: Double(event.deltaY), isContinuous: true,
+                       phase: .ended, momentum: .none, flags: flags)
+            startMomentum(ScrollMomentum(velocityX: Double(event.velocityX), velocityY: Double(event.velocityY)), flags: flags)
+            return
+        }
+        postScroll(deltaX: Double(event.deltaX), deltaY: Double(event.deltaY), isContinuous: event.isContinuous,
+                   phase: event.phase, momentum: event.momentum, flags: flags)
+    }
+
+    private func postScroll(deltaX: Double, deltaY: Double, isContinuous: Bool, phase: ScrollPhase, momentum: MomentumPhase, flags: CGEventFlags) {
         let sign: Double = naturalScroll ? 1 : -1
-        let dyPixels = Int32((Double(event.deltaY) * sign).rounded())
-        let dxPixels = Int32((Double(event.deltaX) * sign).rounded())
-        let unit: CGScrollEventUnit = event.isContinuous ? .pixel : .line
+        let dyPixels = Int32((deltaY * sign).rounded())
+        let dxPixels = Int32((deltaX * sign).rounded())
+        let unit: CGScrollEventUnit = isContinuous ? .pixel : .line
         guard let cgEvent = CGEvent(scrollWheelEvent2Source: source, units: unit, wheelCount: 2,
-                                    wheel1: event.isContinuous ? dyPixels : Int32(event.deltaY.rounded()),
-                                    wheel2: event.isContinuous ? dxPixels : Int32(event.deltaX.rounded()),
+                                    wheel1: isContinuous ? dyPixels : Int32(deltaY.rounded()),
+                                    wheel2: isContinuous ? dxPixels : Int32(deltaX.rounded()),
                                     wheel3: 0) else { return }
-        if event.isContinuous {
+        if isContinuous {
             cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
             cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dyPixels))
             cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dxPixels))
-            cgEvent.setIntegerValueField(CGEventField(rawValue: 99)!, value: Int64(cgScrollPhase(event.phase)))
-            cgEvent.setIntegerValueField(CGEventField(rawValue: 123)!, value: Int64(cgMomentumPhase(event.momentum)))
+            cgEvent.setIntegerValueField(CGEventField(rawValue: 99)!, value: Int64(cgScrollPhase(phase)))
+            cgEvent.setIntegerValueField(CGEventField(rawValue: 123)!, value: Int64(cgMomentumPhase(momentum)))
         }
-        cgEvent.flags = combinedFlags(with: event.modifiers)
-        cgEvent.post(tap: tap)
+        cgEvent.flags = flags
+        post(cgEvent)
+    }
+
+    private func startMomentum(_ glide: ScrollMomentum?, flags: CGEventFlags) {
+        guard let glide else { return }
+        momentum = glide
+        momentumFlags = flags
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + ScrollMomentum.frameInterval, repeating: ScrollMomentum.frameInterval)
+        timer.setEventHandler { [weak self] in self?.stepMomentum() }
+        timer.resume()
+        momentumTimer = timer
+    }
+
+    private func stepMomentum() {
+        guard var glide = momentum, let frame = glide.next() else {
+            stopMomentum()
+            return
+        }
+        momentum = glide
+        postMomentum(frame)
+        if glide.isFinished { stopMomentum() }
+    }
+
+    /// Ends a glide still running (with its `end` frame) and stops the timer.
+    private func stopMomentum() {
+        if var glide = momentum, let frame = glide.cancel() { postMomentum(frame) }
+        momentum = nil
+        momentumTimer?.cancel()
+        momentumTimer = nil
+    }
+
+    private func postMomentum(_ frame: ScrollMomentum.Frame) {
+        postScroll(deltaX: frame.deltaX, deltaY: frame.deltaY, isContinuous: true, phase: .none, momentum: frame.phase, flags: momentumFlags)
     }
 
     private func cgScrollPhase(_ phase: ScrollPhase) -> UInt32 {
@@ -173,7 +233,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
             if stroke.kind == .flagsChanged { cgEvent.type = .flagsChanged }
             cgEvent.flags = stroke.flags
             if stroke.isRepeat { cgEvent.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
-            cgEvent.post(tap: tap)
+            post(cgEvent)
         }
         currentFlags = keyboard.modifierFlags
     }
@@ -187,10 +247,10 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 let chunk = Array(units[index ..< min(index + 16, units.count)])
                 guard let down = CGEvent(keyboardEventSource: self.source, virtualKey: 0, keyDown: true) else { break }
                 down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
-                down.post(tap: self.tap)
+                self.post(down)
                 if let up = CGEvent(keyboardEventSource: self.source, virtualKey: 0, keyDown: false) {
                     up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
-                    up.post(tap: self.tap)
+                    self.post(up)
                 }
                 index += 16
             }
@@ -202,9 +262,10 @@ nonisolated final class InputInjector: @unchecked Sendable {
     /// Releases every held key and button and clears modifier state. Call on disconnect/focus loss.
     func releaseAll() {
         queue.async {
+            self.stopMomentum()
             for button in self.heldButtons {
                 if let cgEvent = CGEvent(mouseEventSource: self.source, mouseType: self.upType(for: button), mouseCursorPosition: self.lastPointer, mouseButton: self.cgButton(button)) {
-                    cgEvent.post(tap: self.tap)
+                    self.post(cgEvent)
                 }
             }
             self.heldButtons.removeAll()
@@ -215,13 +276,17 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 if let cgEvent = CGEvent(keyboardEventSource: self.source, virtualKey: 0, keyDown: false) {
                     cgEvent.type = .flagsChanged
                     cgEvent.flags = []
-                    cgEvent.post(tap: self.tap)
+                    self.post(cgEvent)
                 }
             }
         }
     }
 
     // MARK: Helpers
+
+    private func post(_ event: CGEvent) {
+        event.post(tap: tap)
+    }
 
     private func clampToDisplay(_ point: CGPoint) -> CGPoint {
         CGPoint(x: point.x.clamped(displayFrame.minX, displayFrame.maxX - 1),

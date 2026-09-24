@@ -25,9 +25,9 @@ let package = Package(
         // Host dictation (clip buffering, WAV, MacWhisper `mw` and SpeechAnalyzer runners).
         .target(name: "VantageHostDictation", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Dictation"),
-        // Host keyboard sequencing: the events the injector posts for each key and chord.
+        // Host keyboard sequencing and scroll momentum: the events the injector posts.
         .target(name: "VantageHostInput", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
-                path: "VantageHost/Input", sources: ["KeyboardSequencer.swift"]),
+                path: "VantageHost/Input", sources: ["KeyboardSequencer.swift", "ScrollMomentum.swift"]),
         .testTarget(name: "ClientSessionTests", dependencies: ["VantageClientLogic", "VantageSynthetic", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/ClientSessionTests"),
         .testTarget(name: "HostInputTests", dependencies: ["VantageHostInput", .product(name: "VantageCore", package: "VantageCore")],
