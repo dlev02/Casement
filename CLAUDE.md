@@ -345,7 +345,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   belong to the Mac, not the session: `FileTransferCenter.shared` keeps one `FileLink` per saved
   device (the session, the device list, and visionOS windows share it). A link carries a
   `FileTransferController` (`session.files`; queued files wait, one cut off by a drop resumes;
-  `summary` sums up the current run of files) and the channel: the screen session's token while
+  `summary` sums up the current run of files; a send is settled by the task that sent it, and the
+  engine's event stream can reach the controller later, so a start or progress for a send that
+  isn't moving any more is ignored, `lateEventsDontReviveAFinishedSend`) and the channel: the screen session's token while
   one is connected (`screenDidConnect`/`screenDidDrop`/`screenDidEnd`), else a files-only session of
   its own (`FilesOnlySession.open`, primary kept open beside the channel) whenever work is queued
   or the channel drops under a screen; it closes 30 s after nothing is moving and no screen is up

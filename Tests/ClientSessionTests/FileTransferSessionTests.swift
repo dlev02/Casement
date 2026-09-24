@@ -288,6 +288,46 @@ struct FileTransferSessionTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: host.directory.path) == ["Small.bin"])
     }
 
+    /// A small file on a fast link is sent and settled before the engine's "started" and progress
+    /// for it get through the event stream (the main thread was busy): arriving late, they must
+    /// not put the finished row back in progress, where it stayed for good.
+    @Test @MainActor func lateEventsDontReviveAFinishedSend() async throws {
+        let host = try await MockFileHost()
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let session = ClientSession(identity: DeviceIdentity(), files: files)
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
+        try await waitUntil("file channel") { files.isConnected }
+        files.send([try randomFile(bytes: 64 << 10, in: sourceDir, name: "Notes.bin")], securityScoped: false)
+        try await waitUntil("sent") { files.transfers.first?.state == .done }
+        let sent = try #require(files.transfers.first)
+
+        files.handle(.started(FileTransferItem(id: sent.id, name: sent.name, byteCount: sent.byteCount, direction: .sending)))
+        files.handle(.progress(id: sent.id, bytes: sent.byteCount / 2))
+        #expect(files.transfers.first?.state == .done)
+        #expect(files.transfers.first?.fraction == 1)
+        #expect(!files.hasActiveTransfers)
+    }
+
+    /// The same for a send waiting its turn (after a drop, before the channel is back): a late
+    /// start would mark it moving, and the queue would never send it.
+    @Test @MainActor func lateStartLeavesAWaitingSendQueued() throws {
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        files.send([try randomFile(bytes: 1_000, in: sourceDir, name: "Notes.bin")], securityScoped: false)
+        let waiting = try #require(files.transfers.first)
+        #expect(waiting.state == .waiting, "no file channel yet")
+
+        files.handle(.started(FileTransferItem(id: waiting.id, name: waiting.name, byteCount: waiting.byteCount, direction: .sending)))
+        files.handle(.progress(id: waiting.id, bytes: 500))
+        #expect(files.transfers.first?.state == .waiting)
+        #expect(files.transfers.first?.bytesDone == 0)
+    }
+
     @Test @MainActor func cancelMidTransferReachesTheMac() async throws {
         let host = try await MockFileHost()
         defer { host.stop() }

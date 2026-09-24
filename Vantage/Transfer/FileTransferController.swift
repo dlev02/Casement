@@ -373,20 +373,28 @@ final class FileTransferController {
 
     // MARK: Events
 
-    private func handle(_ event: FileTransferEvent) {
+    /// Internal so tests can deliver an event late, as the engine's stream sometimes does.
+    func handle(_ event: FileTransferEvent) {
         switch event {
         case .started(let item):
-            rateSamples[item.id] = (.now, 0)
             if let index = transfers.firstIndex(where: { $0.id == item.id }) {
+                // `pumpIfNeeded` settles a send as soon as the engine returns, and this stream can
+                // lag behind it on a busy main thread (a small file on a fast link is done in
+                // milliseconds). A start for a send that isn't moving any more, finished or queued
+                // again after a drop, is stale: it would leave the row in progress for good.
+                if item.direction == .sending, sending != item.id { return }
+                rateSamples[item.id] = (.now, 0)
                 transfers[index].state = .active
                 transfers[index].byteCount = item.byteCount
                 transfers[index].interruptedAt = nil
             } else {
+                rateSamples[item.id] = (.now, 0)
                 transfers.append(Transfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction, state: .active,
                                           batch: batchForNewRow()))
             }
         case .progress(let id, let bytes):
-            guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
+            // Late progress for a file that has finished (or is waiting to resume) is stale too.
+            guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].state == .active else { return }
             let now = ContinuousClock.now
             // A resume reports where it picked up first: the rate starts from there.
             if let sample = rateSamples[id], sample.bytes == 0, bytes > 0, transfers[index].bytesPerSecond == 0 {
