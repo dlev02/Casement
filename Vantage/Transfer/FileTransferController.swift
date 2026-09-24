@@ -61,6 +61,7 @@ final class FileTransferController {
         var count = 0
         var finished = 0
         var failed = 0
+        var cancelled = 0
         var sending = 0
         var receiving = 0
         var bytes: UInt64 = 0
@@ -68,6 +69,8 @@ final class FileTransferController {
         var bytesPerSecond: Double = 0
         /// The file moving now, else the next one waiting.
         var current: Transfer?
+        /// The run's first file (the only one, for a run of one).
+        var first: Transfer?
         /// What's left is waiting for a connection that dropped.
         var isPaused = false
 
@@ -102,8 +105,6 @@ final class FileTransferController {
     private(set) var isConnected = false
     /// Called once per file received here, for the "Received …" notice.
     var onReceived: ((Transfer) -> Void)?
-    /// Called once per file sent (or that failed to send), for VoiceOver.
-    var onSendFinished: ((Transfer) -> Void)?
 
     let receiveDirectory: URL
     private var engine: FileTransferEngine?
@@ -244,6 +245,7 @@ final class FileTransferController {
         for transfer in transfers.reversed() {
             guard transfer.batch == currentBatch else { break }
             summary.count += 1
+            summary.first = transfer
             if transfer.direction == .sending { summary.sending += 1 } else { summary.receiving += 1 }
             switch transfer.state {
             case .done:
@@ -252,7 +254,7 @@ final class FileTransferController {
                 summary.bytesDone += transfer.byteCount
             case .failed, .cancelled:
                 summary.finished += 1
-                if case .failed = transfer.state { summary.failed += 1 }
+                if case .failed = transfer.state { summary.failed += 1 } else { summary.cancelled += 1 }
             case .active:
                 anyMoving = true
                 summary.bytes += transfer.byteCount
@@ -306,10 +308,7 @@ final class FileTransferController {
             log.info("file send interrupted by the connection; it resumes when the channel is back")
             return
         }
-        if transfers[index].isActive {
-            finish(index, outcome)
-            onSendFinished?(transfers[index])
-        }
+        if transfers[index].isActive { finish(index, outcome) }
         release(id)
     }
 

@@ -335,8 +335,17 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   both, and files queued without a screen fail with "Update Vantage Host…". Files land in
   `Documents/Received` (`UIFileSharingEnabled` +
   `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
-  `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts),
-  session menu "Send File to Mac…" / "Transfers…", drop onto the Mac's screen (`FileDropDelegate`,
+  `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts;
+  long-press for Send Files… / Transfers…), session menu "Send File to Mac…" / "Transfers…"
+  (always there), **`TransferCapsule`** (`TransferProgressViews.swift`): a glass capsule that appears
+  by itself in the session as soon as a run of files starts ("Report.pdf" / "Sending 3 of 12",
+  percent, what's left, time; tap → Transfers), turns into a checkmark (or "2 of 3 files moved")
+  when the run ends, and leaves after 2.6 s (8 s with VoiceOver); a run of only received files
+  leaves that to `ReceivedFileNotice`. It sits on the edge away from the strip (top while the
+  strip docks at the bottom or is hidden, bottom while it docks at the top; top on visionOS), and
+  keeps one identity through the done state (`shown` in state) so it morphs instead of swapping;
+  Reduce Motion gets opacity only. VoiceOver hears one announcement per run, not per file. Drop
+  onto the Mac's screen (`FileDropDelegate`,
   copies out of the drag into `tmp/Outbox`, "Drop to send to ⟨Mac⟩" hint), `ReceivedFileNotice`
   (Show / Share), `TransfersView` sheet, **without the screen** from the device list: the Mac's
   context menu (and a VoiceOver action) "Send Files…" opens the Files picker for that Mac, and
@@ -360,7 +369,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `FileTransferTests` (VantageCore), `FileTransferSessionTests` (loopback `ClientSession` + mock
   host), `SessionUITests.testFilesMoveBothWays` (needs the synthetic host started with
   `--send-file-on-connect`), `testDisconnectKeepsFilesMovingAndTheListShowsThem`,
-  `testSendFilesFromTheDeviceList`, `testDropHint`,
+  `testSendFilesFromTheDeviceList`, `testTransferCapsuleAppearsOnItsOwn` (both docks; set
+  `TEST_RUNNER_VANTAGE_UI_APPEARANCE=dark` / `TEST_RUNNER_VANTAGE_UI_TEXT_SIZE=UICTContentSizeCategoryAccessibilityL`
+  for screenshots), `testDropHint`,
   `testTransfersSheetScreens`; resume in `FileTransferTests` (`interruptedFileResumesOnANewConnection`
   both ways, `resumedFileThatDoesntMatchIsRefusedThenSentWhole`, `newChannelTakesOverAPartialFromAStaleOne`)
   and `FileTransferSessionTests.interruptedUploadResumesWhereItStopped`; without the screen in

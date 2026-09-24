@@ -66,24 +66,38 @@ final class ClientSession {
     /// again once the host has said it can.
     private(set) var wantsMacAudio = false
 
-    /// This Mac's files and the channel that moves them. It belongs to the Mac, not the session
-    /// (`FileTransferCenter`), so transfers carry on after the session ends.
-    let fileLink: FileLink
+    /// This Mac's files and the channel that moves them. The session screen hands over the Mac's
+    /// shared one (`FileTransferCenter`, see `useFileLink`) so transfers carry on after it closes;
+    /// until then, and in tests, it's one of the session's own.
+    private(set) var fileLink: FileLink
     /// Files to and from the Mac.
     var files: FileTransferController { fileLink.files }
     /// The host can take a file channel. False for hosts that predate file transfer.
     var hostOffersFiles: Bool { capabilities?.fileTransfer == true }
 
-    /// `fileLink` is the Mac's shared one; tests pass their own `files` (or neither) instead.
-    init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil, fileLink: FileLink? = nil) {
+    init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
         let identity = identity ?? (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
         self.identity = identity
         self.deviceName = ClientSession.localDeviceName
         self.deviceModel = ClientSession.hardwareModel()
-        self.fileLink = fileLink ?? FileLink(files: files ?? FileTransferController(), identity: identity,
-                                             clientName: deviceName, clientModel: deviceModel)
-        self.fileLink.onLegacyChannelLost = { [weak self] in
+        self.fileLink = FileLink(files: files ?? FileTransferController(), identity: identity,
+                                 clientName: deviceName, clientModel: deviceModel)
+        adopt(fileLink)
+    }
+
+    /// Moves files to `link` (the Mac's shared one) before connecting.
+    func useFileLink(_ link: FileLink) {
+        guard link !== fileLink else { return }
+        fileLink.screenDidEnd()
+        fileLink = link
+        adopt(link)
+    }
+
+    private func adopt(_ link: FileLink) {
+        // An older Mac's file channel dropping mid-session takes the session with it, so both
+        // come back together.
+        link.onLegacyChannelLost = { [weak self] in
             guard let channel = self?.channel else { return }
             Task { await channel.close() }
         }

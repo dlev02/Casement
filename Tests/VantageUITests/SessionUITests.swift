@@ -267,6 +267,52 @@ nonisolated final class SessionUITests: XCTestCase {
         app.buttons["Done"].tap()
     }
 
+    /// Progress shows up on its own: a capsule appears as soon as a file starts moving, on the
+    /// edge away from the control strip (top while the strip is at the bottom, and the other way
+    /// round), opens Transfers when tapped, and turns into a checkmark when the file is done
+    /// before it goes. `VANTAGE_UI_APPEARANCE` / `VANTAGE_UI_TEXT_SIZE` rerun it in dark mode or
+    /// at a large text size for screenshots.
+    @MainActor func testTransferCapsuleAppearsOnItsOwn() {
+        for dock in ["bottomLeft", "topRight"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
+                                   "-VantageSendTestFile", "2621440", "-VantageSlowFiles", "1200",
+                                   "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", dock, "-vantage.requireBiometrics", "NO"]
+                + Self.appearanceArguments
+            app.launch()
+            let capsule = app.buttons["session.transferCapsule"]
+            XCTAssertTrue(capsule.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertTrue((capsule.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: capsule.value))")
+            let strip = app.buttons["session.toolbar.collapse"]
+            XCTAssertTrue(strip.waitForExistence(timeout: 5))
+            if dock.hasPrefix("bottom") {
+                XCTAssertLessThan(capsule.frame.maxY, app.frame.midY, "top, away from the strip")
+            } else {
+                XCTAssertGreaterThan(capsule.frame.minY, app.frame.midY, "bottom, away from the strip")
+            }
+            XCTAssertFalse(capsule.frame.intersects(strip.frame), "capsule clear of the strip")
+            screenshot("Capsule while sending (strip \(dock))", app)
+
+            if dock.hasPrefix("bottom") {
+                capsule.tap()
+                XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 5), app.debugDescription)
+                app.buttons["Done"].tap()
+            }
+            wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent to"), evaluatedWith: capsule)], timeout: 40)
+            screenshot("Capsule done (strip \(dock))", app)
+            XCTAssertTrue(capsule.waitForNonExistence(timeout: 10), "gets out of the way")
+            app.terminate()
+        }
+    }
+
+    private static var appearanceArguments: [String] {
+        var arguments: [String] = []
+        let environment = ProcessInfo.processInfo.environment
+        if let appearance = environment["VANTAGE_UI_APPEARANCE"] { arguments += ["-vantage.appearance", appearance] }
+        if let size = environment["VANTAGE_UI_TEXT_SIZE"] { arguments += ["-UIPreferredContentSizeCategoryName", size] }
+        return arguments
+    }
+
     /// The "Drop to send" hint, forced on for a screenshot (a drag can't be scripted here).
     @MainActor func testDropHint() {
         let app = XCUIApplication()

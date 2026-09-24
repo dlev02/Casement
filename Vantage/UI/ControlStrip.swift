@@ -270,6 +270,15 @@ struct ControlStrip: View {
         .accessibilityValue(files.progress.map { "Sending, \(Int(($0 * 100).rounded())) percent" } ?? "")
         .accessibilityHint(files.unavailableReason ?? "Choose files on this iPad to send to the Mac's Downloads folder.")
         .accessibilityIdentifier("session.toolbar.sendFile")
+        .contextMenu {
+            Button(action: files.onSend) {
+                Label("Send Files…", systemImage: StripItem.sendFile.symbol)
+            }
+            .disabled(files.unavailableReason != nil)
+            Button(action: files.onShowTransfers) {
+                Label("Transfers…", systemImage: "arrow.up.arrow.down")
+            }
+        }
     }
 
     private func toggleMacAudio() {
@@ -361,12 +370,10 @@ struct ControlStrip: View {
                 }
                 .disabled(files.unavailableReason != nil)
                 .accessibilityIdentifier("session.menu.sendFile")
-                if files.hasTransfers {
-                    Button(action: files.onShowTransfers) {
-                        Label("Transfers…", systemImage: "arrow.up.arrow.down")
-                    }
-                    .accessibilityIdentifier("session.menu.transfers")
+                Button(action: files.onShowTransfers) {
+                    Label("Transfers…", systemImage: "arrow.up.arrow.down")
                 }
+                .accessibilityIdentifier("session.menu.transfers")
                 Button(action: onSendClipboard) {
                     Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
                 }

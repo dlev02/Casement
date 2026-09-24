@@ -11,8 +11,8 @@ struct RemoteSessionScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(DeviceStore.self) private var store
 
-    /// Uses this Mac's shared `FileLink`, so files keep moving after the session closes.
-    @State private var session: ClientSession
+    /// Takes this Mac's shared `FileLink` in `startSession`, so files keep moving after it closes.
+    @State private var session = ClientSession()
     @State private var video = VideoStreamController()
     @State private var input = InputController()
     @State private var stickyModifiers: KeyModifiers = []
@@ -71,11 +71,6 @@ struct RemoteSessionScreen: View {
     @State private var wakeRequested = false
     @State private var wakeTask: Task<Void, Never>?
 
-    init(device: SavedDevice) {
-        self.device = device
-        _session = State(initialValue: ClientSession(fileLink: FileTransferCenter.shared.link(for: device)))
-    }
-
     private var isLive: Bool { session.state == .connected && hasVideo }
 
     var body: some View {
@@ -127,7 +122,15 @@ struct RemoteSessionScreen: View {
                         .padding(.horizontal, 16)
                         .transition(noticeTransition)
                 }
+                if capsuleOnTop {
+                    transferCapsule
+                        .padding(.top, 12)
+                }
                 Spacer()
+                if !capsuleOnTop {
+                    transferCapsule
+                        .padding(.bottom, 16)
+                }
             }
             #if os(visionOS)
             // The control strip is an ornament under the window; the dictation panel floats over
@@ -371,29 +374,37 @@ struct RemoteSessionScreen: View {
             onShowTransfers: { showTransfers = true })
     }
 
+    /// Files moving with the Mac, shown by themselves (tap for Transfers).
+    private var transferCapsule: some View {
+        TransferCapsule(files: session.files, macName: device.name) { showTransfers = true }
+            .padding(.horizontal, 16)
+    }
+
+    /// The capsule sits on the edge away from the control strip, so they never meet.
+    private var capsuleOnTop: Bool {
+        #if os(visionOS)
+        true // the strip is an ornament under the window
+        #else
+        !toolbarDock.isTop || controlsHidden
+        #endif
+    }
+
     private var noticeTransition: AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .offset(y: -6))
     }
 
     /// Shows "Received …" for a few seconds (long enough to reach its buttons with VoiceOver)
-    /// and says it aloud, since the notice appears without focus moving to it.
+    /// and says it aloud, since the notice appears without focus moving to it. A run of several
+    /// files is announced once, by the capsule, when it ends.
     private func showReceived(_ transfer: FileTransferController.Transfer) {
         receivedNotice = transfer
-        AccessibilityNotification.Announcement("Received \(transfer.name) from \(device.name)").post()
+        if session.files.summary.count <= 1 {
+            AccessibilityNotification.Announcement("Received \(transfer.name) from \(device.name)").post()
+        }
         receivedNoticeTask?.cancel()
         receivedNoticeTask = Task {
             do { try await Task.sleep(for: .seconds(voiceOverEnabled ? 15 : 6)) } catch { return }
             receivedNotice = nil
-        }
-    }
-
-    /// Sends finish out of sight (the Transfers sheet is usually closed), so VoiceOver hears how
-    /// each one ended.
-    private func announceSendOutcome(_ transfer: FileTransferController.Transfer) {
-        switch transfer.state {
-        case .done: AccessibilityNotification.Announcement("Sent \(transfer.name) to \(device.name)").post()
-        case .failed(let reason): AccessibilityNotification.Announcement("Couldn't send \(transfer.name). \(reason)").post()
-        default: break
         }
     }
 
@@ -691,10 +702,9 @@ struct RemoteSessionScreen: View {
     }
 
     private func startSession() async {
-
+        session.useFileLink(FileTransferCenter.shared.link(for: device))
         session.onVideo = { message in video.consume(message) }
         session.files.onReceived = { transfer in showReceived(transfer) }
-        session.files.onSendFinished = { transfer in announceSendOutcome(transfer) }
         #if DEBUG
         if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
@@ -770,7 +780,6 @@ struct RemoteSessionScreen: View {
         #endif
         // The Mac's transfers outlive this screen; stop reporting them here.
         session.files.onReceived = nil
-        session.files.onSendFinished = nil
         session.disconnect()
     }
 
