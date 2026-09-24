@@ -229,7 +229,8 @@ actor HostSession {
             case .textInput(let input):
                 if admitsInput(isRelease: false) { injector?.typeText(input.text) }
             case .clipboard(let payload):
-                if !HostOptions.shared.syntheticCapture { clipboard.apply(payload) }
+                // Awaited, so a ⌘V the client sends right behind its clipboard pastes this one.
+                if !HostOptions.shared.syntheticCapture { await clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
                 if let newBitrate = adaptive.apply(feedback: feedback) {
                     encoder?.setBitrate(kbps: newBitrate)

@@ -51,12 +51,20 @@ nonisolated final class ClipboardBridge: @unchecked Sendable {
         }
     }
 
-    /// Applies a payload received from the client. The change count it leaves behind is recorded
-    /// in the same main-thread block, so the next poll never takes the write for a local copy
+    /// Applies a payload received from the client and returns once the pasteboard holds it. The
+    /// session awaits this before it reads the next message: a Mac client pasting with ⌘V sends
+    /// its clipboard and then the ⌘V key on the same stream, and a key posted before a large
+    /// clipboard was written pasted the old one. The change count the write leaves behind is
+    /// recorded in the same main-thread block, so the next poll never takes it for a local copy
     /// and the one after still sees the user's next real copy.
-    func apply(_ payload: ClipboardPayload) {
+    func apply(_ payload: ClipboardPayload) async {
         guard !payload.isEmpty else { return }
-        DispatchQueue.main.async { self.write(payload) }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                self.write(payload)
+                done.resume()
+            }
+        }
     }
 
     /// Main thread.

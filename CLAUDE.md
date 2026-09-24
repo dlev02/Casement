@@ -552,7 +552,10 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Tests: `ClipboardSyncTests`. Host: `ClipboardBridge` touches the pasteboard only on the main
   thread (poll timer on `.main`; `currentPayload()` hops there from the session actor) and records
   its own write's change count in the same block. Never bring back a "suppress next change" flag:
-  it outlived the write and swallowed the user's next copy. Tests: `HostClipboardTests`.
+  it outlived the write and swallowed the user's next copy. `apply` returns only once the write is
+  done and `HostSession` awaits it before reading the next message: ⌘V paste-through sends the
+  clipboard and then the key on one stream, and a key posted before a large clipboard was written
+  pasted the old one. Tests: `HostClipboardTests` (`applyReturnsOnlyOnceTheClipboardIsWritten`).
 - **Audio and dictation**: the host's `AudioCapture` always leaves the Vantage client app
   (`com.benjaminlevinson.vantage`) out of the audio filter, so a Mac connected to itself doesn't
   echo. `MacAudioPlayer` on macOS has no audio session: the engine plays straight to the device,

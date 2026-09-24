@@ -12,6 +12,9 @@ private final class Changes: @unchecked Sendable {
     var all: [ClipboardPayload] { lock.withLock { items } }
 }
 
+/// Hands a test's private pasteboard to a detached task.
+private struct UncheckedBoard: @unchecked Sendable { let board: NSPasteboard }
+
 private func scratchPasteboard() -> NSPasteboard {
     NSPasteboard(name: NSPasteboard.Name("com.benjaminlevinson.vantage.tests.\(UUID().uuidString)"))
 }
@@ -52,14 +55,35 @@ struct ClipboardBridgeTests {
         let changes = Changes()
         bridge.onLocalChange = { changes.append($0) }
 
-        bridge.apply(ClipboardPayload(text: "hello"))
-        let deadline = ContinuousClock.now + .seconds(5)
-        while board.string(forType: .string) != "hello" {
-            #expect(ContinuousClock.now < deadline)
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await bridge.apply(ClipboardPayload(text: "hello"))
+        #expect(board.string(forType: .string) == "hello")
         bridge.poll()
         #expect(changes.all.isEmpty)
+    }
+
+    /// A Mac client's ⌘V sends the clipboard, then the key, on one stream. The session awaits
+    /// `apply` before it reads the key, so the pasteboard must already hold the payload, however
+    /// large, when `apply` returns — even called from off the main thread, as the session is.
+    @Test func applyReturnsOnlyOnceTheClipboardIsWritten() async throws {
+        let board = scratchPasteboard()
+        defer { board.releaseGlobally() }
+        copy("the old clipboard", to: board)
+        let bridge = ClipboardBridge(pasteboard: board)
+        let big = String(repeating: "pasted through ⌘V. ", count: 400_000) // ~8 MB of text
+        let side = 1024
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                                bytesPerRow: 0, bitsPerPixel: 0))
+        let png = try #require(rep.representation(using: .png, properties: [:]))
+        // Checked in the same detached task, straight after `apply`, as the session reads its next
+        // message. Read right here, off the main thread (fine for this private test pasteboard):
+        // any hop to the main queue would line up behind a late write and pass anyway.
+        let target = UncheckedBoard(board: board)
+        let writtenInTime = await Task.detached { () -> Bool in
+            await bridge.apply(ClipboardPayload(text: big, imagePNG: png))
+            return target.board.string(forType: .string) == big && target.board.data(forType: .png) == png
+        }.value
+        #expect(writtenInTime)
     }
 
     /// The session actor reads the pasteboard from the cooperative pool; the bridge hops to the
