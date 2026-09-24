@@ -87,7 +87,8 @@ final class FileTransferController {
 
     private struct Source {
         var url: URL
-        /// From the Files picker: access has to be started and stopped around the read.
+        /// From the Files picker: access is started just for the read and stopped after, so a
+        /// queue of thousands never holds thousands of sandbox extensions open at once.
         var securityScoped: Bool
         /// A copy Vantage made (a drop, a test file); deleted when the transfer ends.
         var temporary: Bool
@@ -110,6 +111,9 @@ final class FileTransferController {
     private var engine: FileTransferEngine?
     private var sources: [UUID: Source] = [:]
     private var sending: UUID?
+    /// Where to start looking for the next file to send: everything before it has gone, so a
+    /// long queue isn't rescanned from the top for every file.
+    private var nextSendHint = 0
     private var rateSamples: [UUID: (time: ContinuousClock.Instant, bytes: UInt64)] = [:]
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
 
@@ -175,11 +179,10 @@ final class FileTransferController {
 
     // MARK: Queue
 
-    /// Files chosen in the Files picker. Their access is security scoped until they're sent.
+    /// Files chosen in the Files picker (security scoped: opened only while each is read).
     func send(_ urls: [URL], securityScoped: Bool) {
         for url in urls {
-            let scoped = securityScoped && url.startAccessingSecurityScopedResource()
-            enqueue(url, name: url.lastPathComponent, source: Source(url: url, securityScoped: scoped, temporary: false))
+            enqueue(url, name: url.lastPathComponent, source: Source(url: url, securityScoped: securityScoped, temporary: false))
         }
     }
 
@@ -205,7 +208,9 @@ final class FileTransferController {
 
     private func enqueue(_ url: URL, name: String, source: Source) {
         let id = UUID()
+        let scoped = source.securityScoped && url.startAccessingSecurityScopedResource()
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { UInt64($0) } ?? 0
+        if scoped { url.stopAccessingSecurityScopedResource() }
         sources[id] = source
         transfers.append(Transfer(id: id, name: name, byteCount: size, direction: .sending, state: .waiting, batch: batchForNewRow()))
         pumpIfNeeded()
@@ -223,6 +228,11 @@ final class FileTransferController {
         if let engine { Task { await engine.cancel(id) } }
     }
 
+    /// Stops everything moving or waiting with this Mac.
+    func cancelAll() {
+        for transfer in transfers where transfer.isActive { cancel(transfer.id) }
+    }
+
     /// Fails every file still waiting to go (the Mac can't take files).
     func failWaiting(_ reason: String) {
         for index in transfers.indices where transfers[index].state == .waiting && transfers[index].id != sending {
@@ -235,6 +245,7 @@ final class FileTransferController {
     func clearFinished() {
         let running = hasActiveTransfers ? currentBatch : nil
         transfers.removeAll { !$0.isActive && $0.batch != running }
+        nextSendHint = 0
     }
 
     /// The current (or last) run of files, summed up.
@@ -279,12 +290,12 @@ final class FileTransferController {
     }
 
     private func pumpIfNeeded() {
-        guard sending == nil, let engine,
-              let next = transfers.first(where: { $0.direction == .sending && $0.state == .waiting }),
-              let source = sources[next.id] else { return }
+        guard sending == nil, let engine, let next = nextWaitingSend(), let source = sources[next.id] else { return }
         sending = next.id
         Task {
+            let scoped = source.securityScoped && source.url.startAccessingSecurityScopedResource()
             let outcome = await engine.send(fileAt: source.url, name: next.name, id: next.id)
+            if scoped { source.url.stopAccessingSecurityScopedResource() }
             let lostConnection = await engine.hasClosed
             sending = nil
             settle(next.id, outcome, lostConnection: lostConnection)
@@ -292,6 +303,20 @@ final class FileTransferController {
             // already be attached (its `attach` found this send still in the way).
             if !lostConnection || (self.engine != nil && self.engine !== engine) { pumpIfNeeded() }
         }
+    }
+
+    /// The first send still waiting, in queue order (an interrupted one comes back first).
+    private func nextWaitingSend() -> Transfer? {
+        var index = min(nextSendHint, transfers.count)
+        while index < transfers.count {
+            if transfers[index].direction == .sending, transfers[index].state == .waiting {
+                nextSendHint = index
+                return transfers[index]
+            }
+            index += 1
+        }
+        nextSendHint = index
+        return nil
     }
 
     /// Records how a send ended. One cut off by the connection dropping goes back to the front of
@@ -305,6 +330,7 @@ final class FileTransferController {
             transfers[index].state = .waiting
             transfers[index].interruptedAt = .now
             transfers[index].bytesPerSecond = 0
+            nextSendHint = min(nextSendHint, index)
             log.info("file send interrupted by the connection; it resumes when the channel is back")
             return
         }
@@ -314,7 +340,6 @@ final class FileTransferController {
 
     private func release(_ id: UUID) {
         guard let source = sources.removeValue(forKey: id) else { return }
-        if source.securityScoped { source.url.stopAccessingSecurityScopedResource() }
         if source.temporary { try? FileManager.default.removeItem(at: source.url.deletingLastPathComponent()) }
     }
 
@@ -428,6 +453,8 @@ final class FileTransferController {
                      bytesDone: 31_400_000, bytesPerSecond: 11_800_000),
             Transfer(id: UUID(), name: "Screen Recording 2026-09-23.mov", byteCount: 412_000_000, direction: .receiving, state: .active,
                      bytesDone: 96_000_000, bytesPerSecond: 23_500_000),
+            Transfer(id: UUID(), name: "Family Photos 2024.zip", byteCount: 6_400_000_000, direction: .sending, state: .waiting,
+                     bytesDone: 2_750_000_000, interruptedAt: .now),
             Transfer(id: UUID(), name: "Site Photos.zip", byteCount: 180_000_000, direction: .sending, state: .waiting),
             Transfer(id: UUID(), name: "Invoice 1042.pdf", byteCount: 212_000, direction: .receiving, state: .done,
                      bytesDone: 212_000, savedURL: URL.temporaryDirectory.appending(path: "Invoice 1042.pdf"), finishedAt: .now),

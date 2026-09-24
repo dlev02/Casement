@@ -330,11 +330,20 @@ nonisolated final class SessionUITests: XCTestCase {
         for appearance in ["light", "dark"] {
             let app = XCUIApplication()
             app.launchArguments = ["-VantageOpenScreen", "transfers", "-vantage.appearance", appearance, "-vantage.requireBiometrics", "NO"]
+            if let size = ProcessInfo.processInfo.environment["VANTAGE_UI_TEXT_SIZE"] {
+                app.launchArguments += ["-UIPreferredContentSizeCategoryName", size]
+            }
             app.launch()
             XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15), app.debugDescription)
             XCTAssertTrue(app.buttons["Cancel Quarterly Report.pdf"].exists)
-            XCTAssertTrue(app.buttons["Share Invoice 1042.pdf"].exists)
+            let summary = app.descendants(matching: .any)["transfers.summary"]
+            XCTAssertTrue(summary.exists, "the run is summed up above its files")
+            XCTAssertTrue(summary.label.contains("All transfers"), summary.label)
             screenshot("Transfers sheet (\(appearance))", app)
+            let share = app.buttons["Share Invoice 1042.pdf"]
+            for _ in 0..<4 where !(share.exists && share.isHittable) { app.swipeUp() }
+            XCTAssertTrue(share.exists, app.debugDescription)
+            screenshot("Transfers sheet, finished files (\(appearance))", app)
             app.terminate()
         }
     }

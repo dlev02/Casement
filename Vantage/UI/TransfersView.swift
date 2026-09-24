@@ -23,7 +23,7 @@ struct TransfersView: View {
                 ContentUnavailableView {
                     Label("No Transfers Yet", systemImage: "arrow.up.arrow.down")
                 } description: {
-                    Text("Files you send to \(macName) or receive from it show up here. Use Send File, or drop files onto the Mac's screen.")
+                    Text("Files you send to \(macName) or receive from it show up here. Use Send File, or drop files onto the Mac.")
                 } actions: {
                     if canSend {
                         Button("Send File…") { showImporter = true }
@@ -32,6 +32,12 @@ struct TransfersView: View {
                 }
             } else {
                 List {
+                    let summary = files.summary
+                    if summary.isActive, summary.count > 1 {
+                        Section {
+                            TransferRunSummary(summary: summary, macName: macName) { files.cancelAll() }
+                        }
+                    }
                     if !active.isEmpty {
                         Section("In Progress") {
                             ForEach(active) { transfer in
@@ -86,6 +92,64 @@ struct TransfersView: View {
     }
 }
 
+/// The run as a whole, above its files: "12 of 340", what's left and how long, one bar, and
+/// Cancel All.
+private struct TransferRunSummary: View {
+    let summary: FileTransferController.Summary
+    let macName: String
+    let onCancelAll: () -> Void
+    @State private var confirmCancel = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Side by side while it fits; stacked at the largest text sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    title
+                    Spacer(minLength: 8)
+                    cancelAll
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    title
+                    cancelAll
+                }
+            }
+            ProgressView(value: summary.fraction)
+                .tint(summary.isPaused ? .secondary : .accentColor)
+                .animation(.linear(duration: 0.12), value: summary.fraction)
+            Text(TransferSummaryFormat.detail(summary))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("All transfers")
+        .accessibilityValue(TransferSummaryFormat.spoken(summary, macName: macName))
+        .accessibilityAction(named: "Cancel All") { confirmCancel = true }
+        .accessibilityIdentifier("transfers.summary")
+        .confirmationDialog("Cancel \(summary.count - summary.finished) files?", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Cancel All Transfers", role: .destructive, action: onCancelAll)
+            Button("Keep Going", role: .cancel) {}
+        } message: {
+            Text("Files already sent or received stay where they are.")
+        }
+    }
+
+    private var title: some View {
+        Text(TransferSummaryFormat.title(summary))
+            .font(.headline)
+            .monospacedDigit()
+    }
+
+    private var cancelAll: some View {
+        Button("Cancel All", role: .destructive) { confirmCancel = true }
+            .buttonStyle(.borderless)
+            .font(.subheadline.weight(.medium))
+    }
+}
+
 /// One file: a progress ring with its direction, the name, and what's happening to it.
 private struct TransferRow: View {
     let transfer: FileTransferController.Transfer
@@ -93,6 +157,7 @@ private struct TransferRow: View {
     var onCancel: (() -> Void)?
     @ScaledMetric(relativeTo: .body) private var ringSide: CGFloat = 34
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 12) {
@@ -100,15 +165,16 @@ private struct TransferRow: View {
                 TransferRing(transfer: transfer, glyphSize: ringSide * 0.38)
                     .frame(width: ringSide, height: ringSide)
                 VStack(alignment: .leading, spacing: 2) {
+                    // At the largest text sizes the name wraps instead of losing its middle.
                     Text(transfer.name)
                         .font(.body)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         .truncationMode(.middle)
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(isFailure ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                         .monospacedDigit()
-                        .lineLimit(3)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
                         .contentTransition(.numericText())
                 }
             }

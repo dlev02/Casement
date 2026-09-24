@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Network
 import Testing
@@ -525,6 +526,43 @@ struct FileTransferSessionTests {
         #expect(link.phase == .unavailable(reason))
     }
 
+    /// A long queue ("a photo library"): 1,500 files go one after another without memory growing
+    /// with the queue, one that vanished before its turn fails on its own, and the run sums up
+    /// right the whole way.
+    @Test(.timeLimit(.minutes(3))) @MainActor func longQueueKeepsMovingWithFlatMemory() async throws {
+        let host = try await MockFileHost(keepsFiles: true)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("library")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let count = 1_500
+        let block = Data(repeating: 0x6B, count: 24_000)
+        var sources: [URL] = []
+        for number in 1...count {
+            let url = sourceDir.appending(path: String(format: "IMG_%04d.heic", number))
+            try block.write(to: url)
+            sources.append(url)
+        }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let link = FileLink(files: files, identity: DeviceIdentity(), clientName: "Test iPad", clientModel: "iPad")
+        link.update(SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port))
+        files.send(sources, securityScoped: false)
+        try FileManager.default.removeItem(at: sources[700]) // gone before its turn
+        #expect(files.summary.count == count && files.summary.bytes == UInt64(count * block.count))
+
+        try await waitUntil("a tenth through", seconds: 60) { files.summary.finished >= count / 10 }
+        let early = currentFootprint()
+        try await waitUntil("all settled", seconds: 150) { !files.summary.isActive }
+        let late = currentFootprint()
+        let summary = files.summary
+        #expect(summary.finished == count && summary.failed == 1)
+        guard case .failed(let reason) = files.transfers[700].state else { Issue.record("\(files.transfers[700].state)"); return }
+        #expect(reason.contains("couldn't read"))
+        let saved = try FileManager.default.contentsOfDirectory(atPath: host.directory.path).filter { $0.hasPrefix("IMG_") }
+        #expect(saved.count == count - 1, "the rest went through")
+        print("long queue: \(count) files, footprint \(early >> 20) MiB at 10%, \(late >> 20) MiB at the end")
+        #expect(late < early + 24 << 20, "memory stays flat along the queue (\(early >> 20) → \(late >> 20) MiB)")
+    }
+
     @Test @MainActor func olderHostNeverSeesAFileChannel() async throws {
         let host = try await MockFileHost(offersFiles: false)
         defer { host.stop() }
@@ -576,4 +614,14 @@ struct FileTransferSessionTests {
         #expect(files.transfers.first?.state == .failed("Update Vantage Host."))
         #expect(!FileManager.default.fileExists(atPath: copy.path), "the outbox copy is cleaned up")
     }
+}
+
+/// This process's physical footprint (what Xcode's memory gauge shows).
+private func currentFootprint() -> UInt64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return result == KERN_SUCCESS ? info.phys_footprint : 0
 }

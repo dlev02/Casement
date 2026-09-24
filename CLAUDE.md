@@ -347,7 +347,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Reduce Motion gets opacity only. VoiceOver hears one announcement per run, not per file. Drop
   onto the Mac's screen (`FileDropDelegate`,
   copies out of the drag into `tmp/Outbox`, "Drop to send to ⟨Mac⟩" hint), `ReceivedFileNotice`
-  (Show / Share), `TransfersView` sheet, **without the screen** from the device list: the Mac's
+  (Show / Share), `TransfersView` sheet (a run of several files gets a summary on top: "4 of 7
+  files", one bar, "40% · 4.16 GB left · 2 min", and Cancel All with a confirmation; rows wrap
+  instead of truncating at accessibility text sizes), **without the screen** from the device list: the Mac's
   context menu (and a VoiceOver action) "Send Files…" opens the Files picker for that Mac, and
   files dropped on its row or card go to it (accent "Drop to send" hint), both over a files-only
   session; and "Open in Vantage" from other apps (`CFBundleDocumentTypes`
@@ -391,7 +393,12 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `FileTransferSessionTests` (`transferKeepsGoingAfterTheSessionEnds`,
   `sendsFilesWithoutOpeningTheScreen`, `droppedFileChannelComesBackWithoutTheScreen`,
   `olderMacExplainsItNeedsTheScreenForFiles`, `olderMacsFileChannelEndsWithTheSession`,
-  `filesOnlyNeedsAPairedMac`). UI tests take `TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` to
+  `filesOnlyNeedsAPairedMac`); long queues in `longQueueKeepsMovingWithFlatMemory` (1,500 files,
+  one missing before its turn fails alone, footprint printed; 14 → 15 MiB here). **Many files**:
+  a queue holds one small `Transfer` + `Source` per file; Files-picker URLs are opened
+  (`startAccessingSecurityScopedResource`) only to read the size and again only while that file
+  is sent, so thousands of picks never hold thousands of sandbox extensions; the next send is
+  found from `nextSendHint` instead of rescanning the queue. UI tests take `TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` to
   use another synthetic host than 47821. Each engine logs
   "sent/received N bytes in M ms (X MiB/s)" (category `files`). Benchmark (opt in):
   `VANTAGE_BENCH_FILES=1 xcrun swift test --package-path Packages/VantageCore --filter FileTransferBenchmark`
