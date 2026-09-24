@@ -208,6 +208,72 @@ struct SessionLifecycleTests {
         }
     }
 
+    @Test @MainActor func sessionAndProbeLearnTheHostsPlatform() async throws {
+        let (listener, channels) = try await listen()
+        defer { listener.cancel() }
+        let server = Task {
+            var iterator = channels.makeAsyncIterator()
+            // The probe: the challenge alone says what the host runs.
+            let probe = try #require(await iterator.next())
+            try await probe.start()
+            guard case .hello? = try await probe.receive() else { throw TestFailure.unexpectedMessage }
+            try await probe.send(.challenge(Challenge(hostName: "Desk PC", hostVersion: "1.0", hostPublicKey: DeviceIdentity().publicKeyData,
+                nonce: AuthTranscript.randomNonce(), isPaired: true, hostPlatform: .windows)))
+            guard case .authenticate? = try await probe.receive() else { throw TestFailure.unexpectedMessage }
+            try await probe.send(.authResult(AuthResult(status: .ok)))
+            _ = try await probe.receive()
+            await probe.close()
+
+            // The session: known from the challenge, before authenticating.
+            let channel = try #require(await iterator.next())
+            try await channel.start()
+            guard case .hello? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            try await channel.send(.challenge(Challenge(hostName: "Desk PC", hostVersion: "1.0", hostPublicKey: DeviceIdentity().publicKeyData,
+                nonce: AuthTranscript.randomNonce(), isPaired: true, hostPlatform: .windows)))
+            guard case .authenticate? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            try await channel.send(.authResult(AuthResult(status: .ok, capabilities: HostCapabilities(codecs: [.hevc],
+                canManageVirtualDisplay: false, clipboard: true, maxFPS: 60, platform: .windows))))
+            guard case .selectDisplay? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            while try await channel.receive() != nil {}
+            await channel.close()
+        }
+        let device = SavedDevice(name: "Desk PC", host: "127.0.0.1", port: listener.port!.rawValue)
+        let probed = await HostAvailabilityProbe.probe(device, identity: DeviceIdentity())
+        #expect(probed.availability == .online)
+        #expect(probed.platform == .windows)
+
+        let session = ClientSession(identity: DeviceIdentity())
+        defer { session.disconnect() }
+        #expect(session.hostPlatform == nil)
+        session.connect(to: device, viewport: Viewport(widthPoints: 800, heightPoints: 600, scale: 2))
+        try await eventually { session.capabilities != nil }
+        #expect(session.hostPlatform == .windows)
+        session.disconnect()
+        try await server.value
+    }
+
+    @Test @MainActor func olderHostsLeaveThePlatformUnknown() async throws {
+        let (listener, channels) = try await listen()
+        defer { listener.cancel() }
+        let server = Task {
+            var iterator = channels.makeAsyncIterator()
+            let channel = try #require(await iterator.next())
+            _ = try await authenticate(channel, status: .ok, paired: true)
+            guard case .selectDisplay? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            // Stay up until the client leaves, so the session stays connected while it's checked.
+            while try await channel.receive() != nil {}
+            await channel.close()
+        }
+        let session = ClientSession(identity: DeviceIdentity())
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Test Mac", host: "127.0.0.1", port: listener.port!.rawValue),
+                        viewport: Viewport(widthPoints: 800, heightPoints: 600, scale: 2))
+        try await eventually { session.state == .connected }
+        #expect(session.hostPlatform == nil)
+        session.disconnect()
+        try await server.value
+    }
+
     @Test @MainActor func silentHostProbeTimesOutAndClosesSocket() async throws {
         let (listener, channels) = try await listen()
         defer { listener.cancel() }

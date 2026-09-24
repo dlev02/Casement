@@ -32,6 +32,9 @@ final class ClientSession {
     private(set) var activeConfig: StreamConfig?
     private(set) var hostName: String = ""
     private(set) var peerTailnetName: String?
+    /// What the host runs: from the challenge as soon as it arrives, then from its capabilities.
+    /// Nil from older hosts, which are all Macs.
+    private(set) var hostPlatform: HostPlatform?
     private(set) var lastRTTMillis: Double = 0
     private(set) var hostStatus: HostStatus?
 
@@ -312,6 +315,7 @@ final class ClientSession {
         guard connectionID == id, !Task.isCancelled else { throw CancellationError() }
         hostName = challenge.hostName
         peerTailnetName = challenge.peerTailnetName
+        hostPlatform = challenge.hostPlatform
         state = .authenticating
 
         let signature = try identity.sign(AuthTranscript.bytes(nonce: challenge.nonce, hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData))
@@ -324,6 +328,7 @@ final class ClientSession {
         case .ok:
             displays = result.displays ?? []
             capabilities = result.capabilities
+            if let platform = result.capabilities?.platform { hostPlatform = platform }
             return (true, result.sessionToken)
         case .pairingRequired, .badPairingCode:
             pairingError = result.status == .badPairingCode

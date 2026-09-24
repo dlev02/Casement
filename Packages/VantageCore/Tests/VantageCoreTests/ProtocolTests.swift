@@ -135,3 +135,45 @@ import Testing
     #expect(decoded.readiness?.screenRecordingGranted == true)
     #expect(decoded.readiness?.accessibilityGranted == false)
 }
+
+@Test func hostPlatformIsMissingFromOlderHosts() throws {
+    // Hosts before `HostPlatform` send neither key; both decode as nil, which means a Mac.
+    let oldChallenge = Data(#"{"hostName":"Mac","hostVersion":"1.0","hostPublicKey":"AQ==","nonce":"AQ==","isPaired":true}"#.utf8)
+    #expect(try JSONDecoder().decode(Challenge.self, from: oldChallenge).hostPlatform == nil)
+    let oldCapabilities = Data(#"{"codecs":["hevc"],"canManageVirtualDisplay":false,"clipboard":true,"maxFPS":60}"#.utf8)
+    #expect(try JSONDecoder().decode(HostCapabilities.self, from: oldCapabilities).platform == nil)
+    // Nil stays off the wire, so an older client sees exactly what it always did.
+    let challenge = Challenge(hostName: "Mac", hostVersion: "1.0", hostPublicKey: Data([1]), nonce: Data([1]), isPaired: true)
+    #expect(!String(decoding: try JSONEncoder().encode(challenge), as: UTF8.self).contains("hostPlatform"))
+}
+
+@Test func hostPlatformRoundTripsIncludingUnknownValues() throws {
+    #expect(HostPlatform.macOS.rawValue == "macos")
+    #expect(HostPlatform.windows.rawValue == "windows")
+    let future = HostPlatform(rawValue: "linux")
+    let encoded = try JSONEncoder().encode([HostPlatform.macOS, .windows, future])
+    #expect(String(decoding: encoded, as: UTF8.self) == #"["macos","windows","linux"]"#)
+    #expect(try JSONDecoder().decode([HostPlatform].self, from: encoded) == [.macOS, .windows, future])
+    let unknownChallenge = Data(#"{"hostName":"Box","hostVersion":"1.0","hostPublicKey":"AQ==","nonce":"AQ==","isPaired":false,"hostPlatform":"haiku"}"#.utf8)
+    #expect(try JSONDecoder().decode(Challenge.self, from: unknownChallenge).hostPlatform == HostPlatform(rawValue: "haiku"))
+}
+
+@Test func hostPlatformTravelsInChallengeAndCapabilities() throws {
+    let nonce = AuthTranscript.randomNonce()
+    let challenge = Challenge(hostName: "Desk PC", hostVersion: "1.0", hostPublicKey: Data(repeating: 2, count: 32), nonce: nonce,
+                              isPaired: false, peerTailnetName: "ipad", hostPlatform: .windows)
+    guard case .challenge(let back) = try Message.decode(kind: .challenge, payload: try Message.challenge(challenge).encodedPayload())
+    else { Issue.record("wrong kind"); return }
+    #expect(back.hostPlatform == .windows)
+    #expect(back.hostName == "Desk PC")
+    #expect(back.nonce == nonce)
+    #expect(back.peerTailnetName == "ipad")
+
+    let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: false, clipboard: true, maxFPS: 60,
+                                        audio: true, fileTransfer: true, filesOnlySessions: true, platform: .macOS)
+    let result = AuthResult(status: .ok, capabilities: capabilities)
+    guard case .authResult(let decoded) = try Message.decode(kind: .authResult, payload: try Message.authResult(result).encodedPayload())
+    else { Issue.record("wrong kind"); return }
+    #expect(decoded.capabilities == capabilities)
+    #expect(decoded.capabilities?.platform == .macOS)
+}

@@ -113,7 +113,8 @@ actor HostSession {
         let nonce = AuthTranscript.randomNonce()
         let isPaired = trust.isTrusted(hello.clientPublicKey)
         let lightweight = hello.isReadinessProbe == true || hello.features?.filesOnly == true
-        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription))
+        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription),
+                                  hostPlatform: HostOptions.shared.platform)
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
@@ -162,7 +163,7 @@ actor HostSession {
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             let token = attachTokens.issue(for: self, peer: peerHost)
             let capabilities = HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: false, maxFPS: 0,
-                                                fileTransfer: true, filesOnlySessions: true)
+                                                fileTransfer: true, filesOnlySessions: true, platform: HostOptions.shared.platform)
             try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
             state = .filesOnly
             log.info("files-only session for \(hello.clientName)")
@@ -190,7 +191,7 @@ actor HostSession {
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
                                             dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
                                             audio: true, fileTransfer: clientTakesFiles ? true : nil,
-                                            filesOnlySessions: clientTakesFiles ? true : nil)
+                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")

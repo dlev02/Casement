@@ -1,4 +1,5 @@
 import Foundation
+import VantageCore
 
 /// Launch-argument driven options, mostly for headless testing.
 ///
@@ -21,6 +22,8 @@ import Foundation
 ///   then behave like a Mac whose screen is off until something wakes it.
 /// - `--capture-fails-for 6`: each session's capture can't start for that many seconds after its
 ///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
+/// - `--platform windows|macos`: the platform the host tells clients it runs (`HostPlatform`), so
+///   the client can be tried against a pretend Windows PC. Any other value is sent as given.
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -49,6 +52,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let fakeDisplaySleep: Bool
     /// Seconds each session's capture fails for, from its first stream request (DEBUG only).
     let captureFailsForSeconds: Double?
+    /// What the host tells clients it runs (`--platform`, DEBUG only; always macOS in release).
+    let platform: HostPlatform
 
     private init() {
         #if DEBUG
@@ -103,6 +108,11 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             captureFailsForSeconds = nil
         }
+        if let index = args.firstIndex(of: "--platform"), index + 1 < args.count, !args[index + 1].isEmpty {
+            platform = HostPlatform(rawValue: args[index + 1].lowercased())
+        } else {
+            platform = .macOS
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -118,6 +128,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         exitAfterSeconds = nil
         fakeDisplaySleep = false
         captureFailsForSeconds = nil
+        platform = .macOS
         #endif
     }
 }

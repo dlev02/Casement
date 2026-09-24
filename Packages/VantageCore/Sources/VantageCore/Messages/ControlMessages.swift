@@ -98,6 +98,30 @@ public struct Hello: Codable, Sendable {
     }
 }
 
+/// The operating system a host runs. A string wrapper rather than an enum so a host on a platform
+/// this build doesn't know still decodes. Hosts before this field send nothing, which means macOS:
+/// read `hostPlatform ?? .macOS`.
+public struct HostPlatform: RawRepresentable, Codable, Sendable, Hashable, CustomStringConvertible {
+    public var rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+
+    /// Vantage Host on a Mac.
+    public static let macOS = HostPlatform(rawValue: "macos")
+    /// A Windows PC running a Vantage-compatible host.
+    public static let windows = HostPlatform(rawValue: "windows")
+
+    public init(from decoder: any Decoder) throws {
+        rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    public var description: String { rawValue }
+}
+
 public struct Challenge: Codable, Sendable {
     public var hostName: String
     public var hostVersion: String
@@ -108,14 +132,19 @@ public struct Challenge: Codable, Sendable {
     public var isPaired: Bool
     /// Tailnet identity of the connecting peer, if the host could resolve it.
     public var peerTailnetName: String?
+    /// What the host runs, known before authenticating (so a probe or the pairing prompt can
+    /// tell a Mac from a PC). Nil from older hosts, which are all Macs.
+    public var hostPlatform: HostPlatform?
 
-    public init(hostName: String, hostVersion: String, hostPublicKey: Data, nonce: Data, isPaired: Bool, peerTailnetName: String? = nil) {
+    public init(hostName: String, hostVersion: String, hostPublicKey: Data, nonce: Data, isPaired: Bool, peerTailnetName: String? = nil,
+                hostPlatform: HostPlatform? = nil) {
         self.hostName = hostName
         self.hostVersion = hostVersion
         self.hostPublicKey = hostPublicKey
         self.nonce = nonce
         self.isPaired = isPaired
         self.peerTailnetName = peerTailnetName
+        self.hostPlatform = hostPlatform
     }
 }
 
@@ -158,9 +187,12 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// running after the session that opened it ends, until the client closes it. Nil from older
     /// hosts, which close the file channel with the session.
     public var filesOnlySessions: Bool?
+    /// What the host runs (also in `Challenge.hostPlatform`). Nil from older hosts, which are all
+    /// Macs.
+    public var platform: HostPlatform?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
-                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil) {
+                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -169,6 +201,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.audio = audio
         self.fileTransfer = fileTransfer
         self.filesOnlySessions = filesOnlySessions
+        self.platform = platform
     }
 }
 

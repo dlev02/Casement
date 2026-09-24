@@ -36,6 +36,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
   guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
+  The host names its OS in `Challenge.hostPlatform` and `HostCapabilities.platform` (`HostPlatform`,
+  a string wrapper: `macos`, `windows`, unknown values still decode; nil from older hosts means a
+  Mac). The client keeps it as `ClientSession.hostPlatform` (from the challenge, then the
+  capabilities) and `HostAvailabilityStore.platforms`. DEBUG host `--platform windows|macos`
+  overrides what it sends, to try the client against a pretend PC.
 - **Host pipeline**: `ScreenCapture` (ScreenCaptureKit, `'420v'`, sRGB, dirty-rect ratio) →
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held
