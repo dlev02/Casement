@@ -65,6 +65,7 @@ internal sealed class MfH264Encoder : IVideoEncoder
     private bool _forceNextKeyframe;
     private volatile bool _disposed;
     private long _framesOut;
+    private bool _warnedAboutTimes;
 
     private sealed class Pending(long sampleTime, ulong captureNanos, long queuedAt)
     {
@@ -92,7 +93,7 @@ internal sealed class MfH264Encoder : IVideoEncoder
         _codecApi = CodecApi.From(transform.NativePointer);
         try
         {
-            using var attributes = transform.Attributes;
+            using var attributes = TransformAttributes(transform); // E_NOTIMPL on some software MFTs
             _isAsync = attributes is not null && attributes.GetUInt32(TransformAttributeKeys.TransformAsync, out var isAsync).Success && isAsync != 0;
             if (_isAsync)
             {
@@ -424,6 +425,12 @@ internal sealed class MfH264Encoder : IVideoEncoder
         }
     }
 
+    private static IMFAttributes? TransformAttributes(IMFTransform transform)
+    {
+        try { return transform.Attributes; }
+        catch (SharpGenException) { return null; }
+    }
+
     private static string FriendlyName(IMFActivate activate)
     {
         try { return activate.GetString(TransformAttributeKeys.MftFriendlyNameAttribute); }
@@ -675,15 +682,30 @@ internal sealed class MfH264Encoder : IVideoEncoder
 
         var skipped = 0;
         Pending? match = null;
+        var rewroteTime = false;
         lock (_lock)
         {
-            while (_pending.Count > 0 && _pending.Peek().SampleTime < sampleTime)
+            if (_pending.Any(p => p.SampleTime == sampleTime))
             {
-                var gone = _pending.Dequeue();
-                if (!gone.Abandoned) skipped++;
+                while (_pending.Peek().SampleTime != sampleTime)
+                {
+                    var gone = _pending.Dequeue();
+                    if (!gone.Abandoned) skipped++;
+                }
+                match = _pending.Dequeue();
             }
-            if (_pending.Count > 0 && _pending.Peek().SampleTime == sampleTime) match = _pending.Dequeue();
+            else if (_pending.Count > 0)
+            {
+                // The MFT rewrote the timestamp: with no reordering, outputs come in input order.
+                match = _pending.Dequeue();
+                rewroteTime = true;
+            }
             if (skipped > 0) _forceNextKeyframe = true;
+        }
+        if (rewroteTime && !_warnedAboutTimes)
+        {
+            _warnedAboutTimes = true;
+            _log.LogInformation("{Name} changes sample times; matching its output to input by order", _name);
         }
         for (var i = 0; i < skipped; i++) _sink?.OnFrameSkipped();
 
