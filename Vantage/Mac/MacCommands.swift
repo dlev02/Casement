@@ -98,7 +98,7 @@ struct MacCommands: Commands {
             .keyboardShortcut("p", modifiers: Self.vantageChord)
             .disabled(!canType)
         Menu("Mac") {
-            ForEach(MacShortcut.menuOrder + [Self.appSwitcher]) { shortcut in
+            ForEach(MacShortcut.sessionMenu) { shortcut in
                 Button(shortcut.label) { session?.sendShortcut(shortcut) }
             }
             .disabled(!canType)
@@ -119,10 +119,6 @@ struct MacCommands: Commands {
             .keyboardShortcut("w", modifiers: Self.vantageChord)
             .disabled(session == nil)
     }
-
-    /// ⌘Tab, tapped: switches the Mac to the app used before the current one.
-    static let appSwitcher = MacShortcut(id: "appSwitcher", label: "App Switcher", symbol: "square.stack",
-                                         keyCode: 0x30, modifiers: .command)
 
     /// A menu checkbox for one of the session's switches.
     private func toggle(_ value: KeyPath<SessionCommands, Bool>, _ flip: @escaping (SessionCommands) -> Void) -> Binding<Bool> {
