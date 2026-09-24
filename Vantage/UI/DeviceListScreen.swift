@@ -5,30 +5,20 @@ import VantageCore
 /// Home screen: a searchable, sortable list/grid of saved devices with Tailscale status.
 struct DeviceListScreen: View {
     @Environment(DeviceStore.self) private var store
-    @Environment(TailscaleReachability.self) private var reachability
-    @State private var showAddDevice = false
-    @State private var showTailscaleDevices = false
-    @State private var editingDevice: SavedDevice?
-    @State private var deviceToDelete: SavedDevice?
-    @State private var deviceToLogIn: SavedDevice?
-    @State private var logInStatus: LogInStatus?
+    @State private var actions = DeviceActions()
     @Binding var selectedDevice: SavedDevice?
     @Environment(\.scenePhase) private var scenePhase
     @State private var availability = HostAvailabilityStore()
     @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
     /// Files keep moving with a Mac after its session closes; its row shows them.
     private let transfers = FileTransferCenter.shared
-    @State private var transfersDevice: SavedDevice?
-    /// Send Files… picks files for this Mac without opening its screen.
-    @State private var sendFilesDevice: SavedDevice?
-    @State private var showSendFiles = false
 
     var body: some View {
         @Bindable var store = store
         NavigationStack {
             Group {
                 if store.devices.isEmpty {
-                    emptyState
+                    DeviceListEmptyState(actions: actions)
                 } else if store.sortedDevices.isEmpty {
                     ContentUnavailableView.search(text: store.searchText)
                 } else if store.isGridLayout {
@@ -40,55 +30,8 @@ struct DeviceListScreen: View {
             .navigationTitle("Vantage")
             .searchable(text: $store.searchText, prompt: "Search devices")
             .toolbar { toolbarContent }
-            .safeAreaInset(edge: .top) { tailscaleBanner }
-            .sheet(isPresented: $showAddDevice) {
-                AddDeviceSheet()
-            }
-            .sheet(isPresented: $showTailscaleDevices) {
-                TailscaleDevicesSheet()
-            }
-            .sheet(item: $editingDevice) { device in
-                AddDeviceSheet(existing: device)
-            }
-            .sheet(item: $transfersDevice) { device in
-                NavigationStack {
-                    TransfersView(files: transfers.link(for: device).files, macName: device.name)
-                }
-            }
-            .fileImporter(isPresented: $showSendFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-                guard case .success(let urls) = result, !urls.isEmpty, let device = sendFilesDevice else { return }
-                transfers.link(for: device).files.send(urls, securityScoped: true)
-            }
-            .confirmationDialog(
-                deviceToDelete.map { "Remove “\($0.name)”?" } ?? "",
-                isPresented: Binding(get: { deviceToDelete != nil }, set: { if !$0 { deviceToDelete = nil } }),
-                titleVisibility: .visible,
-                presenting: deviceToDelete
-            ) { device in
-                Button("Remove Device", role: .destructive) { store.remove(device) }
-                Button("Cancel", role: .cancel) {}
-            } message: { device in
-                Text("\(device.host) will be removed from this device list. The Mac itself is not affected, and you can add it again later.")
-            }
-            .confirmationDialog(
-                deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
-                isPresented: Binding(get: { deviceToLogIn != nil }, set: { if !$0 { deviceToLogIn = nil } }),
-                titleVisibility: .visible,
-                presenting: deviceToLogIn
-            ) { device in
-                Button("Type Password") { logIn(to: device) }
-                Button("Cancel", role: .cancel) {}
-            } message: { _ in
-                Text("Vantage signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
-            }
-            .overlay(alignment: .bottom) {
-                if let logInStatus {
-                    LogInStatusBadge(status: logInStatus)
-                        .padding(.bottom, 24)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(.smooth(duration: 0.3), value: logInStatus)
+            .safeAreaInset(edge: .top) { TailscaleBanner() }
+            .deviceActionPresentations(actions)
             .task {
                 if selectedDevice == nil, let host = ClientOptions.takeAutoConnectHost() {
                     selectedDevice = store.devices.first { $0.host == host }
@@ -100,7 +43,7 @@ struct DeviceListScreen: View {
                     transfers.link(for: device).files.queueTestFile(bytes: bytes)
                 }
                 #endif
-                if ClientOptions.openTailscaleDevices { showTailscaleDevices = true }
+                if ClientOptions.openTailscaleDevices { actions.showTailscaleDevices = true }
             }
             .task(id: availabilityKey) {
                 guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return }
@@ -114,16 +57,16 @@ struct DeviceListScreen: View {
             ForEach(store.sortedDevices) { device in
                 DeviceListItem(device: device, availability: availability.statuses[device.id] ?? .checking,
                                files: transfers.files(for: device.id),
-                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device },
-                               onSendFiles: { sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
+                               onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
+                               onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
                 .swipeActions {
-                    Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
-                    Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
+                    Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+                    Button { actions.editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
                     if ScreenSharingPassword.canLogIn(device) {
-                        Button { deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
+                        Button { actions.deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
                     }
                 }
-                .contextMenu { deviceMenu(for: device) }
+                .contextMenu { DeviceMenu(device: device, actions: actions) }
             }
         }
     }
@@ -134,13 +77,13 @@ struct DeviceListScreen: View {
                 ForEach(store.sortedDevices) { device in
                     DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking,
                                files: transfers.files(for: device.id),
-                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device },
-                               onSendFiles: { sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
+                               onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
+                               onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
                     #if os(visionOS)
                     .contentShape(.hoverEffect, .rect(cornerRadius: 20))
                     .hoverEffect()
                     #endif
-                    .contextMenu { deviceMenu(for: device) }
+                    .contextMenu { DeviceMenu(device: device, actions: actions) }
                 }
             }
             .padding()
@@ -150,29 +93,61 @@ struct DeviceListScreen: View {
         }
     }
 
-    @ViewBuilder
-    private func deviceMenu(for device: SavedDevice) -> some View {
-        Section {
-            Button { sendFiles(to: device) } label: { Label("Send Files…", systemImage: StripItem.sendFile.symbol) }
-            if transfers.files(for: device.id)?.hasTransfers == true {
-                Button { transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .listLeading) {
+            NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
+        }
+        ToolbarItemGroup(placement: .listTrailing) {
+            Menu {
+                DeviceSortPicker()
+                Divider()
+                Button { store.isGridLayout.toggle() } label: {
+                    Label(store.isGridLayout ? "List" : "Grid", systemImage: store.isGridLayout ? "list.bullet" : "square.grid.2x2")
+                }
+            } label: {
+                Label("Sort and Layout", systemImage: "arrow.up.arrow.down")
             }
+            AddDeviceMenu(actions: actions)
         }
-        Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
-        if ScreenSharingPassword.canLogIn(device) {
-            Button { deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
-        }
-        Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
     }
+
+    private var availabilityKey: String {
+        guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return "paused" }
+        return store.devices.map { "\($0.id):\($0.host):\($0.port)" }.joined(separator: "|")
+    }
+}
+
+/// Everything the device list asks for besides opening a session: adding, editing, and removing
+/// Macs, sending them files, and logging in through Screen Sharing. The list (and on the Mac, the
+/// sidebar and the menu bar) sets these; `deviceActionPresentations` presents them.
+@MainActor
+@Observable
+final class DeviceActions {
+    #if os(macOS)
+    /// The Mac has one device list window; the menu bar reaches it from any window, a session's too.
+    static let shared = DeviceActions()
+    #endif
+
+    var showAddDevice = false
+    var showTailscaleDevices = false
+    var editingDevice: SavedDevice?
+    var deviceToDelete: SavedDevice?
+    var deviceToLogIn: SavedDevice?
+    var logInStatus: LogInStatus?
+    var transfersDevice: SavedDevice?
+    /// Send Files… picks files for this Mac without opening its screen.
+    var sendFilesDevice: SavedDevice?
+    var showSendFiles = false
 
     /// Files for this Mac, straight from the Files picker: they go over a files-only session, and
     /// the Mac's row shows them moving.
-    private func sendFiles(to device: SavedDevice) {
+    func sendFiles(to device: SavedDevice) {
         sendFilesDevice = device
         showSendFiles = true
     }
 
-    private func logIn(to device: SavedDevice) {
+    func logIn(to device: SavedDevice) {
         logInStatus = .typing(device.name)
         Task {
             do {
@@ -186,57 +161,152 @@ struct DeviceListScreen: View {
             logInStatus = nil
         }
     }
+}
 
-    private var emptyState: some View {
+extension View {
+    /// The sheets, file picker, and confirmations behind `DeviceActions`.
+    func deviceActionPresentations(_ actions: DeviceActions) -> some View {
+        modifier(DeviceActionPresentations(actions: actions))
+    }
+}
+
+private struct DeviceActionPresentations: ViewModifier {
+    @Bindable var actions: DeviceActions
+    @Environment(DeviceStore.self) private var store
+    private let transfers = FileTransferCenter.shared
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $actions.showAddDevice) {
+                AddDeviceSheet().appLockCurtain()
+            }
+            .sheet(isPresented: $actions.showTailscaleDevices) {
+                TailscaleDevicesSheet().appLockCurtain()
+            }
+            .sheet(item: $actions.editingDevice) { device in
+                AddDeviceSheet(existing: device).appLockCurtain()
+            }
+            .sheet(item: $actions.transfersDevice) { device in
+                NavigationStack {
+                    TransfersView(files: transfers.link(for: device).files, macName: device.name)
+                }
+                #if os(macOS)
+                .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
+                #endif
+                .appLockCurtain()
+            }
+            .fileImporter(isPresented: $actions.showSendFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                guard case .success(let urls) = result, !urls.isEmpty, let device = actions.sendFilesDevice else { return }
+                transfers.link(for: device).files.send(urls, securityScoped: true)
+            }
+            .confirmationDialog(
+                actions.deviceToDelete.map { "Remove “\($0.name)”?" } ?? "",
+                isPresented: Binding(get: { actions.deviceToDelete != nil }, set: { if !$0 { actions.deviceToDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: actions.deviceToDelete
+            ) { device in
+                Button("Remove Device", role: .destructive) { store.remove(device) }
+                Button("Cancel", role: .cancel) {}
+            } message: { device in
+                Text("\(device.host) will be removed from this device list. The Mac itself is not affected, and you can add it again later.")
+            }
+            .confirmationDialog(
+                actions.deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
+                isPresented: Binding(get: { actions.deviceToLogIn != nil }, set: { if !$0 { actions.deviceToLogIn = nil } }),
+                titleVisibility: .visible,
+                presenting: actions.deviceToLogIn
+            ) { device in
+                Button("Type Password") { actions.logIn(to: device) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Vantage signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
+            }
+            .overlay(alignment: .bottom) {
+                if let logInStatus = actions.logInStatus {
+                    LogInStatusBadge(status: logInStatus)
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.smooth(duration: 0.3), value: actions.logInStatus)
+    }
+}
+
+/// A Mac's context menu, in the list and grid, and in the Mac's sidebar.
+struct DeviceMenu: View {
+    let device: SavedDevice
+    let actions: DeviceActions
+    private let transfers = FileTransferCenter.shared
+
+    var body: some View {
+        Section {
+            Button { actions.sendFiles(to: device) } label: { Label("Send Files…", systemImage: StripItem.sendFile.symbol) }
+            if transfers.files(for: device.id)?.hasTransfers == true {
+                Button { actions.transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
+            }
+        }
+        Button { actions.editingDevice = device } label: { Label(Self.editTitle, systemImage: "pencil") }
+        if ScreenSharingPassword.canLogIn(device) {
+            Button { actions.deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
+        }
+        Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    #if os(macOS)
+    static let editTitle = "Edit…" // it opens a sheet
+    #else
+    static let editTitle = "Edit"
+    #endif
+}
+
+/// Add from Tailscale, or by name or address.
+struct AddDeviceMenu: View {
+    let actions: DeviceActions
+
+    var body: some View {
+        Menu {
+            Button { actions.showTailscaleDevices = true } label: { Label("Add from Tailscale…", systemImage: "network") }
+            Button { actions.showAddDevice = true } label: { Label("Add Manually…", systemImage: "keyboard") }
+        } label: {
+            Label("Add Device", systemImage: "plus")
+        }
+    }
+}
+
+/// How the device list is ordered.
+struct DeviceSortPicker: View {
+    @Environment(DeviceStore.self) private var store
+
+    var body: some View {
+        Picker("Sort", selection: Binding(get: { store.sort }, set: { store.sort = $0 })) {
+            ForEach(DeviceSort.allCases) { sort in
+                Label(sort.label, systemImage: sort.symbol).tag(sort)
+            }
+        }
+    }
+}
+
+/// No Macs saved yet: how to add the first one.
+struct DeviceListEmptyState: View {
+    let actions: DeviceActions
+
+    var body: some View {
         ContentUnavailableView {
             Label("No Devices", systemImage: "display")
         } description: {
             Text("Add your Mac to start a remote session over Tailscale.")
         } actions: {
-            Button("Add from Tailscale") { showTailscaleDevices = true }.buttonStyle(.glassProminent)
-            Button("Add Manually") { showAddDevice = true }.buttonStyle(.glass)
+            Button("Add from Tailscale") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
+            Button("Add Manually") { actions.showAddDevice = true }.buttonStyle(.glass)
         }
     }
+}
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .listLeading) {
-            NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
-        }
-        ToolbarItemGroup(placement: .listTrailing) {
-            Menu {
-                Picker("Sort", selection: sortBinding) {
-                    ForEach(DeviceSort.allCases) { sort in
-                        Label(sort.label, systemImage: sort.symbol).tag(sort)
-                    }
-                }
-                Divider()
-                Button { store.isGridLayout.toggle() } label: {
-                    Label(store.isGridLayout ? "List" : "Grid", systemImage: store.isGridLayout ? "list.bullet" : "square.grid.2x2")
-                }
-            } label: {
-                Label("Sort and Layout", systemImage: "arrow.up.arrow.down")
-            }
-            Menu {
-                Button { showTailscaleDevices = true } label: { Label("Add from Tailscale…", systemImage: "network") }
-                Button { showAddDevice = true } label: { Label("Add Manually…", systemImage: "keyboard") }
-            } label: {
-                Label("Add Device", systemImage: "plus")
-            }
-        }
-    }
+/// Shown above the list while Tailscale is off on this device, with a way to open it.
+struct TailscaleBanner: View {
+    @Environment(TailscaleReachability.self) private var reachability
 
-    private var sortBinding: Binding<DeviceSort> {
-        Binding(get: { store.sort }, set: { store.sort = $0 })
-    }
-
-    private var availabilityKey: String {
-        guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return "paused" }
-        return store.devices.map { "\($0.id):\($0.host):\($0.port)" }.joined(separator: "|")
-    }
-
-    @ViewBuilder
-    private var tailscaleBanner: some View {
+    var body: some View {
         if !reachability.isActive {
             HStack(spacing: 8) {
                 Image(systemName: "network.slash")
@@ -322,7 +392,7 @@ private struct DeviceListItem: View {
 }
 
 /// "Drop to send to ⟨Mac⟩" at the end of a row or the foot of a card while files hover over it.
-private struct DropTargetHint: View {
+struct DropTargetHint: View {
     let macName: String
 
     var body: some View {
@@ -412,8 +482,10 @@ struct DeviceIconTile: View {
     }
 }
 
-private struct AvailabilityLabel: View {
+struct AvailabilityLabel: View {
     let status: HostAvailability
+    /// Increased on a selected Mac sidebar row, where an orange word on the accent fill is hard to read.
+    @Environment(\.backgroundProminence) private var prominence
     var body: some View {
         HStack(spacing: 6) {
             if status == .checking {
@@ -423,7 +495,7 @@ private struct AvailabilityLabel: View {
             }
             Text(status.label)
                 .font(.footnote)
-                .foregroundStyle(status.isWarning ? status.tint : .secondary)
+                .foregroundStyle(status.isWarning && prominence != .increased ? status.tint : .secondary)
         }
         .padding(.top, 1)
         .accessibilityElement(children: .ignore)
@@ -431,12 +503,12 @@ private struct AvailabilityLabel: View {
     }
 }
 
-private func lastConnectedText(_ date: Date) -> String {
+func lastConnectedText(_ date: Date) -> String {
     if Date().timeIntervalSince(date) < 60 { return "Just now" }
     return date.formatted(.relative(presentation: .named))
 }
 
-private extension HostAvailability {
+extension HostAvailability {
     var tint: Color {
         switch self {
         case .ready, .online: .green
@@ -466,7 +538,7 @@ enum LogInStatus: Equatable {
     case typing(String), sent(String), failed(String)
 }
 
-private struct LogInStatusBadge: View {
+struct LogInStatusBadge: View {
     let status: LogInStatus
 
     var body: some View {

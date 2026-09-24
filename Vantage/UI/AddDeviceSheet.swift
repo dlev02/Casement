@@ -44,7 +44,9 @@ struct AddDeviceSheet: View {
                         Text("HEVC").tag(VideoCodec.hevc)
                         Text("H.264").tag(VideoCodec.h264)
                     }
+                    #if !os(macOS) // a Mac's own mouse and trackpad already scroll the way it's set up
                     Toggle("Natural Scrolling", isOn: $naturalScroll)
+                    #endif
                     NavigationLink {
                         ControlStripEditor(macName: name.isEmpty ? "This Mac" : name, layout: $controlStrip)
                     } label: {
@@ -90,6 +92,9 @@ struct AddDeviceSheet: View {
                 }
             }
             .navigationTitle(existing == nil ? "Add Device" : "Edit Device")
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -98,6 +103,9 @@ struct AddDeviceSheet: View {
             }
             .onAppear(perform: populate)
         }
+        #if os(macOS)
+        .frame(minWidth: 480, idealWidth: 520, minHeight: 520, idealHeight: 640)
+        #endif
     }
 
     private func populate() {

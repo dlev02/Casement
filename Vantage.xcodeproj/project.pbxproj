@@ -11,6 +11,16 @@
         B10000000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
         B10000000000000000000005 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = A10000000000000000000051; remoteInfo = Vantage; };
         B10000000000000000000006 = {isa = PBXTargetDependency; target = A10000000000000000000051; targetProxy = B10000000000000000000005; };
+        D10000000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = VantageMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+        D10000000000000000000002 = {isa = PBXFileSystemSynchronizedRootGroup; path = Tests/VantageMacUITests; sourceTree = "<group>"; };
+        D10000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        D10000000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        D10000000000000000000005 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = A10000000000000000000051; remoteInfo = Vantage; };
+        D10000000000000000000006 = {isa = PBXTargetDependency; target = A10000000000000000000051; targetProxy = D10000000000000000000005; };
+        D10000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = D10000000000000000000008; buildPhases = (D10000000000000000000003, D10000000000000000000004); buildRules = (); dependencies = (D10000000000000000000006); fileSystemSynchronizedGroups = (D10000000000000000000002); name = VantageMacUITests; productName = VantageMacUITests; productReference = D10000000000000000000001; productType = "com.apple.product-type.bundle.ui-testing"; };
+        D10000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (D10000000000000000000009, D10000000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        D10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Debug; };
+        D10000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Release; };
         C10000000000000000000013 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = C10000000000000000000007; remoteInfo = VantageWidgets; };
         C10000000000000000000014 = {isa = PBXTargetDependency; platformFilters = (ios, ); target = C10000000000000000000007; targetProxy = C10000000000000000000013; };
         B10000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = B10000000000000000000008; buildPhases = (B10000000000000000000003, B10000000000000000000004); buildRules = (); dependencies = (B10000000000000000000006); fileSystemSynchronizedGroups = (B10000000000000000000002); name = VantageUITests; productName = VantageUITests; productReference = B10000000000000000000001; productType = "com.apple.product-type.bundle.ui-testing"; };
@@ -92,6 +102,7 @@
 				A100000000000000000000C1 /* Vantage */,
 				A100000000000000000000C2 /* VantageHost */,
                 B10000000000000000000002,
+                D10000000000000000000002,
 				A100000000000000000000E1 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -103,6 +114,7 @@
 				A100000000000000000000A1 /* Vantage.app */,
 				A100000000000000000000A2 /* VantageHost.app */,
                 B10000000000000000000001,
+                D10000000000000000000001,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -224,6 +236,7 @@
 				A10000000000000000000052 /* VantageHost */,
 				C10000000000000000000007 /* VantageWidgets */,
                 B10000000000000000000007,
+                D10000000000000000000007,
 			);
 		};
 /* End PBXProject section */
@@ -437,7 +450,7 @@
 				INFOPLIST_FILE = Vantage/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Vantage connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Vantage uses Face ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -487,7 +500,7 @@
 				INFOPLIST_FILE = Vantage/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Vantage connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Vantage uses Face ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

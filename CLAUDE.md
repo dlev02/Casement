@@ -480,6 +480,115 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   visionOS app icon (a layered `.solidimagestack`) doesn't exist yet. The simulator can't take
   AXe/xcui input, so pinch mapping still needs a headset check.
 
+## macOS client
+
+The `Vantage` target also builds a native, sandboxed Mac app (`Vantage/Mac/`, plus `#if os(macOS)`
+branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
+
+- **Windows** (`VantageApp.swift`): `Window("Vantage", id: "main")` holds the device list, one
+  only, so ⌘N means Add Mac…; `.defaultLaunchBehavior(.presented)` so it's there at every launch
+  (stale saved window state once opened the app with no window at all), and it takes every link
+  and opened file (`handlesExternalEvents(matching: ["*"])`). Each Mac connects in its own
+  `WindowGroup(id: "session", for: UUID.self)` window (`SessionWindow`: `.commandsRemoved()`,
+  restoration off, `handlesExternalEvents(matching: [])` so a link never opens an empty one).
+  `MacAppDelegate`: closing the last window doesn't quit (sessions and files outlive the list),
+  the Dock icon brings the list back, becoming active opens a pending connection and retries
+  files, and launch starts `MacTransferActivity`. `Settings { MacSettingsView }` and
+  `Window("Vantage Help", id: "help")`.
+- **Device list** (`MacRootView`): `NavigationSplitView`, sidebar `List(selection:)` of
+  `MacSidebarRow` (a `Label`, so the symbol turns white on a selected row; `AvailabilityLabel`
+  drops its orange on the accent fill via `backgroundProminence`; `DeviceTransferBadge`; drops go
+  through `FileDropDelegate`), `.contextMenu(forSelectionType:primaryAction:)` so double-click and
+  Return connect. Detail `MacDeviceDetail`: Connect (`.glassProminent`, default action), Send
+  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac Audio, what's saved. Selection is
+  `@SceneStorage`. Availability checks run while the list is open (none at all, not "Checking…",
+  while Settings › Connection turns them off). `DeviceActions` (in `DeviceListScreen.swift`) holds
+  every sheet, picker, and confirmation the list can raise, shared by the iOS list and the Mac
+  (`DeviceActions.shared`, so the menu bar reaches it from a session window); `DeviceMenu`,
+  `AddDeviceMenu`, `DeviceSortPicker`, `DeviceListEmptyState`, `TailscaleBanner` are shared too.
+- **Routing** (`MacWindowRouter`): holds an `openWindow` from the first window root (the list
+  hands it over in its `.task`, before the root's `onAppear`), so Siri/Shortcuts/Spotlight
+  (`PendingConnection`), `vantage://` links, and files opened in Vantage reach a session even with
+  no window watching. Every Mac window root goes through `macWindowRoot()`: store, Tailscale state
+  (`MacApp`; Settings and sessions are scenes of their own and `ConnectionSettings` crashes
+  without it), appearance, the lock curtain, and the pending-connection watch.
+- **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
+  Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Dictate
+  ⌃⌥⌘D, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
+  Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
+  Screen/Wake Display, Customize Controls…, Disconnect ⌃⌥⌘W); View adds Hide/Show Controls ⌃⌥⌘C,
+  Actual Size ⌃⌥⌘0, Full Screen ⌃⌥⌘F, Sort Macs By; Help › Vantage Help. Session shortcuts all
+  hold ⌃⌥⌘, the one chord a capturing session leaves to Vantage. Items read
+  `@FocusedValue(\.sessionCommands)` (the session publishes `SessionCommands` with
+  `focusedSceneValue`, since its AppKit view holds focus) and `\.selectedMac` (the list); they're
+  dimmed when they don't apply, never hidden. `SidebarCommands`, `ToolbarCommands`.
+- **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
+  Security, About, each a grouped form in its own `NavigationStack`; the last tab is remembered
+  (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Controls on the Mac:
+  Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
+  off; `MacKeyboardSettings` has the keys), Dictation, Session Controls; no touch, trackpad,
+  on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
+  iCloud sync until the Mac is signed for it. Add Device hides Natural Scrolling (the Mac's own
+  mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
+- **App lock**: `AppLock.shared` locks on `com.apple.screenIsLocked`, display sleep, system sleep,
+  and a fast-user switch away, and asks again when `com.apple.screenIsUnlocked` arrives with Vantage
+  in front or when it next becomes active. `appLockCurtain()` lays `LockOverlay` over every Mac
+  window root and every device-list sheet (sheets are windows of their own); the views stay
+  alive, so sessions stay connected. Never swap a Mac window's view for the lock: that
+  disconnects the session. The session's input capture must also ignore input while locked.
+- **Control strip**: shown as on iPad. The Mac's default is `ControlStripLayout.macStandard`
+  (Spotlight, Mission Control, Application Windows, Show Desktop, Type Password, Send Clipboard,
+  Dictate; `platformStandard` picks it). `StripItem.unavailableHere` (`.keyboard` on the Mac) is
+  skipped by `visibleItems()`/`hiddenItems()`, never removed: a layout synced from an iPad keeps
+  its Keyboard button, and editor changes go through `replacingVisible(with:)`, which puts it
+  back after the control it followed. The Mac editor reorders by dragging (grip on each row; no
+  edit mode) and lets section footers wrap.
+- **Clipboard**: the Mac client's `ClipboardSync` wraps `PasteboardSync(pasteboard:)` (injectable,
+  NSPasteboard text/RTF/PNG, TIFF→PNG like the host); it reads only on user action
+  (`currentPayload()` for Send Clipboard, `changedPayload()` for ⌘V paste-through, which reads
+  nothing unless `changeCount` moved), because macOS 15.4+ asks before other programmatic reads. A
+  payload equal to the last one synced is never written again while the pasteboard still holds
+  it, nor sent again: client and host on one Mac share the pasteboard and would bounce it forever.
+  Tests: `ClipboardSyncTests`. Host: `ClipboardBridge` touches the pasteboard only on the main
+  thread (poll timer on `.main`; `currentPayload()` hops there from the session actor) and records
+  its own write's change count in the same block. Never bring back a "suppress next change" flag:
+  it outlived the write and swallowed the user's next copy. Tests: `HostClipboardTests`.
+- **Audio and dictation**: the host's `AudioCapture` always leaves the Vantage client app
+  (`com.benjaminlevinson.vantage`) out of the audio filter, so a Mac connected to itself doesn't
+  echo. `MacAudioPlayer` on macOS has no audio session: the engine plays straight to the device,
+  `AVAudioEngineConfigurationChange` restarts it on a device change, output latency comes from
+  `outputNode.presentationLatency`, and output still pauses while dictation's mic is open. Live
+  check (makes sound): `VANTAGE_LIVE_MAC_AUDIO=1 xcrun swift test --filter MacAudioPlayerLiveTests`.
+  Dictation on macOS stops with what it heard on `AVAudioEngineConfigurationChange` (no
+  interruptions there). `Failure.settings` opens `x-apple.systempreferences:…?Privacy_Microphone` /
+  `Privacy_SpeechRecognition`. `LocalDevice.noun`/`.this`/`.symbol`/`.settingsApp` name the local
+  device ("this Mac" on macOS); the enum cases keep their `iPad` names.
+- **Identity, sandbox, files**: the Mac client names itself with `SCDynamicStoreCopyComputerName`
+  and `sysctlbyname("hw.model")` (`MacComputer`, cached); never `Host.current()`, which can block
+  on DNS. `DeviceCatalog` writes only Application Support on macOS; `CloudSync` looks for
+  `Contents/embedded.provisionprofile` on the Mac. Received files go to `~/Downloads`
+  (`URL.downloadsDirectory.resolvingSymlinksInPath()`), or DEBUG `-VantageReceiveFolder <path>`,
+  and a test runner without the Vantage bundle id gets `$TMPDIR/VantageReceived`, so tests never
+  touch the real Downloads. Show uses `NSWorkspace.activateFileViewerSelecting`. Finder drops
+  carrying `public.file-url` are sent in place (`send([url], securityScoped: false)`); folders are
+  skipped and other drops are still copied. `MacTransferActivity` holds a `.userInitiated`
+  activity (no idle sleep) while files move and a `.userInitiatedAllowingIdleSystemSleep` one (no
+  App Nap) while a screen session is up, and calls `FileTransferCenter.retryAll()` on
+  `NSWorkspace.didWakeNotification`.
+- **Shared container**: every checkout's Debug build has the same bundle id, so they share one
+  sandbox container (saved Macs, defaults, window state). Test with argument-domain overrides
+  (`-vantage.savedDevices '<hex of the JSON array>'`, `-vantage.availabilityChecks NO`,
+  `-ApplePersistenceIgnoreState YES`) rather than editing it, and quit a build with
+  `pkill -f <its path>`: `tell application id … to quit` can quit another checkout's copy.
+- **UI tests** (`Tests/VantageMacUITests`, target `VantageMacUITests`, shared scheme of the same
+  name, which also builds `VantageHost`): `MacShellUITests` starts its own synthetic host from the
+  products folder on port 47856 (`TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` uses one
+  already running) and covers `testConnectOpensTheMacInItsOwnWindow`,
+  `testSessionMenuFollowsTheFocusedWindow`, `testSettingsOpensWithCommandComma`. macOS UI tests
+  need Automation Mode approved once by an admin (`automationmodetool
+  enable-automationmode-without-authentication`); until then `scripts/check.sh` only builds them
+  (`build-for-testing`).
+
 ## Build & test
 
 ```
@@ -504,7 +613,7 @@ xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generi
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platform=macOS' -derivedDataPath .deriveddata
 ```
 
-Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites, the host build, and the iOS and macOS client builds.
+Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites, the host build, and the iOS and macOS client builds, and compiles the Mac UI tests.
 
 ## Running for real
 

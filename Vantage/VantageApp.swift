@@ -5,8 +5,24 @@ struct VantageApp: App {
     #if os(visionOS)
     @Environment(\.scenePhase) private var scenePhase
     #endif
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
+        #if os(macOS)
+        // One device list (⌘N adds a Mac rather than a second list); every link and opened file
+        // lands here rather than in a session window.
+        Window("Vantage", id: MacRootView.sceneID) {
+            MacRootView().macWindowRoot()
+        }
+        .defaultSize(width: 880, height: 580)
+        // Always there at launch, even if it was closed when Vantage last quit (or the state
+        // saved then can't be restored): a Mac app that opens to nothing looks broken.
+        .defaultLaunchBehavior(.presented)
+        .handlesExternalEvents(matching: ["*"])
+        .commands { MacCommands() }
+        #else
         WindowGroup {
             ContentView()
         }
@@ -16,6 +32,7 @@ struct VantageApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { AppLock.shared.lockIfNeeded() }
         }
+        #endif
         #endif
 
         #if os(visionOS) || os(macOS)
@@ -27,7 +44,20 @@ struct VantageApp: App {
         .restorationBehavior(.disabled) // reconnecting should be the user's call, not a relaunch's
         #if os(macOS)
         .commandsRemoved() // File › New Window would open a session window with no Mac in it
+        .handlesExternalEvents(matching: []) // a link never opens an empty session window
         #endif
+        #endif
+
+        #if os(macOS)
+        Settings {
+            MacSettingsView()
+        }
+
+        Window("Vantage Help", id: MacHelpWindow.sceneID) {
+            MacHelpWindow()
+        }
+        .defaultSize(width: 560, height: 640)
+        .commandsRemoved() // opened from Help › Vantage Help
         #endif
     }
 }

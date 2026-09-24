@@ -48,7 +48,7 @@ struct TailscaleAccountScreen: View {
                 }
             } else {
                 Section {
-                    Text("Tailscale has no sign-in for third-party apps. Instead you create a read-only key in the Tailscale admin console and paste it here — then Vantage can list your tailnet and add Macs with one tap.")
+                    Text("Tailscale has no sign-in for third-party apps. Instead you create a read-only key in the Tailscale admin console and paste it here — then Vantage can list your tailnet and add Macs with \(Pointing.oneTap).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -58,7 +58,7 @@ struct TailscaleAccountScreen: View {
                         TailscaleOAuthSetup(onSignedIn: signedIn)
                     } label: {
                         MethodRow(title: "OAuth Client", badge: "Recommended", systemImage: "key.horizontal",
-                                  detail: "Never expires, so you only set it up once. Takes a few more taps.")
+                                  detail: "Never expires, so you only set it up once. Takes a few more \(Pointing.taps).")
                     }
                     NavigationLink {
                         TailscaleTokenSetup(onSignedIn: signedIn)
@@ -74,6 +74,7 @@ struct TailscaleAccountScreen: View {
             }
         }
         .navigationTitle("Tailscale Account")
+        .macGroupedForm()
     }
 
     private func signedIn(_ devices: [TailscaleDevice]) {
@@ -129,7 +130,7 @@ struct TailscaleOAuthSetup: View {
                 Link(destination: Self.oauthURL) {
                     Label("Open Tailscale OAuth Clients", systemImage: "arrow.up.right.square")
                 }
-                SetupStep(2) { Text("Tap **Generate OAuth client…**") }
+                SetupStep(2) { Text("\(Pointing.tap) **Generate OAuth client…**") }
                 SetupStep(3) { Text("Give it a description — \(Text("Vantage").bold()) works.") }
                 SetupStep(4) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -139,7 +140,7 @@ struct TailscaleOAuthSetup: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                SetupStep(5) { Text("Tap **Generate client**, then copy the client ID and secret into the fields below. Tailscale shows the secret only once.") }
+                SetupStep(5) { Text("\(Pointing.tap) **Generate client**, then copy the client ID and secret into the fields below. Tailscale shows the secret only once.") }
             } header: {
                 Text("Steps")
             }
@@ -158,12 +159,13 @@ struct TailscaleOAuthSetup: View {
             } header: {
                 Text("Paste Here")
             } footer: {
-                Text("You can switch to Safari and back between the two — what you've pasted stays here.")
+                Text("You can switch to \(Pointing.browser) and back between the two — what you've pasted stays here.")
             }
 
             TailscaleSignInSection(credential: credential, onSignedIn: onSignedIn)
         }
         .navigationTitle("OAuth Client")
+        .macGroupedForm()
         #if canImport(UIKit)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -186,7 +188,7 @@ struct TailscaleTokenSetup: View {
     var body: some View {
         Form {
             Section {
-                SetupStep(1) { Text("Open the keys page, then tap **Generate access token…**") }
+                SetupStep(1) { Text("Open the keys page, then \(Pointing.tap.lowercased()) **Generate access token…**") }
                 Link(destination: Self.keysURL) {
                     Label("Open Tailscale Keys", systemImage: "arrow.up.right.square")
                 }
@@ -209,6 +211,7 @@ struct TailscaleTokenSetup: View {
             TailscaleSignInSection(credential: credential, onSignedIn: onSignedIn)
         }
         .navigationTitle("Access Token")
+        .macGroupedForm()
         #if canImport(UIKit)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -289,4 +292,19 @@ private struct SetupStep<Content: View>: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
+}
+
+/// Setup steps name the gesture the way this device does it.
+private enum Pointing {
+    #if os(macOS)
+    static let tap = "Click"
+    static let taps = "clicks"
+    static let oneTap = "one click"
+    static let browser = "your browser"
+    #else
+    static let tap = "Tap"
+    static let taps = "taps"
+    static let oneTap = "one tap"
+    static let browser = "Safari"
+    #endif
 }

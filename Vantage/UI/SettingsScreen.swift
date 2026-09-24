@@ -35,7 +35,27 @@ enum AppInfo {
     static let githubURL = URL(string: "https://github.com/dlev02")!
 }
 
-private struct AppearanceSettings: View {
+extension View {
+    /// Mac forms read best as grouped boxes, like System Settings; iOS forms already are.
+    @ViewBuilder func macGroupedForm() -> some View {
+        #if os(macOS)
+        formStyle(.grouped)
+        #else
+        self
+        #endif
+    }
+}
+
+/// Settings → Controls → Keyboard on the Mac, read by the session's keyboard capture.
+enum MacKeyboardSettings {
+    /// On (the default): while a session window is key, shortcuts go to the remote Mac, except
+    /// ⌃⌥⌘ chords, which always stay with Vantage.
+    static let captureShortcutsKey = "vantage.mac.captureShortcuts"
+    /// Sends ⌃ for ⌘ and ⌘ for ⌃.
+    static let swapCommandControlKey = "vantage.mac.swapCommandControl"
+}
+
+struct AppearanceSettings: View {
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
     var body: some View {
         Form {
@@ -64,9 +84,28 @@ struct ControlSettings: View {
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
     @AppStorage(DictationEnginePreference.macOffersParakeetKey) private var macOffersParakeet = false
     @AppStorage(Haptic.settingKey) private var haptics = true
+    @AppStorage(MacKeyboardSettings.captureShortcutsKey) private var captureShortcuts = true
+    @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapCommandControl = false
 
     var body: some View {
         Form {
+            #if os(macOS)
+            macKeyboardSection
+            dictationSection
+            Section {
+                customizeLink
+                Picker("Position", selection: $dock) {
+                    ForEach(ToolbarDock.allCases) { position in
+                        Label(position.label, systemImage: position.symbol).tag(position)
+                    }
+                }
+                Toggle("Start Collapsed", isOn: $collapsed)
+            } header: {
+                Text("Session Controls")
+            } footer: {
+                Text("Choose which controls float over a session and in what order. A Mac can have its own set, from its settings or the Session menu. You can also drag the controls to any corner of the window.")
+            }
+            #else
             #if os(visionOS)
             Section {
                 LabeledContent("Click", value: "Look and pinch")
@@ -112,19 +151,7 @@ struct ControlSettings: View {
                 Text("Unicode Text sends exactly what you type, including accents, emoji, and dictation. Keystrokes sends real key presses using the Mac's US layout, which some apps, games, terminals, and virtual machines require. Holding ⌘, ⌥, or ⌃ in the session controls always sends keystrokes, so ⌘C works from either mode. Hardware keyboards always send keystrokes.")
             }
 
-            Section {
-                Picker("Transcribe", selection: $dictationEngine) {
-                    ForEach(DictationEnginePreference.choices(macOffersParakeet: macOffersParakeet, selection: dictationEngine)) { engine in
-                        Text(engine.label).tag(engine)
-                    }
-                }
-            } header: {
-                Text("Dictation")
-            } footer: {
-                Text(macOffersParakeet
-                     ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the Mac doesn't have the one you pick, Vantage uses the other, then this iPad. On this iPad works offline and shows words as you speak."
-                     : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
-            }
+            dictationSection
 
             #if os(visionOS)
             Section {
@@ -176,9 +203,47 @@ struct ControlSettings: View {
                 Text("The Pencil always clicks exactly where it touches, and Pencil Pro moves the Mac's pointer while hovering. Squeeze needs Pencil Pro; double-tap works on Pencil (2nd generation) and later. Collapse Controls also brings hidden controls back.")
             }
             #endif
+            #endif
         }
         .navigationTitle("Controls")
     }
+
+    private var dictationSection: some View {
+        Section {
+            Picker("Transcribe", selection: $dictationEngine) {
+                ForEach(DictationEnginePreference.choices(macOffersParakeet: macOffersParakeet, selection: dictationEngine)) { engine in
+                    Text(engine.label).tag(engine)
+                }
+            }
+        } header: {
+            Text("Dictation")
+        } footer: {
+            #if os(macOS)
+            Text(macOffersParakeet
+                 ? "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the other Mac doesn't have the one you pick, Vantage uses the other, then this Mac, which works offline and shows words as you speak."
+                 : "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this Mac instead when that one doesn't have MacWhisper. This Mac works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
+            #else
+            Text(macOffersParakeet
+                 ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the Mac doesn't have the one you pick, Vantage uses the other, then this iPad. On this iPad works offline and shows words as you speak."
+                 : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
+            #endif
+        }
+    }
+
+    #if os(macOS)
+    private var macKeyboardSection: some View {
+        Section {
+            Toggle("Send keyboard shortcuts to the Mac", isOn: $captureShortcuts)
+                .accessibilityIdentifier("settings.captureShortcuts")
+            Toggle("Swap ⌘ and ⌃", isOn: $swapCommandControl)
+                .accessibilityIdentifier("settings.swapCommandControl")
+        } header: {
+            Text("Keyboard")
+        } footer: {
+            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Vantage instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, which suits a PC.")
+        }
+    }
+    #endif
 
     private var customizeLink: some View {
         NavigationLink { ControlStripEditor() } label: {
@@ -187,7 +252,7 @@ struct ControlSettings: View {
     }
 }
 
-private struct ConnectionSettings: View {
+struct ConnectionSettings: View {
     @Environment(TailscaleReachability.self) private var reachability
     @Environment(TailscaleAccount.self) private var account
     @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
@@ -253,6 +318,16 @@ struct SecuritySettings: View {
     var body: some View {
         let cloud = store.cloud
         Form {
+            #if os(macOS)
+            Section {
+                Toggle("Require Touch ID", isOn: $requireBiometrics)
+                    .accessibilityIdentifier("settings.requireBiometrics")
+            } footer: {
+                Text("Vantage locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
+            }
+            // iCloud sync stays off on the Mac until the app is signed for iCloud there: without
+            // that, its Keychain can't hold synced secrets.
+            #else
             Section {
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
             } footer: {
@@ -274,6 +349,7 @@ struct SecuritySettings: View {
             } footer: {
                 Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Vantage up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
             }
+            #endif
         }
         .navigationTitle("Privacy & Security")
     }
@@ -282,7 +358,7 @@ struct SecuritySettings: View {
 struct AboutScreen: View {
 
     var body: some View {
-        List {
+        SettingsContainer {
             Section {
                 VStack(spacing: 10) {
                     AppIconTile()
@@ -319,6 +395,20 @@ struct AboutScreen: View {
             }
         }
         .navigationTitle("About")
+    }
+}
+
+/// A List on iOS and visionOS; a grouped Form on the Mac, where a List's section footers stay
+/// on one line and rows lose their boxes.
+private struct SettingsContainer<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        #if os(macOS)
+        Form { content }.formStyle(.grouped)
+        #else
+        List { content }
+        #endif
     }
 }
 
@@ -371,31 +461,13 @@ struct HelpScreen: View {
                      "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
-            FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
-                     "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock."),
+            siriEntry,
             FAQEntry("Does Vantage work away from home?",
                      "Yes. Vantage connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
             FAQEntry("Why does Vantage want a Tailscale key?",
                      "Only to read your device list, so it can offer your Macs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding Macs by name or IP by hand works without one."),
         ]),
-        FAQSection("Controlling the Mac", [
-            FAQEntry("Trackpad or Direct Touch?",
-                     "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
-            FAQEntry("How does it work on Apple Vision Pro?",
-                     "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."),
-            FAQEntry("How do I right-click or middle-click?",
-                     "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
-            FAQEntry("Unicode Text or Keystrokes for the keyboard?",
-                     "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
-            FAQEntry("Why can't I type into a password box?",
-                     "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
-            FAQEntry("How does the key button type into password fields?",
-                     "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
-            FAQEntry("Can I change the buttons in the session controls?",
-                     "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
-            FAQEntry("Can I dictate to the Mac?",
-                     "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
-        ]),
+        FAQSection("Controlling the Mac", controllingTheMac),
         FAQSection("Video & Displays", [
             FAQEntry("HEVC or H.264?",
                      "HEVC looks better at the same bandwidth and is the default. Choose H.264 only if something in the path can't decode HEVC."),
@@ -414,7 +486,7 @@ struct HelpScreen: View {
             FAQEntry("Can I unlock a locked Mac?",
                      "If the Mac is asleep at its lock screen, tap the key button: Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
             FAQEntry("How do I log in after a restart?",
-                     "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then long-press the Mac in the list and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."),
+                     "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."),
             FAQEntry("What does Restart Safely do?",
                      "It's in Vantage Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
         ]),
@@ -429,6 +501,52 @@ struct HelpScreen: View {
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
     ]
+}
+
+extension HelpScreen {
+    #if os(macOS)
+    private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
+                                           "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Vantage is locked with Touch ID, the connection waits until you unlock.")
+    private static let logInGesture = "select the Mac in the sidebar"
+    private static let controllingTheMac: [FAQEntry] = [
+        FAQEntry("Which shortcuts go to the Mac?",
+                 "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Vantage. Hold ⌃⌥⌘ with a key to reach Vantage instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Vantage."),
+        FAQEntry("How do I send ⌘Tab or ⌘Space?",
+                 "macOS keeps those for itself, so Vantage can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
+        FAQEntry("How do I right-click or scroll?",
+                 "The same way as on this Mac: your mouse and trackpad buttons, gestures, and scrolling go straight through, and the other Mac's pointer follows yours inside the window."),
+        FAQEntry("Why can't I type into a password box?",
+                 "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+        FAQEntry("How does Type Password get into password fields?",
+                 "Save the Mac's account name and password in its settings in Vantage. When macOS is blocking ordinary typing, Vantage signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+        FAQEntry("Can I change the buttons in the session controls?",
+                 "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Controls… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
+        FAQEntry("Can I dictate to the Mac?",
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+    ]
+    #else
+    private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
+                                           "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock.")
+    private static let logInGesture = "long-press the Mac in the list"
+    private static let controllingTheMac: [FAQEntry] = [
+                FAQEntry("Trackpad or Direct Touch?",
+                         "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
+                FAQEntry("How does it work on Apple Vision Pro?",
+                         "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."),
+                FAQEntry("How do I right-click or middle-click?",
+                         "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+                FAQEntry("Unicode Text or Keystrokes for the keyboard?",
+                         "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
+                FAQEntry("Why can't I type into a password box?",
+                         "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+                FAQEntry("How does the key button type into password fields?",
+                         "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+                FAQEntry("Can I change the buttons in the session controls?",
+                         "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
+                FAQEntry("Can I dictate to the Mac?",
+                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+    ]
+    #endif
 }
 
 struct FAQSection: Identifiable {

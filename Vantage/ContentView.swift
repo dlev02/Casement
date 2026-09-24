@@ -1,9 +1,10 @@
 import SwiftUI
 import VantageCore
 
+#if !os(macOS) // the Mac's windows start at `MacRootView`
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
-    #if os(visionOS) || os(macOS)
+    #if os(visionOS)
     // Sessions open in windows of their own, so the list and every session share one store and lock.
     @State private var store = DeviceStore.shared
     @State private var reachability = TailscaleReachability()
@@ -47,7 +48,7 @@ struct ContentView: View {
         .background(LockCurtain(lock: lock, appearance: appearance))
         #endif
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
-        #if os(visionOS) || os(macOS)
+        #if os(visionOS)
         .onChange(of: selectedDevice) { _, device in
             guard let device else { return }
             openWindow(id: SessionWindow.sceneID, value: device.id)
@@ -67,7 +68,7 @@ struct ContentView: View {
         #endif
         #if DEBUG
         .sheet(item: $debugScreen) { screen in
-            NavigationStack { debugView(screen) }
+            NavigationStack { DebugScreenView(screen: screen) }
                 .environment(store)
                 .environment(reachability)
                 .environment(tailscaleAccount)
@@ -99,8 +100,6 @@ struct ContentView: View {
             case .background:
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes
-                #elseif os(macOS)
-                break // the Mac locks on screen lock and sleep, not when a window goes to the background
                 #else
                 lock.lockIfNeeded()
                 TransferBackgroundActivity.shared.appDidEnterBackground()
@@ -165,10 +164,21 @@ struct ContentView: View {
         for copy in sharedFiles.take() { link.files.sendOutboxCopy(copy) }
     }
 
-    #if DEBUG
-    /// Opens one screen straight from a launch argument so screenshots don't depend on driving
-    /// the UI. Never compiled into a release build.
-    @ViewBuilder private func debugView(_ screen: DebugScreen) -> some View {
+}
+
+#Preview {
+    ContentView()
+}
+#endif
+
+#if DEBUG
+/// Opens one screen straight from a launch argument so screenshots don't depend on driving
+/// the UI. Never compiled into a release build.
+struct DebugScreenView: View {
+    let screen: DebugScreen
+    @Environment(DeviceStore.self) private var store
+
+    var body: some View {
         switch screen {
         case .settings: SettingsScreen()
         case .controls: ControlSettings()
@@ -185,34 +195,52 @@ struct ContentView: View {
         case .controlStripMac: MacControlStripEditor(deviceID: store.devices.first?.id ?? UUID())
         }
     }
-    #endif
 }
+#endif
 
 #if os(visionOS) || os(macOS)
 /// visionOS and the Mac open each Mac in a window of its own, which the session shapes to the Mac's display.
 struct SessionWindow: View {
     static let sceneID = "session"
     let deviceID: UUID?
+    #if os(visionOS) // the Mac's window root handles both
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
+    #endif
     private let store = DeviceStore.shared
     private let lock = AppLock.shared
 
     var body: some View {
+        #if os(macOS)
+        // The lock covers the session instead of replacing it: swapping the view out would
+        // disconnect it, and the Mac locks whenever its screen does.
+        content
+            .frame(minWidth: 480, minHeight: 300)
+            .macWindowRoot()
+            .onAppear { MacWindowRouter.shared.sessionWindowOpened() }
+            .onDisappear { MacWindowRouter.shared.sessionWindowClosed() }
+        #else
         Group {
             if lock.isLocked {
                 LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
-            } else if let device = store.devices.first(where: { $0.id == deviceID }) {
-                RemoteSessionScreen(device: device).environment(store)
             } else {
-                ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
-                                       description: Text("This Mac is no longer in your device list."))
+                content
             }
         }
         .frame(minWidth: 480, minHeight: 300)
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { lock.authenticate() }
+        }
+        #endif
+    }
+
+    @ViewBuilder private var content: some View {
+        if let device = store.devices.first(where: { $0.id == deviceID }) {
+            RemoteSessionScreen(device: device).environment(store)
+        } else {
+            ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
+                                   description: Text("This Mac is no longer in your device list."))
         }
     }
 }
@@ -299,26 +327,3 @@ private struct LockCurtainContent: View {
     }
 }
 #endif
-
-private struct LockOverlay: View {
-    let errorMessage: String?
-    let onUnlock: () -> Void
-    var body: some View {
-        ZStack {
-            // Opaque, not a material: whatever sits under the lock must not show through.
-            Rectangle().fill(.background).ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "lock.fill").font(.largeTitle)
-                Text("Vantage is locked").font(.headline)
-                if let errorMessage {
-                    Text(errorMessage).font(.callout).multilineTextAlignment(.center).padding(.horizontal)
-                }
-                Button("Unlock", action: onUnlock).buttonStyle(.glassProminent)
-            }
-        }
-    }
-}
-
-#Preview {
-    ContentView()
-}

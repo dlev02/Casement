@@ -41,6 +41,9 @@ struct TailscaleDevicesSheet: View {
             }
             .task { if account.isSignedIn || ClientOptions.tailscaleFixture != nil { await load() } }
         }
+        #if os(macOS)
+        .frame(minWidth: 480, idealWidth: 540, minHeight: 440, idealHeight: 560)
+        #endif
     }
 
     @ViewBuilder private var deviceList: some View {

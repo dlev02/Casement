@@ -39,6 +39,9 @@ struct PairingPrompt: View {
                 .buttonStyle(.glassProminent)
                 .disabled(code.count != 6)
         }
+        #if os(macOS)
+        .frame(maxWidth: 360) // a session window can be far wider than an iPad; keep the prompt compact
+        #endif
         .onAppear { isCodeFocused = true }
     }
 }
