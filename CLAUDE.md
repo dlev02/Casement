@@ -713,6 +713,67 @@ flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-Van
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
 `log` in Drew's profile).
 
+## Windows host
+
+`WindowsHost/` is a Windows host for the same client, in C# on .NET 10 (LTS), speaking the wire
+protocol in `docs/research/windows-host-protocol.md` (the Swift code wins where they differ).
+`WindowsHost/README.md` has the layout and the remote-PC workflow. The .NET SDK is at `~/.dotnet`,
+not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1`
+(always opt out of telemetry: Drew's firewall flags the SDK and test runner calling home).
+
+- `src/Vantage.Protocol` (cross-platform, builds and tests on the Mac): `Wire/`, `Messages/`
+  (records with the Swift key names, a source-generated JSON context, converters for
+  `DisplaySelection` `_0`, `KeyModifiers` as a number, 2001-based dates, uppercase UUIDs),
+  `Transport/FramedConnection` (one writer; control lane, then a video lane that refuses whole
+  P-frames past 2 queued frames or 2 MB and announces when it drains so the session forces an
+  IDR, then a bulk lane for chunks and clipboard; keepalive 5/2/3), `Auth/` (NSec Ed25519, the
+  111-byte transcript, fingerprints, `PairingCodes`, file-backed trust and identity stores over
+  `IProtectedStorage`), `Files/` (`FileTransferEngine`, `FileNames` with the Windows rules,
+  `AttachTokenRegistry`), `Video/` (Annex-B ↔ AVCC, SPS/PPS, IDR detection), `Adaptive/`,
+  `Input/` (`WindowsInputTranslator`: kVK → set-1 scan codes, chords, held state, scroll
+  remainder, point → virtual-desktop pixels; only `IInputInjector` calls `SendInput`), and
+  `Host/` (`HostListener`, `HostSessionCore`, and the platform interfaces: `IScreenSource`,
+  `IVideoEncoderFactory`, `IInputSink`, `IClipboard`, `IHostStatusSource`, `IPowerControl`,
+  `IPeerDirectory`, `IFileStore`).
+- `src/Vantage.SyntheticHost`: the real session logic with a looping pre-encoded clip
+  (`assets/test-clip/clip-1600x1000.h264`, IDR every 30 frames; a keyframe request jumps to the
+  next one), a JSONL input log (wire events plus the Windows events the translator would inject),
+  an in-memory clipboard, and the Mac DEBUG host's flags (`--port`, `--pairing-code`,
+  `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
+  `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
+  `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), and `--pairing-code-rearm <s>`. Loopback is always
+  allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
+  burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
+- The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
+
+```
+cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
+dotnet WindowsHost/src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --port 47862 \
+  --pairing-code 246810 --pairing-code-rearm 3 --display-asleep --clipboard-text "from the PC" \
+  --input-log /tmp/in.jsonl --state-dir "$(mktemp -d)"
+VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
+  VANTAGE_INTEROP_CLIPBOARD_TEXT="from the PC" xcrun swift test --filter WindowsHostInteropTests
+```
+
+**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 36 messages
+defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
+`WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
+(JSON compared key for key after canonicalising, binary byte for byte);
+`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files. A change to any message must update both lists.
+**Interop harness**: `Tests/ClientSessionTests/WindowsHostInteropTests.swift` (opt-in,
+`.serialized`) drives the real `ClientSession` and raw channels against a running Windows host:
+pairing, burning, probe, version mismatch, the stream decoded with VideoToolbox (a PNG is written,
+`VANTAGE_INTEROP_PNG`), keyframe requests answered < 100 ms, exact pong, input and clipboard in the
+input log, sleep/wake status, attach tokens (single use, same address: ::1 ≠ 127.0.0.1), and
+files resuming after a cut both ways (`VANTAGE_INTEROP_FILE_BYTES`; host → client needs a second
+host with `--send-file-on-connect` named by `VANTAGE_INTEROP_FILES_HOST` and
+`VANTAGE_INTEROP_SEND_FILE`: the listener re-offers an interrupted send under the same id when that
+device reattaches). The unchanged `LiveHostFilesTests` and `SessionUITests` (hosts via
+`TEST_RUNNER_VANTAGE_TEST_HOST` with `--send-file-on-connect`, `…_SYNTHETIC_HOST` with
+`--display-asleep`, `…_UNAVAILABLE_HOST` with `--capture-fails-for 6`) also run against it; the
+Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 47860 and never 47820.
+
 ## Reboot, lock screen, and login window (what is and isn't possible)
 
 - **Reboot**: enable "Start Vantage Host at login" (Settings → Reboot). After login the host relaunches
