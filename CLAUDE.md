@@ -287,14 +287,27 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `HostSession`, `attachMedia` goes through `AttachTokenRegistry` (VantageCore: constant-time
   compare, single use, same peer address, 60 s, revoked when the session ends) to
   `HostSession.attachFileChannel`; anything else is closed. Kinds (file channel only): `fileOffer`
-  80, `fileAccept` 81 (`resumeOffset` always 0, or `rejected`), `fileComplete` 82 (SHA-256),
+  80, `fileAccept` 81 (`resumeOffset`, or `rejected`), `fileComplete` 82 (SHA-256),
   `fileResult` 83, `fileCancel` 84, `fileChunkToClient` 103 / `fileChunkToHost` 124
   (`id 16 B | offset u64 | bytes`, 256 KiB). Both ends run `FileTransferEngine` (VantageCore): one
   send at a time per direction (FIFO), 4 chunks in flight through `MessageChannel.send(_:completion:)`,
   incremental SHA-256 on both sides, receives into a hidden `.vantage-<id>.partial` renamed to a
   Finder-style unique name (`FileNames.sanitize`/`uniqueURL`: last path component only, no
   control/bidi characters or leading dots, ≤ 200 UTF-8 bytes); the file channel uses
-  `maxBufferedMessages` 64 so a slow disk pushes back through TCP. Host: `~/Downloads`
+  `maxBufferedMessages` 64 so a slow disk pushes back through TCP. **Resume**: a lost connection
+  keeps the receiver's partial; the sender re-offers the same `id` and the receiver answers
+  `resumeOffset` = the partial's size after re-hashing it (a SHA-256 state can't be saved), the
+  sender hashes that prefix from disk and streams the rest; both hashes run off the actor
+  (`FileTransferEngine.hashPrefix`). Size and hash still gate the rename; a mismatch deletes the
+  partial and the next attempt starts at 0. Cancels delete partials; untouched ones go after 24 h
+  (`partialLifetime`). A new channel from the same sender takes over a partial an old, half-open
+  channel still holds (`PartialClaims`). Old peers answer 0, which always worked. The client
+  re-offers a cut-off send up to 10 times (`FileTransferController.maxInterruptions`) and shows it
+  Paused meanwhile; a receive cut off waits an hour for the Mac to re-offer it. The host re-sends
+  its interrupted sends when the same iPad (`HostFileChannel.clientKey`, the key fingerprint)
+  attaches again within an hour (`HostTransfer.interruptedAt`/`resumeWindow`), and doesn't
+  report a cut-off file as failed meanwhile. Logs: "resuming a send/receive at N of M bytes
+  (hashed … in X ms)". Host: `~/Downloads`
   (`NSDownloadsFolderUsageDescription`; macOS asks once), `com.apple.quarantine` set per file via
   `URLResourceValues.quarantineProperties` (not `LSFileQuarantineEnabled`, which would also
   quarantine dictation WAVs and the Parakeet model), what happens on arrival (next bullet), menu
@@ -302,7 +315,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   comes from `tailscale whois` (iOS only reports "iPad"). Synthetic hosts save to
   `$TMPDIR/VantageSynthetic/Received` and skip the arrival path. Client:
   `FileTransferController` (`session.files`, outlives reconnects: queued files wait, one cut off
-  by a drop restarts from zero up to twice) → `Documents/Received` (`UIFileSharingEnabled` +
+  by a drop resumes) → `Documents/Received` (`UIFileSharingEnabled` +
   `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
   `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts),
   session menu "Send File to Mac…" / "Transfers…", drop onto the Mac's screen (`FileDropDelegate`,
@@ -321,10 +334,13 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `FileTransferTests` (VantageCore), `FileTransferSessionTests` (loopback `ClientSession` + mock
   host), `SessionUITests.testFilesMoveBothWays` (needs the synthetic host started with
   `--send-file-on-connect`), `testDisconnectAsksWhileFilesAreMoving`, `testDropHint`,
-  `testTransfersSheetScreens`. Each engine logs "sent/received N bytes in M ms (X MiB/s)" (category
-  `files`). Out of scope: resume
-  (the offer/accept already carry `id` + `resumeOffset`), a share extension (needs an App Group),
-  background transfers (`BGContinuedProcessingTask`), folders, Taildrop.
+  `testTransfersSheetScreens`; resume in `FileTransferTests` (`interruptedFileResumesOnANewConnection`
+  both ways, `resumedFileThatDoesntMatchIsRefusedThenSentWhole`, `newChannelTakesOverAPartialFromAStaleOne`)
+  and `FileTransferSessionTests.interruptedUploadResumesWhereItStopped`. Each engine logs
+  "sent/received N bytes in M ms (X MiB/s)" (category `files`). Benchmark (opt in):
+  `VANTAGE_BENCH_FILES=1 xcrun swift test --package-path Packages/VantageCore --filter FileTransferBenchmark`
+  (2 GiB over loopback, prints MiB/s and peak footprint). Out of scope: a share extension (needs
+  an App Group), background transfers (`BGContinuedProcessingTask`), folders, Taildrop.
 - **Files arriving on the Mac** (host, `VantageHost/Transfer`; the policy is `FileArrival.swift`,
   tested by `HostFileArrivalTests` in the root package): saved to `~/Downloads` or the folder
   chosen in Settings → Files (`HostFileStore.current` → `ReceiveFolder`: Downloads again while the

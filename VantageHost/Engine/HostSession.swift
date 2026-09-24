@@ -45,6 +45,8 @@ actor HostSession {
     let peerHost: String
     private var fileEngine: FileTransferEngine?
     private var clientName = "iPad"
+    /// The client's key fingerprint: which iPad this is across connections.
+    private var clientKey = ""
     /// Tells the controller a file channel is up (for the menu, notifications, and sending).
     private let onFileChannel: @Sendable (HostFileChannel) -> Void
     // Display sleep: the session outlives it. Capture stops while the display is off (SCK lists
@@ -154,6 +156,7 @@ actor HostSession {
         clientTakesAudio = hello.features?.macAudio == true
         clientTakesFiles = hello.features?.fileTransfer == true
         clientName = hello.clientName
+        clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
         // The file channel's ticket in: single use, from this address only, gone with the session.
         let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
         // Audio rides on the Screen Recording grant checked above (synthetic mode sends a chime),
@@ -508,7 +511,7 @@ actor HostSession {
         }
         // The tailnet knows the device's real name; the app only gets "iPad" from iOS.
         let name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback
-        onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name))
+        onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey))
     }
 
     private func fileChannelEnded(_ engine: FileTransferEngine) {
@@ -814,6 +817,8 @@ struct HostFileChannel: Sendable, Identifiable {
     let engine: FileTransferEngine
     /// Who is on the other end ("Drew's iPad Pro").
     let clientName: String
+    /// The iPad's key fingerprint, the same on every connection it makes.
+    let clientKey: String
     var id: ObjectIdentifier { ObjectIdentifier(session) }
 }
 

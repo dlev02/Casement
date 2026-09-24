@@ -7,8 +7,10 @@ import os
 /// the Mac sends here, and the list the Transfers sheet shows.
 ///
 /// It outlives connections. `ClientSession` attaches a `FileTransferEngine` each time the file
-/// channel comes up and detaches it when it drops; queued files wait for the next one, and a file
-/// cut off by a dropped connection starts again from the beginning (at most twice) once it's back.
+/// channel comes up and detaches it when it drops; queued files wait for the next one. A file cut
+/// off by a dropped connection waits too, and carries on from where it stopped once the channel is
+/// back: sends are offered again under the same id (the Mac kept the partial file), and the Mac
+/// does the same with files it was sending here.
 @MainActor
 @Observable
 final class FileTransferController {
@@ -34,6 +36,8 @@ final class FileTransferController {
         /// The name the Mac saved a sent file under ("Report 2.pdf").
         var savedName: String?
         var finishedAt: Date?
+        /// Set while a file the connection cut off waits to resume.
+        var interruptedAt: Date?
 
         var isActive: Bool { state == .waiting || state == .active }
         var fraction: Double {
@@ -53,8 +57,13 @@ final class FileTransferController {
         var securityScoped: Bool
         /// A copy Vantage made (a drop, a test file); deleted when the transfer ends.
         var temporary: Bool
-        var retries = 0
+        var interruptions = 0
     }
+
+    /// How many times one file may be cut off and resumed before it counts as failed.
+    static let maxInterruptions = 10
+    /// How long a file the Mac was sending when the connection dropped waits for it to resume.
+    static let resumeWindow: TimeInterval = 60 * 60
 
     private(set) var transfers: [Transfer] = []
     /// The file channel is up, so files can move right now.
@@ -110,8 +119,11 @@ final class FileTransferController {
     func attach(_ engine: FileTransferEngine) {
         self.engine = engine
         isConnected = true
+        expireInterruptions()
         Task { [weak self] in
             for await event in engine.events {
+                // A receive cut off by the connection waits for the Mac to offer it again.
+                if case .finished(let id, .failed) = event, await engine.hasClosed, self?.interruptReceive(id) == true { continue }
                 self?.handle(event)
             }
         }
@@ -201,17 +213,18 @@ final class FileTransferController {
         }
     }
 
-    /// Records how a send ended. One cut off by the connection dropping goes back in the queue
-    /// to start over when the file channel returns.
+    /// Records how a send ended. One cut off by the connection dropping goes back to the front of
+    /// the queue and resumes from where it stopped when the file channel returns.
     private func settle(_ id: UUID, _ outcome: FileTransferOutcome, lostConnection: Bool) {
         guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
-        if lostConnection, case .failed = outcome, var source = sources[id], source.retries < 2, transfers[index].state != .cancelled {
-            source.retries += 1
+        if lostConnection, case .failed = outcome, var source = sources[id], source.interruptions < Self.maxInterruptions,
+           transfers[index].state != .cancelled {
+            source.interruptions += 1
             sources[id] = source
             transfers[index].state = .waiting
-            transfers[index].bytesDone = 0
+            transfers[index].interruptedAt = .now
             transfers[index].bytesPerSecond = 0
-            log.info("file send interrupted by a reconnect; queued to start over")
+            log.info("file send interrupted by the connection; it resumes when the channel is back")
             return
         }
         if transfers[index].isActive {
@@ -227,6 +240,27 @@ final class FileTransferController {
         if source.temporary { try? FileManager.default.removeItem(at: source.url.deletingLastPathComponent()) }
     }
 
+    /// A file the Mac was sending here when the connection dropped: it waits for the Mac to
+    /// offer it again (the partial stays in Received, hidden). False if there's no such row.
+    private func interruptReceive(_ id: UUID) -> Bool {
+        guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].direction == .receiving,
+              transfers[index].isActive else { return false }
+        transfers[index].state = .waiting
+        transfers[index].interruptedAt = .now
+        transfers[index].bytesPerSecond = 0
+        rateSamples[id] = nil
+        return true
+    }
+
+    /// Interrupted receives the Mac never came back to within `resumeWindow` count as failed.
+    func expireInterruptions(now: Date = .now) {
+        let cutoff = now.addingTimeInterval(-Self.resumeWindow)
+        for index in transfers.indices where transfers[index].direction == .receiving {
+            guard let since = transfers[index].interruptedAt, since < cutoff else { continue }
+            finish(index, .failed("The connection was lost."))
+        }
+    }
+
     // MARK: Events
 
     private func handle(_ event: FileTransferEvent) {
@@ -236,13 +270,17 @@ final class FileTransferController {
             if let index = transfers.firstIndex(where: { $0.id == item.id }) {
                 transfers[index].state = .active
                 transfers[index].byteCount = item.byteCount
+                transfers[index].interruptedAt = nil
             } else {
                 transfers.append(Transfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction, state: .active))
             }
         case .progress(let id, let bytes):
             guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
             let now = ContinuousClock.now
-            if let sample = rateSamples[id] {
+            // A resume reports where it picked up first: the rate starts from there.
+            if let sample = rateSamples[id], sample.bytes == 0, bytes > 0, transfers[index].bytesPerSecond == 0 {
+                rateSamples[id] = (now, bytes)
+            } else if let sample = rateSamples[id] {
                 let elapsed = now - sample.time
                 let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
                 if seconds >= 0.05, bytes >= sample.bytes {
@@ -264,6 +302,7 @@ final class FileTransferController {
 
     private func finish(_ index: Int, _ outcome: FileTransferOutcome) {
         transfers[index].finishedAt = .now
+        transfers[index].interruptedAt = nil
         transfers[index].bytesPerSecond = 0
         switch outcome {
         case .sent(let savedName):

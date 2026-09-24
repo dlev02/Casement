@@ -27,9 +27,18 @@ struct HostTransfer: Identifiable, Equatable {
     var bytesPerSecond: Double?
     private var sampledAt: Date?
     private var sampledBytes: UInt64 = 0
+    /// Which iPad it's moving to or from (`DeviceIdentity` fingerprint), so an interrupted file
+    /// resumes when that iPad's next file channel opens.
+    var clientKey: String?
+    /// Set while the connection is gone mid-file: the row stays `.waiting` and the file carries on
+    /// from where it stopped when the iPad reconnects (within `HostTransfer.resumeWindow`).
+    var interruptedAt: Date?
+
+    /// How long an interrupted file waits for its iPad before it counts as failed.
+    static let resumeWindow: TimeInterval = 60 * 60
 
     init(id: UUID, name: String, byteCount: UInt64, direction: FileTransferItem.Direction, deviceName: String,
-         state: State, source: URL? = nil) {
+         state: State, source: URL? = nil, clientKey: String? = nil) {
         self.id = id
         self.name = name
         self.byteCount = byteCount
@@ -37,6 +46,7 @@ struct HostTransfer: Identifiable, Equatable {
         self.deviceName = deviceName
         self.state = state
         self.source = source
+        self.clientKey = clientKey
     }
 
     var isActive: Bool { state == .waiting || state == .active }
@@ -70,6 +80,7 @@ struct HostTransfer: Identifiable, Equatable {
 
     mutating func finish(_ outcome: FileTransferOutcome) {
         finishedAt = .now
+        interruptedAt = nil
         switch outcome {
         case .sent:
             state = .done

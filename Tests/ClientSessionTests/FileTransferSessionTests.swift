@@ -37,6 +37,7 @@ private final class MockFileHost: @unchecked Sendable {
     private var attachesRefused = 0
     private var droppedOnce = false
     private var events: [FileTransferEvent] = []
+    private var primaries: [MessageChannel] = []
     /// Replaces the engine on the next file channel: the test plays the host by hand.
     var rawFileChannel: (@Sendable (MessageChannel) async throws -> Void)?
 
@@ -70,6 +71,13 @@ private final class MockFileHost: @unchecked Sendable {
     func stop() {
         listener.cancel()
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Cuts every live connection, primary and file channel, as if the network went away.
+    func dropEverything() async {
+        let (channels, running) = lock.withLock { (primaries, engines) }
+        for channel in channels { await channel.close() }
+        for engine in running { await engine.close() }
     }
 
     private func accept(_ channel: MessageChannel) async {
@@ -106,6 +114,7 @@ private final class MockFileHost: @unchecked Sendable {
     }
 
     private func primary(_ channel: MessageChannel, hello: Hello, peer: String) async throws {
+        lock.withLock { primaries.append(channel) }
         let identity = DeviceIdentity()
         let nonce = AuthTranscript.randomNonce()
         try await channel.send(.challenge(Challenge(hostName: "Mock Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData,
@@ -313,6 +322,39 @@ struct FileTransferSessionTests {
         try await waitUntil("second file channel", seconds: 20) { files.isConnected && host.engineCount == 2 }
         try await waitUntil("sent after reconnect") { files.transfers.first?.state == .done }
         #expect(FileManager.default.fileExists(atPath: host.directory.appending(path: "Later.bin").path))
+    }
+
+    /// The network drops mid-upload: the row pauses where it stopped, the session reconnects,
+    /// and the same file carries on from the Mac's partial instead of starting over.
+    @Test @MainActor func interruptedUploadResumesWhereItStopped() async throws {
+        let host = try await MockFileHost()
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        files.chunkDelayForTesting = .milliseconds(25)
+        let session = ClientSession(identity: DeviceIdentity(), files: files)
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
+        try await waitUntil("file channel") { files.isConnected }
+        let source = try randomFile(bytes: 4 << 20, in: sourceDir, name: "Library.zip")
+        files.send([source], securityScoped: false)
+        try await waitUntil("a third of it") { (files.transfers.first?.bytesDone ?? 0) >= 1_500_000 }
+        files.chunkDelayForTesting = .zero
+
+        await host.dropEverything()
+        try await waitUntil("paused") { files.transfers.first?.interruptedAt != nil }
+        let paused = try #require(files.transfers.first)
+        #expect(paused.state == .waiting && paused.bytesDone > 0, "keeps its place")
+
+        try await waitUntil("finished after reconnecting", seconds: 20) { files.transfers.first?.state == .done }
+        #expect(try sha256(host.directory.appending(path: "Library.zip")) == sha256(source))
+        let id = paused.id
+        let starts = host.hostEvents.enumerated().filter { if case .started(let item) = $0.element { item.id == id } else { false } }
+        #expect(starts.count == 2, "offered once, then again under the same id")
+        let resumedAt = starts.last.flatMap { start in host.hostEvents.dropFirst(start.offset + 1).first }
+        guard case .progress(id, let bytes)? = resumedAt else { Issue.record("no resume point: \(String(describing: resumedAt))"); return }
+        #expect(bytes >= 1_000_000 && bytes < 4 << 20, "picked up at \(bytes)")
     }
 
     @Test @MainActor func olderHostNeverSeesAFileChannel() async throws {

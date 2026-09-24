@@ -2,17 +2,19 @@ import Foundation
 
 // MARK: - File transfer
 //
-// Files travel on a second TCP connection per session (the "file channel"), so a 256 KiB chunk
-// never sits in front of video or input on the main stream. The client opens it right after
-// authenticating, with `attachMedia{sessionToken}` as its first message; the token is the one the
-// host returned in `AuthResult.sessionToken`. Every kind here is gated: the client asks with
+// Files travel on a second TCP connection (the "file channel"), so a 256 KiB chunk never sits in
+// front of video or input on the main stream. The client opens it right after authenticating,
+// with `attachMedia{sessionToken}` as its first message; the token is the one the host returned
+// in `AuthResult.sessionToken`. Every kind here is gated: the client asks with
 // `Hello.features.fileTransfer`, the host answers with a token and `HostCapabilities.fileTransfer`,
 // and these kinds only ever appear on the file channel, so older peers never see them.
 //
 // One file, either direction: sender `fileOffer` → receiver `fileAccept` (or a rejection) → sender
 // `fileChunk`s in order → sender `fileComplete{sha256}` → receiver `fileResult`. Either side may
-// send `fileCancel` at any point. `resumeOffset` is always 0 today; the offer carries a stable `id`
-// so a later version can re-offer an interrupted file and resume.
+// send `fileCancel` at any point. A sender re-offers an interrupted file with the same `id`; a
+// receiver that kept the partial answers `resumeOffset` with how much it has, and the sender
+// streams from there (the SHA-256 still covers the whole file). Peers that predate resume answer
+// 0 and start over, which the protocol always allowed.
 
 /// Sender → receiver: a file is ready to send.
 public struct FileOffer: Codable, Sendable, Equatable {
@@ -36,7 +38,8 @@ public struct FileOffer: Codable, Sendable, Equatable {
 /// Receiver → sender: go ahead from `resumeOffset`, or not at all when `rejected` is set.
 public struct FileAccept: Codable, Sendable, Equatable {
     public var id: UUID
-    /// Where the sender should start. Always 0 until resumable transfers exist.
+    /// Where the sender should start: 0 for a fresh file, or the size of the partial file the
+    /// receiver kept from an earlier, interrupted attempt with the same `id`.
     public var resumeOffset: UInt64
     /// A user-facing reason the receiver won't take the file; nil means accepted.
     public var rejected: String?
@@ -80,7 +83,8 @@ public struct FileResult: Codable, Sendable, Equatable {
     }
 }
 
-/// Either side: stop this transfer. The receiver deletes what it has; no result follows.
+/// Either side: stop this transfer. The receiver deletes what it has (including a partial file
+/// kept for a resume); no result follows.
 public struct FileCancel: Codable, Sendable, Equatable {
     public var id: UUID
     public init(id: UUID) { self.id = id }

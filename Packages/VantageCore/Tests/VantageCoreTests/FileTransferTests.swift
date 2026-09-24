@@ -420,6 +420,181 @@ struct FileTransferEngineTests {
         for run in runs { await run.value }
         guard case .failed = await client.send(fileAt: files[0]) else { Issue.record("should fail once closed"); return }
     }
+
+    // MARK: Resume
+
+    /// Upload (iPad → Mac) and download (Mac → iPad): the connection drops mid-file, the partial
+    /// stays, and the same id on a new connection carries on from it and ends byte-identical.
+    @Test(arguments: [FileTransferRole.client, .host])
+    func interruptedFileResumesOnANewConnection(sender: FileTransferRole) async throws {
+        let senderDir = try temporaryDirectory("sender"), receiverDir = try temporaryDirectory("receiver")
+        defer { try? FileManager.default.removeItem(at: senderDir); try? FileManager.default.removeItem(at: receiverDir) }
+        let receiver: FileTransferRole = sender == .client ? .host : .client
+        let size = 6 << 20 | 4_321
+        let source = try randomFile(bytes: size, in: senderDir, name: "Photos.zip")
+        let id = UUID()
+
+        // First connection: paced, and dropped once a couple of MiB have arrived.
+        do {
+            let (a, b, listener) = try await channelPair()
+            defer { listener.cancel() }
+            var paced = FileTransferConfiguration(receiveDirectory: senderDir, progressInterval: .zero)
+            paced.chunkDelay = .milliseconds(15)
+            let sending = FileTransferEngine(channel: a, role: sender, configuration: paced)
+            let receiving = FileTransferEngine(channel: b, role: receiver, configuration: .init(receiveDirectory: receiverDir, progressInterval: .zero))
+            let runs = [Task { await sending.run() }, Task { await receiving.run() }]
+            let outcome = Task { await sending.send(fileAt: source, id: id) }
+            for await event in receiving.events {
+                if case .progress(_, let bytes) = event, bytes >= 2 << 20 { break }
+            }
+            await b.close() // the receiver's side of the connection goes away
+            guard case .failed = await outcome.value else { Issue.record("the first attempt should fail"); return }
+            for run in runs { await run.value }
+        }
+        let partial = receiverDir.appending(path: FileTransferEngine.partialPrefix + id.uuidString + FileTransferEngine.partialSuffix)
+        let kept = try #require(try FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? UInt64)
+        #expect(kept >= 2 << 20 && kept < UInt64(size), "the partial file stays for a resume")
+
+        // Second connection, same id: picks up at the partial's size.
+        let (a, b, listener) = try await channelPair()
+        defer { listener.cancel() }
+        let sending = FileTransferEngine(channel: a, role: sender, configuration: .init(receiveDirectory: senderDir))
+        let receiving = FileTransferEngine(channel: b, role: receiver, configuration: .init(receiveDirectory: receiverDir, progressInterval: .zero))
+        let runs = [Task { await sending.run() }, Task { await receiving.run() }]
+        let received = Task { () -> [FileTransferEvent] in
+            var all: [FileTransferEvent] = []
+            for await event in receiving.events { all.append(event) }
+            return all
+        }
+        #expect(await sending.send(fileAt: source, id: id) == .sent(savedName: "Photos.zip"))
+        #expect(try Data(contentsOf: receiverDir.appending(path: "Photos.zip")) == Data(contentsOf: source))
+        #expect(!FileManager.default.fileExists(atPath: partial.path))
+        await sending.close()
+        for run in runs { await run.value }
+        let events = await received.value
+        #expect(events.first == .started(FileTransferItem(id: id, name: "Photos.zip", byteCount: UInt64(size), direction: .receiving)))
+        #expect(events.dropFirst().first == .progress(id: id, bytes: kept), "reports where it resumed")
+    }
+
+    /// A partial that no longer matches the sender's file fails the final checksum and is
+    /// deleted, never renamed into place; the next attempt starts from zero and succeeds.
+    @Test func resumedFileThatDoesntMatchIsRefusedThenSentWhole() async throws {
+        let (clientChannel, serverChannel, listener) = try await channelPair()
+        defer { listener.cancel() }
+        let clientDir = try temporaryDirectory("client"), hostDir = try temporaryDirectory("host")
+        defer { try? FileManager.default.removeItem(at: clientDir); try? FileManager.default.removeItem(at: hostDir) }
+        let source = try randomFile(bytes: 1 << 20, in: clientDir, name: "Edited.mov")
+        let id = UUID()
+        // A partial whose bytes differ from the file's first half.
+        let partial = hostDir.appending(path: FileTransferEngine.partialPrefix + id.uuidString + FileTransferEngine.partialSuffix)
+        try Data(repeating: 0x5A, count: 512 << 10).write(to: partial)
+        let client = FileTransferEngine(channel: clientChannel, role: .client, configuration: .init(receiveDirectory: clientDir))
+        let host = FileTransferEngine(channel: serverChannel, role: .host, configuration: .init(receiveDirectory: hostDir))
+        let runs = [Task { await client.run() }, Task { await host.run() }]
+        guard case .failed(let reason) = await client.send(fileAt: source, id: id) else { Issue.record("should fail its checksum"); return }
+        #expect(reason.contains("damaged"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: hostDir.path).isEmpty, "nothing renamed into place, partial gone")
+        #expect(await client.send(fileAt: source, id: id) == .sent(savedName: "Edited.mov"))
+        #expect(try Data(contentsOf: hostDir.appending(path: "Edited.mov")) == Data(contentsOf: source))
+        await client.close()
+        for run in runs { await run.value }
+    }
+
+    /// The sender reconnects before this side notices the old connection died: the new channel
+    /// takes the half-written partial over from the old one, and the old one's later shutdown
+    /// neither deletes it nor reports it.
+    @Test func newChannelTakesOverAPartialFromAStaleOne() async throws {
+        let hostDir = try temporaryDirectory("host")
+        defer { try? FileManager.default.removeItem(at: hostDir) }
+        let bytes = Data((0..<(1 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        let id = UUID()
+        let chunk = 256 << 10
+
+        let (oldClient, oldServer, oldListener) = try await channelPair()
+        defer { oldListener.cancel() }
+        let oldHost = FileTransferEngine(channel: oldServer, role: .host, configuration: .init(receiveDirectory: hostDir, progressInterval: .zero))
+        let oldRun = Task { await oldHost.run() }
+        let oldEvents = Task { () -> [FileTransferEvent] in
+            var all: [FileTransferEvent] = []
+            for await event in oldHost.events { all.append(event) }
+            return all
+        }
+        try await oldClient.send(.fileOffer(FileOffer(id: id, name: "Scan.pdf", byteCount: UInt64(bytes.count))))
+        guard case .fileAccept(let first)? = try await oldClient.receive() else { Issue.record("no accept"); return }
+        #expect(first.resumeOffset == 0)
+        for offset in stride(from: 0, to: 2 * chunk, by: chunk) {
+            try await oldClient.send(.fileChunkToHost(FileChunk(id: id, offset: UInt64(offset), data: bytes[offset..<offset + chunk])))
+        }
+
+        let (newClient, newServer, newListener) = try await channelPair()
+        defer { newListener.cancel() }
+        let newHost = FileTransferEngine(channel: newServer, role: .host, configuration: .init(receiveDirectory: hostDir))
+        let newRun = Task { await newHost.run() }
+        // Give the old engine a moment to write both chunks.
+        try await Task.sleep(for: .milliseconds(200))
+        try await newClient.send(.fileOffer(FileOffer(id: id, name: "Scan.pdf", byteCount: UInt64(bytes.count))))
+        guard case .fileAccept(let second)? = try await newClient.receive() else { Issue.record("no accept"); return }
+        #expect(second.resumeOffset == UInt64(2 * chunk))
+        for offset in stride(from: 2 * chunk, to: bytes.count, by: chunk) {
+            try await newClient.send(.fileChunkToHost(FileChunk(id: id, offset: UInt64(offset), data: bytes[offset..<offset + chunk])))
+        }
+        try await newClient.send(.fileComplete(FileComplete(id: id, sha256: Data(SHA256.hash(data: bytes)))))
+        guard case .fileResult(let result)? = try await newClient.receive() else { Issue.record("no result"); return }
+        #expect(result.ok && result.savedName == "Scan.pdf")
+        #expect(try Data(contentsOf: hostDir.appending(path: "Scan.pdf")) == bytes)
+
+        await oldHost.close()
+        await oldRun.value
+        let events = await oldEvents.value
+        #expect(!events.contains { if case .finished = $0 { true } else { false } }, "the old channel no longer owns it")
+        await newHost.close()
+        await newRun.value
+    }
+
+    /// Partials older than `partialLifetime` go when an engine starts; fresh ones stay.
+    @Test func stalePartialsAreDeletedAndFreshOnesKept() async throws {
+        let (clientChannel, serverChannel, listener) = try await channelPair()
+        defer { listener.cancel() }
+        let hostDir = try temporaryDirectory("host")
+        defer { try? FileManager.default.removeItem(at: hostDir) }
+        let stale = hostDir.appending(path: FileTransferEngine.partialPrefix + UUID().uuidString + FileTransferEngine.partialSuffix)
+        let fresh = hostDir.appending(path: FileTransferEngine.partialPrefix + UUID().uuidString + FileTransferEngine.partialSuffix)
+        try Data(count: 10).write(to: stale)
+        try Data(count: 10).write(to: fresh)
+        try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-25 * 3_600)], ofItemAtPath: stale.path)
+        try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-23 * 3_600)], ofItemAtPath: fresh.path)
+        let host = FileTransferEngine(channel: serverChannel, role: .host, configuration: .init(receiveDirectory: hostDir))
+        let run = Task { await host.run() }
+        await clientChannel.close()
+        await run.value
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: fresh.path))
+    }
+
+    /// Idle until a file is in flight, idle again after.
+    @Test func busyWhileAFileMoves() async throws {
+        let (clientChannel, serverChannel, listener) = try await channelPair()
+        defer { listener.cancel() }
+        let clientDir = try temporaryDirectory("client"), hostDir = try temporaryDirectory("host")
+        defer { try? FileManager.default.removeItem(at: clientDir); try? FileManager.default.removeItem(at: hostDir) }
+        var paced = FileTransferConfiguration(receiveDirectory: clientDir, progressInterval: .zero)
+        paced.chunkDelay = .milliseconds(20)
+        let client = FileTransferEngine(channel: clientChannel, role: .client, configuration: paced)
+        let host = FileTransferEngine(channel: serverChannel, role: .host, configuration: .init(receiveDirectory: hostDir, progressInterval: .zero))
+        let runs = [Task { await client.run() }, Task { await host.run() }]
+        var busy = (await client.isBusy, await host.isBusy)
+        #expect(!busy.0 && !busy.1)
+        let source = try randomFile(bytes: 2 << 20, in: clientDir, name: "Busy.bin")
+        let sending = Task { await client.send(fileAt: source) }
+        for await event in host.events { if case .progress(_, let bytes) = event, bytes > 0 { break } }
+        busy = (await client.isBusy, await host.isBusy)
+        #expect(busy.0 && busy.1)
+        #expect(await sending.value == .sent(savedName: "Busy.bin"))
+        busy = (await client.isBusy, await host.isBusy)
+        #expect(!busy.0 && !busy.1)
+        await client.close()
+        for run in runs { await run.value }
+    }
 }
 
 private final class SavedList: @unchecked Sendable {

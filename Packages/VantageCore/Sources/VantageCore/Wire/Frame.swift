@@ -47,7 +47,10 @@ public enum Frame {
     }
 
     public static func encode(kind: MessageKind, payload: Data, flags: UInt16 = 0) -> Data {
-        var out = Header(kind: kind, flags: flags, length: UInt32(payload.count)).encoded()
+        // One allocation of the final size: a video frame or file chunk is copied once, not
+        // grown out of the 8-byte header.
+        var out = Data(capacity: headerLength + payload.count)
+        out.append(Header(kind: kind, flags: flags, length: UInt32(payload.count)).encoded())
         out.append(payload)
         return out
     }

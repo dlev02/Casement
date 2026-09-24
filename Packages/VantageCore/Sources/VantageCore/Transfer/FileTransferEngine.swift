@@ -50,7 +50,8 @@ public enum FileTransferOutcome: Sendable, Equatable {
 public enum FileTransferEvent: Sendable, Equatable {
     /// A file started moving: an offer we sent (once it's our turn) or one we accepted.
     case started(FileTransferItem)
-    /// Bytes done so far, at most every `progressInterval`, and once at the end.
+    /// Bytes done so far, at most every `progressInterval`, and once at the end. A resumed file
+    /// reports where it picked up straight after `started`.
     case progress(id: UUID, bytes: UInt64)
     case finished(id: UUID, FileTransferOutcome)
 }
@@ -71,6 +72,9 @@ public struct FileTransferConfiguration: Sendable {
     /// A pause before each chunk sent. Zero outside tests: it only exists so UI tests can catch
     /// a transfer in the middle.
     public var chunkDelay: Duration = .zero
+    /// How long a partial file cut off by a lost connection waits for its sender to come back
+    /// and resume it before it's deleted.
+    public var partialLifetime: Duration = .seconds(24 * 60 * 60)
 
     public init(receiveDirectory: URL, chunkSize: Int = FileChunk.standardSize, window: Int = 4,
                 maxIncomingBytes: UInt64 = 64 << 30, freeSpaceMargin: UInt64 = 256 << 20,
@@ -85,14 +89,21 @@ public struct FileTransferConfiguration: Sendable {
     }
 }
 
-/// Runs file transfers over a session's file channel, both ways at once: one outgoing file at a
-/// time (`send` calls queue in order) and whatever the peer offers, saved to
-/// `receiveDirectory` through a hidden `.vantage-<id>.partial` file that is renamed only after
-/// its SHA-256 checks out.
+/// Runs file transfers over a file channel, both ways at once: one outgoing file at a time
+/// (`send` calls queue in order) and whatever the peer offers, saved to `receiveDirectory`
+/// through a hidden `.vantage-<id>.partial` file that is renamed only after its size and SHA-256
+/// check out.
 ///
 /// Sending keeps `window` chunks in flight with `MessageChannel.send(_:completion:)`, so the
 /// socket paces the file to the link instead of it piling up in memory. Receiving leans on the
 /// channel's `maxBufferedMessages` for the same reason in the other direction.
+///
+/// **Resume.** A lost connection leaves the receiver's partial file in place. When the sender
+/// offers the same `id` again (on this channel or a new one), the receiver re-hashes what it has,
+/// since a SHA-256 state can't be saved, and answers `resumeOffset` with its size; the sender
+/// hashes that much of its file from disk and streams the rest. Both hashes run off the actor.
+/// The final checks are the same as for a fresh file. Cancels, damaged files, and checksum
+/// failures delete the partial; untouched ones are deleted after `partialLifetime`.
 public actor FileTransferEngine {
     public nonisolated let events: AsyncStream<FileTransferEvent>
     private let eventSink: AsyncStream<FileTransferEvent>.Continuation
@@ -108,8 +119,9 @@ public actor FileTransferEngine {
     private var outgoing: Outgoing?
     private var cancelledBeforeStart: Set<UUID> = []
 
-    // Incoming, by id.
+    // Incoming, by id, plus the partial being re-hashed before an offer is answered.
     private var incoming: [UUID: Incoming] = [:]
+    private var rehashing: StopFlag?
 
     public static let partialPrefix = ".vantage-"
     public static let partialSuffix = ".partial"
@@ -138,7 +150,13 @@ public actor FileTransferEngine {
     /// The channel has closed; nothing more will move on this engine.
     public var hasClosed: Bool { isClosed }
 
-    /// Ends the channel and every transfer on it.
+    /// A file is moving, or waiting its turn to, in either direction.
+    public var isBusy: Bool {
+        outgoingBusy || outgoing != nil || !turnWaiters.isEmpty || !incoming.isEmpty || rehashing != nil
+    }
+
+    /// Ends the channel and every transfer on it. Files being received keep their partial file,
+    /// so they resume if the sender offers them again later.
     public func close() async {
         await shutDown(reason: "The connection was closed.")
     }
@@ -146,7 +164,8 @@ public actor FileTransferEngine {
     // MARK: Sending
 
     /// Sends one file and returns once the peer has answered (or it failed). Calls queue behind
-    /// each other. `name` overrides the file's own name.
+    /// each other. `name` overrides the file's own name. Sending the same `id` again after a
+    /// lost connection lets the receiver resume from what it already has.
     public func send(fileAt url: URL, name: String? = nil, id: UUID = UUID()) async -> FileTransferOutcome {
         await takeTurn()
         defer { passTurn() }
@@ -183,7 +202,7 @@ public actor FileTransferEngine {
         case .accept(let accept):
             if let reason = accept.rejected { return finish(outgoing: id, .failed(reason)) }
             if accept.resumeOffset > offer.byteCount { return finish(outgoing: id, .failed("The other device asked for a part of the file that doesn't exist.")) }
-            return await stream(handle: handle, offer: offer, from: accept.resumeOffset, state: state)
+            return await stream(handle: handle, url: url, offer: offer, from: accept.resumeOffset, state: state)
         case .result(let result):
             return finish(outgoing: id, result.ok ? .failed("The other device answered out of turn.") : .failed(result.error ?? "The other device couldn't save the file."))
         case .cancelled(let byPeer):
@@ -193,16 +212,18 @@ public actor FileTransferEngine {
         }
     }
 
-    /// Stops a transfer in either direction (or a queued send before it starts).
+    /// Stops a transfer in either direction (or a queued send before it starts). The receiver
+    /// deletes what it has.
     public func cancel(_ id: UUID) {
         if let outgoing, outgoing.id == id {
             guard !outgoing.cancelled else { return }
             outgoing.cancelled = true
+            outgoing.stop.set()
             outgoing.window?.abort(CancellationError())
             channel.sendDetached(.fileCancel(FileCancel(id: id)))
             outgoing.deliver(.cancelled(byPeer: false))
         } else if let state = incoming.removeValue(forKey: id) {
-            state.discard()
+            discard(state)
             channel.sendDetached(.fileCancel(FileCancel(id: id)))
             eventSink.yield(.finished(id: id, .cancelled(byPeer: false)))
         } else {
@@ -210,20 +231,27 @@ public actor FileTransferEngine {
         }
     }
 
-    private func stream(handle: FileHandle, offer: FileOffer, from start: UInt64, state: Outgoing) async -> FileTransferOutcome {
+    private func stream(handle: FileHandle, url: URL, offer: FileOffer, from start: UInt64, state: Outgoing) async -> FileTransferOutcome {
         let id = offer.id
         var hasher = SHA256()
-        var offset: UInt64 = 0
+        var offset = start
         let window = SendWindow(size: config.window)
         state.window = window
         var lastProgress = ContinuousClock.now
         do {
-            // A resumed transfer still hashes the whole file.
-            while offset < start {
-                let piece = try handle.read(upToCount: Int(min(UInt64(config.chunkSize), start - offset))) ?? Data()
-                guard !piece.isEmpty else { throw TransferFailure.fileChanged }
-                hasher.update(data: piece)
-                offset += UInt64(piece.count)
+            if start > 0 {
+                // The receiver kept a partial file: the hash still covers the whole file, so read
+                // the part it already has from disk (off the actor), then carry on after it.
+                eventSink.yield(.progress(id: id, bytes: start))
+                let began = ContinuousClock.now
+                guard let prefix = await Self.hashPrefix(of: url, length: start, stop: state.stop) else {
+                    if let early = state.takeTerminalReply() { return finish(outgoing: id, early) }
+                    throw TransferFailure.fileChanged
+                }
+                if let early = state.takeTerminalReply() { return finish(outgoing: id, early) }
+                hasher = prefix
+                try handle.seek(toOffset: start)
+                log.info("resuming a send at \(start, privacy: .public) of \(offer.byteCount, privacy: .public) bytes (hashed the start in \((ContinuousClock.now - began).milliseconds, privacy: .public) ms)")
             }
             while offset < offer.byteCount {
                 if let early = state.takeTerminalReply() { return finish(outgoing: id, early) }
@@ -258,7 +286,7 @@ public actor FileTransferEngine {
         }
         switch await state.nextReply() {
         case .result(let result):
-            if result.ok { logRate("sent", bytes: offer.byteCount - start, since: state.started) }
+            if result.ok { logRate("sent", bytes: offer.byteCount - start, since: state.started, resumedAt: start) }
             return finish(outgoing: id, result.ok ? .sent(savedName: result.savedName) : .failed(result.error ?? "The other device couldn't save the file."))
         case .cancelled(let byPeer):
             return finish(outgoing: id, .cancelled(byPeer: byPeer))
@@ -308,11 +336,16 @@ public actor FileTransferEngine {
         case .fileCancel(let cancel):
             if let outgoing, outgoing.id == cancel.id {
                 outgoing.cancelledByPeer = true
+                outgoing.stop.set()
                 outgoing.window?.abort(CancellationError())
                 outgoing.deliver(.cancelled(byPeer: true))
             } else if let state = incoming.removeValue(forKey: cancel.id) {
-                state.discard()
+                discard(state)
                 eventSink.yield(.finished(id: cancel.id, .cancelled(byPeer: true)))
+            } else {
+                // A sender that gave up on a file we weren't receiving right now: its partial
+                // from an earlier connection will never be finished.
+                deletePartial(for: cancel.id)
             }
         default:
             // Nothing else belongs on a file channel (including chunks going the wrong way).
@@ -327,32 +360,78 @@ public actor FileTransferEngine {
             return
         }
         let name = FileNames.sanitize(offer.name)
-        if let reason = rejection(for: offer) {
+        let directory = config.receiveDirectory
+        let partial = partialURL(for: offer.id)
+        // Another file channel in this process may still be writing it: the one this sender
+        // used before its connection dropped, if this side hasn't noticed yet. Take it over.
+        if let previous = PartialClaims.shared.claim(partial, by: self) {
+            await previous.relinquish(offer.id)
+        }
+
+        // What an earlier connection left behind, re-hashed so the checksum still covers it.
+        var resume: (offset: UInt64, hasher: SHA256)?
+        if let existing = Self.fileSize(partial), existing > 0, existing <= offer.byteCount {
+            let stop = StopFlag()
+            rehashing = stop
+            let began = ContinuousClock.now
+            if let hasher = await Self.hashPrefix(of: partial, length: existing, stop: stop) {
+                resume = (existing, hasher)
+                log.info("resuming a receive at \(existing, privacy: .public) of \(offer.byteCount, privacy: .public) bytes (re-hashed in \((ContinuousClock.now - began).milliseconds, privacy: .public) ms)")
+            }
+            if rehashing === stop { rehashing = nil }
+        }
+        guard !isClosed, incoming[offer.id] == nil else {
+            PartialClaims.shared.release(partial, by: self)
+            if isClosed { return }
+            try await channel.send(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
+            return
+        }
+        if let reason = rejection(for: offer, alreadyHave: resume?.offset ?? 0) {
             log.info("refusing incoming file (\(offer.byteCount, privacy: .public) bytes): \(reason, privacy: .public)")
+            PartialClaims.shared.release(partial, by: self)
+            try? FileManager.default.removeItem(at: partial)
             try await channel.send(.fileAccept(.rejected(offer.id, reason: reason)))
             return
         }
-        let directory = config.receiveDirectory
-        let partial = directory.appending(path: Self.partialPrefix + offer.id.uuidString + Self.partialSuffix, directoryHint: .notDirectory)
         let handle: FileHandle
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            guard FileManager.default.createFile(atPath: partial.path(percentEncoded: false), contents: nil) else {
-                throw CocoaError(.fileWriteUnknown)
+            if let resume {
+                handle = try FileHandle(forWritingTo: partial)
+                try handle.truncate(atOffset: resume.offset) // also leaves the handle at the end
+            } else {
+                guard FileManager.default.createFile(atPath: partial.path(percentEncoded: false), contents: nil) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                handle = try FileHandle(forWritingTo: partial)
             }
-            handle = try FileHandle(forWritingTo: partial)
         } catch {
-            log.error("can't create partial file: \(error.localizedDescription, privacy: .public)")
+            log.error("can't open partial file: \(error.localizedDescription, privacy: .public)")
+            PartialClaims.shared.release(partial, by: self)
             try await channel.send(.fileAccept(.rejected(offer.id, reason: "The file couldn't be saved on this device.")))
             return
         }
-        incoming[offer.id] = Incoming(offer: offer, name: name, partial: partial, handle: handle)
+        let state = Incoming(offer: offer, name: name, partial: partial, handle: handle)
+        if let resume {
+            state.hasher = resume.hasher
+            state.received = resume.offset
+            state.resumedAt = resume.offset
+        }
+        incoming[offer.id] = state
         eventSink.yield(.started(FileTransferItem(id: offer.id, name: name, byteCount: offer.byteCount, direction: .receiving)))
-        try await channel.send(.fileAccept(FileAccept(id: offer.id, resumeOffset: 0)))
-        if offer.byteCount == 0 { eventSink.yield(.progress(id: offer.id, bytes: 0)) }
+        if state.received > 0 || offer.byteCount == 0 { eventSink.yield(.progress(id: offer.id, bytes: state.received)) }
+        try await channel.send(.fileAccept(FileAccept(id: offer.id, resumeOffset: state.received)))
     }
 
-    private func rejection(for offer: FileOffer) -> String? {
+    /// Another engine took this file over (its sender reconnected on a new channel): let go of
+    /// the partial without deleting it or reporting anything; the new engine reports from here.
+    private func relinquish(_ id: UUID) {
+        guard let state = incoming.removeValue(forKey: id) else { return }
+        try? state.handle.close()
+        log.info("handed a partly received file over to a newer connection")
+    }
+
+    private func rejection(for offer: FileOffer, alreadyHave: UInt64) -> String? {
         if offer.byteCount > config.maxIncomingBytes {
             return "The file is too large (\(ByteCountFormatter.string(fromByteCount: Int64(clamping: offer.byteCount), countStyle: .file)))."
         }
@@ -363,7 +442,7 @@ public actor FileTransferEngine {
         }
         let values = try? probe.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         if let free = values?.volumeAvailableCapacityForImportantUsage, free >= 0,
-           UInt64(free) < offer.byteCount &+ config.freeSpaceMargin {
+           UInt64(free) < (offer.byteCount - alreadyHave) &+ config.freeSpaceMargin {
             return "There isn't enough free space for it."
         }
         return nil
@@ -396,8 +475,8 @@ public actor FileTransferEngine {
         let digest = Data(state.hasher.finalize())
         guard state.received == state.offer.byteCount,
               constantTimeEquals(digest, complete.sha256) else {
-            state.discard()
-            log.error("incoming file failed its checksum (\(state.received, privacy: .public)/\(state.offer.byteCount, privacy: .public) bytes)")
+            discard(state)
+            log.error("incoming file failed its checksum (\(state.received, privacy: .public)/\(state.offer.byteCount, privacy: .public) bytes, resumed at \(state.resumedAt, privacy: .public))")
             try await channel.send(.fileResult(FileResult(id: complete.id, ok: false, error: "The file arrived damaged. Try sending it again.")))
             eventSink.yield(.finished(id: complete.id, .failed("The file arrived damaged.")))
             return
@@ -405,15 +484,16 @@ public actor FileTransferEngine {
         eventSink.yield(.progress(id: complete.id, bytes: state.received))
         do {
             let saved = try place(state)
+            PartialClaims.shared.release(state.partial, by: self)
             config.afterSave?(saved, state.offer)
-            logRate("received", bytes: state.received, since: state.started)
+            logRate("received", bytes: state.received - state.resumedAt, since: state.started, resumedAt: state.resumedAt)
             // It's saved here whether or not the answer reaches the sender.
             eventSink.yield(.finished(id: complete.id, .received(saved)))
             try await channel.send(.fileResult(FileResult(id: complete.id, ok: true, savedName: saved.lastPathComponent)))
         } catch let error as ChannelError {
             throw error
         } catch {
-            state.discard()
+            discard(state)
             log.error("couldn't move received file into place: \(error.localizedDescription, privacy: .public)")
             try await channel.send(.fileResult(FileResult(id: complete.id, ok: false, error: "The file couldn't be saved on the other device.")))
             eventSink.yield(.finished(id: complete.id, .failed("The file couldn't be saved.")))
@@ -440,41 +520,64 @@ public actor FileTransferEngine {
         throw lastError ?? CocoaError(.fileWriteUnknown)
     }
 
-    private func logRate(_ verb: String, bytes: UInt64, since start: ContinuousClock.Instant) {
+    private func logRate(_ verb: String, bytes: UInt64, since start: ContinuousClock.Instant, resumedAt: UInt64) {
         let elapsed = ContinuousClock.now - start
         let seconds = max(0.000_001, Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18)
-        log.info("\(verb, privacy: .public) \(bytes, privacy: .public) bytes in \(Int(seconds * 1000), privacy: .public) ms (\(String(format: "%.1f", Double(bytes) / seconds / 1_048_576), privacy: .public) MiB/s)")
+        let resumed = resumedAt > 0 ? " after resuming at \(resumedAt)" : ""
+        log.info("\(verb, privacy: .public) \(bytes, privacy: .public) bytes in \(Int(seconds * 1000), privacy: .public) ms (\(String(format: "%.1f", Double(bytes) / seconds / 1_048_576), privacy: .public) MiB/s)\(resumed, privacy: .public)")
     }
 
     private func failIncoming(_ state: Incoming, _ reason: String) {
         incoming[state.offer.id] = nil
-        state.discard()
+        discard(state)
         channel.sendDetached(.fileResult(FileResult(id: state.offer.id, ok: false, error: reason)))
         eventSink.yield(.finished(id: state.offer.id, .failed(reason)))
     }
 
-    /// Partial files left by a crash or a lost connection more than an hour ago. Resume isn't
-    /// built yet, so nothing will ever complete them.
+    /// Closes and deletes a partial that won't be finished (cancelled, damaged, or refused).
+    private func discard(_ state: Incoming) {
+        try? state.handle.close()
+        try? FileManager.default.removeItem(at: state.partial)
+        PartialClaims.shared.release(state.partial, by: self)
+    }
+
+    private func partialURL(for id: UUID) -> URL {
+        config.receiveDirectory.appending(path: Self.partialPrefix + id.uuidString + Self.partialSuffix, directoryHint: .notDirectory)
+    }
+
+    private func deletePartial(for id: UUID) {
+        let partial = partialURL(for: id)
+        guard !PartialClaims.shared.isClaimed(partial) else { return } // another channel is writing it
+        try? FileManager.default.removeItem(at: partial)
+    }
+
+    /// Partial files nobody has come back to within `partialLifetime` (a crash, or a sender that
+    /// never reconnected).
     private func removeStalePartials() {
         let manager = FileManager.default
         guard let names = try? manager.contentsOfDirectory(atPath: config.receiveDirectory.path(percentEncoded: false)) else { return }
+        let cutoff = Date.now.addingTimeInterval(-config.partialLifetime.seconds)
         for name in names where name.hasPrefix(Self.partialPrefix) && name.hasSuffix(Self.partialSuffix) {
             let url = config.receiveDirectory.appending(path: name)
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            if modified < Date.now.addingTimeInterval(-3_600) { try? manager.removeItem(at: url) }
+            if modified < cutoff, !PartialClaims.shared.isClaimed(url) { try? manager.removeItem(at: url) }
         }
     }
 
     private func shutDown(reason: String) async {
         guard !isClosed else { return }
         isClosed = true
+        rehashing?.set()
         await channel.close()
         if let outgoing {
+            outgoing.stop.set()
             outgoing.window?.abort(ChannelError.closed)
             outgoing.deliver(.closed)
         }
         for (id, state) in incoming {
-            state.discard()
+            // Kept for a resume; `removeStalePartials` deletes it if nobody comes back.
+            try? state.handle.close()
+            PartialClaims.shared.release(state.partial, by: self)
             eventSink.yield(.finished(id: id, .failed(reason)))
         }
         incoming.removeAll()
@@ -484,6 +587,36 @@ public actor FileTransferEngine {
         outgoingBusy = !waiters.isEmpty
         for waiter in waiters { waiter.resume() }
         eventSink.finish()
+    }
+
+    // MARK: Hashing and files
+
+    /// SHA-256 of the first `length` bytes of the file, read off the actor. Nil if the file is
+    /// shorter than that, can't be read, or `stop` is set first.
+    static func hashPrefix(of url: URL, length: UInt64, stop: StopFlag) async -> SHA256? {
+        await Task.detached(priority: .utility) {
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            var done: UInt64 = 0
+            let piece = 1 << 20
+            while done < length {
+                if stop.isSet { return nil }
+                let ok: Bool = autoreleasepool {
+                    guard let data = try? handle.read(upToCount: Int(min(UInt64(piece), length - done))), !data.isEmpty else { return false }
+                    hasher.update(data: data)
+                    done += UInt64(data.count)
+                    return true
+                }
+                if !ok { return nil }
+            }
+            return hasher
+        }.value
+    }
+
+    private static func fileSize(_ url: URL) -> UInt64? {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.size] as? NSNumber else { return nil }
+        return size.uint64Value
     }
 }
 
@@ -500,10 +633,18 @@ private enum PeerReply: Sendable {
     case closed
 }
 
-/// The file being sent. Only touched on the engine's actor.
+/// A flag another thread can raise to stop a long read (a prefix being hashed).
+final class StopFlag: Sendable {
+    private let raised = Mutex(false)
+    func set() { raised.withLock { $0 = true } }
+    var isSet: Bool { raised.withLock { $0 } }
+}
+
+/// The file being sent. Only touched on the engine's actor (except `stop`).
 private final class Outgoing: @unchecked Sendable {
     let id: UUID
     let started = ContinuousClock.now
+    let stop = StopFlag()
     var cancelled = false
     var cancelledByPeer = false
     var window: SendWindow?
@@ -550,6 +691,8 @@ private final class Incoming: @unchecked Sendable {
     let handle: FileHandle
     var hasher = SHA256()
     var received: UInt64 = 0
+    /// Where this connection picked the file up (0 for a fresh one).
+    var resumedAt: UInt64 = 0
     var lastProgress = ContinuousClock.now
     let started = ContinuousClock.now
 
@@ -559,11 +702,41 @@ private final class Incoming: @unchecked Sendable {
         self.partial = partial
         self.handle = handle
     }
+}
 
-    func discard() {
-        try? handle.close()
-        try? FileManager.default.removeItem(at: partial)
+/// Partial files an engine in this process is writing, so a newer engine (a new file channel
+/// from the same sender, opened before the old one noticed its connection died) takes a partial
+/// over instead of two engines writing it at once.
+private final class PartialClaims: Sendable {
+    static let shared = PartialClaims()
+    private struct Owner: Sendable { weak var engine: FileTransferEngine? }
+    private let owners = Mutex<[String: Owner]>([:])
+
+    /// Makes `engine` the owner and returns the previous one if it's another live engine.
+    func claim(_ url: URL, by engine: FileTransferEngine) -> FileTransferEngine? {
+        owners.withLock { owners in
+            let key = url.standardizedFileURL.path
+            let previous = owners[key]?.engine
+            owners[key] = Owner(engine: engine)
+            return previous === engine ? nil : previous
+        }
     }
+
+    func release(_ url: URL, by engine: FileTransferEngine) {
+        owners.withLock { owners in
+            let key = url.standardizedFileURL.path
+            if owners[key]?.engine === engine || owners[key]?.engine == nil { owners[key] = nil }
+        }
+    }
+
+    func isClaimed(_ url: URL) -> Bool {
+        owners.withLock { $0[url.standardizedFileURL.path]?.engine != nil }
+    }
+}
+
+private extension Duration {
+    var seconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
+    var milliseconds: Int { Int(seconds * 1000) }
 }
 
 /// Up to `size` sends in flight: `acquire` before handing a chunk to the connection, `release`

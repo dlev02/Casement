@@ -228,10 +228,16 @@ final class HostController {
         receiveDirectories[fileChannel.id] = store.directory
         let engine = fileChannel.engine
         Task {
-            for await event in engine.events { handle(event, on: fileChannel) }
+            for await event in engine.events {
+                // A file cut off by the connection waits for the iPad to come back and resume it,
+                // rather than counting as failed. Sends are settled by `startSending`.
+                if case .finished(let id, .failed) = event, await engine.hasClosed, holdForResume(id) { continue }
+                handle(event, on: fileChannel)
+            }
             fileChannels.removeAll { $0.engine === engine }
             if !fileChannels.contains(where: { $0.id == fileChannel.id }) { receiveDirectories[fileChannel.id] = nil }
         }
+        resumeInterruptedSends(on: fileChannel)
         #if DEBUG
         if let path = HostOptions.shared.sendFileOnConnect {
             send([URL(fileURLWithPath: path)], to: fileChannel)
@@ -269,26 +275,94 @@ final class HostController {
     func send(_ urls: [URL], to fileChannel: HostFileChannel) {
         let queued = urls.map { url in
             HostTransfer(id: UUID(), name: url.lastPathComponent, byteCount: Self.size(of: url), direction: .sending,
-                         deviceName: fileChannel.clientName, state: .waiting, source: url)
+                         deviceName: fileChannel.clientName, state: .waiting, source: url, clientKey: fileChannel.clientKey)
         }
         transfers.append(contentsOf: queued)
+        startSending(queued.map(\.id), on: fileChannel)
+    }
+
+    /// Sends the rows with these ids in order, each under its own id so the iPad can resume one
+    /// it already has part of.
+    private func startSending(_ ids: [UUID], on fileChannel: HostFileChannel) {
         let engine = fileChannel.engine
         Task {
-            for transfer in queued {
-                let outcome = await engine.send(fileAt: transfer.source!, id: transfer.id)
+            for id in ids {
+                guard let row = transfers.first(where: { $0.id == id }), row.isActive, let source = row.source else { continue }
+                let outcome = await engine.send(fileAt: source, id: id)
                 // A closed channel ends its event stream, so settle the row here too.
-                if let index = transfers.firstIndex(where: { $0.id == transfer.id }), transfers[index].isActive {
+                guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].isActive else { continue }
+                if case .failed = outcome, await engine.hasClosed {
+                    interrupt(index) // resumes on the iPad's next file channel
+                } else {
                     transfers[index].finish(outcome)
                 }
             }
         }
     }
 
+    /// The iPad is back: carry on with the files that were on their way to it when it dropped.
+    private func resumeInterruptedSends(on fileChannel: HostFileChannel) {
+        expireInterruptions()
+        let ids = transfers.filter { $0.direction == .sending && $0.interruptedAt != nil && $0.clientKey == fileChannel.clientKey }.map(\.id)
+        guard !ids.isEmpty else { return }
+        log.info("resuming \(ids.count, privacy: .public) interrupted file(s) to \(fileChannel.clientName, privacy: .public)")
+        for id in ids {
+            if let index = transfers.firstIndex(where: { $0.id == id }) { transfers[index].interruptedAt = nil }
+        }
+        startSending(ids, on: fileChannel)
+    }
+
+    /// Marks a file the connection cut off as waiting for its iPad; false if there's no such
+    /// active row.
+    private func holdForResume(_ id: UUID) -> Bool {
+        guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].isActive else { return false }
+        if transfers[index].direction == .sending { return true } // `startSending` settles it
+        interrupt(index)
+        return true
+    }
+
+    private func interrupt(_ index: Int) {
+        transfers[index].state = .waiting
+        transfers[index].interruptedAt = .now
+        scheduleInterruptionExpiry()
+    }
+
+    private var expiryTask: Task<Void, Never>?
+
+    /// Checks every minute for interrupted files whose iPad hasn't come back in time.
+    private func scheduleInterruptionExpiry() {
+        guard expiryTask == nil else { return }
+        expiryTask = Task {
+            while transfers.contains(where: { $0.interruptedAt != nil }) {
+                try? await Task.sleep(for: .seconds(60))
+                expireInterruptions()
+            }
+            expiryTask = nil
+        }
+    }
+
+    private func expireInterruptions() {
+        let cutoff = Date.now.addingTimeInterval(-HostTransfer.resumeWindow)
+        for index in transfers.indices {
+            guard let since = transfers[index].interruptedAt, since < cutoff else { continue }
+            transfers[index].finish(.failed("The connection was lost."))
+            if transfers[index].direction == .receiving { Self.discardPartial(transfers[index].id) }
+        }
+        trimTransfers()
+    }
+
     func cancelTransfer(_ id: UUID) {
         guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].isActive else { return }
+        // A received file waiting for its iPad to come back has only a partial file here.
+        if transfers[index].interruptedAt != nil, transfers[index].direction == .receiving { Self.discardPartial(id) }
         // One still waiting its turn is settled now; the engine skips it when the turn comes.
         if transfers[index].state == .waiting { transfers[index].finish(.cancelled(byPeer: false)) }
         for channel in fileChannels { Task { await channel.engine.cancel(id) } }
+    }
+
+    private static func discardPartial(_ id: UUID) {
+        let name = FileTransferEngine.partialPrefix + id.uuidString + FileTransferEngine.partialSuffix
+        try? FileManager.default.removeItem(at: HostFileStore.current.directory.appending(path: name))
     }
 
     /// "Send File to ⟨iPad⟩…": an open panel, then the queue.

@@ -160,6 +160,8 @@ private struct TransferRow: View {
     private var detail: String {
         let total = TransferFormat.bytes(transfer.byteCount)
         switch transfer.state {
+        case .waiting where transfer.interruptedAt != nil:
+            return "Paused · \(TransferFormat.bytes(transfer.bytesDone)) of \(total) · picks up when connected"
         case .waiting:
             return "Waiting · \(total)"
         case .active:
@@ -181,6 +183,8 @@ private struct TransferRow: View {
     private var accessibilityStatus: String {
         let direction = transfer.direction == .sending ? "Sending to \(macName)" : "Receiving from \(macName)"
         switch transfer.state {
+        case .waiting where transfer.interruptedAt != nil:
+            return "Paused at \(Int((transfer.fraction * 100).rounded())) percent. It picks up where it stopped when \(macName) is connected again."
         case .waiting: return "Waiting to send, \(TransferFormat.bytes(transfer.byteCount))"
         case .active:
             var text = "\(direction), \(Int((transfer.fraction * 100).rounded())) percent"
@@ -204,7 +208,7 @@ private struct TransferRing: View {
             Circle()
                 .stroke(Color.primary.opacity(0.1), lineWidth: 3)
             Circle()
-                .trim(from: 0, to: transfer.state == .active ? max(0.015, transfer.fraction) : (transfer.state == .done ? 1 : 0))
+                .trim(from: 0, to: trimEnd)
                 .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 // Progress lands every ~100 ms; a linear glide over the same span reads as one
@@ -219,8 +223,19 @@ private struct TransferRing: View {
         .padding(1.5)
     }
 
+    /// Filled to the progress while moving, and to where it stopped while paused.
+    private var trimEnd: Double {
+        switch transfer.state {
+        case .active: max(0.015, transfer.fraction)
+        case .waiting: transfer.interruptedAt != nil ? transfer.fraction : 0
+        case .done: 1
+        case .failed, .cancelled: 0
+        }
+    }
+
     private var symbol: String {
         switch transfer.state {
+        case .waiting where transfer.interruptedAt != nil: "pause.fill"
         case .waiting, .active: transfer.direction == .sending ? "arrow.up" : "arrow.down"
         case .done: "checkmark"
         case .failed: "exclamationmark"
