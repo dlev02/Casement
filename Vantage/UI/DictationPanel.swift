@@ -270,3 +270,18 @@ private struct LevelMeter: View {
         return CGFloat(Double(level) * envelope * wobble)
     }
 }
+
+extension DictationController.Phase {
+    /// The dictation moments worth feeling: the microphone opening and closing (hold to talk is
+    /// done looking at the Mac, not the panel) and a failure. Review and sending stay quiet, and
+    /// so does cancelling, which the panel closing already shows.
+    static func haptic(from old: Self, to new: Self) -> Haptic? {
+        switch (old, new) {
+        case (.listening, .listening), (.failed, .failed): nil
+        case (_, .listening): .start
+        case (.listening, .transcribing), (.listening, .review): .stop
+        case (_, .failed): .error
+        default: nil
+        }
+    }
+}

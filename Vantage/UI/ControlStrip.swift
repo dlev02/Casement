@@ -35,6 +35,9 @@ struct ControlStrip: View {
     var isPreview = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The last modifier the user tapped, for its haptic. Modifiers that clear themselves after a
+    /// key press stay quiet; only your own tap latches or releases one.
+    @State private var modifierTap = ModifierTap()
 
     var body: some View {
         if isPreview {
@@ -53,6 +56,7 @@ struct ControlStrip: View {
             .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
         #else
         glassSurface
+            .haptic(trigger: modifierTap) { _, tap in tap.latched ? .latch : .unlatch }
             .accessibilityElement(children: .contain)
             .accessibilityValue(dock.label)
             .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
@@ -429,6 +433,7 @@ struct ControlStrip: View {
                 withAnimation(.snappy(duration: 0.2)) {
                     if isOn { stickyModifiers.remove(modifier) } else { stickyModifiers.insert(modifier) }
                 }
+                modifierTap = ModifierTap(count: modifierTap.count + 1, latched: !isOn)
             }
         } label: {
             Image(systemName: item.symbol)
@@ -585,6 +590,12 @@ private struct StripContentTransition: Transition {
             .scaleEffect(phase.isIdentity ? 1 : 0.94, anchor: anchor)
             .blur(radius: phase.isIdentity ? 0 : 3)
     }
+}
+
+/// A tap on a sticky modifier: which way it went, and a count so two taps the same way both play.
+private struct ModifierTap: Equatable {
+    var count = 0
+    var latched = false
 }
 
 /// A press on the control strip's mic button.

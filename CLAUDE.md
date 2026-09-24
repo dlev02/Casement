@@ -120,6 +120,22 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   UIKit; it also needs `GCMouse` deltas the simulator can't produce and a full-screen scene. Don't
   add `prefersPointerLocked = true` back: if SwiftUI ever honoured it, UIKit hover stops and no
   mouse would move the Mac's pointer.
+- **Haptics** (`Model/Haptic.swift` names the moments, `UI/Haptics.swift` plays them; iPhone
+  only): call sites name what happened, never how it feels — `.latch`/`.unlatch` (a sticky
+  modifier you tapped; one a key press clears stays quiet), `.start`/`.stop` (dictation's mic),
+  `.snap` (the strip lands in a corner), `.press` (a long press grabs or clicks), `.secondaryClick`
+  (two/three-finger tap), `.success`/`.warning`/`.error` (outcomes out of sight: reconnected, a
+  dropped session via `ConnectionHaptics`, password typed through Screen Sharing, rejected
+  pairing code, dictation failed). In a view use `.haptic(_:trigger:)` or `.haptic(trigger:) { old,
+  new in Haptic? }` (SwiftUI `sensoryFeedback`); from a callback `Haptics.play(_:)` (e.g. a file
+  received or sent: `Haptics.play(.success)`, a transfer failing: `.error`); from a UIKit view
+  `ViewHaptics` (location-aware, `prepare()` on touch down). Never for pointer motion, scrolling,
+  typing, plain taps/clicks, or real mouse/trackpad clicks. Settings → Controls → Haptics
+  (`vantage.haptics`, on by default, shown on iPhone only); iPhone's System Haptics switch still
+  wins. iPad has no Taptic Engine: the modifiers add nothing and no generators are made there;
+  visionOS compiles them out. Debug: `-VantageForceHaptics 1` treats an iPad as capable,
+  `-VantageHapticProbe 1` lists what played as `session.hapticProbe`'s value. Tests:
+  `HapticTests` (connection rules), `HapticsUITests`. Feel still needs an iPhone.
 - **Mac shortcuts and password**: `MacShortcut` (`Vantage/Model/MacShortcut.swift`) sends
   system-default chords (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with

@@ -247,6 +247,9 @@ struct RemoteSessionScreen: View {
         #if DEBUG && canImport(UIKit)
         .overlay(alignment: .bottomTrailing) { macAudioStatsProbe }
         #endif
+        .modifier(SessionHaptics(state: session.state, pairingError: session.pairingError, dock: toolbarDock,
+                                 dictationPhase: dictationPhase, screenSharingTyping: screenSharingTyping,
+                                 screenSharingError: screenSharingError))
         .animation(.smooth(duration: 0.3), value: screenSharingTyping)
         .animation(.smooth(duration: 0.3), value: macAudioNotice)
         // Hints and notices: in quickly with ease-out, out a little faster.
@@ -525,6 +528,14 @@ struct RemoteSessionScreen: View {
         dictation.isActive
         #else
         false
+        #endif
+    }
+
+    private var dictationPhase: DictationController.Phase? {
+        #if canImport(UIKit)
+        dictation.phase
+        #else
+        nil
         #endif
     }
 
@@ -822,6 +833,57 @@ private struct FileDropDelegate: DropDelegate {
             }
         }
         return !providers.isEmpty
+    }
+}
+
+/// The session's haptics (see `Haptic`): the strip landing in a corner, dictation's microphone
+/// opening and closing, a dropped or restored connection, and outcomes you'd otherwise have to
+/// look for. Pointer and touch gestures buzz from `RemoteInteractionView`.
+private struct SessionHaptics: ViewModifier {
+    let state: ClientSession.State
+    let pairingError: String?
+    let dock: ToolbarDock
+    let dictationPhase: DictationController.Phase?
+    let screenSharingTyping: ScreenSharingTypingState?
+    let screenSharingError: String?
+    @State private var connection = ConnectionHaptics()
+
+    func body(content: Content) -> some View {
+        content
+            .haptic(.snap, trigger: dock)
+            .haptic(trigger: dictationPhase, Self.dictation)
+            .haptic(trigger: pairingError, Self.failure)
+            .haptic(trigger: screenSharingTyping, Self.typed)
+            .haptic(trigger: screenSharingError, Self.failure)
+            .onChange(of: state) { old, new in
+                if let haptic = connection.haptic(from: old, to: new) { Haptics.play(haptic) }
+            }
+            #if DEBUG
+            .overlay(alignment: .bottomLeading) {
+                if ClientOptions.hapticProbe {
+                    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .accessibilityElement()
+                            .accessibilityIdentifier("session.hapticProbe")
+                            .accessibilityValue(Haptics.played.map { "\($0)" }.joined(separator: " "))
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+            #endif
+    }
+
+    private static func dictation(_ old: DictationController.Phase?, _ new: DictationController.Phase?) -> Haptic? {
+        guard let old, let new else { return nil }
+        return DictationController.Phase.haptic(from: old, to: new)
+    }
+
+    /// An error message appeared: a rejected pairing code, a password Screen Sharing couldn't type.
+    private static func failure(_ old: String?, _ new: String?) -> Haptic? { new == nil ? nil : .error }
+
+    private static func typed(_ old: ScreenSharingTypingState?, _ new: ScreenSharingTypingState?) -> Haptic? {
+        new == .sent ? .success : nil
     }
 }
 

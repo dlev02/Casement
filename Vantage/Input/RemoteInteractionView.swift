@@ -17,6 +17,10 @@ final class RemoteInteractionView: UIView {
     var pencilSqueezeAction: PencilAction = .collapseControls
     var pencilDoubleTapAction: PencilAction = .rightClick
 
+    /// Felt when a gesture turns into a mouse press or click: a long press and multi-finger taps.
+    /// Plain taps, pointer motion, and scrolling never buzz.
+    private lazy var haptics = ViewHaptics(view: self)
+
     /// A Pencil points at what you mean, so it always positions the pointer absolutely no matter
     /// which touch mode fingers are using.
     private var isPencilTouch = false
@@ -148,10 +152,12 @@ final class RemoteInteractionView: UIView {
 
     @objc private func handleTwoFingerTap(_ recognizer: UITapGestureRecognizer) {
         input.click(button: .right, modifiers: heldModifiers)
+        haptics.play(.secondaryClick, at: recognizer.location(in: self))
     }
 
     @objc private func handleThreeFingerTap(_ recognizer: UITapGestureRecognizer) {
         input.click(button: .middle, modifiers: heldModifiers)
+        haptics.play(.secondaryClick, at: recognizer.location(in: self))
     }
 
     private var lastPanPoint: CGPoint = .zero
@@ -242,6 +248,7 @@ final class RemoteInteractionView: UIView {
             } else {
                 input.click(button: .left, clickCount: 1, modifiers: heldModifiers) // long-press acts as press-and-hold
             }
+            haptics.play(.press, at: location) // the hold was recognized: grabbed, or clicked
         case .changed where pointsAbsolutely:
             input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
         case .ended:
@@ -304,6 +311,7 @@ final class RemoteInteractionView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first(where: { $0.type == .indirectPointer }), let event else {
             if touches.contains(where: { $0.type == .pencil }) { isPencilTouch = true }
+            haptics.prepare() // it may become a long press or a multi-finger tap
             super.touchesBegan(touches, with: event)
             return
         }

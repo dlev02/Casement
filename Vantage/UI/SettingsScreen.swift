@@ -63,6 +63,7 @@ struct ControlSettings: View {
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
     @AppStorage(DictationEnginePreference.macOffersParakeetKey) private var macOffersParakeet = false
+    @AppStorage(Haptic.settingKey) private var haptics = true
 
     var body: some View {
         Form {
@@ -147,6 +148,15 @@ struct ControlSettings: View {
                 Text("Session Controls")
             } footer: {
                 Text("Choose which controls show and in what order. A Mac can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
+            }
+
+            if Haptics.isSupported {
+                Section {
+                    Toggle("Haptics", isOn: $haptics)
+                        .accessibilityIdentifier("settings.haptics")
+                } footer: {
+                    Text("Light taps confirm held keys, dictation, moving the controls, and dropped connections.")
+                }
             }
 
             Section {

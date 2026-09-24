@@ -60,6 +60,9 @@ enum ClientOptions {
     /// `-VantagePointerProbe 1` exposes the Mac pointer position the app last sent as the value of
     /// an invisible `session.pointerProbe` element, so UI tests can check edges with a hover.
     static var pointerProbe: Bool { value(for: "-VantagePointerProbe") == "1" }
+    /// `-VantageHapticProbe 1` lists the haptics played so far as the value of an invisible
+    /// `session.hapticProbe` element. Pair it with `-VantageForceHaptics 1` on iPad.
+    static var hapticProbe: Bool { value(for: "-VantageHapticProbe") == "1" }
 
     static var seedSampleDevices: Bool {
         #if DEBUG
