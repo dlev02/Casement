@@ -109,7 +109,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Indirect pointers and the Pencil always position absolutely regardless of the touch mode; the
   touch mode only governs fingers. Wheel/trackpad scrolling uses two dedicated pan recognizers
   (continuous vs discrete) — never put `allowedScrollTypesMask` back on the movement pan, it turns
-  scrolling into pointer motion. Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  scrolling into pointer motion. A flick's momentum is the host's job (`ScrollMomentum`): the
+  iPad ends a scroll with `ended` + momentum `began` + velocity; the host posts `ended` alone, then
+  momentum began/continue/end frames at 60 Hz decaying 0.998 per ms (UIScrollView's rate) in whole
+  pixels; it needs ≥ 60 pt/s, stops under 10 pt/s or after 3 s, and the next scroll, a click or
+  `releaseAll` ends it (`ScrollMomentumTests`). Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
   **Edges**: every absolute position goes through `PointerMapping` (pure, `PointerMappingTests`):
   past or within `edgeSnap` (2 pt) of the picture's edge lands on the Mac's outermost row/column,
   and an edge position within `cornerSnap` (16 pt) of a corner lands in the corner. macOS reveals
@@ -522,6 +526,55 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `@FocusedValue(\.sessionCommands)` (the session publishes `SessionCommands` with
   `focusedSceneValue`, since its AppKit view holds focus) and `\.selectedMac` (the list); they're
   dimmed when they don't apply, never hidden. `SidebarCommands`, `ToolbarCommands`.
+- **Session window**: `WindowAspectMatcher` (macOS) resets `contentAspectRatio` for the current
+  width on every resize, with the toolbar's height added (the ratio covers the content view under
+  the toolbar); the first time a display is known it fits the window to the display point for
+  point, or as large as `visibleFrame` allows; nothing in full screen. `SessionWindowShape`
+  provides Actual Size and Full Screen. Title = the Mac's name, subtitle "W × H · View Only".
+  Toolbar: View Only, Send Keyboard Shortcuts, a Mac menu (the shortcuts including App Switcher
+  ⌘Tab, Sleep Display, Lock Mac), Send File, Disconnect (`session.toolbar.disconnect`). The session
+  publishes `.focusedSceneValue(\.sessionCommands, …)`. It suspends on `NSWorkspace.willSleep`
+  and retries on `didWake`, never on scene background.
+- **Input** (`RemoteInteractionNSView`): hosts `video.displayLayer` (flipped, layer-backed,
+  `acceptsFirstMouse` false) and overrides the raw mouse, drag and `scrollWheel` methods on
+  purpose: recognizers don't give per-button downs, ups and drags, `clickCount`, or scroll
+  phases. Pointing is always absolute through `PointerMapping`; drags that leave the view keep
+  arriving and pin to the Mac's edge. Buttons 2/3/4 are middle, back and forward, and ⌃-click
+  stays a left click with ⌃. `mouseMoved` is skipped while the point hit-tests to a SwiftUI
+  overlay; the cursor is blank over the picture only while input is on.
+  `NSTextInputClient.insertText` types Character Viewer and emoji text; `keyDown` never calls
+  `interpretKeyEvents`. `sendsInput` = connected, not View Only, and not `AppLock.shared.isLocked`.
+  DEBUG: `-VantagePointerProbe 1` gives `session.pointerProbe`; `-VantageKeyProbe 1` gives
+  `session.keyProbe`, the last 8 keys sent ("0xc down command").
+- **Keyboard** (`KeyboardCapture`; pure `KeyTranslator`, `KeyCapturePolicy`): a local `NSEvent`
+  monitor sees keys before the menu bar. It acts only when the session window is key, the session
+  view has focus and input is on; a text field keeps its typing, and host-stamped events are
+  swallowed. Policy: with Send keyboard shortcuts on (`MacKeyboardSettings.captureShortcutsKey`,
+  the default) everything goes to the Mac except ⌃⌥⌘ chords; off, ⌘Q, ⌘W, ⌘H, ⌥⌘H, ⌘M, ⌘,,
+  ⌘`/⇧⌘` and ⌃⌘F stay local, judged on the keys as pressed before any swap. `KeyTranslator`
+  sends modifiers as keys of their own, left or right from the device bits; each Caps Lock change
+  is one tap, Fn/Globe is never sent, a release or repeat without a press is dropped, and Swap ⌘
+  and ⌃ is `swapCommandControlKey`. ⌘V first sends `ClipboardSync.changedPayload()` (the host
+  writes it before it reads the ⌘V; see Clipboard). Everything held is released on resign-key,
+  app deactivate, window close, capture off, View Only, lock and teardown. In full screen while
+  capturing, `presentationOptions` swap auto-hide for `.hideDock`, `.hideMenuBar`,
+  `.disableProcessSwitching`; AppKit resets them ~0.1 s after `didEnterFullScreen`, so they're
+  re-applied at 0.15, 0.4 and 1 s, and restored on resign-key, capture off, lock or exit. Tests:
+  `KeyTranslatorTests`, `KeyCapturePolicyTests`, `SessionInputUITests` (needs Automation Mode).
+- **Scrolling** (`ScrollTranslator`): precise deltas go as `-scrollingDelta`, wheel lines as
+  `+scrollingDelta`; the host negates continuous deltas only (`InputInjector.postScroll`), so the
+  posted event equals the local one, already corrected for this Mac's natural-scrolling setting
+  (the per-Mac Natural Scrolling toggle is hidden on macOS). `NSEventPhase` bits aren't wire
+  values: may-begin and stationary are dropped, as is an end or cancel without a began; momentum
+  passes through; wheels send whole lines with the fraction carried, and a change of direction
+  starts from zero. Test: `ScrollTranslatorTests`.
+- **Same Mac**: every host-posted event carries `VantageProtocol.injectedEventMarker` in
+  `.eventSourceUserData` (`InputInjector.post`) and the client drops those events
+  (`NSEvent.isFromVantageHost`). `ThisMac.isHost` (loopback, a local tailnet address, or the
+  host's name equal to this Mac's computer name) shows the "You're viewing this Mac from itself"
+  banner and starts in View Only; `-VantageAllowSelfControl 1` keeps input on. DEBUG hosts leave
+  `com.benjaminlevinson.vantage` out of video capture for a loopback peer. Test:
+  `InjectedEventMarkerTests`.
 - **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
   Security, About, each a grouped form in its own `NavigationStack`; the last tab is remembered
   (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Controls on the Mac:
@@ -612,7 +665,7 @@ xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generi
 # Client (visionOS Simulator; test on the "Vantage Vision Pro" simulator)
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=visionOS Simulator' -derivedDataPath .deriveddata
 
-# Client (macOS; same target, sandboxed, one window per session; the session view is still a stub)
+# Client (macOS; same target, sandboxed, one window per session)
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platform=macOS' -derivedDataPath .deriveddata
 ```
 
