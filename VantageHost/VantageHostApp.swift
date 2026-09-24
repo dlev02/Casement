@@ -42,7 +42,13 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
             controller.generatePairingCode()
         }
         #if DEBUG
+        switch HostOptions.shared.appearance {
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        default: break
+        }
         if HostOptions.shared.openSettingsTab != nil { openSettingsWindowForTesting() }
+        if !HostOptions.shared.previewArrival.isEmpty { previewArrivalForTesting() }
         #endif
     }
 
@@ -58,6 +64,16 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         settingsWindow = window
+    }
+
+    /// `--preview-arrival <paths>`: the on-screen notice for those files, until it's closed.
+    private func previewArrivalForTesting() {
+        let files = HostOptions.shared.previewArrival.map { URL(fileURLWithPath: $0) }
+        let folder = files[0].deletingLastPathComponent()
+        let summary = ArrivalSummary(files: files, devices: ["Drew's iPad Pro"],
+                                     folderName: FileManager.default.displayName(atPath: folder.path(percentEncoded: false)),
+                                     isDownloads: false)
+        ArrivalNotice.shared.show(summary, files: files, lingers: true)
     }
     #endif
 

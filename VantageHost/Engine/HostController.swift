@@ -28,6 +28,8 @@ final class HostController {
     private(set) var fileChannels: [HostFileChannel] = []
     /// Files moving this run (both ways), newest last, for the menu.
     private(set) var transfers: [HostTransfer] = []
+    /// Notifications, the on-screen notice, and Finder for files as they arrive.
+    private let arrivals = FileArrivals()
     let loginItem = LoginItem()
     private var displayObservers: [any NSObjectProtocol] = []
 
@@ -54,6 +56,7 @@ final class HostController {
         trust.onPairingCodeCleared = { [weak self] in
             Task { @MainActor in self?.pairingCode = nil }
         }
+        arrivals.isViewedRemotely = { [weak self] in self?.hasConnectedClients ?? false }
         refreshTrusted()
         refreshPermissions()
         refreshTailscale()
@@ -215,6 +218,9 @@ final class HostController {
         guard sessions.contains(where: { $0 === fileChannel.session }) else { return }
         fileChannels.removeAll { $0.session === fileChannel.session }
         fileChannels.append(fileChannel)
+        if let missing = HostFileStore.current.unavailableChoice {
+            log.error("can't save received files to \(missing, privacy: .public); using Downloads")
+        }
         let engine = fileChannel.engine
         Task {
             for await event in engine.events { handle(event, on: fileChannel) }
@@ -236,22 +242,14 @@ final class HostController {
                 transfers.append(HostTransfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction,
                                               deviceName: channel.clientName, state: .active))
             }
+            if let transfer = transfers.first(where: { $0.id == item.id }) { arrivals.started(transfer) }
         case .progress(let id, let bytes):
             if let index = transfers.firstIndex(where: { $0.id == id }) { transfers[index].bytesDone = bytes }
         case .finished(let id, let outcome):
             guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
             transfers[index].finish(outcome)
-            let transfer = transfers[index]
-            guard !HostFileStore.current.isSynthetic else {
-                if case .received(let url) = outcome { log.info("synthetic host saved a received file at \(url.path(percentEncoded: false), privacy: .public)") }
-                return
-            }
-            switch outcome {
-            case .received(let url): HostNotifications.shared.received(url, from: transfer.deviceName)
-            case .sent: HostNotifications.shared.sent(transfer.name, to: transfer.deviceName)
-            case .failed(let reason): HostNotifications.shared.failed(transfer.name, sending: transfer.direction == .sending, device: transfer.deviceName, reason: reason)
-            case .cancelled: break
-            }
+            // Notifications, the on-screen notice, and Finder, per Settings → Files.
+            arrivals.finished(transfers[index], outcome)
         }
         trimTransfers()
     }

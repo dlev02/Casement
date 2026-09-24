@@ -4,9 +4,15 @@ import Foundation
 ///
 /// - `--synthetic-capture`: stream a rendered test pattern instead of the real display.
 /// - `--pairing-code 123456`: use a fixed pairing code instead of a random one.
-/// - `--open-settings dictation`: open the Settings window on that tab at launch (screenshots).
+/// - `--open-settings dictation|files`: open the Settings window on that tab at launch (screenshots).
 /// - `--send-file-on-connect /path`: send that file to each client whose file channel attaches
 ///   (tests the Mac → iPad direction without the open panel).
+/// - `--receive-folder /path`: save received files there instead of Downloads (or the synthetic
+///   temp folder), so tests never touch the real Downloads.
+/// - `--arrival-actions`: run the real arrival path (notification, on-screen notice, Finder) for a
+///   synthetic host too; it's skipped there otherwise.
+/// - `--preview-arrival /path[,/path…]`: show the on-screen arrival notice for those files at launch.
+/// - `--appearance light|dark`: force the host's own windows into one appearance (screenshots).
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -17,6 +23,14 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let openSettingsTab: String?
     /// File to send to every client once its file channel attaches (DEBUG only).
     let sendFileOnConnect: String?
+    /// Folder received files go to, overriding Settings (DEBUG only).
+    let receiveFolder: String?
+    /// Arrival actions run even in synthetic mode (DEBUG only).
+    let arrivalActions: Bool
+    /// Files to show the arrival notice for at launch (DEBUG only).
+    let previewArrival: [String]
+    /// "light" or "dark" (DEBUG only).
+    let appearance: String?
 
     private init() {
         #if DEBUG
@@ -40,12 +54,32 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             sendFileOnConnect = nil
         }
+        if let index = args.firstIndex(of: "--receive-folder"), index + 1 < args.count {
+            receiveFolder = args[index + 1]
+        } else {
+            receiveFolder = nil
+        }
+        arrivalActions = args.contains("--arrival-actions")
+        if let index = args.firstIndex(of: "--preview-arrival"), index + 1 < args.count {
+            previewArrival = args[index + 1].split(separator: ",").map(String.init)
+        } else {
+            previewArrival = []
+        }
+        if let index = args.firstIndex(of: "--appearance"), index + 1 < args.count {
+            appearance = args[index + 1]
+        } else {
+            appearance = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
         port = 47820
         openSettingsTab = nil
         sendFileOnConnect = nil
+        receiveFolder = nil
+        arrivalActions = false
+        previewArrival = []
+        appearance = nil
         #endif
     }
 }

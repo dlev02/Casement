@@ -113,7 +113,10 @@ private struct HostTransferRow: View {
         case .active:
             let done = ByteCountFormatter.string(fromByteCount: Int64(clamping: transfer.bytesDone), countStyle: .file)
             return "\(done) of \(total) · \(toFrom)"
-        case .done: return transfer.direction == .sending ? "Sent to \(transfer.deviceName)" : "Received · in Downloads"
+        case .done:
+            if transfer.direction == .sending { return "Sent to \(transfer.deviceName)" }
+            let folder = transfer.savedURL.map { FileManager.default.displayName(atPath: $0.deletingLastPathComponent().path(percentEncoded: false)) }
+            return "Received · in \(folder ?? "Downloads")"
         case .failed(let reason): return reason
         case .cancelled: return "Cancelled"
         }

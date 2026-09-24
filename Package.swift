@@ -26,6 +26,11 @@ let package = Package(
         .testTarget(name: "ClientSessionTests", dependencies: ["VantageClientLogic", "VantageSynthetic", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/ClientSessionTests"),
         .testTarget(name: "HostDictationTests", dependencies: ["VantageHostDictation", .product(name: "VantageCore", package: "VantageCore")],
-                    path: "Tests/HostDictationTests")
+                    path: "Tests/HostDictationTests"),
+        // What the host does when files arrive (settings, batching, auto-open safety, wording).
+        .target(name: "VantageHostFiles", path: "VantageHost/Transfer",
+                exclude: ["FileArrivals.swift", "HostFileStore.swift", "HostNotifications.swift", "HostTransfer.swift"],
+                sources: ["FileArrival.swift"], swiftSettings: [.defaultIsolation(MainActor.self)]),
+        .testTarget(name: "HostFileArrivalTests", dependencies: ["VantageHostFiles"], path: "Tests/HostFileArrivalTests")
     ]
 )

@@ -213,10 +213,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `maxBufferedMessages` 64 so a slow disk pushes back through TCP. Host: `~/Downloads`
   (`NSDownloadsFolderUsageDescription`; macOS asks once), `com.apple.quarantine` set per file via
   `URLResourceValues.quarantineProperties` (not `LSFileQuarantineEnabled`, which would also
-  quarantine dictation WAVs and the Parakeet model), `HostNotifications` ("Received … from ⟨iPad⟩"
-  with Show in Finder), menu Files section with "Send File to ⟨iPad⟩…" (`NSOpenPanel`), progress
-  and cancel. The iPad's name comes from `tailscale whois` (iOS only reports "iPad"). Synthetic
-  hosts save to `$TMPDIR/VantageSynthetic/Received` and skip notifications. Client:
+  quarantine dictation WAVs and the Parakeet model), what happens on arrival (next bullet), menu
+  Files section with "Send File to ⟨iPad⟩…" (`NSOpenPanel`), progress and cancel. The iPad's name
+  comes from `tailscale whois` (iOS only reports "iPad"). Synthetic hosts save to
+  `$TMPDIR/VantageSynthetic/Received` and skip the arrival path. Client:
   `FileTransferController` (`session.files`, outlives reconnects: queued files wait, one cut off
   by a drop restarts from zero up to twice) → `Documents/Received` (`UIFileSharingEnabled` +
   `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
@@ -241,6 +241,31 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `files`). Out of scope: resume
   (the offer/accept already carry `id` + `resumeOffset`), a share extension (needs an App Group),
   background transfers (`BGContinuedProcessingTask`), folders, Taildrop.
+- **Files arriving on the Mac** (host, `VantageHost/Transfer`; the policy is `FileArrival.swift`,
+  tested by `HostFileArrivalTests` in the root package): saved to `~/Downloads` or the folder
+  chosen in Settings → Files (`HostFileStore.current` → `ReceiveFolder`: Downloads again while the
+  choice is missing or read-only; read once per file channel, so a change applies from the next
+  connection). `FileArrivals` batches arrivals (`ArrivalBatcher`: 1.5 s after the last file with
+  nothing else coming in, or after 20 s behind a long one), then `ArrivalPlan` applies Settings →
+  Files: a notification (default on; one per batch, QuickLook preview, Show in Finder selects the
+  batch), then Do Nothing / **Show in Finder** (default, since Drew asked to be taken to the file;
+  one window selecting the batch) / Open the File (`AutoOpen`: an allowlist of documents and media
+  minus anything that runs code, installs, or points elsewhere; the rest, and batches over five,
+  are shown in Finder and the notice says why). **Banners are muted while an iPad watches**: macOS
+  holds banners while the screen is mirrored or shared unless "Allow notifications when mirroring
+  or sharing the display" is on (off by default; `com.apple.ncprefs` → `dnd_prefs.dndMirrored`,
+  read only by `SharingNotificationPreference`), and Vantage's ScreenCaptureKit capture counts as
+  sharing: NotificationCenter logs "muted by display state (displayShared)" and the notification
+  only lands in Notification Center. So while a session is connected and a banner wouldn't show,
+  the host shows `ArrivalNotice`: a non-activating glass panel (never key, `.statusBar` level, all
+  spaces) at the top right of the pointer's screen, which is where the iPad left the pointer, with
+  Show in Finder; it pauses while hovered, leaves after 6 s, only fades with Reduce Motion, and is
+  announced to VoiceOver. Settings → Files shows whether banners get through and opens
+  Notification Settings; never change that system setting from code. Synthetic hosts skip all of
+  it unless started with `--arrival-actions`. Debug: `--receive-folder <path>` (tests never touch
+  the real Downloads), `--preview-arrival <path,…>` (the notice until closed), `--open-settings
+  files`, `--appearance light|dark`; override settings without writing Drew's defaults with
+  argument-domain flags such as `-files.afterArrival open -files.notify NO`.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display

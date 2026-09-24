@@ -14,6 +14,9 @@ struct HostSettingsView: View {
             devicesTab
                 .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
                 .tag("devices")
+            FilesSettingsTab()
+                .tabItem { Label("Files", systemImage: "arrow.down.doc") }
+                .tag("files")
             readinessTab
                 .tabItem { Label("Reboot", systemImage: "power.circle") }
                 .tag("reboot")
