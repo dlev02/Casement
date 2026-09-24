@@ -50,6 +50,9 @@ actor HostSession {
     let peerHost: String
     private var fileEngine: FileTransferEngine?
     private var clientName = "iPad"
+    /// The client's hardware model from its hello ("iPad16,6", "Mac16,1"): a Mac client keeps
+    /// received files in Downloads, an iPad in Files.
+    private var clientModel = ""
     /// The client's key fingerprint: which iPad this is across connections.
     private var clientKey = ""
     /// Tells the controller a file channel is up (for the menu, notifications, and sending).
@@ -160,6 +163,7 @@ actor HostSession {
             }
             clientTakesFiles = true
             clientName = hello.clientName
+            clientModel = hello.deviceModel
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             let token = attachTokens.issue(for: self, peer: peerHost)
             let capabilities = HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: false, maxFPS: 0,
@@ -183,6 +187,7 @@ actor HostSession {
         clientTakesAudio = hello.features?.macAudio == true
         clientTakesFiles = hello.features?.fileTransfer == true
         clientName = hello.clientName
+        clientModel = hello.deviceModel
         clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
         // The file channel's ticket in: single use, from this address only, gone with the session.
         let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
@@ -560,7 +565,8 @@ actor HostSession {
         // The tailnet knows the device's real name; the app only gets "iPad" from iOS.
         let name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback
         onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey,
-                                      receiveDirectory: store.directory, isFilesOnly: state == .filesOnly))
+                                      receiveDirectory: store.directory, clientIsMac: clientModel.hasPrefix("Mac"),
+                                      isFilesOnly: state == .filesOnly))
     }
 
     private func handleViewportChange(_ viewport: Viewport) async {
@@ -878,6 +884,10 @@ struct HostFileChannel: Sendable, Identifiable {
     let clientKey: String
     /// Where its engine saves received files (the Settings choice when it attached).
     let receiveDirectory: URL
+    /// A Mac client keeps what it receives in Downloads; an iPad in Files › Vantage.
+    var clientIsMac = false
+    /// Where the other end will find a file the Mac sends it, for the panel and the notification.
+    var clientDestination: String { clientIsMac ? "Downloads" : "Files, in the Vantage folder" }
     /// Opened by a files-only session (no screen), e.g. Send Files from the iPad's device list.
     var isFilesOnly = false
     /// The session that issued the token has ended; the channel carries on until the iPad closes

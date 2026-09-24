@@ -302,7 +302,8 @@ final class HostController {
     func send(_ urls: [URL], to fileChannel: HostFileChannel) {
         let queued = urls.map { url in
             HostTransfer(id: UUID(), name: url.lastPathComponent, byteCount: Self.size(of: url), direction: .sending,
-                         deviceName: fileChannel.clientName, state: .waiting, source: url, clientKey: fileChannel.clientKey)
+                         deviceName: fileChannel.clientName, state: .waiting, source: url, clientKey: fileChannel.clientKey,
+                         destination: fileChannel.clientDestination)
         }
         transfers.append(contentsOf: queued)
         startSending(queued.map(\.id), on: fileChannel)
@@ -409,7 +410,7 @@ final class HostController {
         panel.allowsMultipleSelection = true
         panel.resolvesAliases = true
         panel.title = "Send to \(fileChannel.clientName)"
-        panel.message = "Choose files to send to \(fileChannel.clientName). They'll be in Files, in the Vantage folder."
+        panel.message = "Choose files to send to \(fileChannel.clientName). They'll be in \(fileChannel.clientDestination)."
         panel.prompt = "Send"
         NSApp.activate()
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }

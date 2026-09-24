@@ -57,8 +57,9 @@ final class HostNotifications: NSObject, UNUserNotificationCenterDelegate {
              userInfo: [Self.pathsKey: paths], preview: preview)
     }
 
-    func sent(_ name: String, to device: String) {
-        post(title: "Sent \(name)", body: "It's in Files on \(device), in the Vantage folder.", category: nil, userInfo: [:])
+    func sent(_ name: String, to device: String, destination: String? = nil) {
+        let body = destination == "Downloads" ? "It's in Downloads on \(device)." : "It's in Files on \(device), in the Vantage folder."
+        post(title: "Sent \(name)", body: body, category: nil, userInfo: [:])
     }
 
     func failed(_ name: String, sending: Bool, device: String, reason: String) {

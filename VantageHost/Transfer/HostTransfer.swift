@@ -33,12 +33,14 @@ struct HostTransfer: Identifiable, Equatable {
     /// Set while the connection is gone mid-file: the row stays `.waiting` and the file carries on
     /// from where it stopped when the iPad reconnects (within `HostTransfer.resumeWindow`).
     var interruptedAt: Date?
+    /// Where the other end keeps a file the Mac sent ("Downloads" on a Mac client), for the "Sent" notice.
+    var destination: String?
 
     /// How long an interrupted file waits for its iPad before it counts as failed.
     static let resumeWindow: TimeInterval = 60 * 60
 
     init(id: UUID, name: String, byteCount: UInt64, direction: FileTransferItem.Direction, deviceName: String,
-         state: State, source: URL? = nil, clientKey: String? = nil) {
+         state: State, source: URL? = nil, clientKey: String? = nil, destination: String? = nil) {
         self.id = id
         self.name = name
         self.byteCount = byteCount
@@ -47,6 +49,7 @@ struct HostTransfer: Identifiable, Equatable {
         self.state = state
         self.source = source
         self.clientKey = clientKey
+        self.destination = destination
     }
 
     var isActive: Bool { state == .waiting || state == .active }

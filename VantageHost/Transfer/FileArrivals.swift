@@ -65,7 +65,7 @@ final class FileArrivals {
                 log.info("synthetic host saved a received file at \(url.path(percentEncoded: false), privacy: .public)")
             }
         case .sent:
-            if actsOnArrivals { HostNotifications.shared.sent(transfer.name, to: transfer.deviceName) }
+            if actsOnArrivals { HostNotifications.shared.sent(transfer.name, to: transfer.deviceName, destination: transfer.destination) }
         case .failed(let reason):
             batcher.ended(transfer.id, at: .now)
             if actsOnArrivals {
