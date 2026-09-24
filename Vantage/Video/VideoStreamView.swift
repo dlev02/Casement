@@ -1,6 +1,5 @@
 import AVFoundation
 import CoreMedia
-import SwiftUI
 import VantageCore
 import os
 
@@ -31,9 +30,7 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     @MainActor init() {
         renderer = displayLayer.sampleBufferRenderer
         displayLayer.videoGravity = .resizeAspect
-        #if canImport(UIKit)
-        displayLayer.backgroundColor = UIColor.black.cgColor
-        #endif
+        displayLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         observeFailures()
     }
 
@@ -181,37 +178,3 @@ nonisolated private extension Array where Element == Data {
         return recurse(0, [], [])
     }
 }
-
-#if canImport(UIKit)
-import UIKit
-
-/// SwiftUI wrapper hosting the display layer.
-struct VideoStreamView: UIViewRepresentable {
-    let controller: VideoStreamController
-
-    func makeUIView(context: Context) -> VideoHostingView {
-        let view = VideoHostingView()
-        view.attach(controller.displayLayer)
-        return view
-    }
-
-    func updateUIView(_ uiView: VideoHostingView, context: Context) {}
-}
-
-final class VideoHostingView: UIView {
-    private var displayLayer: AVSampleBufferDisplayLayer?
-
-    func attach(_ layer: AVSampleBufferDisplayLayer) {
-        displayLayer?.removeFromSuperlayer()
-        layer.frame = bounds
-        self.layer.addSublayer(layer)
-        displayLayer = layer
-        backgroundColor = .black
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        displayLayer?.frame = bounds
-    }
-}
-#endif

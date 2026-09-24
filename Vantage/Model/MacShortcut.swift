@@ -23,5 +23,19 @@ nonisolated struct MacShortcut: Identifiable, Hashable, Sendable {
     static let showDesktop = MacShortcut(id: "showDesktop", label: "Show Desktop", symbol: "menubar.dock.rectangle",
                                          keyCode: 0x67, modifiers: .function)
 
+    /// ⌘Tab tapped: back to the app used before. The Mac client offers it because its own ⌘Tab
+    /// never reaches a session (macOS keeps it), unless a full-screen session is capturing keys.
+    static let appSwitcher = MacShortcut(id: "appSwitcher", label: "App Switcher", symbol: "square.stack",
+                                         keyCode: 0x30, modifiers: .command)
+
     static let menuOrder: [MacShortcut] = [spotlight, missionControl, applicationWindows, showDesktop]
+
+    /// The session menu's shortcuts on this platform: the Mac client adds the App Switcher.
+    static var sessionMenu: [MacShortcut] {
+        #if os(macOS)
+        menuOrder + [appSwitcher]
+        #else
+        menuOrder
+        #endif
+    }
 }

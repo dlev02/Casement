@@ -23,7 +23,7 @@ struct ControlStrip: View {
     var tapGuard: StripTapGuard?
     /// The controls to show, in order (the session resolves the Mac's own layout or the
     /// default). The session menu and the collapse button always follow them.
-    var items: [StripItem] = ControlStripLayout.standard.items
+    var items: [StripItem] = ControlStripLayout.platformStandard.visibleItems()
     /// Opens the controls editor from the session menu; nil leaves the menu item out.
     var onCustomize: (() -> Void)?
     /// The Mac Audio toggle (the session owns the player and the per-Mac setting).
@@ -56,6 +56,9 @@ struct ControlStrip: View {
             .accessibilityAction(named: isCollapsed ? "Expand controls" : "Collapse controls") { toggleCollapsed() }
         #else
         glassSurface
+            #if os(macOS)
+            .pointerStyle(.default) // the session hides the pointer over the Mac's picture only
+            #endif
             .haptic(trigger: modifierTap) { _, tap in tap.latched ? .latch : .unlatch }
             .accessibilityElement(children: .contain)
             .accessibilityValue(dock.label)
@@ -247,7 +250,7 @@ struct ControlStrip: View {
         .accessibilityLabel(StripItem.macAudio.label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
-        .accessibilityHint(macAudio.unavailableReason ?? "Plays the Mac's sound on this iPad.")
+        .accessibilityHint(macAudio.unavailableReason ?? "Plays the Mac's sound on \(LocalDevice.this).")
         .accessibilityIdentifier("session.toolbar.macAudio")
     }
 
@@ -268,7 +271,7 @@ struct ControlStrip: View {
         .disabled(files.unavailableReason != nil)
         .accessibilityLabel(StripItem.sendFile.label)
         .accessibilityValue(files.progress.map { "Sending, \(Int(($0 * 100).rounded())) percent" } ?? "")
-        .accessibilityHint(files.unavailableReason ?? "Choose files on this iPad to send to the Mac's Downloads folder.")
+        .accessibilityHint(files.unavailableReason ?? "Choose files on \(LocalDevice.this) to send to the Mac's Downloads folder.")
         .accessibilityIdentifier("session.toolbar.sendFile")
         .contextMenu {
             Button(action: files.onSend) {
@@ -350,7 +353,7 @@ struct ControlStrip: View {
 
     private var sessionMenu: some View {
         Menu {
-            #if !os(visionOS) // look and pinch always points absolutely
+            #if os(iOS) // look and pinch, and a Mac's own pointer, always point absolutely
             Picker("Touch", selection: $touchMode) {
                 ForEach(InputController.TouchMode.allCases) { mode in
                     Label(mode.label, systemImage: mode.symbol).tag(mode)
@@ -383,7 +386,7 @@ struct ControlStrip: View {
             }
 
             Section("Mac") {
-                ForEach(MacShortcut.menuOrder) { shortcut in
+                ForEach(MacShortcut.sessionMenu) { shortcut in
                     Button { send(shortcut) } label: { Label(shortcut.label, systemImage: shortcut.symbol) }
                 }
                 Button { onHostCommand(.sleepDisplay) } label: {

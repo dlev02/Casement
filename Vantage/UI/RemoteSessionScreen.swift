@@ -2,6 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 import VantageCore
 import os
+#if os(macOS)
+import AppKit
+#endif
 
 /// Full-screen remote session: shows the video, hosts input capture, overlays the control strip
 /// and connection status, and runs the periodic feedback/ping loop.
@@ -45,12 +48,10 @@ struct RemoteSessionScreen: View {
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
-    @AppStorage(ControlStripLayout.defaultsKey) private var defaultStripLayout = ControlStripLayout.standard
+    @AppStorage(ControlStripLayout.defaultsKey) private var defaultStripLayout = ControlStripLayout.platformStandard
     @State private var showStripEditor = false
-    #if canImport(UIKit)
     @State private var dictation = DictationController()
     @State private var macAudio = MacAudioPlayer()
-    #endif
     /// `-VantageMacAudio` (DEBUG) until the user flips the toggle.
     @State private var macAudioOverride = ClientOptions.macAudio
     /// A brief note when Mac audio stopped or couldn't start.
@@ -70,6 +71,20 @@ struct RemoteSessionScreen: View {
     /// the button works again if the Mac didn't answer).
     @State private var wakeRequested = false
     @State private var wakeTask: Task<Void, Never>?
+    #if os(macOS)
+    /// "Send keyboard shortcuts to the Mac" (Settings, the Session menu, the toolbar).
+    @AppStorage(MacKeyboardSettings.captureShortcutsKey) private var capturesShortcuts = true
+    @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapsCommandAndControl = false
+    /// Watch without sending the pointer or keys. On by default when the Mac is this one.
+    @State private var isViewOnly = false
+    /// The session's Mac is the one this app runs on (see `ThisMac`).
+    @State private var viewsThisMac = false
+    @State private var checkedThisMac = false
+    @State private var windowShape = SessionWindowShape()
+    #if DEBUG
+    @State private var keyProbe = KeyProbe()
+    #endif
+    #endif
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -86,7 +101,7 @@ struct RemoteSessionScreen: View {
             }
             #elseif os(macOS)
             if session.state == .connected {
-                Text("Session").foregroundStyle(.white) // stands in until the Mac's own input view lands
+                macSessionSurface
             }
             #endif
 
@@ -99,6 +114,13 @@ struct RemoteSessionScreen: View {
             }
 
             VStack {
+                #if os(macOS)
+                if viewsThisMac && session.state == .connected {
+                    ThisMacBanner(isViewOnly: isViewOnly)
+                        .padding(.top, 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
                 if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
                     HostStatusBanner(status: status)
@@ -211,10 +233,29 @@ struct RemoteSessionScreen: View {
                 CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
             })
         }
+        #elseif os(macOS)
+        .background {
+            WindowAspectMatcher(displaySize: session.activeConfig.map {
+                CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
+            }, shape: windowShape)
+        }
+        .navigationTitle(device.name)
+        .navigationSubtitle(windowSubtitle)
+        .toolbar { macToolbar }
+        .focusedSceneValue(\.sessionCommands, sessionCommands)
+        .animation(.smooth(duration: 0.3), value: viewsThisMac && session.state == .connected)
+        // The Mac client isn't suspended in the background (its windows stay on screen); it lets
+        // go when the Mac sleeps and picks up again when it wakes.
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
+            if dictation.isListening { dictation.stop(then: .review) }
+            stickyModifiers = []
+            session.suspendForBackground()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            session.retryNow()
+        }
         #else
-        #if os(iOS)
         .statusBarHidden()
-        #endif
         .persistentSystemOverlays(.hidden)
         #endif
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
@@ -225,7 +266,10 @@ struct RemoteSessionScreen: View {
                     // Lets Settings → Controls offer Parakeet once any Mac has advertised it.
                     UserDefaults.standard.set(true, forKey: DictationEnginePreference.macOffersParakeetKey)
                 }
-                #if DEBUG && canImport(UIKit)
+                #if os(macOS)
+                checkForThisMac()
+                #endif
+                #if DEBUG
                 if let fixture = ClientOptions.dictationFixture { dictation.showFixture(fixture) }
                 if let phrase = ClientOptions.dictationSpeech, !dictation.isActive {
                     dictation.speakForTesting(phrase, route: dictationRoute)
@@ -234,10 +278,8 @@ struct RemoteSessionScreen: View {
             } else {
                 hasVideo = false
                 video.resetFirstFrame()
-                #if canImport(UIKit)
                 dictation.connectionLost()
                 macAudio.connectionLost()
-                #endif
             }
         }
         .onChange(of: session.activeConfig) { _, config in
@@ -251,18 +293,23 @@ struct RemoteSessionScreen: View {
         .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
         .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
         .onChange(of: scenePhase) { _, phase in
+            #if !os(macOS)
             if phase == .background {
-                #if canImport(UIKit)
                 if dictation.isListening { dictation.stop(then: .review) }
-                #endif
                 showKeyboard = false
                 stickyModifiers = []
                 session.suspendForBackground()
-            } else if phase == .active { session.retryNow() }
+                return
+            }
+            #endif
+            if phase == .active { session.retryNow() }
         }
         .overlay(alignment: .top) { hiddenKeyboardField }
-        #if DEBUG && canImport(UIKit)
+        #if DEBUG
         .overlay(alignment: .bottomTrailing) { macAudioStatsProbe }
+        #endif
+        #if DEBUG && os(macOS)
+        .overlay(alignment: .bottomLeading) { keyProbeElement }
         #endif
         .modifier(SessionHaptics(state: session.state, pairingError: session.pairingError, dock: toolbarDock,
                                  dictationPhase: dictationPhase, screenSharingTyping: screenSharingTyping,
@@ -281,6 +328,7 @@ struct RemoteSessionScreen: View {
             NavigationStack {
                 TransfersView(files: session.files, macName: device.name, canSend: canSendFiles)
             }
+            .appLockCurtain()
         }
         .alert("Files are still transferring. Disconnect anyway?", isPresented: $showDisconnectGuard) {
             Button("Disconnect", role: .destructive) { endSession() }
@@ -301,11 +349,9 @@ struct RemoteSessionScreen: View {
             }
         }
         #endif
-        #if canImport(UIKit)
         .onChange(of: macAudio.status) { _, status in
             if case .unavailable(let reason) = status { showMacAudioNotice(reason) }
         }
-        #endif
         .sheet(item: $passwordPrompt) { prompt in
             PasswordPromptSheet(prompt: prompt, password: $newPassword, username: $newUsername) { saved in
                 passwordPrompt = nil
@@ -315,6 +361,7 @@ struct RemoteSessionScreen: View {
                 if !newUsername.isEmpty { DeviceSecrets.setUsername(newUsername, for: device) }
                 sendPassword()
             }
+            .appLockCurtain()
         }
         .sheet(isPresented: $showStripEditor) {
             NavigationStack {
@@ -326,6 +373,7 @@ struct RemoteSessionScreen: View {
                     }
             }
             .environment(store)
+            .appLockCurtain()
         }
         .alert("Couldn't Type the Password", isPresented: Binding(get: { screenSharingError != nil },
                                                                 set: { if !$0 { screenSharingError = nil } })) {
@@ -345,12 +393,7 @@ struct RemoteSessionScreen: View {
             touchMode: $touchMode,
             onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
             onShowKeyboard: { showKeyboard.toggle() },
-            onSendClipboard: {
-                #if canImport(UIKit)
-                let payload = ClipboardSync.currentPayload()
-                if !payload.isEmpty { session.send(.clipboard(payload)) }
-                #endif
-            },
+            onSendClipboard: sendClipboard,
             onSendPassword: sendPassword,
             onHostCommand: { session.send(.hostCommand(HostCommandMessage(command: $0))) },
             onDisconnect: disconnect,
@@ -446,9 +489,7 @@ struct RemoteSessionScreen: View {
     }
 
     private var macAudioFailed: Bool {
-        #if canImport(UIKit)
         if case .unavailable = macAudio.status { return true }
-        #endif
         return false
     }
 
@@ -466,14 +507,12 @@ struct RemoteSessionScreen: View {
         macAudioOverride = nil
         store.setPlayMacAudio(on, for: device.id)
         macAudioNotice = nil
-        #if canImport(UIKit)
         if on, macAudioFailed { macAudio.setWanted(false) } // start over
         macAudio.setWanted(on)
-        #endif
         session.setMacAudio(on)
     }
 
-    #if DEBUG && canImport(UIKit)
+    #if DEBUG
     /// For UI tests launched with `-VantageMacAudio`: the player's numbers as an invisible
     /// accessibility element (`session.macAudioStats`), refreshed every second.
     @ViewBuilder private var macAudioStatsProbe: some View {
@@ -500,10 +539,11 @@ struct RemoteSessionScreen: View {
         }
     }
 
-    /// This Mac's own layout if it has one, else the default. Read from the store rather than
-    /// `device` so edits made mid-session (or synced in) show up straight away.
+    /// This Mac's own layout if it has one, else the default, less what this device can't use
+    /// (the Mac client has no on-screen keyboard). Read from the store rather than `device` so
+    /// edits made mid-session (or synced in) show up straight away.
     private var stripItems: [StripItem] {
-        (store.devices.first { $0.id == device.id }?.controlStrip ?? defaultStripLayout).items
+        (store.devices.first { $0.id == device.id }?.controlStrip ?? defaultStripLayout).visibleItems()
     }
 
     private var connectionOverlay: some View {
@@ -543,29 +583,11 @@ struct RemoteSessionScreen: View {
 
     // MARK: Dictation
 
-    private var isDictationActive: Bool {
-        #if canImport(UIKit)
-        dictation.isActive
-        #else
-        false
-        #endif
-    }
+    private var isDictationActive: Bool { dictation.isActive }
 
-    private var dictationPhase: DictationController.Phase? {
-        #if canImport(UIKit)
-        dictation.phase
-        #else
-        nil
-        #endif
-    }
+    private var dictationPhase: DictationController.Phase? { dictation.phase }
 
-    private var isDictationListening: Bool {
-        #if canImport(UIKit)
-        dictation.isListening
-        #else
-        false
-        #endif
-    }
+    private var isDictationListening: Bool { dictation.isListening }
 
     /// Mac (MacWhisper) when the host advertised it and Settings allows it; otherwise the iPad.
     private var dictationRoute: DictationRoute {
@@ -573,18 +595,24 @@ struct RemoteSessionScreen: View {
     }
 
     @ViewBuilder private var dictationPanel: some View {
-        #if canImport(UIKit)
         if dictation.isActive {
             DictationPanel(dictation: dictation,
                            isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
-                           onCopy: { UIPasteboard.general.string = $0 })
+                           onCopy: Self.copyToClipboard)
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
         }
+    }
+
+    private static func copyToClipboard(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
         #endif
     }
 
     private func handleDictationPress(_ press: DictationPress) {
-        #if canImport(UIKit)
         stickyModifiers = []
         switch press {
         case .began: dictation.pressBegan(route: dictationRoute)
@@ -592,12 +620,15 @@ struct RemoteSessionScreen: View {
         case .toggle: dictation.toggle(route: dictationRoute)
         case .cancelled: dictation.pressCancelled()
         }
-        #endif
     }
 
-    private static let toolbarSpace = "toolbarArea"
+    nonisolated private static let toolbarSpace = "toolbarArea"
+    #if os(macOS)
+    private static let toolbarInsets = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+    #else
     /// The top inset keeps drags below iPadOS window-management gestures.
     private static let toolbarInsets = EdgeInsets(top: 44, leading: 12, bottom: 12, trailing: 12)
+    #endif
 
     private func toolbarArea(in size: CGSize) -> CGRect {
         CGRect(x: Self.toolbarInsets.leading, y: Self.toolbarInsets.top,
@@ -718,11 +749,7 @@ struct RemoteSessionScreen: View {
         #if DEBUG
         if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
-        session.onClipboard = { payload in
-            #if canImport(UIKit)
-            ClipboardSync.apply(payload)
-            #endif
-        }
+        session.onClipboard = { payload in ClipboardSync.apply(payload) }
         video.onNeedsKeyframe = {
             Task { @MainActor in session.send(.requestKeyframe) }
         }
@@ -730,7 +757,6 @@ struct RemoteSessionScreen: View {
             Task { @MainActor in hasVideo = true }
         }
         input.send = { message in session.send(message) }
-        #if canImport(UIKit)
         dictation.send = { message in session.send(message) }
         dictation.deliver = { text, pressReturn in
             input.typeText(text)
@@ -740,7 +766,6 @@ struct RemoteSessionScreen: View {
         session.onAudio = { message in macAudio.handle(message) }
         dictation.onMicrophoneActive = { active in macAudio.setMicrophoneActive(active) }
         macAudio.setWanted(wantsMacAudio)
-        #endif
         session.setMacAudio(wantsMacAudio)
         input.mode = touchMode
         input.naturalScroll = naturalScroll
@@ -785,9 +810,7 @@ struct RemoteSessionScreen: View {
         macAudioNoticeTask?.cancel()
         receivedNoticeTask?.cancel()
         wakeTask?.cancel()
-        #if canImport(UIKit)
         macAudio.setWanted(false)
-        #endif
         // The Mac's transfers outlive this screen; stop reporting them here.
         session.files.onReceived = nil
         session.disconnect()
@@ -801,7 +824,184 @@ struct RemoteSessionScreen: View {
     private var naturalScroll: Bool {
         store.devices.first { $0.id == device.id }?.naturalScroll ?? device.naturalScroll
     }
+
+    /// Send Clipboard: whatever is on the clipboard here, now.
+    private func sendClipboard() {
+        let payload = ClipboardSync.currentPayload()
+        if !payload.isEmpty { session.send(.clipboard(payload)) }
+    }
 }
+
+#if os(macOS)
+// MARK: - Mac client
+
+extension RemoteSessionScreen {
+    /// Pointer and keys go to the Mac.
+    private var sendsInput: Bool {
+        session.state == .connected && !isViewOnly && !AppLock.shared.isLocked
+    }
+
+    @ViewBuilder var macSessionSurface: some View {
+        #if DEBUG
+        RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
+                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsCommandAndControl,
+                                     stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard,
+                                     keyProbe: MacSessionOptions.keyProbe ? keyProbe : nil)
+        #else
+        RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
+                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsCommandAndControl,
+                                     stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard)
+        #endif
+    }
+
+    /// ⌘V on the Mac: something copied here since the last sync goes over first, so the paste
+    /// on the Mac has it (the host writes it before it posts the key).
+    private func pasteThroughClipboard() {
+        if let payload = ClipboardSync.changedPayload() { session.send(.clipboard(payload)) }
+    }
+
+    /// The first time the session connects: is its Mac this one? Then it starts in View Only,
+    /// since every move and key would come straight back through the host
+    /// (`-VantageAllowSelfControl 1` keeps input on for tests).
+    func checkForThisMac() {
+        viewsThisMac = ThisMac.isHost(address: device.host, hostName: session.hostName)
+        guard !checkedThisMac else { return }
+        checkedThisMac = true
+        if viewsThisMac && !MacSessionOptions.allowSelfControl { isViewOnly = true }
+    }
+
+    var windowSubtitle: String {
+        switch session.state {
+        case .connected:
+            var parts: [String] = []
+            if let display = session.activeConfig?.display {
+                parts.append("\(Int(display.pointWidth)) × \(Int(display.pointHeight))")
+            }
+            if isViewOnly { parts.append("View Only") }
+            return parts.joined(separator: " · ")
+        case .connecting, .authenticating: return "Connecting…"
+        case .reconnecting, .suspended: return "Reconnecting…"
+        case .pairingRequired: return "Pairing"
+        case .failed: return "Not connected"
+        default: return ""
+        }
+    }
+
+    @ToolbarContentBuilder var macToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Toggle(isOn: $isViewOnly) {
+                Label("View Only", systemImage: "eye")
+            }
+            .help("Watch the Mac without sending the pointer or keys")
+            .accessibilityIdentifier("session.mac.viewOnly")
+            Toggle(isOn: $capturesShortcuts) {
+                Label("Send Keyboard Shortcuts", systemImage: "command")
+            }
+            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to the Mac. ⌃⌥⌘ shortcuts stay with Vantage."
+                                    : "⌘Q, ⌘W, ⌘H, ⌘M and ⌘, act on Vantage")
+            .accessibilityIdentifier("session.mac.captureShortcuts")
+            Menu {
+                ForEach(MacShortcut.sessionMenu) { shortcut in
+                    Button { input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) } label: {
+                        Label(shortcut.label, systemImage: shortcut.symbol)
+                    }
+                }
+                Divider()
+                Button { sendHostCommand(.sleepDisplay) } label: { Label("Sleep Display", systemImage: "moon") }
+                Button { sendHostCommand(.lockScreen) } label: { Label("Lock Mac", systemImage: "lock") }
+            } label: {
+                Label("Mac", systemImage: "macbook")
+            }
+            .help("Mac shortcuts")
+            .disabled(session.state != .connected)
+            Button { showFileImporter = true } label: {
+                Label("Send File", systemImage: StripItem.sendFile.symbol)
+            }
+            .help("Send files to \(device.name)'s Downloads folder")
+            .disabled(!canSendFiles)
+            Button(action: disconnect) {
+                Label("Disconnect", systemImage: "xmark.circle")
+            }
+            .help("Disconnect from \(device.name)")
+            .accessibilityIdentifier("session.toolbar.disconnect")
+        }
+    }
+
+    private func sendHostCommand(_ command: HostCommand) {
+        session.send(.hostCommand(HostCommandMessage(command: command)))
+    }
+
+    /// What the menu bar's Session, View and Mac menus act on while this window is focused.
+    var sessionCommands: SessionCommands {
+        SessionCommands(
+            macName: device.name,
+            isConnected: session.state == .connected,
+            capturesShortcuts: capturesShortcuts,
+            toggleShortcutCapture: { capturesShortcuts.toggle() },
+            isViewOnly: isViewOnly,
+            toggleViewOnly: { isViewOnly.toggle() },
+            macAudioOn: wantsMacAudio && !macAudioFailed,
+            macAudioAvailable: session.state == .connected && session.hostOffersAudio,
+            toggleMacAudio: toggleMacAudio,
+            canSendFiles: canSendFiles,
+            sendFile: { showFileImporter = true },
+            showTransfers: { showTransfers = true },
+            sendClipboard: sendClipboard,
+            typePassword: sendPassword,
+            sendShortcut: { input.tapChord(keyCode: $0.keyCode, modifiers: $0.modifiers) },
+            hostCommand: sendHostCommand,
+            wake: wakeDisplay,
+            isDictating: isDictationListening,
+            toggleDictation: { handleDictationPress(.toggle) },
+            controlsHidden: controlsHidden,
+            toggleControls: { withAnimation(.smooth(duration: 0.3)) { controlsHidden.toggle() } },
+            actualSize: windowShape.actualSize,
+            toggleFullScreen: windowShape.toggleFullScreen,
+            customizeControls: { showStripEditor = true },
+            disconnect: disconnect)
+    }
+
+    #if DEBUG
+    /// `-VantageKeyProbe 1`: the keys sent lately, as `session.keyProbe`'s value.
+    @ViewBuilder var keyProbeElement: some View {
+        if MacSessionOptions.keyProbe {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityIdentifier("session.keyProbe")
+                .accessibilityValue(keyProbe.value)
+                .allowsHitTesting(false)
+        }
+    }
+    #endif
+}
+
+/// The session's Mac is the one Vantage runs on: say so, since the picture shows itself and the
+/// pointer comes straight back.
+private struct ThisMacBanner: View {
+    let isViewOnly: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("You're viewing this Mac from itself").font(.callout.weight(.semibold))
+                Text(isViewOnly ? "View Only is on, so the pointer and keys stay here."
+                                : "The pointer and keys go to this same Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .platformGlass(in: .capsule)
+        .frame(maxWidth: 520)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session.thisMacBanner")
+    }
+}
+#endif
 
 #if canImport(UIKit)
 import UIKit

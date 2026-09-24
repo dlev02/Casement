@@ -66,12 +66,13 @@ final class InputController {
 
     // MARK: Scroll
 
-    func scroll(deltaX: Double, deltaY: Double, phase: ScrollPhase, momentum: MomentumPhase = .none, continuous: Bool, velocity: CGSize = .zero) {
+    func scroll(deltaX: Double, deltaY: Double, phase: ScrollPhase, momentum: MomentumPhase = .none, continuous: Bool,
+                velocity: CGSize = .zero, modifiers: KeyModifiers = []) {
         send?(.scrollEvent(ScrollEvent(
             phase: phase, momentum: momentum, isContinuous: continuous,
             deltaX: Float(deltaX), deltaY: Float(deltaY),
             x: Float(cursorPoint.x), y: Float(cursorPoint.y),
-            velocityX: Float(velocity.width), velocityY: Float(velocity.height))))
+            velocityX: Float(velocity.width), velocityY: Float(velocity.height), modifiers: modifiers)))
     }
 
     // MARK: Keyboard
@@ -81,8 +82,9 @@ final class InputController {
         send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: isDown, modifiers: modifiers, isRepeat: isRepeat)))
     }
 
-    func keyCode(_ keyCode: UInt16, isDown: Bool, modifiers: KeyModifiers) {
-        send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: isDown, modifiers: modifiers)))
+    /// A key by macOS virtual key code, the wire's own format (the Mac client's `NSEvent.keyCode`).
+    func keyCode(_ keyCode: UInt16, isDown: Bool, modifiers: KeyModifiers, isRepeat: Bool = false) {
+        send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: isDown, modifiers: modifiers, isRepeat: isRepeat)))
     }
 
     /// Sends a modifier key as a discrete press+release (for the on-screen modifier strip acting

@@ -15,4 +15,10 @@ import VantageCore
         #expect(MacShortcut.spotlight.keyCode == 0x31 && MacShortcut.spotlight.modifiers == .command)
         #expect(MacShortcut.menuOrder.map(\.id) == ["spotlight", "missionControl", "appWindows", "showDesktop"])
     }
+
+    /// The Mac client's own ⌘Tab stays on the Mac it runs on, so its session menu sends one.
+    @Test func macClientOffersTheAppSwitcher() {
+        #expect(MacShortcut.appSwitcher.keyCode == 0x30 && MacShortcut.appSwitcher.modifiers == .command)
+        #expect(MacShortcut.sessionMenu.map(\.id) == ["spotlight", "missionControl", "appWindows", "showDesktop", "appSwitcher"])
+    }
 }
