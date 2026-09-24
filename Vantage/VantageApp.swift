@@ -18,13 +18,16 @@ struct VantageApp: App {
         }
         #endif
 
-        #if os(visionOS)
+        #if os(visionOS) || os(macOS)
         WindowGroup(id: SessionWindow.sceneID, for: UUID.self) { $deviceID in
             SessionWindow(deviceID: deviceID)
         }
         .defaultSize(width: 1280, height: 800)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled) // reconnecting should be the user's call, not a relaunch's
+        #if os(macOS)
+        .commandsRemoved() // File › New Window would open a session window with no Mac in it
+        #endif
         #endif
     }
 }

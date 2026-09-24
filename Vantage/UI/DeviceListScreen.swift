@@ -200,10 +200,10 @@ struct DeviceListScreen: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItem(placement: .listLeading) {
             NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .listTrailing) {
             Menu {
                 Picker("Sort", selection: sortBinding) {
                     ForEach(DeviceSort.allCases) { sort in
@@ -492,4 +492,14 @@ private struct LogInStatusBadge: View {
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
     }
+}
+
+private extension ToolbarItemPlacement {
+    #if os(macOS) // the Mac has no top bar
+    static var listLeading: Self { .navigation }
+    static var listTrailing: Self { .primaryAction }
+    #else
+    static var listLeading: Self { .topBarLeading }
+    static var listTrailing: Self { .topBarTrailing }
+    #endif
 }

@@ -60,7 +60,7 @@ struct MacQuery: EntityQuery, EntityStringQuery {
 
 /// The system can ask for the Spotlight entries to be rebuilt (after a restore, or when it drops
 /// the index). Answer from the catalog, honouring the app lock the same way publishing does.
-@available(iOS 27, *)
+@available(iOS 27, macOS 27, *)
 extension MacQuery: IndexedEntityQuery {
     func reindexEntities(for identifiers: [UUID], indexDescription: CSSearchableIndexDescription) async throws {
         let macs = DeviceCatalog.load()

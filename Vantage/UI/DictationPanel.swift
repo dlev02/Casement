@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 import VantageCore
 
 /// The glass card that shows a dictation: live transcript and level while listening, a spinner
@@ -194,7 +196,9 @@ struct DictationPanel: View {
             if case .failed(let failure) = dictation.phase {
                 if failure.opensSettings {
                     Button("Open Settings") {
+                        #if canImport(UIKit)
                         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        #endif
                         dictation.cancel()
                     }
                     .buttonStyle(.glassProminent)

@@ -476,6 +476,9 @@ private struct FAQRow: View {
 private struct AppIconTile: View {
     var body: some View {
         Group {
+            #if os(macOS)
+            Image(nsImage: NSApplication.shared.applicationIconImage).resizable()
+            #else
             if let icon = Bundle.main.primaryIconName, let image = UIImage(named: icon) {
                 Image(uiImage: image).resizable()
             } else {
@@ -487,6 +490,7 @@ private struct AppIconTile: View {
                         .foregroundStyle(.white)
                 }
             }
+            #endif
         }
         .frame(width: 96, height: 96)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))

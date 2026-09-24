@@ -84,6 +84,10 @@ struct RemoteSessionScreen: View {
                                            onPencilAction: performPencilAction)
                     .ignoresSafeArea()
             }
+            #elseif os(macOS)
+            if session.state == .connected {
+                Text("Session").foregroundStyle(.white) // stands in until the Mac's own input view lands
+            }
             #endif
 
             if let screenNote {
@@ -208,7 +212,9 @@ struct RemoteSessionScreen: View {
             })
         }
         #else
+        #if os(iOS)
         .statusBarHidden()
+        #endif
         .persistentSystemOverlays(.hidden)
         #endif
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
@@ -620,6 +626,7 @@ struct RemoteSessionScreen: View {
 
     @ViewBuilder
     private var hiddenKeyboardField: some View {
+        #if canImport(UIKit)
         if showKeyboard {
             RemoteKeyboardField(isPresented: $showKeyboard, onText: typeFromSoftwareKeyboard, onKey: { keyCode in
                 input.tapChord(keyCode: keyCode, modifiers: stickyModifiers)
@@ -628,6 +635,7 @@ struct RemoteSessionScreen: View {
             .frame(width: 1, height: 1)
             .opacity(0.01)
         }
+        #endif
     }
 
     /// Unicode text is the default. Keystrokes mode, or any held ⌘/⌥/⌃, sends real key presses so
@@ -945,12 +953,16 @@ private struct PasswordPromptSheet: View {
                 Section {
                     TextField("Account name", text: $username)
                         .textContentType(.username)
+                        #if !os(macOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .autocorrectionDisabled()
                     if prompt == .missing {
                         SecureField("Mac Password", text: $password)
                             .textContentType(.password)
+                            #if !os(macOS)
                             .textInputAutocapitalization(.never)
+                            #endif
                             .autocorrectionDisabled()
                     }
                 } footer: {
@@ -960,7 +972,9 @@ private struct PasswordPromptSheet: View {
                 }
             }
             .navigationTitle(prompt == .missing ? "Save Password" : "Mac Account")
+            #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onFinish(false) }

@@ -62,7 +62,7 @@ struct TransfersView: View {
             }
         }
         .navigationTitle("Transfers")
-        #if !os(visionOS)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {

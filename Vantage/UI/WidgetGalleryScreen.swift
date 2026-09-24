@@ -31,7 +31,9 @@ struct WidgetGalleryScreen: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #if canImport(UIKit)
         .background(Color(.systemGroupedBackground))
+        #endif
         .navigationTitle("Widgets")
         // Tall enough to show every sample without scrolling, for screenshots.
         .presentationSizing(.page)

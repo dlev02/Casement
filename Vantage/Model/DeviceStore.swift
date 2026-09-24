@@ -9,8 +9,8 @@ import WidgetKit
 @MainActor
 @Observable
 final class DeviceStore {
-    #if os(visionOS)
-    /// visionOS sessions live in their own windows and share the list's store.
+    #if os(visionOS) || os(macOS)
+    /// visionOS and Mac sessions live in their own windows and share the list's store.
     static let shared = DeviceStore()
     #endif
 

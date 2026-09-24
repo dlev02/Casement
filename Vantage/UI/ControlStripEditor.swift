@@ -11,7 +11,9 @@ struct ControlStripEditor: View {
     @AppStorage(ControlStripLayout.defaultsKey) private var defaultLayout = ControlStripLayout.standard
     @AppStorage("vantage.toolbarDock") private var dock = ToolbarDock.bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if !os(macOS)
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     @State private var showDefaultEditor = false
 
     /// Edits the default layout (Settings → Controls).
@@ -39,17 +41,19 @@ struct ControlStripEditor: View {
             moreSection
             resetSection
         }
+        #if !os(macOS)
         // Always editing, so the reorder handles show, as in Control Center.
         .environment(\.editMode, .constant(.active))
+        #endif
         .safeAreaInset(edge: .top, spacing: 0) {
             if pinsPreview {
                 preview
                     .padding(.horizontal)
                     .padding(.vertical, 8)
-                    .background(Color(.systemGroupedBackground))
+                    .background(Self.groupedBackground)
                     // Rows fade out as they pass under the preview instead of being cut off.
                     .overlay(alignment: .bottom) {
-                        LinearGradient(colors: [Color(.systemGroupedBackground), Color(.systemGroupedBackground).opacity(0)],
+                        LinearGradient(colors: [Self.groupedBackground, Self.groupedBackground.opacity(0)],
                                        startPoint: .top, endPoint: .bottom)
                             .frame(height: 16)
                             .offset(y: 16)
@@ -61,7 +65,9 @@ struct ControlStripEditor: View {
         .sensoryFeedback(.selection, trigger: layout)
         .navigationTitle("Customize Controls")
         .modifier(MacSubtitle(name: mac?.name))
+        #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .navigationDestination(isPresented: $showDefaultEditor) { ControlStripEditor() }
     }
 
@@ -80,10 +86,18 @@ struct ControlStripEditor: View {
     private var pinsPreview: Bool {
         #if os(visionOS)
         false
+        #elseif os(macOS)
+        true
         #else
         verticalSizeClass != .compact
         #endif
     }
+
+    #if os(macOS)
+    private static var groupedBackground: Color { Color(nsColor: .windowBackgroundColor) }
+    #else
+    private static var groupedBackground: Color { Color(.systemGroupedBackground) }
+    #endif
 
     /// Gentle and quick, no overshoot to speak of. Reduce Motion swaps the preview with a
     /// crossfade instead of sliding its buttons around (see `preview`).

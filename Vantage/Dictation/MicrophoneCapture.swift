@@ -51,11 +51,13 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
 
     /// Activates a record-capable audio session and starts the tap.
     func start() throws {
+        #if !os(macOS) // macOS has no audio session; the engine talks to the device directly
         let session = AVAudioSession.sharedInstance()
         // playAndRecord (not record) so a later Mac-audio stream can share the session; other
         // apps' audio ducks while the mic is live.
         try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
+        #endif
 
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
@@ -100,7 +102,9 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
             if let tail = analyzerResampler?.finish() { onAnalyzerBuffer(tail) }
             if let tail = uplinkResampler?.finish(), let data = PCM16.data(from: tail) { onUplink(data) }
         }
+        #if !os(macOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     // MARK: Audio thread

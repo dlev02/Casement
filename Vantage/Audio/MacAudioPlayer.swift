@@ -1,3 +1,5 @@
+// Not on the Mac client yet: it is built around AVAudioSession, which macOS doesn't have.
+#if !os(macOS)
 import AVFAudio
 import Foundation
 import Observation
@@ -466,3 +468,4 @@ nonisolated final class NullAudioOutput: @unchecked Sendable {
     }
 }
 #endif
+#endif // !os(macOS)

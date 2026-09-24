@@ -5,8 +5,8 @@ import SwiftUI
 @MainActor
 @Observable
 final class AppLock {
-    #if os(visionOS)
-    /// visionOS sessions live in their own windows and share the list's lock.
+    #if os(visionOS) || os(macOS)
+    /// visionOS and Mac sessions live in their own windows and share the list's lock.
     static let shared = AppLock()
     #endif
 

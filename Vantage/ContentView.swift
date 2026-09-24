@@ -3,7 +3,7 @@ import VantageCore
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
-    #if os(visionOS)
+    #if os(visionOS) || os(macOS)
     // Sessions open in windows of their own, so the list and every session share one store and lock.
     @State private var store = DeviceStore.shared
     @State private var reachability = TailscaleReachability()
@@ -47,7 +47,7 @@ struct ContentView: View {
         .background(LockCurtain(lock: lock, appearance: appearance))
         #endif
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
-        #if os(visionOS)
+        #if os(visionOS) || os(macOS)
         .onChange(of: selectedDevice) { _, device in
             guard let device else { return }
             openWindow(id: SessionWindow.sceneID, value: device.id)
@@ -99,6 +99,8 @@ struct ContentView: View {
             case .background:
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes
+                #elseif os(macOS)
+                break // the Mac locks on screen lock and sleep, not when a window goes to the background
                 #else
                 lock.lockIfNeeded()
                 TransferBackgroundActivity.shared.appDidEnterBackground()
@@ -150,7 +152,7 @@ struct ContentView: View {
     /// other request.
     private func openSessionForSharedFiles() {
         guard !sharedFiles.pending.isEmpty, !lock.isLocked else { return }
-        #if !os(visionOS)
+        #if os(iOS)
         guard selectedDevice == nil else { return } // the open session takes them
         #endif
         let recent = store.devices.max { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) }
@@ -186,8 +188,8 @@ struct ContentView: View {
     #endif
 }
 
-#if os(visionOS)
-/// visionOS opens each Mac in a window of its own, which the session shapes to the Mac's display.
+#if os(visionOS) || os(macOS)
+/// visionOS and the Mac open each Mac in a window of its own, which the session shapes to the Mac's display.
 struct SessionWindow: View {
     static let sceneID = "session"
     let deviceID: UUID?

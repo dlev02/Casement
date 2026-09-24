@@ -10,7 +10,7 @@ groups). Read this before working here.
 | Target | Path | Product |
 | --- | --- | --- |
 | `VantageHost` | `VantageHost/` | macOS 26+ menu-bar app (LSUIElement), unsandboxed, Developer ID intended |
-| `Vantage` | `Vantage/` | iPadOS/iOS 26+ client (universal), also native visionOS 26+ |
+| `Vantage` | `Vantage/` | iPadOS/iOS 26+ client (universal), also native visionOS 26+ and macOS 26+ (`SDKROOT = auto`; sandbox entitlements from `ENABLE_*[sdk=macosx*]` build settings) |
 | `VantageCore` | `Packages/VantageCore/` | Local SPM package shared by both: wire protocol, transport, identity |
 | `VantageWidgets` | `VantageWidgets/` | iOS widget extension (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
 | — | `Shared/` | Synced folder compiled into both `Vantage` and `VantageWidgets`: `DeviceCatalog`, `MacEntity`, widget views |
@@ -499,9 +499,12 @@ xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generi
 
 # Client (visionOS Simulator; test on the "Vantage Vision Pro" simulator)
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=visionOS Simulator' -derivedDataPath .deriveddata
+
+# Client (macOS; same target, sandboxed, one window per session; the session view is still a stub)
+xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platform=macOS' -derivedDataPath .deriveddata
 ```
 
-Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites and both builds.
+Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites, the host build, and the iOS and macOS client builds.
 
 ## Running for real
 

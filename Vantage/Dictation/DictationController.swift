@@ -2,7 +2,9 @@ import AVFAudio
 import Foundation
 import Observation
 import Speech
+#if canImport(UIKit)
 import UIKit
+#endif
 import VantageCore
 import os
 
@@ -353,7 +355,7 @@ final class DictationController {
         observeInterruptions()
         startedAt = .now
         phase = .listening
-        #if !os(visionOS)
+        #if os(iOS)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
     }
@@ -377,7 +379,7 @@ final class DictationController {
         // still sounding.
         phase = .transcribing
         level = 0
-        #if !os(visionOS)
+        #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         if capture != nil { try? await Task.sleep(for: Self.captureTail) }
@@ -534,6 +536,7 @@ final class DictationController {
 
     /// A phone call or Siri takes the mic: stop and keep what was heard.
     private func observeInterruptions() {
+        #if !os(macOS)
         guard interruptionObserver == nil else { return }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -541,6 +544,7 @@ final class DictationController {
                 self.stop(then: .review)
             }
         }
+        #endif
     }
 
     private func stopObservingInterruptions() {
