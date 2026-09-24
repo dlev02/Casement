@@ -74,6 +74,16 @@ public sealed record HostListenerOptions
     /// <summary><c>--pairing-code N</c>: a fixed code that never expires (DEBUG). Shown at start.</summary>
     public string? FixedPairingCode { get; init; }
 
+    /// <summary>
+    /// With a <see cref="FixedPairingCode"/>: show it again this long after it was used or burned
+    /// (DEBUG <c>--pairing-code-rearm S</c>, so a test run can burn the code and still pair). Null
+    /// (the default) keeps the Mac's rule: a fixed code works until one pairing uses it up.
+    /// </summary>
+    public TimeSpan? RearmFixedPairingCodeAfter { get; init; }
+
+    /// <summary>How long a send cut off by a lost connection waits for the same device to reattach and resume it.</summary>
+    public TimeSpan InterruptedSendResumeWindow { get; init; } = TimeSpan.FromHours(1);
+
     /// <summary>Limit for the whole handshake (first message through <c>authenticate</c>).</summary>
     public TimeSpan HandshakeTimeout { get; init; } = TimeSpan.FromSeconds(15);
 

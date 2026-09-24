@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vantage.Protocol.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -35,16 +35,32 @@ host (`VantageHost/`), written in C# on .NET 10 LTS. The byte-level contract is
 
 ## On the Mac
 
-The .NET 10 SDK lives in `~/.dotnet` and isn't on `PATH`:
+The .NET 10 SDK lives in `~/.dotnet` and isn't on `PATH`. Always opt out of the SDK's telemetry
+(`DOTNET_CLI_TELEMETRY_OPTOUT=1`; the test runner honours it too), on the PC as well:
 
 ```sh
-export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH
+export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1
 cd WindowsHost
 dotnet build Vantage.Windows.slnx
 dotnet test --solution Vantage.Windows.slnx
 ```
 
 Never run anything on port 47820 on the Mac (the real Mac host); test hosts use 47821 and up.
+
+The synthetic host runs the real session logic with a looping clip, so the iPad app, the Swift
+tests and the simulator can talk to it:
+
+```sh
+dotnet src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --port 47862 --pairing-code 246810 \
+  [--pairing-code-rearm 3] [--display-asleep] [--capture-fails-for 6] [--send-file-on-connect PATH] \
+  [--receive-folder PATH] [--input-log PATH.jsonl] [--clipboard-text TEXT] [--platform windows|macos] \
+  [--state-dir PATH] [--exit-after S] [--log-input-events]
+xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47862 -VantagePairingCode 246810
+```
+
+A fixed `--pairing-code` is used up by one pairing (as on the Mac); `--pairing-code-rearm S` shows
+it again S seconds later. The Swift side of the proof (golden vectors, `WindowsHostInteropTests`,
+`LiveHostFilesTests`, `SessionUITests`) is described in the repo's `CLAUDE.md`, "Windows host".
 
 ## On the PC (drew-pc)
 
@@ -64,7 +80,7 @@ The remote loop from the Mac:
 # push
 tar -czf - WindowsHost | ssh you@100.64.0.20 "tar -xzf - -C C:/src/vantage"
 # build
-ssh you@100.64.0.20 "cd C:/src/vantage/WindowsHost; dotnet build -c Debug"
+ssh you@100.64.0.20 "$env:DOTNET_CLI_TELEMETRY_OPTOUT=1; cd C:/src/vantage/WindowsHost; dotnet build -c Debug"
 ```
 
 Run the host in Drew's **interactive** session, not the SSH one (an SSH process can't see the
