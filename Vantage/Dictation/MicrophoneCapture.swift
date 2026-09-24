@@ -15,7 +15,7 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .noInput: "This iPad has no microphone input available."
+            case .noInput: "This \(LocalDevice.noun) has no microphone input available."
             case .converterUnavailable: "Vantage couldn't read the microphone's audio format."
             }
         }
@@ -25,7 +25,8 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
     static var uplinkFormat: AVAudioFormat { PCM16.format }
 
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "dictation")
-    private let engine = AVAudioEngine()
+    /// Posts `AVAudioEngineConfigurationChange` on the Mac when the input device changes.
+    let engine = AVAudioEngine()
     private let analyzerFormat: AVAudioFormat?
     private let wantsUplink: Bool
     private let onAnalyzerBuffer: @Sendable (AVAudioPCMBuffer) -> Void

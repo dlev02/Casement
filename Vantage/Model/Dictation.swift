@@ -4,11 +4,12 @@ import VantageCore
 /// Where dictated speech is turned into text (Settings → Controls).
 nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
     /// MacWhisper on the Mac when the host offers it, then the host's built-in Parakeet;
-    /// otherwise this iPad.
+    /// otherwise this device.
     case mac
-    /// Vantage Host's optional built-in Parakeet model, then MacWhisper; otherwise this iPad.
+    /// Vantage Host's optional built-in Parakeet model, then MacWhisper; otherwise this device.
     case parakeet
-    /// Apple's on-device speech model on this iPad. Works offline and when the Mac is busy.
+    /// Apple's on-device speech model on this device (the case keeps its name on the Mac client).
+    /// Works offline and when the Mac is busy.
     case iPad
     var id: String { rawValue }
 
@@ -16,7 +17,7 @@ nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
         switch self {
         case .mac: "On the Mac (MacWhisper)"
         case .parakeet: "On the Mac (Parakeet)"
-        case .iPad: "On this iPad"
+        case .iPad: "On \(LocalDevice.this)"
         }
     }
 
@@ -31,6 +32,7 @@ nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
 
 /// The engine one dictation actually uses.
 nonisolated enum DictationRoute: Equatable {
+    /// This device (iPad, or the Mac the client runs on).
     case iPad
     /// Stream audio to the host, which transcribes it with this engine.
     case mac(DictationEngineID)
@@ -51,7 +53,11 @@ nonisolated enum DictationRoute: Equatable {
 
     var label: String {
         switch self {
+        #if os(macOS)
+        case .iPad: "This Mac" // "On Mac" names the remote Mac's engine
+        #else
         case .iPad: "On iPad"
+        #endif
         case .mac(let engine): Self.label(for: engine)
         }
     }
@@ -68,7 +74,7 @@ nonisolated enum DictationRoute: Equatable {
 
     var symbol: String {
         switch self {
-        case .iPad: "ipad.landscape"
+        case .iPad: LocalDevice.symbol
         case .mac: "macbook"
         }
     }

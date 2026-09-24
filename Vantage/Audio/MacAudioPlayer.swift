@@ -1,5 +1,3 @@
-// Not on the Mac client yet: it is built around AVAudioSession, which macOS doesn't have.
-#if !os(macOS)
 import AVFAudio
 import Foundation
 import Observation
@@ -16,6 +14,11 @@ import os
 /// category to `.playAndRecord`, output stops (the iPad's speaker would otherwise feed the Mac's
 /// sound into the transcript), and once the microphone has let the session go this takes it back.
 /// No background audio mode: playback ends with the session when the app leaves the foreground.
+///
+/// macOS has no audio session: the engine plays straight to the output device, and an output
+/// device change arrives as `AVAudioEngineConfigurationChange` (the engine stops; this restarts
+/// it). Output still pauses while dictation's microphone is open, so the speakers don't feed the
+/// Mac's sound into the transcript.
 @MainActor
 @Observable
 final class MacAudioPlayer {
@@ -26,7 +29,7 @@ final class MacAudioPlayer {
         case playing
         /// Dictation has the audio session.
         case paused
-        /// The host (or this iPad) can't play audio right now; the text says why.
+        /// The host (or this device) can't play audio right now; the text says why.
         case unavailable(String)
     }
 
@@ -170,7 +173,7 @@ final class MacAudioPlayer {
             nullOutput = NullAudioOutput(buffer: pipeline.buffer)
             status = .playing
             #else
-            status = .unavailable("This iPad couldn't start playing the Mac's sound.")
+            status = .unavailable("This \(LocalDevice.noun) couldn't start playing the Mac's sound.")
             #endif
         }
     }
@@ -201,6 +204,7 @@ final class MacAudioPlayer {
     private func observeSession() {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
+        #if !os(macOS)
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init(rawValue:))
             let options = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
@@ -210,11 +214,13 @@ final class MacAudioPlayer {
             let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
             MainActor.assumeIsolated { self?.handleRouteChange(reason) }
         })
+        #endif
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
             let changed = note.object as? AVAudioEngine
             MainActor.assumeIsolated {
                 guard let self, let engine = self.engine, changed === engine else { return }
-                // The hardware format changed under the engine (a new route); it has stopped.
+                // The hardware format changed under the engine (a new route or, on the Mac, a
+                // new output device); it has stopped.
                 self.log.info("Mac audio: engine configuration changed; restarting")
                 self.stopOutput(releaseSession: false)
                 self.startOutput()
@@ -227,6 +233,7 @@ final class MacAudioPlayer {
         observers.removeAll()
     }
 
+    #if !os(macOS)
     private func handleInterruption(began: Bool, shouldResume: Bool) {
         // Dictation's own session changes aren't interruptions of ours to handle.
         guard !microphoneActive else { return }
@@ -253,6 +260,7 @@ final class MacAudioPlayer {
             break
         }
     }
+    #endif
 
     // MARK: Stats
 
@@ -270,8 +278,7 @@ final class MacAudioPlayer {
     private func logStats() {
         let stats = pipeline.buffer.stats
         let transit = pipeline.transitSnapshot()
-        let session = AVAudioSession.sharedInstance()
-        let outputMs = (session.outputLatency + session.ioBufferDuration) * 1000
+        let outputMs = AudioOutputSetup.outputLatency(of: engine) * 1000
         log.info("Mac audio stats: packets \(transit.packets, privacy: .public), depth \(Int(stats.milliseconds(stats.depthFrames)), privacy: .public) ms (smoothed \(Int(stats.milliseconds(stats.smoothedDepthFrames)), privacy: .public)), target \(Int(stats.milliseconds(stats.targetFrames)), privacy: .public) ms, underruns \(stats.underruns, privacy: .public), idle gaps \(stats.idleGaps, privacy: .public), drops \(stats.drops, privacy: .public), repeats \(stats.duplicates, privacy: .public), skips \(stats.skips, privacy: .public), start trims \(stats.startTrims, privacy: .public), overflows \(stats.overflows, privacy: .public), frames in/out \(stats.framesPushed, privacy: .public)/\(stats.framesPlayed, privacy: .public), arrival jitter p95 \(String(format: "%.1f", transit.jitterP95Ms), privacy: .public) ms, output \(Int(outputMs), privacy: .public) ms")
         #if DEBUG
         // Host and client share a clock only on loopback (the simulator on the host's Mac).
@@ -316,21 +323,37 @@ nonisolated final class AudioOutputSetup: @unchecked Sendable {
         queue.sync {}
     }
 
-    /// Lets other apps' audio resume, after anything already queued.
+    /// Lets other apps' audio resume, after anything already queued. Nothing to do on the Mac.
     func deactivateSession() {
+        #if !os(macOS)
         queue.async {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
+        #endif
+    }
+
+    /// Seconds from the engine's output to the speaker: the session's output latency plus its IO
+    /// buffer on iOS; the output node's presentation latency (device, safety offset and buffer)
+    /// on the Mac.
+    static func outputLatency(of engine: AVAudioEngine?) -> Double {
+        #if os(macOS)
+        return engine?.outputNode.presentationLatency ?? 0
+        #else
+        let session = AVAudioSession.sharedInstance()
+        return session.outputLatency + session.ioBufferDuration
+        #endif
     }
 
     private static func run(buffer: AudioJitterBuffer) -> Result {
-        let session = AVAudioSession.sharedInstance()
         var step = "session"
         var engine: AVAudioEngine?
         do {
+            #if !os(macOS)
+            let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try? session.setPreferredIOBufferDuration(0.005)
             try session.setActive(true)
+            #endif
             step = "engine"
             let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
             let started = AVAudioEngine()
@@ -342,7 +365,11 @@ nonisolated final class AudioOutputSetup: @unchecked Sendable {
             buffer.reset()
             step = "start"
             try started.start()
+            #if os(macOS)
+            let details = "output latency \(Int(outputLatency(of: started) * 1000)) ms, \(Int(started.outputNode.outputFormat(forBus: 0).sampleRate)) Hz device"
+            #else
             let details = "IO buffer \(Int(session.ioBufferDuration * 1000)) ms, output latency \(Int(session.outputLatency * 1000)) ms, route \(session.currentRoute.outputs.first?.portType.rawValue ?? "none")"
+            #endif
             return .running(started, details: details)
         } catch {
             engine?.stop()
@@ -468,4 +495,3 @@ nonisolated final class NullAudioOutput: @unchecked Sendable {
     }
 }
 #endif
-#endif // !os(macOS)

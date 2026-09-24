@@ -8,7 +8,7 @@ import UIKit
 import VantageCore
 import os
 
-/// One dictation at a time for a session: records the mic, transcribes on the iPad or streams
+/// One dictation at a time for a session: records the mic, transcribes on this device or streams
 /// the audio to the Mac (MacWhisper or the host's built-in Parakeet), and holds the text for
 /// review until Send or Cancel.
 ///
@@ -32,8 +32,28 @@ final class DictationController {
     struct Failure: Equatable {
         var title: String
         var message: String
-        /// Offer a button to the app's page in Settings (a permission was denied).
-        var opensSettings = false
+        /// Offer a button to this privacy setting (a permission was denied).
+        var settings: PrivacySetting?
+
+        var opensSettings: Bool { settings != nil }
+    }
+
+    /// The permission a failure's Open Settings button leads to.
+    enum PrivacySetting: Equatable {
+        case microphone
+        case speechRecognition
+
+        /// iOS has one page per app; the Mac's System Settings has one pane per permission.
+        var url: URL? {
+            #if os(macOS)
+            let anchor = self == .microphone ? "Privacy_Microphone" : "Privacy_SpeechRecognition"
+            return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")
+            #elseif canImport(UIKit)
+            return URL(string: UIApplication.openSettingsURLString)
+            #else
+            return nil
+            #endif
+        }
     }
 
     /// What to do once listening stops and the final text is known.
@@ -191,7 +211,7 @@ final class DictationController {
                 reset(keepingPhase: false)
                 phase = .failed(Failure(title: "Connection Lost",
                                         message: preview.isEmpty ? "The connection to the Mac dropped before it could transcribe the recording." :
-                                            "The connection to the Mac dropped before \(route.label) finished. The on-iPad preview is below."))
+                                            "The connection to the Mac dropped before \(route.label) finished. The on-\(LocalDevice.noun) preview is below."))
                 if !preview.isEmpty { text = preview }
             } else {
                 stop(then: .review)
@@ -267,7 +287,7 @@ final class DictationController {
     /// Startup timing, measured from the tap (no transcript content).
     private func logStage(_ stage: String) {
         let route = switch route {
-        case .iPad: "iPad"
+        case .iPad: LocalDevice.noun
         case .mac(let engine): engine.rawValue
         }
         log.info("dictation start (\(route, privacy: .public)): \(stage, privacy: .public) after \(LiveTranscriber.milliseconds(since: self.requestedAt), privacy: .public) ms")
@@ -283,7 +303,7 @@ final class DictationController {
             do {
                 transcriber = try await LiveTranscriber.make(allowDownload: false) { _ in }
             } catch {
-                // No model on this iPad (or not now): record without a preview.
+                // No model on this device (or not now): record without a preview.
                 self?.dropPreview(attempt: attempt)
                 return
             }
@@ -352,7 +372,7 @@ final class DictationController {
         }
         self.capture = capture
         logStage("microphone started")
-        observeInterruptions()
+        observeInterruptions(of: capture)
         startedAt = .now
         phase = .listening
     }
@@ -437,9 +457,9 @@ final class DictationController {
     private func fail(_ failure: LiveTranscriber.Failure) {
         switch failure {
         case .unsupportedLocale(let name):
-            fail(Failure(title: "Language Not Supported", message: "Dictation on this iPad doesn't support \(name). Choose On the Mac (MacWhisper) in Settings → Controls to transcribe on your Mac."))
+            fail(Failure(title: "Language Not Supported", message: "Dictation on \(LocalDevice.this) doesn't support \(name). Choose On the Mac (MacWhisper) in Settings → Controls to transcribe on your Mac."))
         case .assetsUnavailable, .needsDownload:
-            fail(Failure(title: "Speech Model Unavailable", message: "This iPad couldn't get the speech model. Check your internet connection and try again, or transcribe on the Mac."))
+            fail(Failure(title: "Speech Model Unavailable", message: "This \(LocalDevice.noun) couldn't get the speech model. Check your internet connection and try again, or transcribe on the Mac."))
         }
     }
 
@@ -502,7 +522,7 @@ final class DictationController {
             break
         }
         fail(Failure(title: "Microphone Access Is Off",
-                     message: "Allow Vantage to use the microphone in Settings to dictate to your Mac.", opensSettings: true))
+                     message: "Allow Vantage to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
         return false
     }
 
@@ -511,8 +531,8 @@ final class DictationController {
         if status == .notDetermined { status = await Self.requestSpeechAuthorization() }
         guard status == .authorized else {
             fail(Failure(title: "Speech Recognition Is Off",
-                         message: "Allow Speech Recognition for Vantage in Settings, or choose On the Mac (MacWhisper) in Settings → Controls.",
-                         opensSettings: true))
+                         message: "Allow Speech Recognition for Vantage in \(LocalDevice.settingsApp), or choose On the Mac (MacWhisper) in Settings → Controls.",
+                         settings: .speechRecognition))
             return false
         }
         return true
@@ -528,17 +548,25 @@ final class DictationController {
 
     // MARK: Interruptions
 
-    /// A phone call or Siri takes the mic: stop and keep what was heard.
-    private func observeInterruptions() {
-        #if !os(macOS)
+    /// A phone call or Siri takes the mic (iOS), or the Mac's input device changes under the
+    /// engine, which stops it (macOS has no audio session to interrupt): stop and keep what was
+    /// heard.
+    private func observeInterruptions(of capture: MicrophoneCapture) {
         guard interruptionObserver == nil else { return }
-        interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
+        #if os(macOS)
+        let name = Notification.Name.AVAudioEngineConfigurationChange
+        let object: AnyObject? = capture.engine
+        #else
+        let name = AVAudioSession.interruptionNotification
+        let object: AnyObject? = nil
+        #endif
+        interruptionObserver = NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.phase == .listening else { return }
+                self.log.info("dictation interrupted; stopping with what was heard")
                 self.stop(then: .review)
             }
         }
-        #endif
     }
 
     private func stopObservingInterruptions() {
@@ -594,7 +622,7 @@ final class DictationController {
             phase = .review
         case "failed":
             phase = .failed(Failure(title: "Microphone Access Is Off",
-                                    message: "Allow Vantage to use the microphone in Settings to dictate to your Mac.", opensSettings: true))
+                                    message: "Allow Vantage to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
         case "download":
             transcript = DictationTranscript()
             phase = .preparing(progress: 0.42)
