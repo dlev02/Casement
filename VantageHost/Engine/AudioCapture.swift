@@ -10,8 +10,10 @@ import os
 /// switches and viewport changes, and audio shouldn't drop out each time. Audio follows the
 /// filter's applications, not its pixels, so a main-display filter hears every app. The video
 /// half is a 2×2 picture once a second, received by a no-op `.screen` output (without one, SCK
-/// logs "stream output NOT found" for every frame). Vantage Host's own sounds are excluded. Rides
-/// on the Screen Recording grant; there is no separate audio prompt.
+/// logs "stream output NOT found" for every frame). Vantage Host's own sounds are excluded, and so
+/// is the Vantage client when it runs on this Mac (connected to itself, its speakers would play
+/// the Mac's sound back into the capture: an echo that feeds on itself). Rides on the Screen
+/// Recording grant; there is no separate audio prompt.
 nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "audio")
     private let audioQueue = DispatchQueue(label: "vantage.audio.capture", qos: .userInteractive)
@@ -22,6 +24,9 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
     private var onStop: (@Sendable (String) -> Void)?
     private var loggedFormat = false
     private var stream: SCStream?
+
+    /// The Vantage client app, left out of the capture if it runs here.
+    static let clientBundleID = "com.benjaminlevinson.vantage"
 
     override init() {}
 
@@ -34,7 +39,8 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
         guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
             throw CaptureError.displayNotFound
         }
-        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        let client = content.applications.filter { $0.bundleIdentifier == Self.clientBundleID }
+        let filter = SCContentFilter(display: display, excludingApplications: client, exceptingWindows: [])
         let config = SCStreamConfiguration()
         config.capturesAudio = true
         config.sampleRate = AudioBlock.sampleRate
