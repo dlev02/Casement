@@ -355,9 +355,6 @@ final class DictationController {
         observeInterruptions()
         startedAt = .now
         phase = .listening
-        #if os(iOS)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        #endif
     }
 
     private func upload(_ samples: Data) {
@@ -379,9 +376,6 @@ final class DictationController {
         // still sounding.
         phase = .transcribing
         level = 0
-        #if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
         if capture != nil { try? await Task.sleep(for: Self.captureTail) }
         guard attempt == self.attempt else { return } // Cancelled during the tail.
         // Stopping flushes the resamplers, so every captured sample has been handed out after this.
