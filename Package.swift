@@ -37,6 +37,11 @@ let package = Package(
         .target(name: "VantageHostFiles", path: "VantageHost/Transfer",
                 exclude: ["FileArrivals.swift", "HostFileStore.swift", "HostNotifications.swift", "HostTransfer.swift"],
                 sources: ["FileArrival.swift"], swiftSettings: [.defaultIsolation(MainActor.self)]),
-        .testTarget(name: "HostFileArrivalTests", dependencies: ["VantageHostFiles"], path: "Tests/HostFileArrivalTests")
+        .testTarget(name: "HostFileArrivalTests", dependencies: ["VantageHostFiles"], path: "Tests/HostFileArrivalTests"),
+        // The host's pasteboard bridge (change polling, applying the client's clipboard).
+        .target(name: "VantageHostClipboard", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
+                path: "VantageHost/System", sources: ["ClipboardBridge.swift"]),
+        .testTarget(name: "HostClipboardTests", dependencies: ["VantageHostClipboard", .product(name: "VantageCore", package: "VantageCore")],
+                    path: "Tests/HostClipboardTests")
     ]
 )
