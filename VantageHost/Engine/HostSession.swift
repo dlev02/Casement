@@ -263,6 +263,9 @@ actor HostSession {
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
         if !HostOptions.shared.syntheticCapture { injector = InputInjector(displayFrame: frame) }
+        #if DEBUG
+        InputEventLog.startIfRequested()
+        #endif
 
         let capture: any FrameSource = HostOptions.shared.syntheticCapture
             ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)

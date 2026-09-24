@@ -15,6 +15,8 @@ import Foundation
 /// - `--appearance light|dark`: force the host's own windows into one appearance (screenshots).
 /// - `--open-menu`: show the menu bar popover's content in a window too (screenshots when the
 ///   menu bar is too crowded to show the item).
+/// - `--log-input-events`: log the key events reaching the session (`InputEventLog`).
+/// - `--exit-after 300`: quit after that many seconds, so a test host never outlives its run.
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -35,6 +37,10 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let appearance: String?
     /// Also host the menu's content in a window at launch (DEBUG only).
     let openMenu: Bool
+    /// Log key events with their flags through a listen-only tap (DEBUG only).
+    let logInputEvents: Bool
+    /// Quit this long after launch (DEBUG only).
+    let exitAfterSeconds: Double?
 
     private init() {
         #if DEBUG
@@ -75,6 +81,13 @@ nonisolated final class HostOptions: @unchecked Sendable {
             appearance = nil
         }
         openMenu = args.contains("--open-menu")
+        logInputEvents = args.contains("--log-input-events")
+        if let index = args.firstIndex(of: "--exit-after"), index + 1 < args.count,
+           let seconds = Double(args[index + 1]), seconds > 0 {
+            exitAfterSeconds = seconds
+        } else {
+            exitAfterSeconds = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -86,6 +99,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
         previewArrival = []
         appearance = nil
         openMenu = false
+        logInputEvents = false
+        exitAfterSeconds = nil
         #endif
     }
 }

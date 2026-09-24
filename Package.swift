@@ -11,7 +11,7 @@ let package = Package(
                 path: "Vantage", exclude: ["Assets.xcassets", "ContentView.swift", "VantageApp.swift", "UI", "Video",
                     "Input/RemoteInteractionView.swift", "Model/ClipboardSync.swift",
                     "Model/DeviceStore.swift", "Net/TailscaleReachability.swift"],
-                sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Dictation/AudioResampler.swift",
+                sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Model/MacShortcut.swift", "Dictation/AudioResampler.swift",
                     "Audio/OpusDecoder.swift", "Audio/AudioJitterBuffer.swift", "Transfer/FileTransferController.swift", "Transfer/SharedFileInbox.swift"],
                 swiftSettings: [.defaultIsolation(MainActor.self)]),
         .target(name: "VantageSynthetic", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
@@ -23,8 +23,13 @@ let package = Package(
         // Host dictation (clip buffering, WAV, MacWhisper `mw` and SpeechAnalyzer runners).
         .target(name: "VantageHostDictation", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Dictation"),
+        // Host keyboard sequencing: the events the injector posts for each key and chord.
+        .target(name: "VantageHostInput", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
+                path: "VantageHost/Input", sources: ["KeyboardSequencer.swift"]),
         .testTarget(name: "ClientSessionTests", dependencies: ["VantageClientLogic", "VantageSynthetic", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/ClientSessionTests"),
+        .testTarget(name: "HostInputTests", dependencies: ["VantageHostInput", .product(name: "VantageCore", package: "VantageCore")],
+                    path: "Tests/HostInputTests"),
         .testTarget(name: "HostDictationTests", dependencies: ["VantageHostDictation", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/HostDictationTests"),
         // What the host does when files arrive (settings, batching, auto-open safety, wording).

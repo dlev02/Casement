@@ -687,24 +687,3 @@ private enum StripSlot: Hashable {
         if case .item(let item) = self { item.category } else { .actions }
     }
 }
-
-/// A macOS keyboard shortcut Vantage can send as one tap. These are the system defaults; a Mac
-/// with remapped shortcuts in System Settings → Keyboard will do whatever it was remapped to.
-struct MacShortcut: Identifiable, Hashable {
-    let id: String
-    let label: String
-    let symbol: String
-    let keyCode: UInt16
-    let modifiers: KeyModifiers
-
-    static let spotlight = MacShortcut(id: "spotlight", label: "Spotlight", symbol: "magnifyingglass",
-                                       keyCode: 0x31, modifiers: .command)
-    static let missionControl = MacShortcut(id: "missionControl", label: "Mission Control", symbol: "rectangle.3.group",
-                                            keyCode: 0x7E, modifiers: .control)
-    static let applicationWindows = MacShortcut(id: "appWindows", label: "Application Windows", symbol: "rectangle.on.rectangle",
-                                                keyCode: 0x7D, modifiers: .control)
-    static let showDesktop = MacShortcut(id: "showDesktop", label: "Show Desktop", symbol: "menubar.dock.rectangle",
-                                         keyCode: 0x67, modifiers: [])
-
-    static let menuOrder: [MacShortcut] = [spotlight, missionControl, applicationWindows, showDesktop]
-}

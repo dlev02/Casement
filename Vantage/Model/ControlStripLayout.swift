@@ -82,7 +82,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .upArrow: "↑ key"
         case .downArrow: "↓ key"
         case .rightArrow: "→ key"
-        case .spotlight: "⌘ Space"
+        case .spotlight: "⌘ Space: Spotlight, or whatever you've set there, like Raycast"
         case .missionControl: "⌃ ↑"
         case .applicationWindows: "⌃ ↓"
         case .showDesktop: "F11"

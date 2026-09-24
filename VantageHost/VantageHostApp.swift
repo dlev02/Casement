@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 @main
 struct VantageHostApp: App {
@@ -44,6 +45,12 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         if HostOptions.shared.openSettingsTab != nil { openSettingsWindowForTesting() }
         if !HostOptions.shared.previewArrival.isEmpty { previewArrivalForTesting() }
         if HostOptions.shared.openMenu { openMenuWindowForTesting() }
+        if let seconds = HostOptions.shared.exitAfterSeconds {
+            // A scripted test host quits by itself instead of being left running.
+            Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "controller")
+                .info("--exit-after: quitting in \(seconds, privacy: .public) s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { NSApp.terminate(nil) }
+        }
         #endif
     }
 

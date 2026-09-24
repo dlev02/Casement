@@ -17,7 +17,7 @@ import Testing
         for item in StripItem.allCases {
             #expect(!item.label.isEmpty && !item.symbol.isEmpty && !item.detail.isEmpty)
         }
-        #expect(StripItem.spotlight.detail == "⌘ Space")
+        #expect(StripItem.spotlight.detail.hasPrefix("⌘ Space") && StripItem.spotlight.detail.contains("Raycast"))
         #expect(StripItem.disconnect.category == .actions)
         #expect(StripItem.macAudio.label == "Mac Audio" && StripItem.macAudio.category == .actions)
         #expect(StripItem.sendFile.label == "Send File" && StripItem.sendFile.symbol == "arrow.up.doc")

@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -18,7 +19,9 @@ nonisolated final class InputInjector: @unchecked Sendable {
     /// Global frame (points) of the display being controlled.
     private var displayFrame: CGRect
     private var heldButtons: Set<PointerButton> = []
-    private var heldKeys: Set<UInt16> = []
+    /// Keys and modifiers held, and how each key goes out.
+    private var keyboard = KeyboardSequencer()
+    /// The keyboard's modifiers, which pointer and scroll events carry too.
     private var currentFlags: CGEventFlags = []
     private var lastPointer: CGPoint = .zero
     private var naturalScroll: Bool
@@ -151,21 +154,28 @@ nonisolated final class InputInjector: @unchecked Sendable {
         queue.async { self.injectKey(event) }
     }
 
+    /// Keys go out the way a Mac keyboard sends them (`KeyboardSequencer`): modifiers as their own
+    /// flagsChanged presses, Fn on arrows and function keys. ⌘Space opens Raycast directly when
+    /// Raycast has taken it over, since Raycast ignores anything but a physical keyboard.
     private func injectKey(_ event: KeyEvent) {
-        // Modifier keys are posted as flagsChanged with cumulative state.
-        if let modifierBit = Self.modifierFlag(forKeyCode: event.keyCode) {
-            if event.isDown { currentFlags.insert(modifierBit) } else { currentFlags.remove(modifierBit) }
-            guard let cgEvent = CGEvent(keyboardEventSource: source, virtualKey: event.keyCode, keyDown: event.isDown) else { return }
-            cgEvent.type = .flagsChanged
-            cgEvent.flags = currentFlags
-            cgEvent.post(tap: tap)
+        if SearchShortcut.isCommandSpace(event, heldFlags: keyboard.modifierFlags), let url = SearchShortcut.launcherURL() {
+            keyboard.consume(event)
+            log.info("⌘Space: opening \(url.absoluteString, privacy: .public)")
+            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             return
         }
-        guard let cgEvent = CGEvent(keyboardEventSource: source, virtualKey: event.keyCode, keyDown: event.isDown) else { return }
-        cgEvent.flags = combinedFlags(with: event.modifiers)
-        if event.isRepeat { cgEvent.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
-        if event.isDown { heldKeys.insert(event.keyCode) } else { heldKeys.remove(event.keyCode) }
-        cgEvent.post(tap: tap)
+        post(keyboard.strokes(for: event))
+    }
+
+    private func post(_ strokes: [KeyboardSequencer.Stroke]) {
+        for stroke in strokes {
+            guard let cgEvent = CGEvent(keyboardEventSource: source, virtualKey: stroke.keyCode, keyDown: stroke.kind == .keyDown) else { continue }
+            if stroke.kind == .flagsChanged { cgEvent.type = .flagsChanged }
+            cgEvent.flags = stroke.flags
+            if stroke.isRepeat { cgEvent.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
+            cgEvent.post(tap: tap)
+        }
+        currentFlags = keyboard.modifierFlags
     }
 
     /// Types a Unicode string (software keyboard / dictation / emoji path), chunked to 16 units.
@@ -198,10 +208,8 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 }
             }
             self.heldButtons.removeAll()
-            for key in self.heldKeys {
-                CGEvent(keyboardEventSource: self.source, virtualKey: key, keyDown: false)?.post(tap: self.tap)
-            }
-            self.heldKeys.removeAll()
+            // Keys first, then each held modifier comes up as its own key.
+            self.post(self.keyboard.releaseAll())
             if !self.currentFlags.isEmpty {
                 self.currentFlags = []
                 if let cgEvent = CGEvent(keyboardEventSource: self.source, virtualKey: 0, keyDown: false) {
@@ -262,18 +270,6 @@ nonisolated final class InputInjector: @unchecked Sendable {
         case .left: .leftMouseDragged
         case .right: .rightMouseDragged
         default: .otherMouseDragged
-        }
-    }
-
-    static func modifierFlag(forKeyCode keyCode: UInt16) -> CGEventFlags? {
-        switch keyCode {
-        case 0x37, 0x36: .maskCommand      // L/R Command
-        case 0x38, 0x3C: .maskShift        // L/R Shift
-        case 0x3B, 0x3E: .maskControl      // L/R Control
-        case 0x3A, 0x3D: .maskAlternate    // L/R Option
-        case 0x39: .maskAlphaShift         // Caps Lock
-        case 0x3F: .maskSecondaryFn        // Fn
-        default: nil
         }
     }
 }

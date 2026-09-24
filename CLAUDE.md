@@ -102,7 +102,22 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   touch mode only governs fingers. Wheel/trackpad scrolling uses two dedicated pan recognizers
   (continuous vs discrete) — never put `allowedScrollTypesMask` back on the movement pan, it turns
   scrolling into pointer motion. Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
-- **Mac shortcuts and password**: `MacShortcut` sends system-default chords (⌘Space, ⌃↑, ⌃↓, F11).
+- **Mac shortcuts and password**: `MacShortcut` (`Vantage/Model/MacShortcut.swift`) sends
+  system-default chords (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
+  (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with
+  the left/right device bit) and come up after the key, and arrow/function/navigation keys carry
+  Fn (arrows and the keypad also the keypad bit). macOS stores its shortcuts with those bits
+  (`com.apple.symbolichotkeys` 32/33 = ⌃↑/⌃↓ with Fn, 0x840000; 36 = F11 with Fn): without them
+  Mission Control, App Exposé and Show Desktop never fired. Never drop the Fn bits; the client
+  also sends `.function` on those shortcuts for older hosts. ⌘Space: Spotlight's hot key and
+  Carbon hot keys (Alfred and co.) answer injected keys, but Raycast only answers a physical
+  keyboard (session tap, HID tap, HID-state source, device bits and human timing all fail; it runs
+  a HID-level tap plus its own IOHID listener), so while Spotlight's shortcut (hot key 64) is off and
+  Raycast is running the host opens `raycast://` instead (`SearchShortcut`). Keys stay on
+  `.cgSessionEventTap`: a HID-tap post buys nothing and runs through every other app's HID tap.
+  `--log-input-events` (DEBUG host) logs each key event reaching the session with its flags
+  (listen-only tap; text keys typed on the Mac itself are logged without a key code). Tests:
+  `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`.
   `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
   Keychain (when-unlocked class); the key button types it plus Return through the host. When
   `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
@@ -347,7 +362,7 @@ Drive the simulator with Axiom's `xcui tap -x -y` (the `--label` matcher does no
 rows here). Host timing is logged as "stream setup took N ms" in the `session` category, and every
 click as "pointer down/up" in the `input` category. Synthetic mode
 disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
-and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward. Client debug
+and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward, or launch it with `--exit-after <seconds>` (DEBUG) so it quits by itself. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
 `log` in Drew's profile).
