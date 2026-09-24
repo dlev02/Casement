@@ -106,12 +106,15 @@ final class ClientSession {
         }
     }
 
-    /// What the Mac shows for this device ("iPad" on iOS, which hides the user's device name).
+    /// What the Mac shows for this device ("iPad" on iOS, which hides the user's device name;
+    /// the computer name from Sharing settings on a Mac).
     static var localDeviceName: String {
         #if canImport(UIKit)
         UIDevice.current.name
+        #elseif os(macOS)
+        MacComputer.name
         #else
-        Host.current().localizedName ?? "iPad"
+        "iPad"
         #endif
     }
 
@@ -386,6 +389,9 @@ final class ClientSession {
             }
         }
     }
+    #elseif os(macOS)
+    /// The Mac's model identifier ("Mac15,6"); `uname` only says "arm64" there.
+    static func hardwareModel() -> String { MacComputer.model }
     #else
     static func hardwareModel() -> String { "iPad" }
     #endif
@@ -393,6 +399,28 @@ final class ClientSession {
 
 #if canImport(UIKit)
 import UIKit
+#endif
+
+#if os(macOS)
+import SystemConfiguration
+
+/// This Mac's name and model, read once. `Host.current().localizedName` can wait on DNS, so it
+/// never runs on the main actor; the computer name comes from configd instead.
+nonisolated enum MacComputer {
+    static let name: String = {
+        let name = SCDynamicStoreCopyComputerName(nil, nil) as String?
+        return name.flatMap { $0.isEmpty ? nil : $0 } ?? "Mac"
+    }()
+
+    static let model: String = {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 1 else { return "Mac" }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 else { return "Mac" }
+        let model = String(decoding: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return model.isEmpty ? "Mac" : model
+    }()
+}
 #endif
 
 enum ClientHandshakeError: Error {
