@@ -1,0 +1,18 @@
+<Solution>
+  <!-- Everything, for building on the PC. The WinUI app's XAML only compiles on Windows, so the Mac
+       builds Vantage.Windows.slnx (the same projects minus the app). -->
+  <Folder Name="/src/">
+    <Project Path="src/Vantage.Protocol/Vantage.Protocol.csproj" />
+    <Project Path="src/Vantage.SyntheticHost/Vantage.SyntheticHost.csproj" />
+    <Project Path="src/Vantage.Host.Windows.Platform/Vantage.Host.Windows.Platform.csproj" />
+    <Project Path="src/Vantage.Host.Windows.Cli/Vantage.Host.Windows.Cli.csproj" />
+    <Project Path="src/Vantage.Host.Windows/Vantage.Host.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vantage.Protocol.Tests/Vantage.Protocol.Tests.csproj" />
+    <Project Path="tests/Vantage.Host.Windows.Tests/Vantage.Host.Windows.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/InputProbe/InputProbe.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Vantage.Host.Windows.App.Pages.FilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
+            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="Files" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Save files from the iPad in" />
+                    <TextBlock x:Name="FolderText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="FolderHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Click="OnChooseFolder" Content="Change…" />
+                        <Button x:Name="ResetButton" Click="OnResetFolder" Content="Use Downloads" />
+                        <Button Click="OnOpenFolder" Content="Open Folder" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <RadioButtons
+                    x:Name="AfterArrivalChoice"
+                    Header="When files arrive"
+                    SelectionChanged="OnAfterArrivalChanged">
+                    <x:String>Do nothing</x:String>
+                    <x:String>Show them in File Explorer</x:String>
+                    <x:String>Open them (documents, pictures and media only)</x:String>
+                </RadioButtons>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <ToggleSwitch
+                    x:Name="NotifySwitch"
+                    Header="Show a notification when files arrive"
+                    Toggled="OnNotifyToggled" />
+            </Border>
+
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Received files are marked as downloaded from the internet, so Windows checks them like any download. A new folder applies from the next connection."
+                TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>
