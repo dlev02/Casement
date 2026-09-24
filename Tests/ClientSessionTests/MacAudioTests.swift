@@ -272,6 +272,34 @@ struct AudioJitterBufferTests {
         #expect(largestStep(left) < 0.05)
     }
 
+    @Test func backlogBeforePlaybackStartsAtTheTargetWithoutASkip() {
+        // 300 ms buffered before anything plays: playback starts `target` behind the newest
+        // audio, fading in from silence, and carries on from there without a jump.
+        let buffer = AudioJitterBuffer()
+        var packet = [Float](repeating: 0, count: 960)
+        func value(_ frame: Int) -> Float { Float(frame) / 100_000 } // a ramp: each sample says where it's from
+        for index in 0..<30 {
+            for frame in 0..<480 {
+                packet[frame * 2] = value(index * 480 + frame)
+                packet[frame * 2 + 1] = value(index * 480 + frame)
+            }
+            packet.withUnsafeBufferPointer { buffer.push($0, channels: 2, captureNanos: UInt64(index) * 10_000_000) }
+        }
+        var left = [Float](repeating: 0, count: 240), right = left
+        buffer.render(left: &left, right: &right, frames: 240)
+        let stats = buffer.stats
+        #expect(stats.isPlaying)
+        #expect(stats.skips == 0)
+        #expect(stats.startTrims == 1)
+        #expect(stats.depthFrames == stats.targetFrames)
+        let first = 14_400 - stats.targetFrames - 240
+        #expect(left[0] < value(first) * 0.01)   // fades in…
+        #expect(left[239] == value(first + 239)) // …from where it starts
+        buffer.render(left: &left, right: &right, frames: 240)
+        #expect(left[0] == value(first + 240))   // and goes straight on
+        #expect(buffer.stats.skips == 0)
+    }
+
     @Test func jitteryNetworkSettlesWithinTheBand() {
         // Packets held back 30 ms every half second: the target grows until they stop underrunning.
         let buffer = AudioJitterBuffer()

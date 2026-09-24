@@ -120,25 +120,33 @@ nonisolated final class SessionUITests: XCTestCase {
 
         let probe = app.otherElements["session.macAudioStats"]
         XCTAssertTrue(probe.waitForExistence(timeout: 5), app.debugDescription)
-        func stat(_ name: String) -> Int {
-            let words = probe.label.split(separator: " ")
-            guard let index = words.firstIndex(of: Substring(name)), index + 1 < words.count else { return -1 }
-            return Int(words[index + 1]) ?? -1
+        // Every query snapshots the app on its main thread, which the audio packets pass through,
+        // so read the probe once per check and take every number from that one reading.
+        func stats(_ label: String) -> [String: Int] {
+            let words = label.split(separator: " ")
+            return Dictionary(stride(from: 0, to: words.count - 1, by: 2).compactMap { index in
+                Int(words[index + 1]).map { (String(words[index]), $0) }
+            }, uniquingKeysWith: { _, last in last })
         }
         let playing = expectation(for: NSPredicate(format: "label BEGINSWITH %@", "playing 1"), evaluatedWith: probe)
         wait(for: [playing], timeout: 10)
-        let pushedAtStart = stat("pushed")
+        let atStart = stats(probe.label)
         // Twelve seconds: six chimes, and one of the player's 10 s stats lines in the log.
         Thread.sleep(forTimeInterval: 12)
+        let label = probe.label
+        let end = stats(label)
         screenshot("Strip with Mac Audio on", app)
-        let pushed = stat("pushed"), played = stat("played")
-        print("mac audio probe: \(probe.label)")
-        XCTAssertGreaterThan(pushed - pushedAtStart, 48_000 * 10, "about 12 s of audio should have arrived")
-        XCTAssertGreaterThan(played, 48_000 * 10)
-        XCTAssertLessThanOrEqual(stat("underruns"), 1, probe.label)
-        XCTAssertEqual(stat("skips"), 0, probe.label)
-        let depth = stat("depth"), target = stat("target")
-        XCTAssertTrue((20...120).contains(depth) && (40...80).contains(target), probe.label)
+        print("mac audio probe: \(label)")
+        XCTAssertGreaterThan(end["pushed", default: 0] - atStart["pushed", default: 0], 48_000 * 10,
+                             "about 12 s of audio should have arrived")
+        XCTAssertGreaterThan(end["played", default: 0], 48_000 * 10, label)
+        XCTAssertLessThanOrEqual(end["underruns", default: -1], 1, label)
+        // Playback starts at the target with a fade-in; cutting back a burst once playing is audible.
+        XCTAssertEqual(end["skips", default: -1], 0, label)
+        // The latency the buffer steers by, not the instantaneous depth, which moves a packet at a
+        // time and dips whenever the main thread is busy.
+        XCTAssertTrue((20...120).contains(end["latency", default: -1]), label)
+        XCTAssertTrue((40...80).contains(end["target", default: -1]), label)
 
         toggle.tap()
         wait(for: [expectation(for: NSPredicate(format: "value == %@", "Off"), evaluatedWith: toggle)], timeout: 3)

@@ -476,7 +476,7 @@ struct RemoteSessionScreen: View {
                     .frame(width: 1, height: 1)
                     .accessibilityElement()
                     .accessibilityIdentifier("session.macAudioStats")
-                    .accessibilityLabel("playing \(macAudio.status == .playing ? 1 : 0) pushed \(String(stats.framesPushed)) played \(String(stats.framesPlayed)) depth \(Int(stats.milliseconds(stats.depthFrames))) target \(Int(stats.milliseconds(stats.targetFrames))) underruns \(stats.underruns) skips \(stats.skips)")
+                    .accessibilityLabel("playing \(macAudio.status == .playing ? 1 : 0) pushed \(String(stats.framesPushed)) played \(String(stats.framesPlayed)) depth \(Int(stats.milliseconds(stats.depthFrames))) latency \(Int(stats.milliseconds(stats.smoothedDepthFrames))) target \(Int(stats.milliseconds(stats.targetFrames))) underruns \(stats.underruns) skips \(stats.skips) trims \(stats.startTrims)")
             }
             .allowsHitTesting(false)
         }

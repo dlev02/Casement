@@ -266,15 +266,22 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (re-asks on every reconnect) → `MacAudioPlayer` (decode queue → `AudioJitterBuffer`, a lock-free
   SPSC ring pulled by an `AVAudioSourceNode`; target 40–80 ms, +10 ms per late underrun, −4 ms per
   10 s clean; a host pause (timeline jump) isn't counted; one-frame stretch/squeeze outside target
-  ±15 ms; bursts > target+90 ms cut back with a crossfade; fades on dry-out). `.playback` +
+  ±15 ms; bursts > target+90 ms cut back with a crossfade (a skip); a backlog that size found
+  before playback starts begins at the target instead (`startTrims`); fades on dry-out). `.playback` +
   `.mixWithOthers`; `DictationController.onMicrophoneActive` pauses output before the mic takes
-  `.playAndRecord` and resumes after it lets go. Per Mac: `SavedDevice.playMacAudio`
+  `.playAndRecord` and resumes after it lets go. `AudioOutputSetup` activates (and deactivates) the
+  session and starts the engine on its own queue; never move that back onto the main actor: every packet
+  reaches the player through it, so the 100–200 ms start queued the Mac's first audio into a
+  burst that landed just after playback began and was cut back with an audible skip. A stop
+  during a start, and the mic taking over, wait for that queue, so the session never changes
+  under the mic. Per Mac: `SavedDevice.playMacAudio`
   (`DeviceStore.setPlayMacAudio`); strip item `macAudio` + session-menu toggle; a failure shows
   `MacAudioNotice` and the toggle retries. `ControlStripLayout.upgradeSavedLayouts` moves layouts
   saved as an older standard (the editor saves the full list even on Reset) to the new one once;
   add to `standardHistory` whenever the standard gains a control. Stats log every 10 s (`audio`
   category, both sides). Debug: `-VantageMacAudio 1|0` overrides the saved choice and adds an
-  invisible `session.macAudioStats` element for `SessionUITests.testMacAudioToggleStreamsTheMacsSound`;
+  invisible `session.macAudioStats` element (`latency` is the smoothed depth the buffer steers
+  by) for `SessionUITests.testMacAudioToggleStreamsTheMacsSound`;
   the synthetic host streams a −18 dBFS two-note chime (`SyntheticAudioSource`). Some simulators
   can't reach CoreAudio ("there is no system object", engine start −10851); DEBUG simulator builds
   then play into `NullAudioOutput` so the rest of the path still runs. Out of scope on purpose:

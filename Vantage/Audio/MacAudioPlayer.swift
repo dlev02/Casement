@@ -32,7 +32,12 @@ final class MacAudioPlayer {
 
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "audio")
     @ObservationIgnored private let pipeline = MacAudioPipeline()
+    @ObservationIgnored private let setup = AudioOutputSetup()
     @ObservationIgnored private var engine: AVAudioEngine?
+    /// A start is running on `setup` and hasn't come back yet.
+    @ObservationIgnored private var isStartingOutput = false
+    /// Bumped by every start and every stop, so a start that comes back after a stop is ignored.
+    @ObservationIgnored private var outputAttempt = 0
     #if DEBUG && targetEnvironment(simulator)
     /// Some simulators can't reach an audio device at all (CoreAudio: "there is no system
     /// object"); this pulls from the buffer on a timer instead, so the rest of the path can
@@ -90,10 +95,11 @@ final class MacAudioPlayer {
         guard active != microphoneActive else { return }
         microphoneActive = active
         if active {
-            if isOutputRunning {
+            if isOutputRunning || isStartingOutput {
                 stopOutput(releaseSession: false) // the microphone is about to reconfigure it
                 status = .paused
             }
+            setup.finishPending() // nothing of ours may change the session once the microphone has it
         } else if status == .paused {
             startOutput()
         }
@@ -127,37 +133,40 @@ final class MacAudioPlayer {
 
     // MARK: Output
 
+    /// Activating the audio session and starting the engine take 100–200 ms, so they run on
+    /// `setup`'s queue rather than here. Every message reaches the player through the main
+    /// actor, and while a start held it up the Mac's first audio queued behind it, then landed
+    /// in one burst just after playback began and had to be cut back: a skip you could hear, and
+    /// the session's picture froze meanwhile. Packets that arrive before the engine runs are
+    /// decoded but not buffered, so buffering starts with audio arriving as it plays.
     private func startOutput() {
-        guard wanted, !microphoneActive, !interrupted, !isOutputRunning, pipeline.isConfigured else { return }
-        let session = AVAudioSession.sharedInstance()
-        var step = "session"
-        do {
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setPreferredIOBufferDuration(0.005)
-            try session.setActive(true)
-            step = "engine"
-            let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
-            let engine = AVAudioEngine()
-            let node = Self.makeSourceNode(buffer: pipeline.buffer, format: format)
-            engine.attach(node)
-            engine.connect(node, to: engine.mainMixerNode, format: format)
-            engine.prepare()
-            pipeline.buffer.reset()
-            step = "start"
-            try engine.start()
+        guard wanted, !microphoneActive, !interrupted, !isOutputRunning, !isStartingOutput, pipeline.isConfigured else { return }
+        isStartingOutput = true
+        outputAttempt += 1
+        let attempt = outputAttempt
+        let requested = DispatchTime.now().uptimeNanoseconds
+        setup.start(buffer: pipeline.buffer) { [weak self] in
+            Task { @MainActor in self?.outputStarted(attempt, requested: requested) }
+        }
+    }
+
+    private func outputStarted(_ attempt: Int, requested: UInt64) {
+        // A stop since then has already taken (and undone) this start.
+        guard attempt == outputAttempt, isStartingOutput, let result = setup.take() else { return }
+        isStartingOutput = false
+        let milliseconds = (DispatchTime.now().uptimeNanoseconds - requested) / 1_000_000
+        switch result {
+        case .running(let engine, let details):
             self.engine = engine
             status = .playing
-            log.info("Mac audio playing: IO buffer \(Int(session.ioBufferDuration * 1000), privacy: .public) ms, output latency \(Int(session.outputLatency * 1000), privacy: .public) ms, route \(session.currentRoute.outputs.first?.portType.rawValue ?? "none", privacy: .public)")
-        } catch {
+            log.info("Mac audio playing: \(details, privacy: .public), started in \(milliseconds, privacy: .public) ms")
+        case .failed(let step, let error):
             log.error("Mac audio couldn't start (\(step, privacy: .public)): \(error.localizedDescription, privacy: .public)")
-            engine?.stop()
-            engine = nil
             #if DEBUG && targetEnvironment(simulator)
             log.info("Mac audio: no audio device in this simulator; playing into a null output")
             pipeline.buffer.reset()
             nullOutput = NullAudioOutput(buffer: pipeline.buffer)
             status = .playing
-            return
             #else
             status = .unavailable("This iPad couldn't start playing the Mac's sound.")
             #endif
@@ -169,28 +178,20 @@ final class MacAudioPlayer {
         nullOutput?.stop()
         nullOutput = nil
         #endif
-        guard let engine else { return }
-        engine.stop()
-        self.engine = nil
+        var running = engine
+        engine = nil
+        if isStartingOutput {
+            // Let the start finish rather than have it change the session after this (the
+            // microphone may be about to take it), then undo it.
+            isStartingOutput = false
+            outputAttempt += 1
+            setup.finishPending()
+            if case .running(let started, _)? = setup.take() { running = started }
+        }
+        guard let running else { return }
+        running.stop()
         pipeline.buffer.reset()
-        if releaseSession, !microphoneActive {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
-    }
-
-    /// Renders on the audio thread. Nonisolated so the block doesn't inherit the main actor.
-    private nonisolated static func makeSourceNode(buffer: AudioJitterBuffer, format: AVAudioFormat) -> AVAudioSourceNode {
-        AVAudioSourceNode(format: format) { isSilence, _, frameCount, outputData in
-            let list = UnsafeMutableAudioBufferListPointer(outputData)
-            guard list.count >= 2,
-                  let left = list[0].mData?.assumingMemoryBound(to: Float.self),
-                  let right = list[1].mData?.assumingMemoryBound(to: Float.self) else {
-                isSilence.pointee = true
-                return noErr
-            }
-            buffer.render(left: left, right: right, frames: Int(frameCount))
-            return noErr
-        }
+        if releaseSession, !microphoneActive { setup.deactivateSession() }
     }
 
     // MARK: Session events
@@ -269,11 +270,97 @@ final class MacAudioPlayer {
         let transit = pipeline.transitSnapshot()
         let session = AVAudioSession.sharedInstance()
         let outputMs = (session.outputLatency + session.ioBufferDuration) * 1000
-        log.info("Mac audio stats: packets \(transit.packets, privacy: .public), depth \(Int(stats.milliseconds(stats.depthFrames)), privacy: .public) ms, target \(Int(stats.milliseconds(stats.targetFrames)), privacy: .public) ms, underruns \(stats.underruns, privacy: .public), idle gaps \(stats.idleGaps, privacy: .public), drops \(stats.drops, privacy: .public), repeats \(stats.duplicates, privacy: .public), skips \(stats.skips, privacy: .public), overflows \(stats.overflows, privacy: .public), frames in/out \(stats.framesPushed, privacy: .public)/\(stats.framesPlayed, privacy: .public), arrival jitter p95 \(String(format: "%.1f", transit.jitterP95Ms), privacy: .public) ms, output \(Int(outputMs), privacy: .public) ms")
+        log.info("Mac audio stats: packets \(transit.packets, privacy: .public), depth \(Int(stats.milliseconds(stats.depthFrames)), privacy: .public) ms (smoothed \(Int(stats.milliseconds(stats.smoothedDepthFrames)), privacy: .public)), target \(Int(stats.milliseconds(stats.targetFrames)), privacy: .public) ms, underruns \(stats.underruns, privacy: .public), idle gaps \(stats.idleGaps, privacy: .public), drops \(stats.drops, privacy: .public), repeats \(stats.duplicates, privacy: .public), skips \(stats.skips, privacy: .public), start trims \(stats.startTrims, privacy: .public), overflows \(stats.overflows, privacy: .public), frames in/out \(stats.framesPushed, privacy: .public)/\(stats.framesPlayed, privacy: .public), arrival jitter p95 \(String(format: "%.1f", transit.jitterP95Ms), privacy: .public) ms, output \(Int(outputMs), privacy: .public) ms")
         #if DEBUG
         // Host and client share a clock only on loopback (the simulator on the host's Mac).
         log.info("Mac audio transit (loopback clock): p50 \(String(format: "%.1f", transit.p50Ms), privacy: .public) ms, p95 \(String(format: "%.1f", transit.p95Ms), privacy: .public) ms; capture → speaker ≈ \(Int(transit.p50Ms + stats.milliseconds(stats.depthFrames) + outputMs), privacy: .public) ms")
         #endif
+    }
+}
+
+/// `MacAudioPlayer`'s audio session and engine work, off the main actor on a serial queue of its
+/// own: activating (or deactivating) the session and starting the engine block for 100–200 ms.
+/// A start's result waits here until the player takes it. Safe to call from any thread.
+nonisolated final class AudioOutputSetup: @unchecked Sendable {
+    enum Result {
+        /// Running; `details` describes the IO buffer, latency and route for the log.
+        case running(AVAudioEngine, details: String)
+        case failed(step: String, error: any Error)
+    }
+
+    private let queue = DispatchQueue(label: "vantage.audio.output", qos: .userInitiated)
+    private let lock = NSLock()
+    private var result: Result? // guarded by `lock`
+
+    /// Starts on the queue and calls `completion` there once the result is ready to take.
+    func start(buffer: AudioJitterBuffer, completion: @escaping @Sendable () -> Void) {
+        queue.async { [self] in
+            let outcome = Self.run(buffer: buffer)
+            lock.withLock { result = outcome }
+            completion()
+        }
+    }
+
+    /// The finished start's result, once.
+    func take() -> Result? {
+        lock.withLock {
+            defer { result = nil }
+            return result
+        }
+    }
+
+    /// Waits for a start or deactivation in progress to finish.
+    func finishPending() {
+        queue.sync {}
+    }
+
+    /// Lets other apps' audio resume, after anything already queued.
+    func deactivateSession() {
+        queue.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
+    private static func run(buffer: AudioJitterBuffer) -> Result {
+        let session = AVAudioSession.sharedInstance()
+        var step = "session"
+        var engine: AVAudioEngine?
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? session.setPreferredIOBufferDuration(0.005)
+            try session.setActive(true)
+            step = "engine"
+            let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
+            let started = AVAudioEngine()
+            engine = started
+            let node = makeSourceNode(buffer: buffer, format: format)
+            started.attach(node)
+            started.connect(node, to: started.mainMixerNode, format: format)
+            started.prepare()
+            buffer.reset()
+            step = "start"
+            try started.start()
+            let details = "IO buffer \(Int(session.ioBufferDuration * 1000)) ms, output latency \(Int(session.outputLatency * 1000)) ms, route \(session.currentRoute.outputs.first?.portType.rawValue ?? "none")"
+            return .running(started, details: details)
+        } catch {
+            engine?.stop()
+            return .failed(step: step, error: error)
+        }
+    }
+
+    /// Renders on the audio thread.
+    private static func makeSourceNode(buffer: AudioJitterBuffer, format: AVAudioFormat) -> AVAudioSourceNode {
+        AVAudioSourceNode(format: format) { isSilence, _, frameCount, outputData in
+            let list = UnsafeMutableAudioBufferListPointer(outputData)
+            guard list.count >= 2,
+                  let left = list[0].mData?.assumingMemoryBound(to: Float.self),
+                  let right = list[1].mData?.assumingMemoryBound(to: Float.self) else {
+                isSilence.pointee = true
+                return noErr
+            }
+            buffer.render(left: left, right: right, frames: Int(frameCount))
+            return noErr
+        }
     }
 }
 

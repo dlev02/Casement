@@ -17,10 +17,15 @@ import Synchronization
 /// ppm, so when the smoothed depth leaves target ± 15 ms, one render block is stretched or
 /// squeezed by a single frame (linear interpolation, inaudible); a burst far above the target
 /// (packets that queued behind a video keyframe) is cut back to the target with a crossfade.
+/// Found before playback starts, such a backlog is left out instead: nothing is playing yet to
+/// crossfade from, and the fade-in starts from silence either way.
 nonisolated final class AudioJitterBuffer: @unchecked Sendable {
     struct Stats: Sendable, Equatable {
         /// Frames buffered at the last render.
         var depthFrames = 0
+        /// The depth smoothed over the last hundred or so renders: the latency the listener has,
+        /// and what the drift correction steers by. `depthFrames` moves a packet at a time.
+        var smoothedDepthFrames = 0
         var targetFrames = 0
         /// Dry spells caused by late packets.
         var underruns = 0
@@ -29,8 +34,10 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
         /// Render blocks squeezed (one frame dropped) or stretched (one frame repeated) for drift.
         var drops = 0
         var duplicates = 0
-        /// Bursts cut back to the target.
+        /// Bursts cut back to the target while playing.
         var skips = 0
+        /// Starts that found far more than the target buffered and began at the target.
+        var startTrims = 0
         /// Packets dropped because the ring was full.
         var overflows = 0
         var framesPushed = 0
@@ -64,11 +71,13 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
     private let resetGeneration = Atomic<Int>(0)
     // Mirrors of consumer state for `stats`.
     private let depthMirror = Atomic<Int>(0)
+    private let smoothedDepthMirror = Atomic<Int>(0)
     private let targetMirror = Atomic<Int>(0)
     private let playingMirror = Atomic<Bool>(false)
     private let drops = Atomic<Int>(0)
     private let duplicates = Atomic<Int>(0)
     private let skips = Atomic<Int>(0)
+    private let startTrims = Atomic<Int>(0)
     private let overflows = Atomic<Int>(0)
     private let framesPlayed = Atomic<Int>(0)
 
@@ -118,10 +127,12 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
     }
 
     var stats: Stats {
-        Stats(depthFrames: depthMirror.load(ordering: .relaxed), targetFrames: targetMirror.load(ordering: .relaxed),
+        Stats(depthFrames: depthMirror.load(ordering: .relaxed), smoothedDepthFrames: smoothedDepthMirror.load(ordering: .relaxed),
+              targetFrames: targetMirror.load(ordering: .relaxed),
               underruns: lateUnderruns.load(ordering: .relaxed), idleGaps: idleGaps.load(ordering: .relaxed),
               drops: drops.load(ordering: .relaxed), duplicates: duplicates.load(ordering: .relaxed),
-              skips: skips.load(ordering: .relaxed), overflows: overflows.load(ordering: .relaxed),
+              skips: skips.load(ordering: .relaxed), startTrims: startTrims.load(ordering: .relaxed),
+              overflows: overflows.load(ordering: .relaxed),
               framesPushed: written.load(ordering: .relaxed), framesPlayed: framesPlayed.load(ordering: .relaxed),
               isPlaying: playingMirror.load(ordering: .relaxed))
     }
@@ -199,7 +210,7 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
             framesSinceUnderrun = 0
         }
         var readAt = read.load(ordering: .relaxed)
-        let available = written.load(ordering: .acquiring) - readAt
+        var available = written.load(ordering: .acquiring) - readAt
 
         if !playing {
             guard available >= max(target, n) else {
@@ -209,6 +220,14 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
             }
             playing = true
             fadeInRemaining = fadeFrames
+            if available - n > target + skipAbove {
+                // A backlog before anything has played (late packets after a dry spell, all at
+                // once): start `target` behind the newest audio rather than that far behind.
+                // Unlike a skip, nothing audible is cut: the fade-in starts from silence.
+                readAt += available - n - target
+                available = target + n
+                startTrims.add(1, ordering: .relaxed)
+            }
             smoothedDepth = Double(available - n)
         }
 
@@ -316,6 +335,7 @@ nonisolated final class AudioJitterBuffer: @unchecked Sendable {
 
     private func publish(depth: Int) {
         depthMirror.store(depth, ordering: .relaxed)
+        smoothedDepthMirror.store(playing ? Int(smoothedDepth) : depth, ordering: .relaxed)
         targetMirror.store(target, ordering: .relaxed)
         playingMirror.store(playing, ordering: .relaxed)
     }
