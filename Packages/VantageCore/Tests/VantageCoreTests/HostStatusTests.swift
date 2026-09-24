@@ -9,7 +9,16 @@ import Testing
         guard case .hostStatus(let status) = try Message.decode(kind: .hostStatus, payload: old) else {
             Issue.record("wrong kind"); return
         }
-        #expect(status.isSecureInputActive && status.isDisplayAsleep == nil)
+        #expect(status.isSecureInputActive && status.isDisplayAsleep == nil && status.isScreenUnavailable == nil)
+    }
+
+    @Test func screenUnavailableRoundTrips() throws {
+        let waiting = HostStatus(isScreenLocked: false, isSecureInputActive: false, inputPath: .native,
+                                 isDisplayAsleep: false, isScreenUnavailable: true)
+        guard case .hostStatus(let back) = try Message.decode(kind: .hostStatus, payload: try Message.hostStatus(waiting).encodedPayload()) else {
+            Issue.record("wrong kind"); return
+        }
+        #expect(back == waiting)
     }
 
     @Test func asleepRoundTripsAndOlderClientsIgnoreIt() throws {

@@ -19,6 +19,8 @@ import Foundation
 /// - `--exit-after 300`: quit after that many seconds, so a test host never outlives its run.
 /// - `--display-asleep`: pretend the display starts asleep (`DisplayPower.fake`); synthetic hosts
 ///   then behave like a Mac whose screen is off until something wakes it.
+/// - `--capture-fails-for 6`: each session's capture can't start for that many seconds after its
+///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -45,6 +47,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let exitAfterSeconds: Double?
     /// A pretend display that starts asleep (DEBUG only).
     let fakeDisplaySleep: Bool
+    /// Seconds each session's capture fails for, from its first stream request (DEBUG only).
+    let captureFailsForSeconds: Double?
 
     private init() {
         #if DEBUG
@@ -93,6 +97,12 @@ nonisolated final class HostOptions: @unchecked Sendable {
             exitAfterSeconds = nil
         }
         fakeDisplaySleep = args.contains("--display-asleep")
+        if let index = args.firstIndex(of: "--capture-fails-for"), index + 1 < args.count,
+           let seconds = Double(args[index + 1]), seconds > 0 {
+            captureFailsForSeconds = seconds
+        } else {
+            captureFailsForSeconds = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -107,6 +117,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         logInputEvents = false
         exitAfterSeconds = nil
         fakeDisplaySleep = false
+        captureFailsForSeconds = nil
         #endif
     }
 }

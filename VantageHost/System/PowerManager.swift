@@ -94,6 +94,17 @@ nonisolated enum DisplayPower {
         return CGDisplayIsAsleep(CGMainDisplayID()) != 0
     }
 
+    /// Whether any panel is actually lit: CGDisplayIsAsleep plus the active display list (empty
+    /// while every display is off). IOKit has no display power state to read on Apple silicon
+    /// (IODisplayWrangler carries no power properties there), so these are the signals.
+    static func panelDescription() -> (isOff: Bool, text: String) {
+        if fake.isEnabled { return (fake.isAsleep, fake.isAsleep ? "pretend display asleep" : "pretend display on") }
+        var active: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &active)
+        let asleep = CGDisplayIsAsleep(CGMainDisplayID()) != 0
+        return (asleep || active == 0, "main display \(asleep ? "asleep" : "on"), \(active) active")
+    }
+
     /// `pmset displaysleepnow`, like the Mac's own "Sleep display" (or the pretend display).
     static func sleepNow() {
         if fake.isEnabled {

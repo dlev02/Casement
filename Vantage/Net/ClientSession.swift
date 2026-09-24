@@ -164,7 +164,13 @@ final class ClientSession {
     /// The Mac says its display is asleep (hosts that predate this never say so).
     var isDisplayAsleep: Bool { state == .connected && hostStatus?.isDisplayAsleep == true }
 
-    /// Asks the Mac to turn its display on. Any input would too; this is the explicit button.
+    /// The Mac's display is awake but the host has had no picture of it for a few seconds.
+    var isScreenUnavailable: Bool {
+        state == .connected && hostStatus?.isScreenUnavailable == true && hostStatus?.isDisplayAsleep != true
+    }
+
+    /// Asks the Mac to turn its display on (and, while the picture is missing, to try capture
+    /// again). Any input would wake it too; this is the explicit button.
     func wakeDisplay() {
         send(.hostCommand(HostCommandMessage(command: .wakeDisplay)))
     }

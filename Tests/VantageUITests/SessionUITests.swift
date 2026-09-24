@@ -375,6 +375,27 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(menu.exists, "still in the session")
     }
 
+    /// Against a synthetic host started with `--capture-fails-for 6`: the Mac is awake but there's
+    /// no picture, so after ~3 s the session says so ("Waiting for the Mac's screen…") instead of
+    /// showing nothing; Retry reaches the host, and the note clears once frames arrive.
+    /// `TEST_RUNNER_VANTAGE_UNAVAILABLE_HOST` picks the host:port (default 127.0.0.1:47822).
+    @MainActor func testMissingPictureIsExplainedUntilFramesReturn() {
+        let host = ProcessInfo.processInfo.environment["VANTAGE_UNAVAILABLE_HOST"] ?? "127.0.0.1:47822"
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", host, "-VantagePairingCode", "246810",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        app.launch()
+        let retry = app.buttons["session.retryScreen"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Waiting for the Mac's screen…"].exists)
+        XCTAssertTrue(app.buttons["Session Options"].exists, "still in the session")
+        screenshot("Waiting for the Mac's screen", app)
+        retry.tap()
+        XCTAssertTrue(retry.waitForNonExistence(timeout: 20), "the note should clear once frames arrive")
+        XCTAssertFalse(app.staticTexts["Reconnecting…"].exists)
+        screenshot("Picture back", app)
+    }
+
     @MainActor private func openSessionEditor(_ app: XCUIApplication) {
         let menu = app.buttons["Session Options"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))

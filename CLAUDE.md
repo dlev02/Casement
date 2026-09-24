@@ -113,7 +113,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Carbon hot keys (Alfred and co.) answer injected keys, but Raycast only answers a physical
   keyboard (session tap, HID tap, HID-state source, device bits and human timing all fail; it runs
   a HID-level tap plus its own IOHID listener), so while Spotlight's shortcut (hot key 64) is off and
-  Raycast is running the host opens `raycast://` instead (`SearchShortcut`). Keys stay on
+  Raycast is running the host opens `raycast://` instead (`SearchShortcut`). That's a heuristic:
+  Raycast keeps its hotkey out of readable defaults (only `initialSpotlightHotkey`), so if something
+  else ever owns ⌘Space while Spotlight's is off and Raycast runs, the button still opens Raycast. Keys stay on
   `.cgSessionEventTap`: a HID-tap post buys nothing and runs through every other app's HID tap.
   `--log-input-events` (DEBUG host) logs each key event reaching the session with its flags
   (listen-only tap; text keys typed on the Mac itself are logged without a key code). Tests:
@@ -139,15 +141,27 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   always wakes. Waking is `IOPMAssertionDeclareUserActivity(kIOPMUserActiveLocal)` re-using one
   assertion id (Remote lights the display on macOS 27 too; a fresh id per call leaked an assertion
   every time). On Drew's Mac display sleep also posts `com.apple.screenIsLocked` + Secure Input
-  even with screen lock off; both clear on wake. Client: `DisplayAsleepView` (last frame dimmed,
-  glass note, Wake button, tap anywhere) replaces the lock banner while asleep; `ClientSession`
+  even with screen lock off; both clear on wake. **Awake but no picture** (capture won't start;
+  once seen after a wake, when SCK listed no displays for 10+ s): a watchdog in `HostSession`
+  retries (0.5 s doubling to 5 s) for the whole session, logs every attempt as "capture
+  unavailable for N s: <reason>; <panel state>; trying again" (category `session`), re-declares
+  local activity when CGDisplayIsAsleep or an empty active-display list says the panel is off
+  (IOKit has no display power state on Apple silicon), treats a started capture with no frame in
+  5 s as failed, and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on the
+  first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
+  (last frame dimmed, glass note, Wake/Retry button, tap anywhere) shows "The Mac's display is
+  asleep" or "Waiting for the Mac's screen…", never a frozen frame without a word; the lock
+  banner hides only while asleep. `ClientSession`
   resets its reconnect backoff only once the host answers the stream request or the connection
   lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (a
-  pretend display that starts asleep; sleep/wake commands work on synthetic hosts too). Tests:
-  `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
+  pretend display that starts asleep; sleep/wake commands work on synthetic hosts too) and
+  `--capture-fails-for <s>` (each session's capture fails that long from its first stream
+  request). Tests: `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
   `SessionUITests.testSleepDisplayShowsAsleepStateAndWakes` (synthetic host with
   `--display-asleep`; `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST=127.0.0.1:<port>` and
-  `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults).
+  `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults),
+  `testMissingPictureIsExplainedUntilFramesReturn` (synthetic host with `--capture-fails-for 6`,
+  default 127.0.0.1:47822, `TEST_RUNNER_VANTAGE_UNAVAILABLE_HOST` overrides).
 - **Siri / Shortcuts / Spotlight / widgets**: `ConnectToMacIntent` (+ `VantageShortcuts` phrases
   like "Connect to ⟨Mac⟩ in Vantage") runs in-app and drops the id into `PendingConnection`;
   `ContentView` opens the session once the app is unlocked. Widgets tap through

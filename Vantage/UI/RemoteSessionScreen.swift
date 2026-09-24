@@ -85,8 +85,8 @@ struct RemoteSessionScreen: View {
             }
             #endif
 
-            if session.isDisplayAsleep {
-                DisplayAsleepView(isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
+            if let screenNote {
+                MacScreenNote(kind: screenNote, isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
                     .transition(.opacity)
             } else if !isLive {
                 connectionOverlay
@@ -176,11 +176,15 @@ struct RemoteSessionScreen: View {
             #endif
         }
         .animation(.smooth(duration: 0.35), value: isLive)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: session.isDisplayAsleep)
-        .onChange(of: session.isDisplayAsleep) { _, asleep in
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: screenNote)
+        .onChange(of: screenNote) { _, note in
             wakeTask?.cancel()
             wakeRequested = false
-            if asleep { AccessibilityNotification.Announcement("The Mac's display is asleep").post() }
+            switch note {
+            case .asleep?: AccessibilityNotification.Announcement("The Mac's display is asleep").post()
+            case .unavailable?: AccessibilityNotification.Announcement("Waiting for the Mac's screen").post()
+            case nil: break
+            }
         }
         #if os(visionOS)
         // Keep the window bar: it's how the session window is moved and closed.
@@ -391,7 +395,14 @@ struct RemoteSessionScreen: View {
 
     // MARK: Display sleep
 
-    /// The Wake button or a tap on the sleeping Mac's screen.
+    /// Why there's no live picture, if the Mac has said.
+    private var screenNote: MacScreenNote.Kind? {
+        if session.isDisplayAsleep { return .asleep }
+        if session.isScreenUnavailable { return .unavailable }
+        return nil
+    }
+
+    /// Wake/Retry, or a tap on the Mac's screen while there's no live picture.
     private func wakeDisplay() {
         guard !wakeRequested else { return }
         session.wakeDisplay()

@@ -87,6 +87,34 @@ struct DisplaySleepSessionTests {
         await try host.value.close()
     }
 
+    @Test @MainActor func aMissingPictureIsExplainedAndRetryReachesTheHost() async throws {
+        let (listener, channels) = try await Self.listen()
+        defer { listener.cancel() }
+        let waiting = HostStatus(isScreenLocked: false, isSecureInputActive: false, inputPath: .native,
+                                 isDisplayAsleep: false, isScreenUnavailable: true)
+        let back = HostStatus(isScreenLocked: false, isSecureInputActive: false, inputPath: .native,
+                              isDisplayAsleep: false, isScreenUnavailable: false)
+        let host = Task {
+            var iterator = channels.makeAsyncIterator()
+            let channel = try #require(await iterator.next())
+            try await Self.acceptStreamRequest(channel)
+            try await channel.send(.hostStatus(waiting))
+            guard case .hostCommand(let command)? = try await channel.receive() else { throw Failure.unexpected }
+            #expect(command.command == .wakeDisplay) // Retry
+            try await channel.send(.hostStatus(back))
+            return channel
+        }
+        let session = ClientSession(identity: DeviceIdentity())
+        defer { session.disconnect() }
+        session.connect(to: Self.device(listener.port!.rawValue), viewport: Self.viewport)
+        try await Self.eventually { session.isScreenUnavailable }
+        #expect(!session.isDisplayAsleep && session.reconnectAttempts == 0)
+        session.wakeDisplay()
+        try await Self.eventually { !session.isScreenUnavailable }
+        #expect(session.state == .connected)
+        await try host.value.close()
+    }
+
     @Test @MainActor func aHostThatDropsEveryStreamRequestIsNotRetriedInALoop() async throws {
         let (listener, channels) = try await Self.listen()
         defer { listener.cancel() }
