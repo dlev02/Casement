@@ -38,7 +38,13 @@ final class ClientSession {
     private var channel: MessageChannel?
     private var device: SavedDevice?
     private var pairingCode: String?
-    private var reconnectAttempts = 0
+    /// Reconnects since the last healthy connection. A connection is healthy once the host
+    /// answers the stream request (status, stream config, or video) or it has lasted a while, not
+    /// merely once the handshake passes: an older host whose display is asleep accepts, then
+    /// drops every stream request, and resetting at the handshake retried it every 1.6 s forever.
+    private(set) var reconnectAttempts = 0
+    /// Wait before reconnect attempt `n` (tests shorten it).
+    var reconnectDelay: (Int) -> Duration = { attempt in .seconds(min(pow(1.6, Double(attempt)), 15)) }
     private var connectionTask: Task<Void, Never>?
     private var connectionID = UUID()
     private var viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)
@@ -155,6 +161,14 @@ final class ClientSession {
         send(.audioRequest(AudioRequest(enabled: enabled)))
     }
 
+    /// The Mac says its display is asleep (hosts that predate this never say so).
+    var isDisplayAsleep: Bool { state == .connected && hostStatus?.isDisplayAsleep == true }
+
+    /// Asks the Mac to turn its display on. Any input would too; this is the explicit button.
+    func wakeDisplay() {
+        send(.hostCommand(HostCommandMessage(command: .wakeDisplay)))
+    }
+
     func sendFeedback(_ feedback: QualityFeedback) {
         send(.qualityFeedback(feedback))
     }
@@ -168,6 +182,7 @@ final class ClientSession {
     private func runConnection(id: UUID) async {
         guard let device else { return }
         while !Task.isCancelled, connectionID == id {
+            var connectedAt: ContinuousClock.Instant?
             closeFileChannel() // a new primary connection gets a new file channel
             state = reconnectAttempts == 0 ? .connecting : .reconnecting
             activeConfig = nil
@@ -208,10 +223,12 @@ final class ClientSession {
                     try await channel.send(.audioRequest(AudioRequest(enabled: true)))
                 }
                 state = .connected
-                reconnectAttempts = 0
+                connectedAt = .now
                 if let fileToken, hostOffersFiles {
                     openFileChannel(token: fileToken, host: device.host, port: port, id: id)
                 }
+                // No video for a while (the Mac's display asleep, a static screen) is normal:
+                // only the connection itself ending brings a reconnect.
                 while let message = try await channel.receive() {
                     guard connectionID == id, !Task.isCancelled else { break }
                     if case .disconnect = message {
@@ -221,6 +238,7 @@ final class ClientSession {
                         state = .failed("The Mac ended the session.")
                         return
                     }
+                    if reconnectAttempts > 0, Self.answersStream(message) { reconnectAttempts = 0 }
                     route(message)
                 }
             } catch let error as ProtocolErrorMessage {
@@ -239,13 +257,14 @@ final class ClientSession {
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
             closeFileChannel() // files wait for the next connection's file channel
+            if let connectedAt, ContinuousClock.now - connectedAt > .seconds(10) { reconnectAttempts = 0 }
             reconnectAttempts += 1
             guard reconnectAttempts <= 40 else {
                 state = .failed("Couldn’t reach the Mac. Check that Vantage Host and Tailscale are running on both devices.")
                 return
             }
             state = .reconnecting
-            do { try await Task.sleep(for: .seconds(min(pow(1.6, Double(reconnectAttempts)), 15))) }
+            do { try await Task.sleep(for: reconnectDelay(reconnectAttempts)) }
             catch { return }
         }
     }
@@ -334,6 +353,14 @@ final class ClientSession {
             fileEngine = nil
             files.detach(engine)
             Task { await engine.close() }
+        }
+    }
+
+    /// The host took the stream request: it said how it's doing or started sending.
+    private static func answersStream(_ message: Message) -> Bool {
+        switch message {
+        case .hostStatus, .streamConfig, .videoConfig, .videoFrame: true
+        default: false
         }
     }
 

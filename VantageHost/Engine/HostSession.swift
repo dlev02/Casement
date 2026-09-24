@@ -47,6 +47,18 @@ actor HostSession {
     private var clientName = "iPad"
     /// Tells the controller a file channel is up (for the menu, notifications, and sending).
     private let onFileChannel: @Sendable (HostFileChannel) -> Void
+    // Display sleep: the session outlives it. Capture stops while the display is off (SCK lists
+    // no displays then) and comes back on wake; input while asleep wakes it.
+    /// What the client last asked to stream, which capture returns to after a sleep or a failure.
+    private var wantedSelection: SelectDisplay?
+    private var streamStarting = false
+    private var pendingStart: SelectDisplay?
+    private var retryTask: Task<Void, Never>?
+    private var captureStartedAt: ContinuousClock.Instant?
+    private var monitoring = false
+    private var displayAsleep = false
+    /// When this session put the display to sleep; input in the next moment doesn't wake it.
+    private var sleptAt: ContinuousClock.Instant?
 
     init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, peerHost: String,
          attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
@@ -126,6 +138,8 @@ actor HostSession {
                 message: "On the Mac, grant Screen Recording to Vantage Host in System Settings → Privacy & Security, then reopen Vantage Host and retry.")))
             throw SessionError.authFailed
         }
+        // A sleeping display lists no displays at all, so wake it before looking.
+        if DisplayPower.isAsleep() { await wakeDisplayForStreaming() }
         let displays = try await DisplayEnumerator.availableDisplays()
         // Dictation kinds are new, so they're advertised only to a client that said it knows them.
         if hello.features?.dictation == true { dictationEngines = await HostTranscriber.availableEngines() }
@@ -151,15 +165,15 @@ actor HostSession {
         while let message = try await channel.receive() {
             switch message {
             case .selectDisplay(let select):
-                try await startStreaming(select)
+                await selectDisplay(select)
             case .pointerEvent(let event):
-                injector?.handle(event)
+                if admitsInput(isRelease: event.action == .up) { injector?.handle(event) }
             case .scrollEvent(let event):
-                injector?.handle(event)
+                if admitsInput(isRelease: false) { injector?.handle(event) }
             case .keyEvent(let event):
-                injector?.handle(event)
+                if admitsInput(isRelease: !event.isDown) { injector?.handle(event) }
             case .textInput(let input):
-                injector?.typeText(input.text)
+                if admitsInput(isRelease: false) { injector?.typeText(input.text) }
             case .clipboard(let payload):
                 if !HostOptions.shared.syntheticCapture { clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
@@ -193,10 +207,14 @@ actor HostSession {
 
     // MARK: Streaming
 
+    /// Sets up capture and encoding for `select`. Throws when there's nothing to capture (the
+    /// display is asleep: SCK lists none) or capture won't start; callers keep the session.
     private func startStreaming(_ select: SelectDisplay) async throws {
         let startedAt = MonotonicClock.nanos()
         defer { log.info("stream setup took \((MonotonicClock.nanos() - startedAt) / 1_000_000) ms") }
-        await stopStreaming()
+        await stopCapture()
+        // The pretend display fails the way ScreenCaptureKit does while the screen is off.
+        if DisplayPower.fake.isEnabled, DisplayPower.fake.isAsleep { throw CaptureError.displayNotFound }
         let chosen: DisplayInfo
         if HostOptions.shared.syntheticCapture {
             switch select.selection {
@@ -208,6 +226,7 @@ actor HostSession {
         } else {
             let all = try await DisplayEnumerator.shareableDisplays()
             let mainID = CGMainDisplayID()
+            if all.isEmpty { log.error("ScreenCaptureKit lists no displays (main \(mainID), asleep \(DisplayPower.isAsleep()))") }
             switch select.selection {
             case .display(let id):
                 guard let match = all.first(where: { $0.info.id == id }) else { throw CaptureError.displayNotFound }
@@ -262,7 +281,10 @@ actor HostSession {
         self.encoder = encoder
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
-        if !HostOptions.shared.syntheticCapture { injector = InputInjector(displayFrame: frame) }
+        // The injector (and whatever keys it holds) survives capture restarts.
+        if !HostOptions.shared.syntheticCapture {
+            if let injector { injector.updateDisplayFrame(frame) } else { injector = InputInjector(displayFrame: frame) }
+        }
         #if DEBUG
         InputEventLog.startIfRequested()
         #endif
@@ -270,17 +292,19 @@ actor HostSession {
         let capture: any FrameSource = HostOptions.shared.syntheticCapture
             ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
             : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
+        let captureID = ObjectIdentifier(capture)
         try await capture.start(onFrame: { [weak self] frame in
             guard let self else { return }
             Task { await self.ingest(frame) }
-        }, onStop: { [weak self] _ in
+        }, onStop: { [weak self] error in
             guard let self else { return }
-            Task { await self.requestRestart() }
+            let reason = error.map { Self.describe($0) } ?? "stopped"
+            Task { await self.captureStopped(captureID, reason: reason) }
         })
         self.capture = capture
+        captureStartedAt = .now
 
-        power.begin()
-        power.declareUserActivity()
+        clipboard.stop()
         clipboard.onLocalChange = { [weak self] payload in
             guard let self else { return }
             Task { await self.sendClipboard(payload) }
@@ -292,9 +316,6 @@ actor HostSession {
         }
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
-        lockMonitor.onChange = { [channel] status in channel.sendDetached(.hostStatus(status)) }
-        lockMonitor.start()
-        channel.sendDetached(.hostStatus(lockMonitor.currentStatus()))
         needsKeyframe = true
         log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
     }
@@ -335,11 +356,26 @@ actor HostSession {
     }
 
     private func handle(_ command: HostCommand) async {
+        // The pretend display (`--display-asleep`) sleeps and wakes on a synthetic host too.
+        let controlsDisplay = !HostOptions.shared.syntheticCapture || DisplayPower.fake.isEnabled
+        switch command {
+        case .sleepDisplay where controlsDisplay:
+            sleptAt = .now
+            HostCommandRunner.sleepDisplay()
+            lockMonitor.refresh()
+            return
+        case .wakeDisplay where controlsDisplay:
+            sleptAt = nil
+            power.wakeDisplay(reason: "Wake command")
+            lockMonitor.refresh()
+            return
+        default:
+            break
+        }
         guard !HostOptions.shared.syntheticCapture else { return }
         switch command {
         case .lockScreen: HostCommandRunner.lockScreen()
-        case .sleepDisplay: HostCommandRunner.sleepDisplay()
-        case .wakeDisplay: power.declareUserActivity()
+        case .sleepDisplay, .wakeDisplay: break
         case .releaseAllInput: injector?.releaseAll()
         case .refreshDisplays:
             if let displays = try? await DisplayEnumerator.availableDisplays() {
@@ -471,32 +507,208 @@ actor HostSession {
         needsKeyframe = true
     }
 
-    /// Rebuilds capture after display sleep/wake or a display reconfiguration.
-    func restartCapture() async {
-        await requestRestart()
+    // MARK: Display sleep and capture restarts
+
+    /// The client asked for a stream. Wakes a sleeping display first; if capture still can't
+    /// start, the session stays up, the client hears why (`HostStatus.isDisplayAsleep`), and
+    /// capture comes back on its own. Ending the session here made the client reconnect in a loop.
+    private func selectDisplay(_ select: SelectDisplay) async {
+        wantedSelection = select
+        startMonitoring()
+        if DisplayPower.isAsleep() { await wakeDisplayForStreaming() }
+        retryTask?.cancel()
+        retryTask = nil
+        if await startStream(select) == false { captureUnavailable() }
     }
 
-    private func requestRestart() async {
-        // Capture stopped (display sleep/reconfigure). Rebuild on next selectDisplay or force keyframe.
-        needsKeyframe = true
-        if let info = displayInfo {
-            let select = SelectDisplay(selection: .display(info.id), targetFPS: 60, quality: .auto, preferredCodec: encoder?.currentCodec)
-            try? await startStreaming(select)
+    /// Session-long pieces, set up with the first stream and kept through capture restarts.
+    private func startMonitoring() {
+        guard !monitoring else { return }
+        monitoring = true
+        power.begin()
+        lockMonitor.onChange = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.hostStatusChanged() }
+        }
+        lockMonitor.start()
+        let status = lockMonitor.currentStatus()
+        displayAsleep = status.isDisplayAsleep == true
+        channel.sendDetached(.hostStatus(status))
+    }
+
+    /// Lock, secure input, or display sleep changed: tell the client, and bring capture back
+    /// when the display wakes.
+    private func hostStatusChanged() async {
+        guard state == .streaming else { return }
+        let status = lockMonitor.currentStatus() // the latest, whatever order the notices came in
+        channel.sendDetached(.hostStatus(status))
+        let asleep = status.isDisplayAsleep == true
+        guard asleep != displayAsleep else {
+            // Capture waiting on something else (a lock screen lists no displays either): try
+            // again now that the Mac changed, rather than at the next backoff step.
+            if !asleep, capture == nil, wantedSelection != nil, !streamStarting { await restartStream(reason: "Mac state changed") }
+            return
+        }
+        displayAsleep = asleep
+        if asleep {
+            log.info("display went to sleep; the session stays up")
+            // ScreenCaptureKit stops its stream by itself; the pretend display does the same.
+            if DisplayPower.fake.isEnabled, let capture { await captureStopped(ObjectIdentifier(capture), reason: "display asleep") }
+        } else {
+            log.info("display woke")
+            sleptAt = nil
+            needsKeyframe = true
+            if capture == nil { await restartStream(reason: "display woke") }
         }
     }
 
-    private func stopStreaming() async {
+    /// Input while the display is asleep wakes it (at most once a second) rather than reaching
+    /// a screen nobody can see; releases still go through so nothing stays held. Input in the
+    /// moment after Sleep Display (the hand that chose it) doesn't count.
+    private func admitsInput(isRelease: Bool) -> Bool {
+        guard displayAsleep else { return true }
+        if isRelease { return true }
+        if let sleptAt, ContinuousClock.now - sleptAt < .seconds(2) { return false }
+        if power.wakeDisplay(reason: "input while asleep", minimumInterval: .seconds(1)) { lockMonitor.refresh() }
+        return false
+    }
+
+    /// Wakes the display and waits (up to ~3 s) for ScreenCaptureKit to list it again.
+    private func wakeDisplayForStreaming() async {
+        power.wakeDisplay(reason: "client connected")
+        let started = ContinuousClock.now
+        while ContinuousClock.now - started < .seconds(3) {
+            if !DisplayPower.isAsleep() {
+                if HostOptions.shared.syntheticCapture { break }
+                if let displays = try? await DisplayEnumerator.shareableDisplays(), !displays.isEmpty { break }
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        log.info("display \(DisplayPower.isAsleep() ? "still asleep" : "awake", privacy: .public) after \((ContinuousClock.now - started).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+    }
+
+    /// Starts or restarts the stream, one at a time. Nil means another start was running; it
+    /// takes this request over once it's done.
+    private func startStream(_ select: SelectDisplay) async -> Bool? {
+        if streamStarting {
+            pendingStart = select
+            return nil
+        }
+        streamStarting = true
+        defer { streamStarting = false }
+        var next: SelectDisplay? = select
+        var started = false
+        while let current = next {
+            pendingStart = nil
+            do {
+                try await startStreaming(current)
+                started = true
+            } catch {
+                started = false
+                log.error("capture didn't start: \(Self.describe(error), privacy: .public)\(DisplayPower.isAsleep() ? " (display asleep)" : "", privacy: .public)")
+            }
+            next = pendingStart
+        }
+        if started {
+            retryTask?.cancel()
+            retryTask = nil
+        }
+        return started
+    }
+
+    /// Capture is down and the client is waiting. A sleeping display comes back through the wake
+    /// notice; anything else is retried with backoff for as long as the session lasts.
+    private func captureUnavailable() {
+        channel.sendDetached(.hostStatus(lockMonitor.currentStatus()))
+        guard !DisplayPower.isAsleep() else { return }
+        guard retryTask == nil, state == .streaming else { return }
+        retryTask = Task { [weak self] in
+            var delay: Duration = .milliseconds(500)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, await self.needsRetry() else { return }
+                await self.restartStream(reason: "retry")
+                delay = min(delay * 2, .seconds(5))
+            }
+        }
+    }
+
+    private func needsRetry() -> Bool {
+        let needed = state == .streaming && capture == nil && !DisplayPower.isAsleep()
+        if !needed { retryTask = nil }
+        return needed
+    }
+
+    /// ScreenCaptureKit stopped the stream by itself: the display went to sleep (it then lists
+    /// no displays: "Failed to find any displays or windows to capture") or changed. The
+    /// session, input, and power state carry on; only capture waits.
+    private func captureStopped(_ id: ObjectIdentifier, reason: String) async {
+        guard let capture, ObjectIdentifier(capture) == id else { return }
+        self.capture = nil
+        pendingPixelBuffer = nil
+        needsKeyframe = true
+        await capture.stop()
+        log.info("capture stopped (\(reason, privacy: .public)); display \(DisplayPower.isAsleep() ? "asleep" : "awake", privacy: .public)")
+        lockMonitor.refresh()
+        captureUnavailable()
+    }
+
+    /// The controller saw the displays wake or change: rebuild capture so it follows.
+    func restartCapture() async {
+        guard state == .streaming, wantedSelection != nil, !DisplayPower.isAsleep() else { return }
+        // The wake notice just restarted it; don't do it twice.
+        if capture != nil, let captureStartedAt, ContinuousClock.now - captureStartedAt < .seconds(2) { return }
+        await restartStream(reason: "displays changed")
+    }
+
+    /// Brings capture back on the display it was on, or the client's original choice if that
+    /// display is gone; failing both, retries later.
+    private func restartStream(reason: String) async {
+        // A wake arrives as two notices (the controller's and the status monitor's); the start
+        // already under way covers both.
+        guard state == .streaming, let wanted = wantedSelection, !streamStarting else { return }
+        log.info("restarting capture: \(reason, privacy: .public)")
+        needsKeyframe = true
+        var targets: [SelectDisplay] = []
+        // Synthetic displays are made to the viewport, so only the original request rebuilds one.
+        if let displayInfo, !HostOptions.shared.syntheticCapture {
+            targets.append(SelectDisplay(selection: .display(displayInfo.id), targetFPS: wanted.targetFPS, quality: wanted.quality,
+                                         preferredCodec: encoder?.currentCodec ?? wanted.preferredCodec))
+        }
+        targets.append(wanted)
+        for target in targets {
+            switch await startStream(target) {
+            case true?, nil: return
+            case false?: continue
+            }
+        }
+        captureUnavailable()
+    }
+
+    /// Stops capture and encoding only; input, power, and status monitoring stay.
+    private func stopCapture() async {
         await capture?.stop()
         capture = nil
         encoder?.stop()
         encoder = nil
+        pendingPixelBuffer = nil
+        encodesInFlight = 0
+    }
+
+    private func stopStreaming() async {
+        retryTask?.cancel()
+        retryTask = nil
+        await stopCapture()
         injector?.releaseAll()
         injector = nil
         clipboard.stop()
         lockMonitor.stop()
         power.end()
-        pendingPixelBuffer = nil
-        encodesInFlight = 0
+    }
+
+    nonisolated private static func describe(_ error: any Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) \(error.code): \(error.localizedDescription)"
     }
 
     private func teardown() async {

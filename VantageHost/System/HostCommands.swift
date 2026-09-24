@@ -22,11 +22,9 @@ nonisolated enum HostCommandRunner {
         _ = lock()
     }
 
+    /// Puts the display to sleep (`pmset displaysleepnow`). The session stays up: capture stops
+    /// while the display is off and comes back when something wakes it.
     static func sleepDisplay() {
-        // Public path: put the display to sleep.
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-        task.arguments = ["displaysleepnow"]
-        try? task.run()
+        DisplayPower.sleepNow()
     }
 }

@@ -127,6 +127,27 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Secure Input. Shifted characters get an explicit Shift_L. The live handshake test is opt-in:
   `VANTAGE_LIVE_SCREEN_SHARING=1 xcrun swift test --package-path Packages/VantageCore` (a bogus
   account, expects a clean rejection). A real sign-in still needs a device check.
+- **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
+  display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
+  "Failed to find any displays or windows to capture"). Never end a session because capture
+  can't start (that was the reconnect loop): capture waits, `HostStatus.isDisplayAsleep` (optional;
+  nil from older hosts) tells the client, and capture restarts with a keyframe when the display
+  wakes (NSWorkspace screensDid*, a 1 s poll, the controller's restart; one start at a time). The
+  injector, power assertion, and status monitor live for the session, not the capture. Connecting
+  wakes a sleeping display before listing displays; input while asleep wakes it (≤ 1/s) instead
+  of being delivered (releases still are), except for 2 s after Sleep Display; the Wake command
+  always wakes. Waking is `IOPMAssertionDeclareUserActivity(kIOPMUserActiveLocal)` re-using one
+  assertion id (Remote lights the display on macOS 27 too; a fresh id per call leaked an assertion
+  every time). On Drew's Mac display sleep also posts `com.apple.screenIsLocked` + Secure Input
+  even with screen lock off; both clear on wake. Client: `DisplayAsleepView` (last frame dimmed,
+  glass note, Wake button, tap anywhere) replaces the lock banner while asleep; `ClientSession`
+  resets its reconnect backoff only once the host answers the stream request or the connection
+  lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (a
+  pretend display that starts asleep; sleep/wake commands work on synthetic hosts too). Tests:
+  `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
+  `SessionUITests.testSleepDisplayShowsAsleepStateAndWakes` (synthetic host with
+  `--display-asleep`; `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST=127.0.0.1:<port>` and
+  `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults).
 - **Siri / Shortcuts / Spotlight / widgets**: `ConnectToMacIntent` (+ `VantageShortcuts` phrases
   like "Connect to ⟨Mac⟩ in Vantage") runs in-app and drops the id into `PendingConnection`;
   `ContentView` opens the session once the app is unlocked. Widgets tap through

@@ -1,16 +1,24 @@
+import CoreGraphics
 import Foundation
 import IOKit.pwr_mgt
 import IOKit.ps
 import os
 
-/// Holds a display-sleep-prevention assertion while a client session is active, and declares
-/// remote user activity so the panel (and framebuffer) stays live for capture.
+/// Holds a display-sleep-prevention assertion while a client session is active, and wakes the
+/// display when the client needs it: at connect, on the Wake command, and on input while it's
+/// asleep. Thread-safe: the session actor and the input path both call in.
 nonisolated final class PowerManager: @unchecked Sendable {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "power")
+    private let lock = NSLock()
     private var assertionID: IOPMAssertionID = 0
     private var active = false
+    /// The one user-activity assertion this session re-declares. IOPMLib.h asks callers to pass
+    /// the returned id back each time; a fresh id per call leaked an assertion every time.
+    private var activityID: IOPMAssertionID = 0
+    private var lastWake: ContinuousClock.Instant?
 
     func begin(reason: String = "Vantage remote session active") {
+        lock.lock(); defer { lock.unlock() }
         guard !active else { return }
         var id: IOPMAssertionID = 0
         let status = IOPMAssertionCreateWithName(
@@ -28,13 +36,33 @@ nonisolated final class PowerManager: @unchecked Sendable {
         }
     }
 
-    /// Declares remote user activity so a sleeping display wakes for the remote client.
-    func declareUserActivity() {
-        var id: IOPMAssertionID = 0
-        IOPMAssertionDeclareUserActivity("Vantage remote input" as CFString, kIOPMUserActiveRemote, &id)
+    /// Turns the display on (a no-op when it's already on) by declaring user activity, as a
+    /// key press on the Mac would. `minimumInterval` limits how often input can do this: the
+    /// call is an IPC to powerd, and once a second is plenty.
+    @discardableResult
+    func wakeDisplay(reason: String, minimumInterval: Duration = .zero) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let now = ContinuousClock.now
+        if minimumInterval > .zero, let lastWake, now - lastWake < minimumInterval { return false }
+        lastWake = now
+        if DisplayPower.fake.isEnabled {
+            DisplayPower.fake.wake()
+        } else {
+            // Local and Remote both light a sleeping display on macOS 27 (checked with
+            // `pmset displaysleepnow`); Local is what a key press on the Mac itself declares.
+            let status = IOPMAssertionDeclareUserActivity("Vantage remote input" as CFString, kIOPMUserActiveLocal, &activityID)
+            if status != kIOReturnSuccess { log.error("declaring user activity failed: \(status)") }
+        }
+        log.info("waking the display (\(reason, privacy: .public))")
+        return true
     }
 
     func end() {
+        lock.lock(); defer { lock.unlock() }
+        if activityID != 0 {
+            IOPMAssertionRelease(activityID)
+            activityID = 0
+        }
         guard active else { return }
         IOPMAssertionRelease(assertionID)
         assertionID = 0
@@ -54,5 +82,46 @@ nonisolated final class PowerManager: @unchecked Sendable {
             if state == kIOPSACPowerValue { return true }
         }
         return false
+    }
+}
+
+/// Whether the Mac's display is asleep. While it is, ScreenCaptureKit lists no displays and any
+/// running stream stops ("Failed to find any displays or windows to capture"), so capture can
+/// only come back after a wake.
+nonisolated enum DisplayPower {
+    static func isAsleep() -> Bool {
+        if fake.isEnabled { return fake.isAsleep }
+        return CGDisplayIsAsleep(CGMainDisplayID()) != 0
+    }
+
+    /// `pmset displaysleepnow`, like the Mac's own "Sleep display" (or the pretend display).
+    static func sleepNow() {
+        if fake.isEnabled {
+            fake.sleep()
+            return
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        task.arguments = ["displaysleepnow"]
+        try? task.run()
+    }
+
+    /// DEBUG `--display-asleep`: a pretend display that starts asleep, for synthetic hosts and
+    /// tests. Sleep and wake flip it the way they would a real one.
+    static let fake = FakeDisplay(enabled: HostOptions.shared.fakeDisplaySleep)
+
+    final class FakeDisplay: @unchecked Sendable {
+        let isEnabled: Bool
+        private let lock = NSLock()
+        private var asleep: Bool
+
+        init(enabled: Bool) {
+            isEnabled = enabled
+            asleep = enabled
+        }
+
+        var isAsleep: Bool { lock.withLock { asleep } }
+        func sleep() { lock.withLock { asleep = true } }
+        func wake() { lock.withLock { asleep = false } }
     }
 }

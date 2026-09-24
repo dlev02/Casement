@@ -35,6 +35,7 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
         self.onStop = onStop
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            log.error("display \(self.displayID) isn't shareable (listed: \(content.displays.map(\.displayID), privacy: .public))")
             throw CaptureError.displayNotFound
         }
         let filter = SCContentFilter(display: display, excludingWindows: [])

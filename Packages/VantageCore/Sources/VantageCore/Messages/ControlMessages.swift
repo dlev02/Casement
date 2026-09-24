@@ -322,12 +322,17 @@ public struct HostStatus: Codable, Sendable, Equatable {
     public var isSecureInputActive: Bool
     public var inputPath: HostInputPath
     public var message: String?
+    /// The Mac's display is asleep, so there's no picture until it wakes. Nil from hosts that
+    /// predate it (optional, so both sides decode the other's JSON either way).
+    public var isDisplayAsleep: Bool?
 
-    public init(isScreenLocked: Bool, isSecureInputActive: Bool, inputPath: HostInputPath, message: String? = nil) {
+    public init(isScreenLocked: Bool, isSecureInputActive: Bool, inputPath: HostInputPath, message: String? = nil,
+                isDisplayAsleep: Bool? = nil) {
         self.isScreenLocked = isScreenLocked
         self.isSecureInputActive = isSecureInputActive
         self.inputPath = inputPath
         self.message = message
+        self.isDisplayAsleep = isDisplayAsleep
     }
 }
 

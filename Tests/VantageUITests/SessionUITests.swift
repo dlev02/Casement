@@ -334,6 +334,47 @@ nonisolated final class SessionUITests: XCTestCase {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
     }
 
+    /// Sleep Display from the session menu, against a synthetic host started with
+    /// `--display-asleep` (a pretend display that sleeps and wakes like a real one): the Mac's
+    /// screen gets the asleep note, the session stays put with no video, and Wake (or a tap
+    /// anywhere) brings it back. `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST` picks another host:port;
+    /// `TEST_RUNNER_VANTAGE_TEXT_SIZE` (a UIContentSizeCategory name) screenshots it at that size.
+    @MainActor func testSleepDisplayShowsAsleepStateAndWakes() {
+        let environment = ProcessInfo.processInfo.environment
+        let host = environment["VANTAGE_SYNTHETIC_HOST"] ?? "127.0.0.1:47821"
+        let app = XCUIApplication()
+        app.launchArguments = ["-VantageAutoConnect", host, "-VantagePairingCode", "246810",
+                               "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
+        if let size = environment["VANTAGE_TEXT_SIZE"] { app.launchArguments += ["-UIPreferredContentSizeCategoryName", size] }
+        app.launch()
+        let menu = app.buttons["Session Options"]
+        let wake = app.buttons["session.wakeDisplay"]
+        func sleepDisplay() {
+            XCTAssertTrue(menu.waitForExistence(timeout: 20), app.debugDescription)
+            menu.tap()
+            let item = app.buttons["Sleep Display"]
+            XCTAssertTrue(item.waitForExistence(timeout: 3), app.debugDescription)
+            item.tap()
+            XCTAssertTrue(wake.waitForExistence(timeout: 10), app.debugDescription)
+        }
+
+        sleepDisplay()
+        XCTAssertTrue(app.staticTexts["The Mac's display is asleep"].exists)
+        screenshot("Mac display asleep", app)
+        // No picture for a while is fine: same session, no reconnecting.
+        XCTAssertFalse(wake.waitForNonExistence(timeout: 4), "the asleep state should stay until woken")
+        XCTAssertFalse(app.staticTexts["Reconnecting…"].exists)
+        wake.tap()
+        XCTAssertTrue(wake.waitForNonExistence(timeout: 10), app.debugDescription)
+        screenshot("Mac display awake again", app)
+
+        // Again, woken by a tap on the Mac's screen this time.
+        sleepDisplay()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        XCTAssertTrue(wake.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(menu.exists, "still in the session")
+    }
+
     @MainActor private func openSessionEditor(_ app: XCUIApplication) {
         let menu = app.buttons["Session Options"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))

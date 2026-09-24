@@ -65,6 +65,10 @@ struct RemoteSessionScreen: View {
     /// Files are being dragged over the Mac's screen.
     @State private var isDropTargeted = ClientOptions.dropHintFixture
     @State private var queuedTestFile = false
+    /// Wake was tapped and the Mac's display hasn't come on yet (clears itself after a while so
+    /// the button works again if the Mac didn't answer).
+    @State private var wakeRequested = false
+    @State private var wakeTask: Task<Void, Never>?
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -81,13 +85,17 @@ struct RemoteSessionScreen: View {
             }
             #endif
 
-            if !isLive {
+            if session.isDisplayAsleep {
+                DisplayAsleepView(isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
+                    .transition(.opacity)
+            } else if !isLive {
                 connectionOverlay
                     .transition(.opacity)
             }
 
             VStack {
-                if let status = session.hostStatus, status.isScreenLocked || status.isSecureInputActive {
+                // A sleeping Mac also reports its lock screen; the asleep note says enough.
+                if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
                     HostStatusBanner(status: status)
                         .padding(.top, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -168,6 +176,12 @@ struct RemoteSessionScreen: View {
             #endif
         }
         .animation(.smooth(duration: 0.35), value: isLive)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: session.isDisplayAsleep)
+        .onChange(of: session.isDisplayAsleep) { _, asleep in
+            wakeTask?.cancel()
+            wakeRequested = false
+            if asleep { AccessibilityNotification.Announcement("The Mac's display is asleep").post() }
+        }
         #if os(visionOS)
         // Keep the window bar: it's how the session window is moved and closed.
         .ornament(visibility: session.state == .connected ? .visible : .hidden,
@@ -372,6 +386,20 @@ struct RemoteSessionScreen: View {
         case .done: AccessibilityNotification.Announcement("Sent \(transfer.name) to \(device.name)").post()
         case .failed(let reason): AccessibilityNotification.Announcement("Couldn't send \(transfer.name). \(reason)").post()
         default: break
+        }
+    }
+
+    // MARK: Display sleep
+
+    /// The Wake button or a tap on the sleeping Mac's screen.
+    private func wakeDisplay() {
+        guard !wakeRequested else { return }
+        session.wakeDisplay()
+        wakeRequested = true
+        wakeTask?.cancel()
+        wakeTask = Task {
+            do { try await Task.sleep(for: .seconds(6)) } catch { return }
+            wakeRequested = false
         }
     }
 
@@ -712,6 +740,7 @@ struct RemoteSessionScreen: View {
         feedbackTask = nil
         macAudioNoticeTask?.cancel()
         receivedNoticeTask?.cancel()
+        wakeTask?.cancel()
         #if canImport(UIKit)
         macAudio.setWanted(false)
         #endif

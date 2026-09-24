@@ -17,6 +17,8 @@ import Foundation
 ///   menu bar is too crowded to show the item).
 /// - `--log-input-events`: log the key events reaching the session (`InputEventLog`).
 /// - `--exit-after 300`: quit after that many seconds, so a test host never outlives its run.
+/// - `--display-asleep`: pretend the display starts asleep (`DisplayPower.fake`); synthetic hosts
+///   then behave like a Mac whose screen is off until something wakes it.
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -41,6 +43,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let logInputEvents: Bool
     /// Quit this long after launch (DEBUG only).
     let exitAfterSeconds: Double?
+    /// A pretend display that starts asleep (DEBUG only).
+    let fakeDisplaySleep: Bool
 
     private init() {
         #if DEBUG
@@ -88,6 +92,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             exitAfterSeconds = nil
         }
+        fakeDisplaySleep = args.contains("--display-asleep")
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -101,6 +106,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         openMenu = false
         logInputEvents = false
         exitAfterSeconds = nil
+        fakeDisplaySleep = false
         #endif
     }
 }
