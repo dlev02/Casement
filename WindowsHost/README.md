@@ -82,3 +82,75 @@ From the Mac, `xcrun swift test` reaches `100.64.0.20:47821` directly over Tails
 interop suite runs against the real Windows host. The simulator may not route to the tailnet; tunnel
 so the peer is loopback (a DEBUG host accepts it):
 `ssh -N -L 47831:127.0.0.1:47821 you@100.64.0.20`.
+
+## Windows host: projects and the PC-side workflow
+
+| Project | Output | What |
+| --- | --- | --- |
+| `src/Vantage.Host.Windows.Platform/` | library | WGC capture on the monitor's GPU, D3D11 BGRA→NV12, Media Foundation H.264 (hardware MFT by adapter LUID, software fallback), `SendInput`, Win32 clipboard, WTS/secure-desktop/display-power status, keep-awake, DPAPI storage, receive folder + Mark of the Web, Tailscale CLI, tray icon, start at login, and `WindowsHostRuntime` (the composition root). |
+| `src/Vantage.Host.Windows.Cli/` | `VantageHostCli.exe` | The real pipeline with console logging and no UI (bring-up, SSH). Keys: P new pairing code, Q quit. |
+| `src/Vantage.Host.Windows/` | `VantageHost.exe` | The WinUI 3 tray app (Windows App SDK 2.5, unpackaged, self-contained). Same flags as the CLI. |
+| `tools/InputProbe/` | `InputProbe.exe` | Logs mouse/keyboard events with `injected` and `vantage` marks (the Windows `click-target.swift`). |
+| `tests/Vantage.Host.Windows.Tests/` | xUnit | The pure parts (coordinates, dirty regions, DPI maths, clipboard text/DIB/PNG, tray menu, Tailscale JSON, NAL units, flags, receive folder, start at login). |
+
+On the Mac, `dotnet build Vantage.Windows.slnx` compiles everything but the WinUI app (the
+Windows projects set `EnableWindowsTargeting`), and `dotnet test --solution Vantage.Windows.slnx`
+runs the Windows tests too. Export `DOTNET_CLI_TELEMETRY_OPTOUT=1 TESTINGPLATFORM_TELEMETRY_OPTOUT=1`
+first; the scripts do. XAML compiles only on Windows: build the app from `Vantage.Windows.PC.slnx`.
+
+Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
+`--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream),
+`--platform windows|macos`, `--synthetic` (separate `Vantage Host (Synthetic)` data folder, input
+logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
+auto|hardware|software`, `--rate-control cbr|lowdelayvbr`, `--send-file-on-connect PATH` and
+`--capture-fails-for S` (Debug), `--background`, `--verbose`. Logs default to
+`%LOCALAPPDATA%\Vantage Host\logs\host.log`; `run-dev.ps1` uses `dev.log`.
+
+### First bring-up on drew-pc
+
+```powershell
+# 0. Once, elevated, before anything listens (also removes block rules Windows may have made):
+powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\firewall.ps1
+```
+
+```sh
+# 1. From the Mac: copy the tree over (once first: ssh you@100.64.0.20 "mkdir C:\src\vantage")
+sh WindowsHost/scripts/push.sh
+# 2. Build everything and run the Windows tests on the PC
+ssh you@100.64.0.20 "cd C:\src\vantage\WindowsHost & set DOTNET_CLI_TELEMETRY_OPTOUT=1& set TESTINGPLATFORM_TELEMETRY_OPTOUT=1& dotnet build Vantage.Windows.PC.slnx -c Debug & dotnet test --project tests\Vantage.Host.Windows.Tests"
+# 3. Run the console host in Drew's interactive session for a minute, saving the encoded stream
+ssh you@100.64.0.20 "powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\run-dev.ps1 -DumpH264 C:\temp\vantage.h264 -ExitAfter 60"
+# 4. Connect something so it streams: the interop suite, or the simulator through the tunnel above
+VANTAGE_INTEROP_HOST=100.64.0.20:47821 xcrun swift test --filter WindowsHostInteropTests
+# 5. Read the log, then check the stream on the Mac
+ssh you@100.64.0.20 "powershell -Command Get-Content (Join-Path $env:LOCALAPPDATA 'Vantage Host\logs\dev.log') -Tail 80"
+scp you@100.64.0.20:C:/temp/vantage.h264 /tmp/ && ffprobe -v error -show_streams /tmp/vantage.h264 | grep -E "profile|has_b_frames|color_|width|height"
+ffprobe -v error -show_frames -select_streams v /tmp/vantage.h264 | grep -c pict_type=I   # IDRs only when asked for
+ffplay /tmp/vantage.h264
+```
+
+What the log should show: `GPU: NVIDIA GeForce RTX 5070 Ti …` (the monitor's adapter, not the
+AMD iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
+`encoder: NVIDIA H.264 Encoder MFT (hardware, async) …`, then `…: first frame N bytes, NAL types
+[7,8,5]` (SPS, PPS, IDR; a 9 or 6 in front is an AUD/SEI the core drops). If the NVIDIA MFT
+misbehaves, rerun with `-Encoder software` to separate encoder problems from pipeline ones.
+`ffprobe` should report High profile, `has_b_frames=0`, `color_primaries=bt709`,
+`color_transfer=iec61966-2-1` (or `bt709`) and `color_range=tv`.
+
+Input: start `InputProbe.exe` (`tools\InputProbe\bin\Debug\net10.0-windows\`) at the PC (or
+through a scheduled task with its output redirected to a file), then move, click, scroll, type and
+send chords from the client; every event the host sends is marked `injected vantage`. Stop the
+console host with `run-dev.ps1 -Stop`.
+
+### The app
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\publish.ps1 -Launch
+```
+
+publishes `VantageHost.exe` self-contained into `%LOCALAPPDATA%\Programs\Vantage Host\` with a
+Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed code). Left-click
+the tray icon for the window (General shows the tailnet address and Show Pairing Code), right-click
+for the menu; turn on "Start Vantage Host when I sign in" there. Closing the window keeps it in the
+tray; Quit is in the tray menu and on the About page. Drew's iPad then pairs with
+`100.64.0.20:47820`.
