@@ -34,7 +34,13 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertLessThan(toggle.frame.midX, app.frame.midX)
         toggle.tap()
         XCUIDevice.shared.press(.home)
+        // Under load the Home press can return while the app still reports the foreground, and
+        // activate() then does nothing (it came back in 30 ms and the app stayed behind the Home
+        // Screen): wait until the app has really left, and until it's really back.
+        let left = NSPredicate(format: "state != %@", NSNumber(value: XCUIApplication.State.runningForeground.rawValue))
+        wait(for: [expectation(for: left, evaluatedWith: app)], timeout: 10)
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         XCTAssertTrue(toggle.waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["Command"].exists)
         screenshot("Session resumed", app)

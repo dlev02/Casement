@@ -84,7 +84,7 @@ struct DisplaySleepSessionTests {
         session.wakeDisplay()
         try await Self.eventually { !session.isDisplayAsleep }
         #expect(session.state == .connected && session.reconnectAttempts == 0)
-        await try host.value.close()
+        try await host.value.close()
     }
 
     @Test @MainActor func aMissingPictureIsExplainedAndRetryReachesTheHost() async throws {
@@ -112,7 +112,7 @@ struct DisplaySleepSessionTests {
         session.wakeDisplay()
         try await Self.eventually { !session.isScreenUnavailable }
         #expect(session.state == .connected)
-        await try host.value.close()
+        try await host.value.close()
     }
 
     @Test @MainActor func aHostThatDropsEveryStreamRequestIsNotRetriedInALoop() async throws {
