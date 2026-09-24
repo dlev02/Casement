@@ -104,12 +104,15 @@ public sealed class ProtectedTrustStore : ITrustStore
     }
 
     /// <inheritdoc />
-    public void Trust(string fingerprint, string name)
+    public void Trust(string fingerprint, string name) => Trust(fingerprint, name, null);
+
+    /// <inheritdoc />
+    public void Trust(string fingerprint, string name, string? deviceName)
     {
         lock (_lock)
         {
             if (_clients.Exists(c => c.Fingerprint == fingerprint)) return;
-            _clients = [.. _clients, new TrustedClient(fingerprint, name, _time.GetUtcNow())];
+            _clients = [.. _clients, new TrustedClient(fingerprint, name, _time.GetUtcNow(), deviceName)];
             Save();
         }
         Changed?.Invoke();

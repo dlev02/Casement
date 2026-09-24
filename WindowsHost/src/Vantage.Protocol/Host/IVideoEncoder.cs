@@ -72,7 +72,11 @@ public interface IVideoEncoder : IAsyncDisposable
 /// <summary>Where an encoder delivers its output.</summary>
 public interface IEncodedFrameSink
 {
-    /// <summary>One access unit for one input frame, in decode order.</summary>
+    /// <summary>
+    /// One access unit for one input frame, in decode order. Returns at once: the core only queues
+    /// the frame for its session queue, so it's safe to call from the encoder's own event thread
+    /// (the core never waits on anything inside these callbacks).
+    /// </summary>
     void OnFrame(EncodedFrame frame);
 
     /// <summary>The encoder took a frame and produced nothing for it (rate control dropped it).</summary>

@@ -18,8 +18,12 @@ internal sealed class TestHost : IAsyncDisposable
     public readonly HostListener Listener;
     public readonly MemoryClipboard Clipboard;
 
-    public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null)
+    public readonly RecordingFileStore Files;
+
+    public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
+                    IPeerDirectory? peers = null)
     {
+        Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
         Clipboard = new MemoryClipboard(clipboardText, new EventLog(null, false, NullLogger.Instance));
         var storage = new FileProtectedStorage(Path.Combine(Root, "state"));
@@ -32,7 +36,8 @@ internal sealed class TestHost : IAsyncDisposable
             Clipboard = Clipboard,
             Status = Display,
             Power = Display,
-            Files = new SyntheticFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName, NullLogger.Instance),
+            Files = Files,
+            Peers = peers,
             Identity = new ProtectedIdentityStore(storage, new NSecEd25519()),
             Trust = new ProtectedTrustStore(storage, TimeProvider.System),
             Logging = NullLoggerFactory.Instance,
@@ -54,6 +59,32 @@ internal sealed class TestHost : IAsyncDisposable
         await Listener.StopAsync();
         Directory.Delete(Root, recursive: true);
     }
+}
+
+/// <summary>The synthetic store, remembering who each saved file came from.</summary>
+internal sealed class RecordingFileStore(string directory) : IFileStore
+{
+    private readonly SyntheticFileStore _inner = new(directory, NullLogger.Instance);
+    public readonly List<(string Path, FileSender? Sender)> Saved = [];
+    public string ReceiveDirectory => _inner.ReceiveDirectory;
+    public bool IsCaseInsensitive => _inner.IsCaseInsensitive;
+    public long? GetAvailableFreeSpace(string directory) => _inner.GetAvailableFreeSpace(directory);
+    public void OnPartialCreated(string partialPath) => _inner.OnPartialCreated(partialPath);
+    public void OnBeforeFinalize(string partialPath) => _inner.OnBeforeFinalize(partialPath);
+    public void OnSaved(string path, FileOffer offer)
+    {
+        lock (Saved) Saved.Add((path, null));
+    }
+
+    public void OnSaved(string path, FileOffer offer, FileSender sender)
+    {
+        lock (Saved) Saved.Add((path, sender));
+    }
+}
+
+internal sealed class FixedPeers(PeerIdentity identity) : IPeerDirectory
+{
+    public Task<PeerIdentity?> WhoisAsync(System.Net.IPAddress peer, CancellationToken cancellationToken) => Task.FromResult<PeerIdentity?>(identity);
 }
 
 internal sealed class RecordingInput : IInputSink
@@ -363,6 +394,49 @@ public class HostListenerTests
         Assert.True(Assert.Single(host.Listener.FileChannels).SessionEnded);
         Assert.Equal(new FileTransferOutcome.Sent("Hello 2.txt"), await engine.SendAsync(file));
         engine.Close();
+    }
+
+    [Fact]
+    public async Task WhoisNamesTheDeviceInTheTrustListSessionsAndSavedFiles()
+    {
+        await using var host = new TestHost(peers: new FixedPeers(new PeerIdentity("drew@example.com", "Drew", "Drew's iPad Pro")));
+        var client = new TestClient();
+        var (connection, challenge, result) = await client.ConnectAsync(host.Port, "246810").WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(AuthStatus.Ok, result.Status);
+        Assert.Equal("drew@example.com", challenge.PeerTailnetName);
+        var trusted = Assert.Single(host.Listener.Environment.Trust.List());
+        Assert.Equal("Test iPad", trusted.Name);
+        Assert.Equal("Drew's iPad Pro", trusted.DeviceName);
+        Assert.Equal("Drew's iPad Pro", trusted.DisplayName);
+        Assert.Equal("Drew's iPad Pro", Assert.Single(host.Listener.Sessions).ClientName);
+
+        var channel = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await channel.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var engine = new FileTransferEngine(channel, FileTransferRole.Client, new FileTransferConfiguration { ReceiveDirectory = Path.Combine(host.Root, "client") });
+        _ = engine.RunAsync();
+        var file = Path.Combine(host.Root, "From iPad.txt");
+        await File.WriteAllTextAsync(file, "hi");
+        var outcome = await engine.SendAsync(file).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(outcome.IsSuccess, outcome.ToString());
+        lock (host.Files.Saved) Assert.Equal(new FileSender("Drew's iPad Pro", trusted.Fingerprint), Assert.Single(host.Files.Saved).Sender);
+        engine.Close();
+        connection.Close();
+    }
+
+    [Fact]
+    public async Task ListenerReportsItsState()
+    {
+        await using var host = new TestHost();
+        Assert.Equal(HostListenerState.Listening, host.Listener.State);
+        var clash = new HostListener(host.Listener.Environment, new HostListenerOptions { Port = host.Port, AllowLoopback = true });
+        var changes = new List<HostListenerState>();
+        clash.StateChanged += changes.Add;
+        await Assert.ThrowsAsync<System.Net.Sockets.SocketException>(() => clash.StartAsync());
+        Assert.Equal(HostListenerState.Failed, clash.State);
+        Assert.Equal([HostListenerState.Failed], changes);
+        Assert.Contains("in use", clash.FailureReason);
+        await host.Listener.StopAsync();
+        Assert.Equal(HostListenerState.Stopped, host.Listener.State);
     }
 
     [Fact]

@@ -39,7 +39,12 @@ public sealed record HostIdentity(byte[] Seed, byte[] PublicKey);
 /// <param name="Fingerprint">Lowercase hex of the first 8 bytes of SHA-256(raw public key): 16 characters.</param>
 /// <param name="Name"><c>Hello.clientName</c> when it paired (iOS says just "iPad"; the UI may show the whois name instead).</param>
 /// <param name="AddedAt">When it paired.</param>
-public sealed record TrustedClient(string Fingerprint, string Name, DateTimeOffset AddedAt);
+/// <param name="DeviceName">The tailnet's name for the device (whois <c>Hostinfo.Hostname</c>, e.g. "Drew's iPad Pro") when it was known at pairing; show it before <paramref name="Name"/>.</param>
+public sealed record TrustedClient(string Fingerprint, string Name, DateTimeOffset AddedAt, string? DeviceName = null)
+{
+    /// <summary>The best name to show: the tailnet device name, else the hello name.</summary>
+    public string DisplayName => string.IsNullOrEmpty(DeviceName) ? Name : DeviceName;
+}
 
 /// <summary>
 /// The trust list: which client keys may connect without a pairing code (spec §7.1). The protocol
@@ -54,12 +59,18 @@ public interface ITrustStore
     /// <summary>Adds a client after a correct pairing code. No-op if it's already there.</summary>
     void Trust(string fingerprint, string name);
 
+    /// <summary>
+    /// Adds a client with the tailnet's name for it (whois), when known. Stores that implement only
+    /// the two-argument form drop the device name.
+    /// </summary>
+    void Trust(string fingerprint, string name, string? deviceName) => Trust(fingerprint, name);
+
     /// <summary>Removes a client. Returns false if it wasn't there. The listener also closes its sessions and file channels.</summary>
     bool Revoke(string fingerprint);
 
     /// <summary>Everyone paired, oldest first.</summary>
     IReadOnlyList<TrustedClient> List();
 
-    /// <summary>Raised (any thread) after <see cref="Trust"/> or <see cref="Revoke"/> changes the list.</summary>
+    /// <summary>Raised (any thread) after <c>Trust</c> or <see cref="Revoke"/> changes the list.</summary>
     event Action? Changed;
 }

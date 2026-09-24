@@ -54,6 +54,19 @@ public sealed class PairingCodes
     }
 
     /// <summary>
+    /// When the showing code stops working (issued + 10 minutes), for a countdown; null when no code
+    /// is showing or it is a fixed DEBUG code that never expires. A code can also end sooner (used
+    /// or burned): watch <see cref="Cleared"/>.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt
+    {
+        get
+        {
+            lock (_lock) return _active is null || _fixedCode is not null ? null : _issuedAt + Lifetime;
+        }
+    }
+
+    /// <summary>
     /// Shows a new code (the user chose "Show Pairing Code"), replacing any old one and resetting
     /// the miss count. <c>%06d</c> of a uniform 0…999 999.
     /// </summary>

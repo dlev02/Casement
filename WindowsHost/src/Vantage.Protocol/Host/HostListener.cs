@@ -70,8 +70,25 @@ public sealed class HostListener : IAsyncDisposable
     /// <summary>Every file engine's events, tagged with the channel they came from (UI progress, notifications).</summary>
     public event Action<Guid, FileTransferEvent>? FileTransfer;
 
-    /// <summary>A client paired successfully (fingerprint, client name). The pairing code is gone by now.</summary>
+    /// <summary>A client paired successfully (fingerprint, device name). The pairing code is gone by now.</summary>
     public event Action<string, string>? Paired;
+
+    /// <summary>Whether the listener is accepting connections.</summary>
+    public HostListenerState State { get; private set; } = HostListenerState.Stopped;
+
+    /// <summary>Why it failed, when <see cref="State"/> is <see cref="HostListenerState.Failed"/> (e.g. "the port is in use").</summary>
+    public string? FailureReason { get; private set; }
+
+    /// <summary>Raised (any thread) when <see cref="State"/> changes.</summary>
+    public event Action<HostListenerState>? StateChanged;
+
+    private void SetState(HostListenerState state, string? reason = null)
+    {
+        FailureReason = reason;
+        if (State == state) return;
+        State = state;
+        StateChanged?.Invoke(state);
+    }
 
     /// <summary>
     /// Binds and starts accepting. Throws <see cref="SocketException"/> if the port is taken. With a
@@ -80,11 +97,23 @@ public sealed class HostListener : IAsyncDisposable
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
         var socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp) { DualMode = true };
-        if (OperatingSystem.IsWindows()) socket.ExclusiveAddressUse = true;
-        else socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        socket.Bind(new IPEndPoint(IPAddress.IPv6Any, Options.Port));
-        socket.Listen(64);
+        try
+        {
+            // Never share the port with another listener (a second host must fail, not split connections).
+            if (OperatingSystem.IsWindows()) socket.ExclusiveAddressUse = true;
+            socket.Bind(new IPEndPoint(IPAddress.IPv6Any, Options.Port));
+            socket.Listen(64);
+        }
+        catch (SocketException error)
+        {
+            socket.Dispose();
+            SetState(HostListenerState.Failed, error.SocketErrorCode == SocketError.AddressAlreadyInUse
+                ? $"Port {Options.Port} is already in use." : error.Message);
+            _log.LogError("can't listen on port {Port}: {Error}", Options.Port, error.Message);
+            throw;
+        }
         _socket = socket;
+        SetState(HostListenerState.Listening);
         if (Options.FixedPairingCode is not null) Pairing.NewCode();
         _acceptLoop = Task.Run(AcceptLoopAsync, cancellationToken);
         _log.LogInformation("listening on {EndPoint}{Loopback}", socket.LocalEndPoint, Options.AllowLoopback ? " (loopback allowed)" : "");
@@ -99,6 +128,7 @@ public sealed class HostListener : IAsyncDisposable
     {
         if (_stopping.IsCancellationRequested) return;
         await _stopping.CancelAsync().ConfigureAwait(false);
+        SetState(HostListenerState.Stopped);
         _socket?.Dispose();
         foreach (var session in _sessions.Values) session.Abort();
         foreach (var channel in _fileChannels.Values) channel.Engine.Close();
@@ -198,10 +228,18 @@ public sealed class HostListener : IAsyncDisposable
             {
                 return;
             }
-            catch (SocketException error)
+            catch (SocketException error) when (error.SocketErrorCode is SocketError.ConnectionReset or SocketError.ConnectionAborted
+                                                    or SocketError.TooManyOpenSockets or SocketError.NoBufferSpaceAvailable)
             {
                 _log.LogError("accept failed: {Error}", error.Message);
+                await Task.Delay(TimeSpan.FromMilliseconds(100), Environment.Time, CancellationToken.None).ConfigureAwait(false);
                 continue;
+            }
+            catch (SocketException error)
+            {
+                _log.LogError("the listener stopped: {Error}", error.Message);
+                SetState(HostListenerState.Failed, error.Message);
+                return;
             }
             var remote = client.RemoteEndPoint as IPEndPoint;
             if (remote is null || !PeerPolicy.IsAllowed(remote.Address, Options.AllowLoopback))
@@ -365,6 +403,17 @@ public sealed class HostListener : IAsyncDisposable
         public string ReceiveDirectory { get; } = receiveDirectory;
         public bool Watching { get; set; }
     }
+}
+
+/// <summary>Whether a <see cref="HostListener"/> is accepting connections.</summary>
+public enum HostListenerState
+{
+    /// <summary>Not started, or stopped.</summary>
+    Stopped,
+    /// <summary>Accepting connections.</summary>
+    Listening,
+    /// <summary>Couldn't bind or stopped accepting on its own; see <see cref="HostListener.FailureReason"/>.</summary>
+    Failed,
 }
 
 /// <summary>A connected session, for the UI.</summary>

@@ -37,6 +37,12 @@ public enum SessionState
 /// </remarks>
 public sealed class HostSessionCore
 {
+    /// <summary>
+    /// A captured frame whose <see cref="ICapturedFrame.DirtyRatio"/> is at or below this is treated as
+    /// unchanged and not encoded (idle suppression), unless a keyframe is pending.
+    /// </summary>
+    public const double IdleDirtyRatio = 0.0001;
+
     private static readonly TimeSpan s_captureNoFrameLimit = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan s_unavailableNotice = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan s_maxRecoveryDelay = TimeSpan.FromSeconds(5);
@@ -48,6 +54,8 @@ public sealed class HostSessionCore
     private readonly SerialQueue _queue;
     private readonly CancellationTokenSource _ended = new();
     private Hello? _hello;
+    private PeerIdentity? _peer;
+    private bool _peerLookedUp;
     private bool _clientTakesFiles;
     private FileTransferEngine? _fileEngine;
 
@@ -108,7 +116,7 @@ public sealed class HostSessionCore
     /// <summary>Where the session is.</summary>
     public SessionState State { get; private set; } = SessionState.Handshaking;
 
-    /// <summary><c>Hello.clientName</c> once known.</summary>
+    /// <summary>The tailnet's name for the device (whois) when known, else <c>Hello.clientName</c>.</summary>
     public string ClientName { get; private set; } = "iPad";
 
     /// <summary>The client key's fingerprint once known.</summary>
@@ -190,20 +198,8 @@ public sealed class HostSessionCore
         ClientName = hello.ClientName;
         var isPaired = _env.Trust.IsTrusted(Fingerprint);
         var lightweight = hello.IsReadinessProbe == true || hello.Features?.FilesOnly == true;
-        string? tailnetName = null;
-        if (!lightweight && _env.Peers is { } peers)
-        {
-            try
-            {
-                using var whoisLimit = CancellationTokenSource.CreateLinkedTokenSource(deadline);
-                whoisLimit.CancelAfter(TimeSpan.FromSeconds(2));
-                tailnetName = (await peers.WhoisAsync(Peer, whoisLimit.Token).ConfigureAwait(false))?.TailnetName;
-            }
-            catch (Exception error) when (error is not OperationCanceledException || !deadline.IsCancellationRequested)
-            {
-                _log.LogDebug("whois failed: {Error}", error.Message);
-            }
-        }
+        if (!lightweight) await LookUpPeerAsync(deadline).ConfigureAwait(false);
+        var tailnetName = _peer?.TailnetName;
         await _connection.SendAsync(new Challenge
         {
             HostName = _env.HostName,
@@ -250,8 +246,8 @@ public sealed class HostSessionCore
                     }).ConfigureAwait(false);
                     return false;
             }
-            _env.Trust.Trust(Fingerprint, hello.ClientName);
-            _listener.RaisePaired(Fingerprint, hello.ClientName);
+            _env.Trust.Trust(Fingerprint, hello.ClientName, _peer?.DeviceName);
+            _listener.RaisePaired(Fingerprint, ClientName);
         }
 
         if (hello.IsReadinessProbe == true)
@@ -325,6 +321,24 @@ public sealed class HostSessionCore
         }).ConfigureAwait(false);
         _log.LogInformation("client authenticated: {Client}", hello.ClientName);
         return true;
+    }
+
+    /// <summary>Whois for the peer, once per session, within 2 s; the device name becomes <see cref="ClientName"/>.</summary>
+    private async Task LookUpPeerAsync(CancellationToken cancellationToken)
+    {
+        if (_peerLookedUp || _env.Peers is not { } peers) return;
+        _peerLookedUp = true;
+        try
+        {
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            limit.CancelAfter(TimeSpan.FromSeconds(2));
+            _peer = await peers.WhoisAsync(Peer, limit.Token).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(_peer?.DeviceName)) ClientName = _peer.DeviceName;
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _log.LogDebug("whois failed: {Error}", error.Message);
+        }
     }
 
     // MARK: Loops
@@ -572,7 +586,7 @@ public sealed class HostSessionCore
         previous?.Dispose();
 
         // Idle suppression: skip a static frame, but always honour a pending keyframe.
-        if (frame.DirtyRatio <= 0.0001 && !_needsKeyframe && _framesSent > 0) return;
+        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0) return;
         if (_encodesInFlight >= 1)
         {
             _pendingEncode = true;
@@ -989,6 +1003,8 @@ public sealed class HostSessionCore
     /// </summary>
     internal async Task<FileTransferEngine?> AttachFileChannelAsync(FramedConnection channel)
     {
+        // Files-only sessions skip whois at the handshake; the device's name is worth it here.
+        await LookUpPeerAsync(CancellationToken.None).ConfigureAwait(false);
         FileTransferEngine? engine = null;
         await _queue.RunAsync(() =>
         {
@@ -998,6 +1014,7 @@ public sealed class HostSessionCore
                 ReceiveDirectory = _env.Files.ReceiveDirectory,
                 Store = _env.Files,
                 PartialDirectory = _listener.ResumeFolderFor,
+                Sender = new FileSender(ClientName, Fingerprint),
             }, _env.Logging.CreateLogger("Vantage.Files"));
             _fileEngine = engine;
             return Task.CompletedTask;

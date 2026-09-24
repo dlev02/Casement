@@ -40,4 +40,15 @@ public interface IFileStore
     /// Called on the engine's thread; don't block.
     /// </summary>
     void OnSaved(string path, FileOffer offer);
+
+    /// <summary>
+    /// The same, with who sent it (for "Report.pdf from Drew's iPad"). The core calls this one;
+    /// by default it forwards to <see cref="OnSaved(string, FileOffer)"/>.
+    /// </summary>
+    void OnSaved(string path, FileOffer offer, FileSender sender) => OnSaved(path, offer);
 }
+
+/// <summary>Who a received file came from.</summary>
+/// <param name="Name">The device's name: the tailnet device name when known, else what it calls itself ("iPad").</param>
+/// <param name="Fingerprint">Its key fingerprint (the same on every connection).</param>
+public sealed record FileSender(string Name, string Fingerprint);

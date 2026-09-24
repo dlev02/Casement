@@ -49,6 +49,9 @@ public sealed record FileTransferConfiguration
     /// <summary>Platform hooks: Hidden attribute, Zone.Identifier, free space, case-insensitive names.</summary>
     public IFileStore? Store { get; init; }
 
+    /// <summary>Who is on the other end, passed to <see cref="IFileStore.OnSaved(string, FileOffer, FileSender)"/>.</summary>
+    public FileSender? Sender { get; init; }
+
     /// <summary>Apply the Windows name rules on top of the Mac's (reserved names, <c>&lt;&gt;"|?*</c>).</summary>
     public bool WindowsNameRules { get; init; } = true;
 }
@@ -641,7 +644,11 @@ public sealed class FileTransferEngine
         {
             var saved = Place(state);
             PartialClaims.Release(state.Partial, this);
-            RunHook(() => _config.Store?.OnSaved(saved, state.Offer));
+            RunHook(() =>
+            {
+                if (_config.Sender is { } sender) _config.Store?.OnSaved(saved, state.Offer, sender);
+                else _config.Store?.OnSaved(saved, state.Offer);
+            });
             LogRate("received", state.Received - state.ResumedAt, state.Started, state.ResumedAt);
             // Saved whether or not the answer reaches the sender.
             Emit(new FileTransferEvent.Finished(complete.Id, new FileTransferOutcome.Received(saved)));

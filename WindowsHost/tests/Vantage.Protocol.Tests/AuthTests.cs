@@ -60,8 +60,10 @@ public class AuthTests
         Assert.Equal(PairingCheck.Unavailable, codes.Consume(code));
 
         code = codes.NewCode();
+        Assert.Equal(time.GetUtcNow() + TimeSpan.FromMinutes(10), codes.ExpiresAt);
         Assert.Equal(PairingCheck.Accepted, codes.Consume(code));
         Assert.Null(codes.Current);
+        Assert.Null(codes.ExpiresAt);
     }
 
     [Fact]
@@ -70,6 +72,7 @@ public class AuthTests
         var time = new ManualTime();
         var codes = new PairingCodes(time, "246810");
         Assert.Equal("246810", codes.NewCode());
+        Assert.Null(codes.ExpiresAt); // a fixed code never expires
         time.Advance(TimeSpan.FromHours(3));
         Assert.Equal(PairingCheck.Accepted, codes.Consume("246810"));
     }

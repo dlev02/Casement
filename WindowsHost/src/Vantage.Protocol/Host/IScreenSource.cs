@@ -100,8 +100,10 @@ public interface ICapturedFrame : IDisposable
 
     /// <summary>
     /// Fraction of the frame area that changed since the previous frame, 0…1 (Windows 24H2+:
-    /// <c>DirtyRegionMode.ReportOnly</c> rects). Report 1 when unknown; 0 only when the platform
-    /// knows nothing changed (the core then skips encoding it unless a keyframe is pending).
+    /// <c>DirtyRegionMode.ReportOnly</c> rects). Report 1 when unknown. At or below
+    /// <see cref="HostSessionCore.IdleDirtyRatio"/> the core treats the frame as unchanged and skips
+    /// encoding it (unless a keyframe is pending), so a frame where only the cursor moved must report
+    /// more than that (Windows reports ~0.0005, a 32×32 area at 1080p).
     /// </summary>
     double DirtyRatio { get; }
 
