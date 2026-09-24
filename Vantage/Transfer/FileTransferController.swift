@@ -124,9 +124,25 @@ final class FileTransferController {
     private var rateSamples: [UUID: (time: ContinuousClock.Instant, bytes: UInt64)] = [:]
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
 
-    /// `Documents/Received`, which Files shows as On My iPad → Vantage → Received.
+    /// `Documents/Received`, which Files shows as On My iPad → Vantage → Received. On the Mac,
+    /// the Downloads folder (the sandbox's `Downloads` is a link to it; resolved so Finder shows
+    /// the real folder).
     static var defaultReceiveDirectory: URL {
+        #if os(macOS)
+        #if DEBUG
+        // UI tests pass `-VantageReceiveFolder <path>` and never touch the real Downloads.
+        if let folder = UserDefaults.standard.string(forKey: "VantageReceiveFolder") {
+            return URL(filePath: folder, directoryHint: .isDirectory)
+        }
+        #endif
+        // Only the app saves to Downloads; a test runner (no Vantage bundle) gets a scratch folder.
+        guard Bundle.main.bundleIdentifier == "com.benjaminlevinson.vantage" else {
+            return URL.temporaryDirectory.appending(path: "VantageReceived", directoryHint: .isDirectory)
+        }
+        return URL.downloadsDirectory.resolvingSymlinksInPath()
+        #else
         URL.documentsDirectory.appending(path: "Received", directoryHint: .isDirectory)
+        #endif
     }
 
     /// Copies of dropped files wait here until they've been sent.

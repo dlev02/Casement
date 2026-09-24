@@ -2,10 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 import VantageCore
 import os
+#if os(macOS)
+import AppKit
+#endif
 
 /// Files sent to and received from the Mac this session: what's moving (with a ring that fills
 /// as it goes, the rate, and time left), then how the rest ended. Received files can be shared or
-/// shown in Files. The session presents it in a sheet with its own navigation stack.
+/// shown in Files (in Finder on the Mac). The session presents it in a sheet with its own
+/// navigation stack.
 struct TransfersView: View {
     let files: FileTransferController
     let macName: String
@@ -53,7 +57,7 @@ struct TransfersView: View {
                         } header: {
                             Text("Finished")
                         } footer: {
-                            Text("Files from \(macName) are in Files, under On My iPad › Vantage › Received.")
+                            Text("Files from \(macName) are \(ReceivedFiles.location).")
                         }
                     }
                 }
@@ -82,7 +86,7 @@ struct TransfersView: View {
                     Button("Clear") {
                         withAnimation(.smooth(duration: 0.25)) { files.clearFinished() }
                     }
-                    .accessibilityHint("Removes finished transfers from this list. Received files stay in Files.")
+                    .accessibilityHint("Removes finished transfers from this list. Received files stay \(ReceivedFiles.location).")
                 }
             }
         }
@@ -209,13 +213,13 @@ private struct TransferRow: View {
                 }
                 .accessibilityLabel("Share \(transfer.name)")
                 Button {
-                    if let files = ReceivedFiles.filesAppURL(for: url) { openURL(files) }
+                    ReceivedFiles.show(url, openURL: openURL)
                 } label: {
                     Image(systemName: "folder")
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(.rect)
                 }
-                .accessibilityLabel("Show \(transfer.name) in Files")
+                .accessibilityLabel("Show \(transfer.name) in \(ReceivedFiles.browser)")
             }
             .buttonStyle(.borderless)
             .font(.title3)
@@ -337,9 +341,26 @@ enum TransferFormat {
 }
 
 enum ReceivedFiles {
+    #if os(macOS)
+    static let browser = "Finder"
+    static let location = "in your Downloads folder"
+    #else
+    static let browser = "Files"
+    static let location = "in Files, under On My iPad › Vantage › Received"
+    #endif
+
     /// Opens Files at the folder holding `url` (On My iPad › Vantage › Received).
     static func filesAppURL(for url: URL) -> URL? {
         URL(string: "shareddocuments://" + url.deletingLastPathComponent().path(percentEncoded: true))
+    }
+
+    /// Shows a received file: a Finder window selecting it on the Mac, Files at its folder on iOS.
+    static func show(_ url: URL, openURL: OpenURLAction) {
+        #if os(macOS)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        #else
+        if let files = filesAppURL(for: url) { openURL(files) }
+        #endif
     }
 }
 
@@ -360,9 +381,9 @@ struct ReceivedFileNotice: View {
             if let url = transfer.savedURL {
                 Divider().frame(height: 18)
                 Button("Show") {
-                    if let files = ReceivedFiles.filesAppURL(for: url) { openURL(files) }
+                    ReceivedFiles.show(url, openURL: openURL)
                 }
-                .accessibilityLabel("Show in Files")
+                .accessibilityLabel("Show in \(ReceivedFiles.browser)")
                 ShareLink(item: url) { Text("Share") }
             }
         }
@@ -398,6 +419,10 @@ struct DropToSendHint: View {
 
 /// Files dragged onto the Mac's screen, or onto its row in the device list: copied out of the
 /// drag (its files only live for the callback) and queued for the Mac's Downloads.
+///
+/// On the Mac client, files dragged from Finder are sent from where they are: the drag hands the
+/// app a file URL (and the sandbox access to it), so a 2 GB file isn't copied first. Anything
+/// that isn't a file on disk (an image dragged out of a browser) is copied as on iOS.
 struct FileDropDelegate: DropDelegate {
     let isEnabled: Bool
     @Binding var isTargeted: Bool
@@ -414,6 +439,12 @@ struct FileDropDelegate: DropDelegate {
         guard isEnabled else { return false }
         let providers = info.itemProviders(for: [.item])
         for provider in providers {
+            #if os(macOS)
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                sendInPlace(provider)
+                continue
+            }
+            #endif
             // The file's own type (a JPEG, a PDF), not a private or text flavour of it.
             let type = provider.registeredContentTypes.first { $0.conforms(to: .data) || $0.conforms(to: .package) } ?? .item
             let files = self.files()
@@ -434,6 +465,25 @@ struct FileDropDelegate: DropDelegate {
         }
         return !providers.isEmpty
     }
+
+    #if os(macOS)
+    private func sendInPlace(_ provider: NSItemProvider) {
+        let files = self.files()
+        _ = provider.loadObject(ofClass: URL.self) { url, error in
+            let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "files")
+            guard let url, url.isFileURL else {
+                log.error("dropped item had no file URL: \(error?.localizedDescription ?? "?", privacy: .public)")
+                return
+            }
+            // Folders aren't sent (yet); a package (an .app, a .pages) is a folder too.
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory != true else {
+                log.info("dropped a folder; skipped")
+                return
+            }
+            Task { @MainActor in files.send([url], securityScoped: false) }
+        }
+    }
+    #endif
 }
 
 #if DEBUG
