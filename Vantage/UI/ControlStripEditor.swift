@@ -255,9 +255,14 @@ private struct StripItemRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .accessibilityElement(children: .combine)
-            // Read the name before the button, which also gives the system reorder handle
-            // "Reorder Escape" rather than "Reorder Remove Escape".
+            // The name is the label and what it sends the value ("Escape, Esc key"). The system
+            // reorder handle takes its name from the row's label, so a description folded into
+            // the label would make it "Reorder Escape, Esc key".
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.label)
+            .accessibilityValue(item.detail)
+            // Read the name before the button, which also gives the reorder handle "Reorder
+            // Escape" rather than "Reorder Remove Escape".
             .accessibilitySortPriority(1)
         }
         .opacity(isEnabled ? 1 : 0.45)

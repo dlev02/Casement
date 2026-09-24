@@ -90,7 +90,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Settings → Controls → Customize Controls (default), the Edit Device sheet's Controls row (saved
   with the sheet), and the session menu's Customize Controls… (writes the store live; the strip
   behind follows). Disconnect (`session.toolbar.disconnect`) is a standard item: immediate, no
-  confirmation. Tests: `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
+  confirmation. VoiceOver reads an editor row as the control's name (label) and what it sends
+  (value): the system reorder handle is named after the row's label ("Reorder Escape"), so a
+  description folded into the label made it "Reorder Escape, Esc key" on iOS 27. Tests:
+  `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall

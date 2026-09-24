@@ -414,16 +414,35 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Remove Show Desktop"].waitForExistence(timeout: 3))
         screenshot("More Controls", app)
 
-        // Drag Tab by its reorder handle to the top of the list.
+        // VoiceOver hears a row as the control's name, then what it sends.
         for _ in 0..<8 where !app.buttons["Remove Control"].isHittable { app.swipeDown() }
-        let handles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder"))
-        let tab = app.buttons["Reorder Tab"]
+        let tabRow = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ AND value == %@", "Tab", "Tab key")).firstMatch
+        XCTAssertTrue(tabRow.exists, app.debugDescription)
+
+        // Drag Tab by its reorder handle to the top of the list.
+        let tab = reorderHandle("Tab", app)
         XCTAssertTrue(tab.waitForExistence(timeout: 3), app.debugDescription)
-        tab.press(forDuration: 0.6, thenDragTo: app.buttons["Reorder Control"])
-        XCTAssertEqual(handles.firstMatch.label, "Reorder Tab")
+        tab.press(forDuration: 0.6, thenDragTo: reorderHandle("Control", app))
+        let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder ")).firstMatch
+        XCTAssertTrue(Self.isReorderHandle(first, for: "Tab"), first.label)
         screenshot("Tab moved first", app)
 
         resetDefaultLayout(app)
+    }
+
+    /// A row's system reorder handle, "Reorder Tab". The system names it after the row's label, so
+    /// this also takes "Reorder Tab, …" in case a system version folds more of the row into it.
+    @MainActor private func reorderHandle(_ name: String, _ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(Self.reorderHandle(named: name)).firstMatch
+    }
+
+    private static func reorderHandle(named name: String) -> NSPredicate {
+        NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Reorder \(name)", "Reorder \(name), ")
+    }
+
+    @MainActor private static func isReorderHandle(_ element: XCUIElement, for name: String) -> Bool {
+        reorderHandle(named: name).evaluate(with: element)
     }
 
     /// Scrolls to Reset to Default and taps it if the layout isn't already the default.
