@@ -9,4 +9,7 @@
     <Project Path="tests/Vantage.Protocol.Tests/Vantage.Protocol.Tests.csproj" />
     <Project Path="tests/Vantage.Host.Windows.Tests/Vantage.Host.Windows.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/InputProbe/InputProbe.csproj" />
+  </Folder>
 </Solution>

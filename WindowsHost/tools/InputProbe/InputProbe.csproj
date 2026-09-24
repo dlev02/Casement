@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Logs every mouse and keyboard event reaching the desktop (WH_MOUSE_LL / WH_KEYBOARD_LL),
+       marking injected ones and the ones Vantage Host sent: the Windows counterpart of
+       scripts/click-target.swift. Run it in the interactive session on the PC. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Vantage.Tools.InputProbe</RootNamespace>
+    <AssemblyName>InputProbe</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Lets macOS build it (compile-only) as part of the solution. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>
