@@ -226,6 +226,9 @@ struct FileTransferSessionTests {
         let files = FileTransferController(receiveDirectory: clientDir)
         var received: [FileTransferController.Transfer] = []
         files.onReceived = { received.append($0) }
+        var felt: [Haptic] = []
+        files.onFeedback = { felt.append($0) }
+        files.feedbackQuietPeriod = .zero
         let session = ClientSession(identity: DeviceIdentity(), files: files)
         defer { session.disconnect() }
         session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
@@ -244,6 +247,7 @@ struct FileTransferSessionTests {
         #expect(upload.direction == .sending && upload.savedName == "Report.pdf" && upload.fraction == 1)
         let onMac = host.directory.appending(path: "Report.pdf")
         #expect(try sha256(onMac) == sha256(source))
+        #expect(felt == [.success], "the run of sends finished")
         let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
         print("loopback session upload: 3 MiB in \(Int(seconds * 1000)) ms (\(String(format: "%.0f", 3 / seconds)) MiB/s)")
 
@@ -258,6 +262,7 @@ struct FileTransferSessionTests {
         #expect(saved == clientDir.appending(path: "Report.pdf"))
         #expect(try sha256(saved) == sha256(source))
         #expect(!files.hasActiveTransfers)
+        #expect(felt == [.success, .success], "and a file received")
     }
 
     @Test @MainActor func refusedOfferShowsTheReason() async throws {
@@ -266,6 +271,9 @@ struct FileTransferSessionTests {
         let sourceDir = try scratchDirectory("source")
         defer { try? FileManager.default.removeItem(at: sourceDir) }
         let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        var felt: [Haptic] = []
+        files.onFeedback = { felt.append($0) }
+        files.feedbackQuietPeriod = .zero
         let session = ClientSession(identity: DeviceIdentity(), files: files)
         defer { session.disconnect() }
         session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
@@ -276,6 +284,7 @@ struct FileTransferSessionTests {
         guard case .failed(let reason) = files.transfers[0].state else { Issue.record("\(files.transfers[0].state)"); return }
         #expect(reason.contains("too large"))
         #expect(files.transfers[1].state == .done, "the queue moves on")
+        #expect(felt == [.error], "a refusal is a real failure; the run doesn't also claim success")
         #expect(try FileManager.default.contentsOfDirectory(atPath: host.directory.path) == ["Small.bin"])
     }
 
@@ -363,6 +372,9 @@ struct FileTransferSessionTests {
         defer { try? FileManager.default.removeItem(at: sourceDir) }
         let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
         files.chunkDelayForTesting = .milliseconds(25)
+        var felt: [Haptic] = []
+        files.onFeedback = { felt.append($0) }
+        files.feedbackQuietPeriod = .zero
         let session = ClientSession(identity: DeviceIdentity(), files: files)
         defer { session.disconnect() }
         session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
@@ -379,6 +391,7 @@ struct FileTransferSessionTests {
 
         try await waitUntil("finished after reconnecting", seconds: 20) { files.transfers.first?.state == .done }
         #expect(try sha256(host.directory.appending(path: "Library.zip")) == sha256(source))
+        #expect(felt == [.success], "the pause wasn't a failure")
         let id = paused.id
         let starts = host.hostEvents.enumerated().filter { if case .started(let item) = $0.element { item.id == id } else { false } }
         #expect(starts.count == 2, "offered once, then again under the same id")

@@ -154,7 +154,7 @@ nonisolated final class SessionUITests: XCTestCase {
     @MainActor func testFilesMoveBothWays() {
         let app = XCUIApplication()
         app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
-                               "-VantageSendTestFile", "3145728",
+                               "-VantageSendTestFile", "3145728", "-VantageForceHaptics", "1", "-VantageHapticProbe", "1",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let send = app.buttons["session.toolbar.sendFile"]
@@ -191,6 +191,11 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Transfers after both directions", app)
         app.buttons["Done"].tap()
         XCTAssertTrue(send.waitForExistence(timeout: 5))
+        // A file received and a run of sends that went: felt, and never as an error.
+        let probe = app.otherElements["session.hapticProbe"]
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        let felt = (probe.value as? String) ?? ""
+        XCTAssertTrue(felt.contains("success") && !felt.contains("error"), felt)
     }
 
     /// Disconnect while a file is moving: no question, the screen closes, the file carries on,

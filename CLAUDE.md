@@ -135,7 +135,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   wins. iPad has no Taptic Engine: the modifiers add nothing and no generators are made there;
   visionOS compiles them out. Debug: `-VantageForceHaptics 1` treats an iPad as capable,
   `-VantageHapticProbe 1` lists what played as `session.hapticProbe`'s value. Tests:
-  `HapticTests` (connection rules), `HapticsUITests`. Feel still needs an iPhone.
+  `HapticTests` (connection rules), `HapticsUITests` (its synthetic host must not run
+  `--send-file-on-connect`: a file arriving plays `.success`). Feel still needs an iPhone.
 - **Mac shortcuts and password**: `MacShortcut` (`Vantage/Model/MacShortcut.swift`) sends
   system-default chords (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with
@@ -381,7 +382,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `FileTransferCenter.retryAll`), which resumes from the partials. Checked in the simulator: 100 MB
   kept moving ~25 s after the app left, paused at 40.6 MB, and resumed there on return ("resuming a
   send at 40632320 … hashed the start in 24 ms"); the real continued-processing task and its Live
-  Activity need a device. Debug:
+  Activity need a device. **Haptics** (iPhone, foreground; `Haptics.play`): each link's
+  `FileTransferController.onFeedback` goes through `FileTransferCenter.onFeedback` (set in
+  `ContentView`), so they play from the device list too: `.success` for a file received and once
+  when a run of sends all went, `.error` for a real failure, never for a pause that will resume;
+  the same one twice within a second plays once (`feedbackQuietPeriod`). Debug:
   `-VantageSendTestFile <bytes>` queues random bytes once the channel is up (without
   `-VantageAutoConnect`, on the first saved Mac from the device list, as if picked with Send
   Files…), `-VantageAutoConnect` opens its session once per launch, `-VantageSlowFiles <ms>`

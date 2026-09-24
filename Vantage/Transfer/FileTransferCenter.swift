@@ -12,6 +12,9 @@ final class FileTransferCenter {
     static let shared = FileTransferCenter()
 
     private(set) var links: [UUID: FileLink] = [:]
+    /// Haptics for how transfers end, from every Mac's queue (the app plays them with
+    /// `Haptics.play`, which does nothing off iPhone or in the background). Set once at launch.
+    var onFeedback: ((Haptic) -> Void)?
     private let identity: DeviceIdentity
     private let receiveDirectory: URL
     private let clientName: String
@@ -37,6 +40,7 @@ final class FileTransferCenter {
         #if DEBUG
         if let millis = ClientOptions.slowFilesMillis { link.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
+        link.files.onFeedback = { [weak self] haptic in self?.onFeedback?(haptic) }
         link.update(device)
         links[device.id] = link
         return link

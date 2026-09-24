@@ -106,6 +106,13 @@ final class FileTransferController {
     private(set) var isConnected = false
     /// Called once per file received here, for the "Received …" notice.
     var onReceived: ((Transfer) -> Void)?
+    /// How transfers ended, as haptics: `success` for each file received and once for a run of
+    /// sends that all went, `error` for a real failure (a pause for a resume isn't one). The same
+    /// one twice within a second plays once, so a burst of files doesn't rattle.
+    var onFeedback: ((Haptic) -> Void)?
+    /// How long the same haptic stays quiet after playing (tests set zero).
+    var feedbackQuietPeriod: Duration = .seconds(1)
+    private var lastFeedback: (haptic: Haptic, at: ContinuousClock.Instant)?
 
     let receiveDirectory: URL
     private var engine: FileTransferEngine?
@@ -405,6 +412,7 @@ final class FileTransferController {
     }
 
     private func finish(_ index: Int, _ outcome: FileTransferOutcome) {
+        defer { feedback(after: outcome) }
         transfers[index].finishedAt = .now
         transfers[index].interruptedAt = nil
         transfers[index].bytesPerSecond = 0
@@ -423,6 +431,25 @@ final class FileTransferController {
         case .cancelled:
             transfers[index].state = .cancelled
         }
+    }
+
+    private func feedback(after outcome: FileTransferOutcome) {
+        switch outcome {
+        case .received: play(.success)
+        case .failed: play(.error)
+        case .sent:
+            // The run's last send: all of them went.
+            let run = summary
+            if !run.isActive, run.sending > 0, run.failed == 0 { play(.success) }
+        case .cancelled: break
+        }
+    }
+
+    private func play(_ haptic: Haptic) {
+        let now = ContinuousClock.now
+        if let last = lastFeedback, last.haptic == haptic, now - last.at < feedbackQuietPeriod { return }
+        lastFeedback = (haptic, now)
+        onFeedback?(haptic)
     }
 
     #if DEBUG
