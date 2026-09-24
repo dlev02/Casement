@@ -122,6 +122,13 @@ final class FileLink {
         ensureConnected()
     }
 
+    /// Stops moving files for now (the app is about to be suspended): the channel closes, both
+    /// sides keep their partial files, and `retryNow` picks everything up where it stopped.
+    func pause() {
+        log.info("pausing file transfers with \(self.macName, privacy: .private)")
+        close()
+    }
+
     /// Closes the channel (and a files-only session's primary). Files still queued wait.
     func close() {
         linkTask?.cancel()

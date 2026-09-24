@@ -50,6 +50,29 @@ final class FileTransferCenter {
     /// Something is moving (or waiting to) with any Mac.
     var hasActiveTransfers: Bool { links.values.contains { $0.files.hasActiveTransfers } }
 
+    /// Every Mac's current run of files added together (what the background task reports).
+    var overallSummary: FileTransferController.Summary {
+        var total = FileTransferController.Summary()
+        var anyMoving = false
+        for link in links.values {
+            let run = link.files.summary
+            guard run.isActive else { continue }
+            total.count += run.count
+            total.finished += run.finished
+            total.failed += run.failed
+            total.cancelled += run.cancelled
+            total.sending += run.sending
+            total.receiving += run.receiving
+            total.bytes += run.bytes
+            total.bytesDone += run.bytesDone
+            total.bytesPerSecond += run.bytesPerSecond
+            anyMoving = anyMoving || !run.isPaused
+            if total.current == nil { total.current = run.current }
+        }
+        total.isPaused = total.isActive && !anyMoving
+        return total
+    }
+
     /// Back in the foreground: every Mac with files waiting tries again now.
     func retryAll() {
         for link in links.values { link.retryNow() }

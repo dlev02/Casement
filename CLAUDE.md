@@ -357,8 +357,21 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   files keep moving; the device list then shows them on the Mac's row/card
   (`DeviceTransferBadge`, "Sending 3 of 12 · 45% · 2 min", tap → Transfers; also the context menu's
   Transfers…). Only an older Mac, which would stop them, gets "Files are still transferring.
-  Disconnect anyway?". Returning to the foreground retries every waiting file
-  (`FileTransferCenter.retryAll`). Debug:
+  Disconnect anyway?". **In the background** (iOS; `TransferBackgroundActivity`): a run of files
+  that starts in the foreground and is ≥ 32 MB or > 20 files submits one `BGContinuedProcessingTask`
+  (`com.benjaminlevinson.vantage.transfers.<UUID>`, registered just before submitting on the main
+  queue, wildcard in `BGTaskSchedulerPermittedIdentifiers`, `.queue` strategy; no background mode
+  needed) that reports every Mac's run (`FileTransferCenter.overallSummary`) as bytes plus a
+  title/subtitle ("Sending files to ⟨Mac⟩", "3 of 12 · 2 GB left · 4 min") and completes when the
+  run ends. Expiry (the system, or the person stopping it in the Live Activity) pauses every link
+  cleanly (`FileLink.pause`: channel closed, partials kept). Where the task isn't available (the
+  simulator says "BGTaskScheduler is not available on this platform", Background App Refresh off,
+  visionOS) backgrounding takes the ordinary `beginBackgroundTask` grace (~25–30 s), then the same
+  pause. Returning to the foreground retries everything (`appDidBecomeActive` →
+  `FileTransferCenter.retryAll`), which resumes from the partials. Checked in the simulator: 100 MB
+  kept moving ~25 s after the app left, paused at 40.6 MB, and resumed there on return ("resuming a
+  send at 40632320 … hashed the start in 24 ms"); the real continued-processing task and its Live
+  Activity need a device. Debug:
   `-VantageSendTestFile <bytes>` queues random bytes once the channel is up (without
   `-VantageAutoConnect`, on the first saved Mac from the device list, as if picked with Send
   Files…), `-VantageAutoConnect` opens its session once per launch, `-VantageSlowFiles <ms>`
@@ -383,7 +396,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   "sent/received N bytes in M ms (X MiB/s)" (category `files`). Benchmark (opt in):
   `VANTAGE_BENCH_FILES=1 xcrun swift test --package-path Packages/VantageCore --filter FileTransferBenchmark`
   (2 GiB over loopback, prints MiB/s and peak footprint). Out of scope: a share extension (needs
-  an App Group), background transfers (`BGContinuedProcessingTask`), folders, Taildrop.
+  an App Group), folders, Taildrop, `UIBackgroundModes` (not needed for continued processing).
 - **Files arriving on the Mac** (host, `VantageHost/Transfer`; the policy is `FileArrival.swift`,
   tested by `HostFileArrivalTests` in the root package): saved to `~/Downloads` or the folder
   chosen in Settings → Files (`HostFileStore.current` → `ReceiveFolder`: Downloads again while the

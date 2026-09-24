@@ -76,6 +76,9 @@ struct ContentView: View {
         .task {
             reachability.start()
             lock.authenticate()
+            #if os(iOS)
+            TransferBackgroundActivity.shared.start()
+            #endif
             #if DEBUG
             debugScreen = ClientOptions.openScreen
             #endif
@@ -86,12 +89,17 @@ struct ContentView: View {
                 reachability.refresh()
                 lock.authenticate()
                 // Files cut off while the app was away pick up where they stopped.
+                #if os(iOS)
+                TransferBackgroundActivity.shared.appDidBecomeActive()
+                #else
                 FileTransferCenter.shared.retryAll()
+                #endif
             case .background:
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes
                 #else
                 lock.lockIfNeeded()
+                TransferBackgroundActivity.shared.appDidEnterBackground()
                 #endif
             default: break
             }

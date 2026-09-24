@@ -41,6 +41,12 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Files keep moving after Vantage is backgrounded: TransferBackgroundActivity submits a
+	     BGContinuedProcessingTask (iOS 26) per run of files, as .transfers.<UUID>. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.benjaminlevinson.vantage.transfers.*</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vantage uses the microphone when you dictate text to your Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
