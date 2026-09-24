@@ -13,6 +13,8 @@ import Foundation
 ///   synthetic host too; it's skipped there otherwise.
 /// - `--preview-arrival /path[,/path…]`: show the on-screen arrival notice for those files at launch.
 /// - `--appearance light|dark`: force the host's own windows into one appearance (screenshots).
+/// - `--open-menu`: show the menu bar popover's content in a window too (screenshots when the
+///   menu bar is too crowded to show the item).
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -31,6 +33,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let previewArrival: [String]
     /// "light" or "dark" (DEBUG only).
     let appearance: String?
+    /// Also host the menu's content in a window at launch (DEBUG only).
+    let openMenu: Bool
 
     private init() {
         #if DEBUG
@@ -70,6 +74,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             appearance = nil
         }
+        openMenu = args.contains("--open-menu")
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -80,6 +85,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         arrivalActions = false
         previewArrival = []
         appearance = nil
+        openMenu = false
         #endif
     }
 }

@@ -9,22 +9,16 @@ struct VantageHostApp: App {
         MenuBarExtra {
             HostMenuView(controller: delegate.controller)
         } label: {
-            Image(systemName: menuBarSymbol)
+            // A progress ring joins the icon while files move (and VoiceOver hears how far along).
+            let controller = delegate.controller
+            Image(nsImage: StatusItemIcon.image(for: controller.status, activity: StatusItemIcon.Activity(controller.transfers)))
+                .accessibilityLabel("Vantage Host")
+                .accessibilityValue(StatusItemIcon.accessibilityValue(status: controller.status, transfers: controller.transfers))
         }
         .menuBarExtraStyle(.window)
 
         Settings {
             HostSettingsView(controller: delegate.controller)
-        }
-    }
-
-    /// Symbols that exist: "display.and.arrow.down.fill" and "display.slash" don't, and left the
-    /// menu bar item blank while connected.
-    private var menuBarSymbol: String {
-        switch delegate.controller.status {
-        case .connected: "display.and.arrow.down"
-        case .listening, .idle: "display"
-        case .error: "display.trianglebadge.exclamationmark"
         }
     }
 }
@@ -49,11 +43,25 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         }
         if HostOptions.shared.openSettingsTab != nil { openSettingsWindowForTesting() }
         if !HostOptions.shared.previewArrival.isEmpty { previewArrivalForTesting() }
+        if HostOptions.shared.openMenu { openMenuWindowForTesting() }
         #endif
     }
 
     #if DEBUG
     private var settingsWindow: NSWindow?
+    private var menuWindow: NSWindow?
+
+    /// `--open-menu`: the popover's content in a plain window, for when the item is hidden.
+    private func openMenuWindowForTesting() {
+        let root = VStack(spacing: 0) {
+            HostMenuView(controller: controller)
+            StatusIconPreview(controller: controller)
+        }
+        let window = NSWindow(contentViewController: NSHostingController(rootView: root))
+        window.title = "Vantage Host Menu"
+        window.makeKeyAndOrderFront(nil)
+        menuWindow = window
+    }
 
     /// `--open-settings <tab>`: a menu-bar app can't be told to open its Settings scene from the
     /// command line, so host the same view in a plain window for screenshots.
@@ -97,3 +105,25 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         controller.stop()
     }
 }
+
+#if DEBUG
+/// `--open-menu`: the menu bar icon as it is right now, at menu bar size and enlarged, with what
+/// VoiceOver says about it.
+private struct StatusIconPreview: View {
+    let controller: HostController
+
+    var body: some View {
+        let icon = StatusItemIcon.image(for: controller.status, activity: StatusItemIcon.Activity(controller.transfers))
+        HStack(spacing: 16) {
+            Image(nsImage: icon).renderingMode(.template)
+            Image(nsImage: icon).renderingMode(.template).resizable().interpolation(.high)
+                .frame(width: icon.size.width * 4, height: icon.size.height * 4)
+            Text(StatusItemIcon.accessibilityValue(status: controller.status, transfers: controller.transfers))
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(width: 320)
+    }
+}
+#endif

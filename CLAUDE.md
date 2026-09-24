@@ -261,11 +261,21 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   spaces) at the top right of the pointer's screen, which is where the iPad left the pointer, with
   Show in Finder; it pauses while hovered, leaves after 6 s, only fades with Reduce Motion, and is
   announced to VoiceOver. Settings → Files shows whether banners get through and opens
-  Notification Settings; never change that system setting from code. Synthetic hosts skip all of
-  it unless started with `--arrival-actions`. Debug: `--receive-folder <path>` (tests never touch
-  the real Downloads), `--preview-arrival <path,…>` (the notice until closed), `--open-settings
-  files`, `--appearance light|dark`; override settings without writing Drew's defaults with
-  argument-domain flags such as `-files.afterArrival open -files.notify NO`.
+  Notification Settings; never change that system setting from code. **Progress**: while a file
+  arrives, a `Progress` (file, downloading, cancellable) is published for its hidden
+  `.vantage-<id>.partial`, so folder subscribers such as the Dock's Downloads stack see it (Finder
+  hides the partial, and the partial-then-rename safety is unchanged), and each saved file posts
+  `com.apple.DownloadFileFinished` so the stack bounces. The menu bar icon (`StatusItemIcon`)
+  gains a progress ring with an arrow while files move (`StatusItemIcon.moving` decides which;
+  VoiceOver hears "Receiving Report.pdf, 45%"), and the menu's Files section shows the receive
+  folder and, per file, progress, speed and time left (`HostTransfer.record`), cancel and Show in
+  Finder; a row's wording lives in `HostTransferRow.detail`, the send targets in
+  `HostFilesSection.sendTargets`. Synthetic hosts skip all of it unless started with
+  `--arrival-actions`. Debug: `--receive-folder <path>` (tests never touch the real Downloads),
+  `--preview-arrival <path,…>` (the notice until closed), `--open-settings files`, `--open-menu`
+  (the popover and the live menu bar icon in a window: on a crowded menu bar the item hides
+  behind the overflow), `--appearance light|dark`; override settings without writing Drew's
+  defaults with argument-domain flags such as `-files.afterArrival open -files.notify NO`.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display

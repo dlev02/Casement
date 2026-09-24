@@ -28,8 +28,10 @@ final class HostController {
     private(set) var fileChannels: [HostFileChannel] = []
     /// Files moving this run (both ways), newest last, for the menu.
     private(set) var transfers: [HostTransfer] = []
-    /// Notifications, the on-screen notice, and Finder for files as they arrive.
+    /// Notifications, the on-screen notice, Finder, and Dock progress for files as they move.
     private let arrivals = FileArrivals()
+    /// The folder each file channel saves into (Settings can change it for later channels).
+    private var receiveDirectories: [HostFileChannel.ID: URL] = [:]
     let loginItem = LoginItem()
     private var displayObservers: [any NSObjectProtocol] = []
 
@@ -57,6 +59,7 @@ final class HostController {
             Task { @MainActor in self?.pairingCode = nil }
         }
         arrivals.isViewedRemotely = { [weak self] in self?.hasConnectedClients ?? false }
+        arrivals.onCancel = { [weak self] id in self?.cancelTransfer(id) }
         refreshTrusted()
         refreshPermissions()
         refreshTailscale()
@@ -218,13 +221,16 @@ final class HostController {
         guard sessions.contains(where: { $0 === fileChannel.session }) else { return }
         fileChannels.removeAll { $0.session === fileChannel.session }
         fileChannels.append(fileChannel)
-        if let missing = HostFileStore.current.unavailableChoice {
+        let store = HostFileStore.current
+        if let missing = store.unavailableChoice {
             log.error("can't save received files to \(missing, privacy: .public); using Downloads")
         }
+        receiveDirectories[fileChannel.id] = store.directory
         let engine = fileChannel.engine
         Task {
             for await event in engine.events { handle(event, on: fileChannel) }
             fileChannels.removeAll { $0.engine === engine }
+            if !fileChannels.contains(where: { $0.id == fileChannel.id }) { receiveDirectories[fileChannel.id] = nil }
         }
         #if DEBUG
         if let path = HostOptions.shared.sendFileOnConnect {
@@ -242,9 +248,14 @@ final class HostController {
                 transfers.append(HostTransfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction,
                                               deviceName: channel.clientName, state: .active))
             }
-            if let transfer = transfers.first(where: { $0.id == item.id }) { arrivals.started(transfer) }
+            if let transfer = transfers.first(where: { $0.id == item.id }) {
+                arrivals.started(transfer, receivingInto: receiveDirectories[channel.id])
+            }
         case .progress(let id, let bytes):
-            if let index = transfers.firstIndex(where: { $0.id == id }) { transfers[index].bytesDone = bytes }
+            if let index = transfers.firstIndex(where: { $0.id == id }) {
+                transfers[index].record(bytes: bytes)
+                arrivals.progressed(transfers[index])
+            }
         case .finished(let id, let outcome):
             guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
             transfers[index].finish(outcome)

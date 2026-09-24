@@ -23,6 +23,10 @@ struct HostTransfer: Identifiable, Equatable {
     var finishedAt: Date?
     /// The file being sent (sending only).
     var source: URL?
+    /// Smoothed speed once there's enough to go on (about half a second of progress).
+    var bytesPerSecond: Double?
+    private var sampledAt: Date?
+    private var sampledBytes: UInt64 = 0
 
     init(id: UUID, name: String, byteCount: UInt64, direction: FileTransferItem.Direction, deviceName: String,
          state: State, source: URL? = nil) {
@@ -40,6 +44,28 @@ struct HostTransfer: Identifiable, Equatable {
     var fraction: Double {
         guard byteCount > 0 else { return state == .done ? 1 : 0 }
         return min(1, Double(bytesDone) / Double(byteCount))
+    }
+
+    /// Time left at the current speed, while it's moving.
+    var secondsRemaining: TimeInterval? {
+        guard state == .active, let bytesPerSecond, bytesPerSecond > 0, byteCount > bytesDone else { return nil }
+        return Double(byteCount - bytesDone) / bytesPerSecond
+    }
+
+    /// Progress so far; updates the speed from the bytes since the last sample.
+    mutating func record(bytes: UInt64, at now: Date = .now) {
+        bytesDone = bytes
+        guard let sampledAt else {
+            self.sampledAt = now
+            sampledBytes = bytes
+            return
+        }
+        let elapsed = now.timeIntervalSince(sampledAt)
+        guard elapsed >= 0.5, bytes >= sampledBytes else { return }
+        let rate = Double(bytes - sampledBytes) / elapsed
+        bytesPerSecond = bytesPerSecond.map { $0 * 0.6 + rate * 0.4 } ?? rate
+        self.sampledAt = now
+        sampledBytes = bytes
     }
 
     mutating func finish(_ outcome: FileTransferOutcome) {

@@ -5,34 +5,54 @@ import os
 
 /// What the Mac does as files come and go, driven by the controller's transfer events:
 ///
+/// - While a file arrives, a `Progress` is published for its hidden `.vantage-<id>.partial`, so
+///   anything watching the folder (the Dock's Downloads stack) can show it moving; Finder hides the
+///   partial itself, and the engine only renames it once the checksum is good.
 /// - Arrivals are batched (`ArrivalBatcher`): files that land together get one notification, one
 ///   on-screen notice, and one Finder window selecting all of them.
+/// - Each finished file posts `com.apple.DownloadFileFinished`, the note browsers post so the
+///   Dock's Downloads stack bounces.
 /// - What happens to a batch follows Settings → Files (`ArrivalPlan`). A synthetic host skips all
 ///   of it unless it runs with `--arrival-actions`.
 @MainActor
 final class FileArrivals {
     /// An iPad is streaming this Mac's screen, so macOS counts the screen as shared.
     var isViewedRemotely: () -> Bool = { false }
+    /// Cancel from outside the menu (a progress's cancel button).
+    var onCancel: (UUID) -> Void = { _ in }
 
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "files")
     private var batcher = ArrivalBatcher()
     private var flush: Task<Void, Never>?
+    private var progress: [UUID: Progress] = [:]
 
     private var actsOnArrivals: Bool {
         !HostOptions.shared.syntheticCapture || HostOptions.shared.arrivalActions
     }
 
-    func started(_ transfer: HostTransfer) {
+    func started(_ transfer: HostTransfer, receivingInto directory: URL?) {
         guard transfer.direction == .receiving else { return }
         batcher.started(transfer.id, at: .now)
         scheduleFlush()
+        if let directory { publishProgress(for: transfer, in: directory) }
+    }
+
+    func progressed(_ transfer: HostTransfer) {
+        guard let progress = progress[transfer.id] else { return }
+        progress.completedUnitCount = Int64(clamping: transfer.bytesDone)
+        if let rate = transfer.bytesPerSecond { progress.throughput = Int(rate) }
+        progress.estimatedTimeRemaining = transfer.secondsRemaining
     }
 
     func finished(_ transfer: HostTransfer, _ outcome: FileTransferOutcome) {
+        if let progress = progress.removeValue(forKey: transfer.id) { progress.unpublish() }
         switch outcome {
         case .received(let url):
             batcher.arrived(transfer.id, .init(url: url, device: transfer.deviceName, byteCount: transfer.byteCount), at: .now)
-            if !actsOnArrivals {
+            if actsOnArrivals {
+                DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"),
+                                                             object: url.path(percentEncoded: false))
+            } else {
                 log.info("synthetic host saved a received file at \(url.path(percentEncoded: false), privacy: .public)")
             }
         case .sent:
@@ -110,5 +130,25 @@ final class FileArrivals {
             }
         }
         if !unclaimed.isEmpty { HostNotifications.reveal(unclaimed) }
+    }
+
+    // MARK: Finder / Dock progress
+
+    private func publishProgress(for transfer: HostTransfer, in directory: URL) {
+        let partial = directory.appending(path: FileTransferEngine.partialPrefix + transfer.id.uuidString + FileTransferEngine.partialSuffix,
+                                          directoryHint: .notDirectory)
+        guard progress[transfer.id] == nil, FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)) else { return }
+        let item = Progress(totalUnitCount: Int64(clamping: max(transfer.byteCount, 1)))
+        item.kind = .file
+        item.fileOperationKind = .downloading
+        item.fileURL = partial
+        item.isPausable = false
+        item.isCancellable = true
+        let id = transfer.id
+        item.cancellationHandler = { [weak self] in
+            Task { @MainActor in self?.onCancel(id) }
+        }
+        item.publish()
+        progress[id] = item
     }
 }
