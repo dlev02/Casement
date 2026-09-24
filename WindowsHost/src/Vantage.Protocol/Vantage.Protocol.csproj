@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The cross-platform half of the Windows host: wire format, messages, transport, auth, files,
+       and the session logic. No Windows APIs, so it builds and tests on macOS. -->
+  <PropertyGroup>
+    <RootNamespace>Vantage.Protocol</RootNamespace>
+    <AssemblyName>Vantage.Protocol</AssemblyName>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSec.Cryptography" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vantage.Protocol.Tests" />
+  </ItemGroup>
+
+</Project>

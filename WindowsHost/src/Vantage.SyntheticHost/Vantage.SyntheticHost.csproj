@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A loopback test host that runs on macOS: the real session logic from Vantage.Protocol with
+       a looping pre-encoded H.264 clip, an input log, and an in-memory clipboard. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Vantage.SyntheticHost</RootNamespace>
+    <AssemblyName>Vantage.SyntheticHost</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vantage.Protocol\Vantage.Protocol.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+
+</Project>

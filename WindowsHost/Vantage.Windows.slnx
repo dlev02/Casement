@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vantage.Protocol/Vantage.Protocol.csproj" />
+    <Project Path="src/Vantage.SyntheticHost/Vantage.SyntheticHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vantage.Protocol.Tests/Vantage.Protocol.Tests.csproj" />
+  </Folder>
+</Solution>
