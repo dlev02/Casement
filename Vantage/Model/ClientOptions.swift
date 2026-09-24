@@ -57,6 +57,9 @@ enum ClientOptions {
     static var slowFilesMillis: Int? { value(for: "-VantageSlowFiles").flatMap(Int.init) }
     /// `-VantageDropHint 1` shows the "Drop to send" hint without a drag (screenshots).
     static var dropHintFixture: Bool { value(for: "-VantageDropHint") == "1" }
+    /// `-VantagePointerProbe 1` exposes the Mac pointer position the app last sent as the value of
+    /// an invisible `session.pointerProbe` element, so UI tests can check edges with a hover.
+    static var pointerProbe: Bool { value(for: "-VantagePointerProbe") == "1" }
 
     static var seedSampleDevices: Bool {
         #if DEBUG

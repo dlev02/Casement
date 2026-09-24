@@ -41,7 +41,25 @@ final class RemoteInteractionView: UIView {
         #if !os(visionOS)
         addInteraction(UIPencilInteraction(delegate: self))
         #endif
+        #if DEBUG
+        if ClientOptions.pointerProbe {
+            isAccessibilityElement = true
+            accessibilityIdentifier = "session.pointerProbe"
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// `-VantagePointerProbe 1`: where the Mac's pointer was last sent, for UI tests.
+    override var accessibilityValue: String? {
+        get {
+            guard ClientOptions.pointerProbe else { return super.accessibilityValue }
+            let point = input.cursorPoint, size = input.displayPointSize
+            return String(format: "%.1f %.1f of %.0f %.0f", point.x, point.y, size.width, size.height)
+        }
+        set { super.accessibilityValue = newValue }
+    }
+    #endif
 
     required init?(coder: NSCoder) { fatalError() }
 
@@ -60,12 +78,7 @@ final class RemoteInteractionView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         displayLayer.frame = bounds
-        updateVideoRect()
-    }
-
-    private func updateVideoRect() {
-        let aspect = input.displayPointSize
-        input.videoRect = Geometry.aspectFit(aspect, in: bounds.size)
+        input.viewSize = bounds.size
     }
 
     // MARK: Gestures
@@ -159,10 +172,14 @@ final class RemoteInteractionView: UIView {
                 input.moveRelative(translation: translation, action: .move, modifiers: heldModifiers)
                 lastPanPoint = location
             }
-        case .ended, .cancelled:
+        case .ended:
             if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .up, modifiers: heldModifiers)
             }
+        case .cancelled:
+            // A system gesture took the touch: let go where the pointer is rather than trusting
+            // the location of a touch that's gone.
+            if pointsAbsolutely { input.release(modifiers: heldModifiers) }
         default:
             break
         }
@@ -227,10 +244,12 @@ final class RemoteInteractionView: UIView {
             }
         case .changed where pointsAbsolutely:
             input.moveAbsolute(viewPoint: location, action: .move, modifiers: heldModifiers)
-        case .ended, .cancelled:
+        case .ended:
             if pointsAbsolutely {
                 input.moveAbsolute(viewPoint: location, action: .up, modifiers: heldModifiers)
             }
+        case .cancelled:
+            if pointsAbsolutely { input.release(modifiers: heldModifiers) }
         default:
             break
         }
@@ -270,7 +289,14 @@ final class RemoteInteractionView: UIView {
     /// A trackpad or mouse always positions the Mac's pointer absolutely — you can see where the
     /// iPad's pointer is, so a relative mapping would only fight you. The touch mode setting is
     /// about fingers.
+    ///
+    /// Only `began` and `changed` carry a position. iPadOS ends the hover as soon as the pointer
+    /// leaves the view, and it takes the pointer at a screen edge (the Dock, the menu bar) the
+    /// moment you push against it; the end reports (0, 0). Following it threw the Mac's pointer
+    /// to its top-left corner, so pushing to the bottom never showed the Mac's Dock. The Mac's
+    /// pointer stays where the iPad's pointer left, which at an edge is on that edge.
     @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
+        guard recognizer.state == .began || recognizer.state == .changed else { return }
         guard lastButtonMask.isEmpty else { return } // a drag is in progress; touchesMoved owns it
         input.moveAbsolute(viewPoint: recognizer.location(in: self), action: .move, modifiers: heldModifiers)
     }

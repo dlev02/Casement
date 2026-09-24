@@ -21,8 +21,11 @@ final class InputController {
 
     /// Point size of the streamed display (set from StreamConfig).
     var displayPointSize: CGSize = CGSize(width: 1210, height: 834)
-    /// The rect (in the client view's coordinate space) where video is drawn (aspect-fit).
-    var videoRect: CGRect = .zero
+    /// Size of the session view the video is aspect-fit into (set on every layout).
+    var viewSize: CGSize = .zero
+    /// Worked out from both sizes on every use: the display size usually arrives after the
+    /// view's first layout, and a rect stored at layout time kept the default display's shape.
+    var pointerMapping: PointerMapping { PointerMapping(displaySize: displayPointSize, viewSize: viewSize) }
 
     /// Current cursor position in display points (trackpad mode maintains this).
     private(set) var cursorPoint: CGPoint = CGPoint(x: 605, y: 417)
@@ -31,9 +34,10 @@ final class InputController {
 
     // MARK: Pointer
 
-    /// Absolute move to a point in the client view (direct-touch tap/drag).
+    /// Absolute move to a point in the client view (pointer, Pencil, direct-touch tap/drag). Points
+    /// past or at the edge of the picture land on the Mac's edge (see `PointerMapping`).
     func moveAbsolute(viewPoint: CGPoint, action: PointerAction, button: PointerButton = .left, clickCount: Int = 1, modifiers: KeyModifiers = []) {
-        guard let point = displayPoint(fromViewPoint: viewPoint) else { return }
+        guard let point = pointerMapping.displayPoint(forViewPoint: viewPoint) else { return }
         cursorPoint = point
         emitPointer(action: action, button: button, clickCount: clickCount, modifiers: modifiers)
     }
@@ -44,6 +48,11 @@ final class InputController {
         cursorPoint.x = (cursorPoint.x + translation.width * scale).clamped(0, displayPointSize.width - 1)
         cursorPoint.y = (cursorPoint.y + translation.height * scale).clamped(0, displayPointSize.height - 1)
         emitPointer(action: action, button: button, clickCount: 1, modifiers: modifiers)
+    }
+
+    /// Lets go of `button` where the pointer already is.
+    func release(button: PointerButton = .left, modifiers: KeyModifiers = []) {
+        emitPointer(action: .up, button: button, clickCount: 1, modifiers: modifiers)
     }
 
     func click(button: PointerButton, clickCount: Int = 1, modifiers: KeyModifiers = []) {
@@ -105,14 +114,5 @@ final class InputController {
             }
         }
         flushText()
-    }
-
-    // MARK: Geometry
-
-    private func displayPoint(fromViewPoint viewPoint: CGPoint) -> CGPoint? {
-        guard videoRect.width > 0, videoRect.height > 0 else { return nil }
-        let u = ((viewPoint.x - videoRect.minX) / videoRect.width).clamped(0, 1)
-        let v = ((viewPoint.y - videoRect.minY) / videoRect.height).clamped(0, 1)
-        return CGPoint(x: u * displayPointSize.width, y: v * displayPointSize.height)
     }
 }

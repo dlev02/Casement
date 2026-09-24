@@ -46,7 +46,10 @@ final class RemoteSessionViewController: UIViewController {
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool { true }
-    override var prefersPointerLocked: Bool { true }
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
+    // No `prefersPointerLocked`: pointer lock is deliberately off (see "Input routing" in
+    // CLAUDE.md). The `true` that used to be here never took effect — the session's SwiftUI
+    // presentation controller doesn't ask its children (`childViewControllerForPointerLock` is
+    // nil) — and if SwiftUI ever started asking, every mouse would stop moving the Mac's pointer.
 }
 #endif

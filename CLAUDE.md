@@ -102,6 +102,24 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   touch mode only governs fingers. Wheel/trackpad scrolling uses two dedicated pan recognizers
   (continuous vs discrete) — never put `allowedScrollTypesMask` back on the movement pan, it turns
   scrolling into pointer motion. Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  **Edges**: every absolute position goes through `PointerMapping` (pure, `PointerMappingTests`):
+  past or within `edgeSnap` (2 pt) of the picture's edge lands on the Mac's outermost row/column,
+  and an edge position within `cornerSnap` (16 pt) of a corner lands in the corner. macOS reveals
+  a hidden Dock/menu bar or fires a hot corner only there (one move onto the bottom row shows the
+  Dock in ~0.16 s; 3 pt short never does — `LiveDockEdgeTests`, opt-in, real host), and the iPad
+  pointer stops 1 pt short of the screen edge. The hover handler uses only `.began`/`.changed`:
+  iPadOS ends the hover when the pointer leaves the view or is pushed into a screen edge (it takes
+  it for its own Dock/menu bar), and the end reports (0, 0) — following it threw the Mac's pointer
+  to the top-left, which is why a Bluetooth mouse couldn't show the Dock. The mapping is computed
+  from `InputController.viewSize` + `displayPointSize` on every use (a rect stored at layout time
+  kept the default display's shape). Cancelled pans/long presses release in place. UI test:
+  `PointerEdgeUITests` (`hover()` to each edge; `-VantagePointerProbe 1` exposes the last Mac
+  position as `session.pointerProbe`'s value). **Pointer lock is off on purpose**: the session's
+  SwiftUI presentation controller never consults a child's `prefersPointerLocked`
+  (`childViewControllerForPointerLock` is nil), so locking would mean presenting the session from
+  UIKit; it also needs `GCMouse` deltas the simulator can't produce and a full-screen scene. Don't
+  add `prefersPointerLocked = true` back: if SwiftUI ever honoured it, UIKit hover stops and no
+  mouse would move the Mac's pointer.
 - **Mac shortcuts and password**: `MacShortcut` (`Vantage/Model/MacShortcut.swift`) sends
   system-default chords (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with
