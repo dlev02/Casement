@@ -2,8 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/Vantage.Protocol/Vantage.Protocol.csproj" />
     <Project Path="src/Vantage.SyntheticHost/Vantage.SyntheticHost.csproj" />
+    <Project Path="src/Vantage.Host.Windows.Platform/Vantage.Host.Windows.Platform.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vantage.Protocol.Tests/Vantage.Protocol.Tests.csproj" />
+    <Project Path="tests/Vantage.Host.Windows.Tests/Vantage.Host.Windows.Tests.csproj" />
   </Folder>
 </Solution>

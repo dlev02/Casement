@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Windows half of the host: capture (Windows.Graphics.Capture), encode (Media Foundation),
+       SendInput, clipboard, session/power state, tray, storage. No XAML, so it compiles on macOS
+       with -p:EnableWindowsTargeting=true (compile-only there). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RootNamespace>Vantage.Host.Windows</RootNamespace>
+    <AssemblyName>Vantage.Host.Windows.Platform</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Lets macOS build it (compile-only) as part of the solution. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vantage.Protocol\Vantage.Protocol.csproj" />
+    <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.DXGI" />
+    <PackageReference Include="Vortice.MediaFoundation" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Tray glyphs drawn by scripts/make-icons.py. -->
+    <EmbeddedResource Include="Tray\Icons\*.ico" LogicalName="Vantage.Host.Windows.Tray.Icons.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vantage.Host.Windows.Tests" />
+  </ItemGroup>
+
+</Project>

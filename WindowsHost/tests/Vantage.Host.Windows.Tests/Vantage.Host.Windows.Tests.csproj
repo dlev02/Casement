@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests for the pure parts of the Windows platform library (coordinates, dirty regions, DPI
+       maths, clipboard text/DIB/PNG, tray menu, Tailscale JSON, NAL units, command line, receive
+       folder). They run on macOS too: build with -p:EnableWindowsTargeting=true there. Nothing here
+       calls a Windows API. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Vantage.Host.Windows.Tests</RootNamespace>
+    <!-- Lets macOS build it (compile-only) as part of the solution. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- The platform assembly is marked Windows-only; these tests only touch its pure types. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Vantage.Host.Windows.Platform\Vantage.Host.Windows.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
