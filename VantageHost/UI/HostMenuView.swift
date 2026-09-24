@@ -144,7 +144,8 @@ struct HostMenuView: View {
 
     private var statusTitle: String {
         switch controller.status {
-        case .connected(let count): "^[\(count) client](inflect: true) connected"
+        // A plain String, so no markdown inflection: spell out the plural.
+        case .connected(let count): count == 1 ? "1 client connected" : "\(count) clients connected"
         case .listening: "Ready for connections"
         case .error(let message): message
         case .idle: "Not listening"

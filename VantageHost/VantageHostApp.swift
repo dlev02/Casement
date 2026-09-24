@@ -18,12 +18,13 @@ struct VantageHostApp: App {
         }
     }
 
+    /// Symbols that exist: "display.and.arrow.down.fill" and "display.slash" don't, and left the
+    /// menu bar item blank while connected.
     private var menuBarSymbol: String {
         switch delegate.controller.status {
-        case .connected: "display.and.arrow.down.fill"
-        case .listening: "display"
-        case .error: "exclamationmark.triangle"
-        case .idle: "display.slash"
+        case .connected: "display.and.arrow.down"
+        case .listening, .idle: "display"
+        case .error: "display.trianglebadge.exclamationmark"
         }
     }
 }
