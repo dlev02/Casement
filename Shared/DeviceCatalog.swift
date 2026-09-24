@@ -8,7 +8,9 @@ import os
 /// sign for App Groups, so on such builds `containerURL` is nil and the catalog falls back to the
 /// app's own Application Support — Siri and Shortcuts keep working (they run inside the app) while
 /// widgets show their empty state until the entitlement exists. The simulator doesn't enforce the
-/// entitlement, which is how widgets get verified before then.
+/// entitlement, which is how widgets get verified before then. The Mac client has no widgets and
+/// no App Group, and its sandbox refuses an unentitled group container, so it keeps only the
+/// Application Support copy.
 nonisolated enum DeviceCatalog {
     static let appGroup = "group.com.benjaminlevinson.vantage"
     /// Widget and control kinds, shared so the app reloads exactly these when the catalog changes.
@@ -74,9 +76,11 @@ nonisolated enum DeviceCatalog {
     /// Shared container first, then the app's private copy.
     private static var candidateURLs: [URL] {
         var urls: [URL] = []
+        #if !os(macOS)
         if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             urls.append(group.appending(path: "Library/Application Support/Vantage/catalog.json"))
         }
+        #endif
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             urls.append(support.appending(path: "Vantage/catalog.json"))
         }

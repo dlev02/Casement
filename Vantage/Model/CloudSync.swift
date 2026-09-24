@@ -113,8 +113,15 @@ final class CloudSync {
 
     /// Whether this build carries the iCloud key-value entitlement. Read from the signed
     /// provisioning profile rather than probing the store, which only logs when it's missing.
+    /// iOS embeds it as `embedded.mobileprovision` in the bundle; a Mac app as
+    /// `Contents/embedded.provisionprofile`.
     private static let hasKeyValueStoreEntitlement: Bool = {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+        #if os(macOS)
+        let profile: URL? = Bundle.main.bundleURL.appending(path: "Contents/embedded.provisionprofile")
+        #else
+        let profile = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision")
+        #endif
+        guard let url = profile,
               let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .isoLatin1) else {
             #if targetEnvironment(simulator)
