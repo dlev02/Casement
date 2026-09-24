@@ -138,6 +138,7 @@ private struct HostTransferRow: View {
         case .done: "checkmark.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
         case .cancelled: "xmark.circle"
+        case .waiting where transfer.interruptedAt != nil: "pause.circle"
         case .waiting, .active: transfer.direction == .sending ? "arrow.up.circle" : "arrow.down.circle"
         }
     }
@@ -157,6 +158,9 @@ private struct HostTransferRow: View {
         let total = Self.bytes(transfer.byteCount)
         let toFrom = transfer.direction == .sending ? "To \(transfer.deviceName)" : "From \(transfer.deviceName)"
         switch transfer.state {
+        case .waiting where transfer.interruptedAt != nil:
+            // Cut off mid-file: it picks up where it stopped when the iPad comes back.
+            return "Paused at \(Int((transfer.fraction * 100).rounded(.down)))% · resumes when \(transfer.deviceName) reconnects"
         case .waiting:
             return "Waiting · \(total) · \(toFrom)"
         case .active:

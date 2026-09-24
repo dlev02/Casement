@@ -44,6 +44,15 @@ final class FileArrivals {
         progress.estimatedTimeRemaining = transfer.secondsRemaining
     }
 
+    /// A file the connection cut off, waiting for its iPad to come back and resume it: neither an
+    /// arrival nor a failure. Its progress goes until `started` brings it back on resume.
+    func paused(_ transfer: HostTransfer) {
+        if let progress = progress.removeValue(forKey: transfer.id) { progress.unpublish() }
+        guard transfer.direction == .receiving else { return }
+        batcher.ended(transfer.id, at: .now)
+        scheduleFlush()
+    }
+
     func finished(_ transfer: HostTransfer, _ outcome: FileTransferOutcome) {
         if let progress = progress.removeValue(forKey: transfer.id) { progress.unpublish() }
         switch outcome {

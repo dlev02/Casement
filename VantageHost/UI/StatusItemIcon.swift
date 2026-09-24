@@ -30,7 +30,8 @@ enum StatusItemIcon {
 
     /// The files the icon counts as moving (the one place that decides; a paused file shouldn't spin).
     static func moving(_ transfers: [HostTransfer]) -> [HostTransfer] {
-        transfers.filter(\.isActive)
+        // A file waiting for its iPad to reconnect (`interruptedAt`) can wait an hour: not moving.
+        transfers.filter { $0.isActive && $0.interruptedAt == nil }
     }
 
     private struct Key: Hashable {

@@ -75,6 +75,10 @@ public struct FileTransferConfiguration: Sendable {
     /// How long a partial file cut off by a lost connection waits for its sender to come back
     /// and resume it before it's deleted.
     public var partialLifetime: Duration = .seconds(24 * 60 * 60)
+    /// The folder an earlier connection left a file's partial in, when that isn't
+    /// `receiveDirectory` (the receive folder changed in between). A resumed file keeps writing to
+    /// that partial and is saved beside it.
+    public var partialDirectory: (@Sendable (UUID) -> URL?)?
 
     public init(receiveDirectory: URL, chunkSize: Int = FileChunk.standardSize, window: Int = 4,
                 maxIncomingBytes: UInt64 = 64 << 30, freeSpaceMargin: UInt64 = 256 << 20,
@@ -360,7 +364,7 @@ public actor FileTransferEngine {
             return
         }
         let name = FileNames.sanitize(offer.name)
-        let directory = config.receiveDirectory
+        let directory = folder(for: offer.id)
         let partial = partialURL(for: offer.id)
         // Another file channel in this process may still be writing it: the one this sender
         // used before its connection dropped, if this side hasn't noticed yet. Take it over.
@@ -386,7 +390,7 @@ public actor FileTransferEngine {
             reply(.fileAccept(.rejected(offer.id, reason: "That file is already being transferred.")))
             return
         }
-        if let reason = rejection(for: offer, alreadyHave: resume?.offset ?? 0) {
+        if let reason = rejection(for: offer, in: directory, alreadyHave: resume?.offset ?? 0) {
             log.info("refusing incoming file (\(offer.byteCount, privacy: .public) bytes): \(reason, privacy: .public)")
             PartialClaims.shared.release(partial, by: self)
             try? FileManager.default.removeItem(at: partial)
@@ -411,7 +415,7 @@ public actor FileTransferEngine {
             reply(.fileAccept(.rejected(offer.id, reason: "The file couldn't be saved on this device.")))
             return
         }
-        let state = Incoming(offer: offer, name: name, partial: partial, handle: handle)
+        let state = Incoming(offer: offer, name: name, directory: directory, partial: partial, handle: handle)
         if let resume {
             state.hasher = resume.hasher
             state.received = resume.offset
@@ -439,12 +443,12 @@ public actor FileTransferEngine {
         log.info("handed a partly received file over to a newer connection")
     }
 
-    private func rejection(for offer: FileOffer, alreadyHave: UInt64) -> String? {
+    private func rejection(for offer: FileOffer, in directory: URL, alreadyHave: UInt64) -> String? {
         if offer.byteCount > config.maxIncomingBytes {
             return "The file is too large (\(ByteCountFormatter.string(fromByteCount: Int64(clamping: offer.byteCount), countStyle: .file)))."
         }
         // Measure on the folder, or the nearest one above it that exists yet.
-        var probe = config.receiveDirectory
+        var probe = directory
         while !FileManager.default.fileExists(atPath: probe.path(percentEncoded: false)), probe.pathComponents.count > 1 {
             probe = probe.deletingLastPathComponent()
         }
@@ -517,7 +521,7 @@ public actor FileTransferEngine {
         }
         var lastError: (any Error)?
         for _ in 0..<8 {
-            let target = FileNames.uniqueURL(for: state.name, in: config.receiveDirectory)
+            let target = FileNames.uniqueURL(for: state.name, in: state.directory)
             do {
                 try manager.moveItem(at: state.partial, to: target)
                 return target
@@ -549,8 +553,13 @@ public actor FileTransferEngine {
         PartialClaims.shared.release(state.partial, by: self)
     }
 
+    /// Where this file's partial is (or goes), and where it's saved.
+    private func folder(for id: UUID) -> URL {
+        config.partialDirectory?(id) ?? config.receiveDirectory
+    }
+
     private func partialURL(for id: UUID) -> URL {
-        config.receiveDirectory.appending(path: Self.partialPrefix + id.uuidString + Self.partialSuffix, directoryHint: .notDirectory)
+        folder(for: id).appending(path: Self.partialPrefix + id.uuidString + Self.partialSuffix, directoryHint: .notDirectory)
     }
 
     private func deletePartial(for id: UUID) {
@@ -695,6 +704,8 @@ private final class Outgoing: @unchecked Sendable {
 private final class Incoming: @unchecked Sendable {
     let offer: FileOffer
     let name: String
+    /// The folder it's saved into (the receive folder, or where an earlier connection left it).
+    let directory: URL
     let partial: URL
     let handle: FileHandle
     var hasher = SHA256()
@@ -704,9 +715,10 @@ private final class Incoming: @unchecked Sendable {
     var lastProgress = ContinuousClock.now
     let started = ContinuousClock.now
 
-    init(offer: FileOffer, name: String, partial: URL, handle: FileHandle) {
+    init(offer: FileOffer, name: String, directory: URL, partial: URL, handle: FileHandle) {
         self.offer = offer
         self.name = name
+        self.directory = directory
         self.partial = partial
         self.handle = handle
     }

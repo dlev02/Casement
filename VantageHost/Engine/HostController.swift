@@ -255,7 +255,7 @@ final class HostController {
             for await event in engine.events {
                 // A file cut off by the connection waits for the iPad to come back and resume it,
                 // rather than counting as failed. Sends are settled by `startSending`.
-                if case .finished(let id, .failed) = event, await engine.hasClosed, holdForResume(id) { continue }
+                if case .finished(let id, .failed) = event, await engine.hasClosed, holdForResume(id, on: fileChannel) { continue }
                 handle(event, on: fileChannel)
             }
             fileChannels.removeAll { $0.engine === engine }
@@ -279,8 +279,9 @@ final class HostController {
             }
             if let transfer = transfers.first(where: { $0.id == item.id }) {
                 // The folder this channel's engine saves into (Settings can change it for later
-                // channels); a channel can outlive its session, so it travels with the channel.
-                arrivals.started(transfer, receivingInto: channel.receiveDirectory)
+                // channels; a channel can outlive its session, so it travels with the channel), or
+                // where a resumed file's partial already is.
+                arrivals.started(transfer, receivingInto: ResumeFolders.shared.folder(for: item.id) ?? channel.receiveDirectory)
             }
         case .progress(let id, let bytes):
             if let index = transfers.firstIndex(where: { $0.id == id }) {
@@ -288,6 +289,7 @@ final class HostController {
                 arrivals.progressed(transfers[index])
             }
         case .finished(let id, let outcome):
+            ResumeFolders.shared.set(nil, for: id)
             guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
             transfers[index].finish(outcome)
             // Notifications, the on-screen notice, and Finder, per Settings → Files.
@@ -338,11 +340,14 @@ final class HostController {
     }
 
     /// Marks a file the connection cut off as waiting for its iPad; false if there's no such
-    /// active row.
-    private func holdForResume(_ id: UUID) -> Bool {
+    /// active row. A receive remembers where its partial is, and drops its Finder/Dock progress
+    /// until it resumes (a bar stalled for up to an hour helps no one).
+    private func holdForResume(_ id: UUID, on channel: HostFileChannel) -> Bool {
         guard let index = transfers.firstIndex(where: { $0.id == id }), transfers[index].isActive else { return false }
         if transfers[index].direction == .sending { return true } // `startSending` settles it
+        if ResumeFolders.shared.folder(for: id) == nil { ResumeFolders.shared.set(channel.receiveDirectory, for: id) }
         interrupt(index)
+        arrivals.paused(transfers[index])
         return true
     }
 
@@ -370,8 +375,11 @@ final class HostController {
         let cutoff = Date.now.addingTimeInterval(-HostTransfer.resumeWindow)
         for index in transfers.indices {
             guard let since = transfers[index].interruptedAt, since < cutoff else { continue }
-            transfers[index].finish(.failed("The connection was lost."))
+            let outcome = FileTransferOutcome.failed("The connection was lost.")
+            transfers[index].finish(outcome)
             if transfers[index].direction == .receiving { Self.discardPartial(transfers[index].id) }
+            // It never came back: now it's a failure, and says so like any other.
+            arrivals.finished(transfers[index], outcome)
         }
         trimTransfers()
     }
@@ -385,9 +393,12 @@ final class HostController {
         for channel in fileChannels { Task { await channel.engine.cancel(id) } }
     }
 
+    /// Deletes a paused receive's partial, wherever it was being written.
     private static func discardPartial(_ id: UUID) {
         let name = FileTransferEngine.partialPrefix + id.uuidString + FileTransferEngine.partialSuffix
-        try? FileManager.default.removeItem(at: HostFileStore.current.directory.appending(path: name))
+        let folder = ResumeFolders.shared.folder(for: id) ?? HostFileStore.current.directory
+        try? FileManager.default.removeItem(at: folder.appending(path: name))
+        ResumeFolders.shared.set(nil, for: id)
     }
 
     /// "Send File to ⟨iPad⟩…": an open panel, then the queue.

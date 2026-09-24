@@ -551,6 +551,35 @@ struct FileTransferEngineTests {
         await newRun.value
     }
 
+    /// The receive folder changed while a file was paused: it still resumes from its partial in
+    /// the old folder (`partialDirectory`) and is saved there, not started over in the new one.
+    @Test func resumedPartialKeepsItsFolder() async throws {
+        let (clientChannel, serverChannel, listener) = try await channelPair()
+        defer { listener.cancel() }
+        let clientDir = try temporaryDirectory("client"), oldDir = try temporaryDirectory("old"), newDir = try temporaryDirectory("new")
+        defer { for dir in [clientDir, oldDir, newDir] { try? FileManager.default.removeItem(at: dir) } }
+        let source = try randomFile(bytes: 2 << 20, in: clientDir, name: "Scan.tiff")
+        let id = UUID()
+        let half = try Data(contentsOf: source).prefix(1 << 20)
+        try half.write(to: oldDir.appending(path: FileTransferEngine.partialPrefix + id.uuidString + FileTransferEngine.partialSuffix))
+        var hostConfig = FileTransferConfiguration(receiveDirectory: newDir, progressInterval: .zero)
+        hostConfig.partialDirectory = { $0 == id ? oldDir : nil }
+        let client = FileTransferEngine(channel: clientChannel, role: .client, configuration: .init(receiveDirectory: clientDir))
+        let host = FileTransferEngine(channel: serverChannel, role: .host, configuration: hostConfig)
+        let runs = [Task { await client.run() }, Task { await host.run() }]
+        let events = Task { () -> [FileTransferEvent] in
+            var all: [FileTransferEvent] = []
+            for await event in host.events { all.append(event) }
+            return all
+        }
+        #expect(await client.send(fileAt: source, id: id) == .sent(savedName: "Scan.tiff"))
+        #expect(try Data(contentsOf: oldDir.appending(path: "Scan.tiff")) == Data(contentsOf: source))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: newDir.path).isEmpty)
+        await client.close()
+        for run in runs { await run.value }
+        #expect(await events.value.dropFirst().first == .progress(id: id, bytes: 1 << 20), "resumed, not restarted")
+    }
+
     /// Partials older than `partialLifetime` go when an engine starts; fresh ones stay.
     @Test func stalePartialsAreDeletedAndFreshOnesKept() async throws {
         let (clientChannel, serverChannel, listener) = try await channelPair()

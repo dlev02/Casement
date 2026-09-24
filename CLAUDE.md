@@ -317,7 +317,13 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Paused meanwhile; a receive cut off waits an hour for the Mac to re-offer it. The host re-sends
   its interrupted sends when the same iPad (`HostFileChannel.clientKey`, the key fingerprint)
   attaches again within an hour (`HostTransfer.interruptedAt`/`resumeWindow`), and doesn't
-  report a cut-off file as failed meanwhile. Logs: "resuming a send/receive at N of M bytes
+  report a cut-off file as failed meanwhile: the menu row says "Paused at 45% · resumes when ⟨iPad⟩
+  reconnects" (`HostTransferRow.detail`), the menu bar ring leaves it out (`StatusItemIcon.moving`),
+  and its Finder/Dock progress is withdrawn (`FileArrivals.paused`) until `started` republishes it.
+  A paused receive remembers its partial's folder (`ResumeFolders`, fed to the engine as
+  `FileTransferConfiguration.partialDirectory`), so it resumes and is saved there even if
+  Settings → Files changed the folder in between (`resumedPartialKeepsItsFolder`). One that
+  never comes back fails after the hour like any other failure. Logs: "resuming a send/receive at N of M bytes
   (hashed … in X ms)". Host: `~/Downloads`
   (`NSDownloadsFolderUsageDescription`; macOS asks once), `com.apple.quarantine` set per file via
   `URLResourceValues.quarantineProperties` (not `LSFileQuarantineEnabled`, which would also

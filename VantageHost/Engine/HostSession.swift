@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import Network
+import Synchronization
 import VantageCore
 import os
 
@@ -546,7 +547,11 @@ actor HostSession {
             return
         }
         let store = HostFileStore.current
-        let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: store.configuration)
+        var configuration = store.configuration
+        // A file cut off earlier keeps writing to its partial, even if Settings → Files moved the
+        // receive folder since.
+        configuration.partialDirectory = { ResumeFolders.shared.folder(for: $0) }
+        let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: configuration)
         fileEngine = engine
         log.info("file channel attached; receiving into \(store.directory.path(percentEncoded: false), privacy: .public)")
         let host = peerHost, fallback = clientName
@@ -849,6 +854,17 @@ actor HostSession {
         let bits = Double(pixels) * Double(fps) * 0.08
         return Int(min(60_000, max(4_000, bits / 1000)))
     }
+}
+
+/// Where each file cut off mid-receive left its partial, so whichever channel resumes it (a new
+/// one, maybe after the receive folder changed) keeps writing to the same file. Set when a
+/// receive pauses, cleared when it finishes, is cancelled, or expires.
+nonisolated final class ResumeFolders: Sendable {
+    static let shared = ResumeFolders()
+    private let folders = Mutex<[UUID: URL]>([:])
+
+    func folder(for id: UUID) -> URL? { folders.withLock { $0[id] } }
+    func set(_ folder: URL?, for id: UUID) { folders.withLock { $0[id] = folder } }
 }
 
 /// A session's live file channel, as the controller and menu see it.
