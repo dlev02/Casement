@@ -23,11 +23,16 @@ private final class MockSession: Sendable {
 
 /// Stands in for Vantage Host: authenticates, hands out a file channel token (unless it plays an
 /// older host), binds the second connection with `AttachTokenRegistry`, and runs a host-role
-/// `FileTransferEngine` on it, saving into `directory`.
+/// `FileTransferEngine` on it, saving into `directory`. Its file channels never close with their
+/// session, like a current Vantage Host; `keepsFiles` says so to the client (and takes files-only
+/// sessions), which is what makes the client rely on it.
 private final class MockFileHost: @unchecked Sendable {
     let listener: NWListener
     let directory: URL
     let offersFiles: Bool
+    let keepsFiles: Bool
+    /// Answer files-only sessions with "pairing required", as a Mac that doesn't know this iPad.
+    let refusesFilesOnlyUnpaired: Bool
     let maxIncomingBytes: UInt64
     let behaviour: PrimaryBehaviour
     private let registry = AttachTokenRegistry<MockSession>()
@@ -38,6 +43,9 @@ private final class MockFileHost: @unchecked Sendable {
     private var droppedOnce = false
     private var events: [FileTransferEvent] = []
     private var primaries: [MessageChannel] = []
+    private var hellos: [Hello] = []
+    private var screenMessages: [MessageKind] = []
+    private var primariesClosed = 0
     /// Replaces the engine on the next file channel: the test plays the host by hand.
     var rawFileChannel: (@Sendable (MessageChannel) async throws -> Void)?
 
@@ -47,11 +55,23 @@ private final class MockFileHost: @unchecked Sendable {
     var latestEngine: FileTransferEngine? { lock.withLock { engines.last } }
     var engineCount: Int { lock.withLock { engines.count } }
     var hostEvents: [FileTransferEvent] { lock.withLock { events } }
+    var filesOnlyHelloCount: Int { lock.withLock { hellos.filter { $0.features?.filesOnly == true }.count } }
+    var screenHelloCount: Int { lock.withLock { hellos.filter { $0.features?.filesOnly != true }.count } }
+    /// Kinds a files-only session sent on its primary other than ping (should be none).
+    var filesOnlyStrayMessages: [MessageKind] { lock.withLock { screenMessages } }
+    var closedPrimaryCount: Int { lock.withLock { primariesClosed } }
+    /// Starts of the transfer with this id, as the Mac saw them.
+    func starts(of id: UUID) -> Int {
+        hostEvents.filter { if case .started(let item) = $0 { item.id == id } else { false } }.count
+    }
 
-    init(offersFiles: Bool = true, maxIncomingBytes: UInt64 = 64 << 30, behaviour: PrimaryBehaviour = .stay) async throws {
+    init(offersFiles: Bool = true, keepsFiles: Bool = false, refusesFilesOnlyUnpaired: Bool = false,
+         maxIncomingBytes: UInt64 = 64 << 30, behaviour: PrimaryBehaviour = .stay) async throws {
         directory = FileManager.default.temporaryDirectory.appending(path: "mock-host-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         self.offersFiles = offersFiles
+        self.keepsFiles = keepsFiles
+        self.refusesFilesOnlyUnpaired = refusesFilesOnlyUnpaired
         self.maxIncomingBytes = maxIncomingBytes
         self.behaviour = behaviour
         listener = try NWListener(using: VantageNetwork.tcpParameters(), on: .any)
@@ -114,21 +134,30 @@ private final class MockFileHost: @unchecked Sendable {
     }
 
     private func primary(_ channel: MessageChannel, hello: Hello, peer: String) async throws {
-        lock.withLock { primaries.append(channel) }
+        lock.withLock { primaries.append(channel); hellos.append(hello) }
+        defer { lock.withLock { primariesClosed += 1 } }
         let identity = DeviceIdentity()
         let nonce = AuthTranscript.randomNonce()
+        let filesOnly = hello.features?.filesOnly == true && keepsFiles
         try await channel.send(.challenge(Challenge(hostName: "Mock Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData,
-                                                    nonce: nonce, isPaired: true)))
+                                                    nonce: nonce, isPaired: !(filesOnly && refusesFilesOnlyUnpaired))))
         guard case .authenticate? = try await channel.receive() else { throw ChannelError.closed }
+        if filesOnly && refusesFilesOnlyUnpaired {
+            try await channel.send(.authResult(AuthResult(status: .pairingRequired)))
+            await channel.close()
+            return
+        }
         let wantsFiles = hello.features?.fileTransfer == true && offersFiles
         let session = MockSession(number: connectionCount)
         let token = wantsFiles ? registry.issue(for: session, peer: peer) : nil
         let capabilities = HostCapabilities(codecs: [.hevc], canManageVirtualDisplay: false, clipboard: true, maxFPS: 60,
-                                            fileTransfer: wantsFiles ? true : nil)
+                                            fileTransfer: wantsFiles ? true : nil,
+                                            filesOnlySessions: wantsFiles && keepsFiles ? true : nil)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
         let engineCountAtStart = engineCount
         while let message = try await channel.receive() {
             if case .disconnect = message { break }
+            if filesOnly, message.kind != .ping { lock.withLock { screenMessages.append(message.kind) } }
             if behaviour == .dropOnceAfterAttach, engineCount > engineCountAtStart, !lock.withLock({ droppedOnce }) {
                 lock.withLock { droppedOnce = true }
                 break
@@ -152,9 +181,9 @@ private final class MockFileHost: @unchecked Sendable {
 private enum Failure: Error { case timedOut(String) }
 
 @MainActor
-private func waitUntil(_ what: String, seconds: Double = 15, _ condition: () -> Bool) async throws {
+private func waitUntil(_ what: String, seconds: Double = 15, _ condition: () async -> Bool) async throws {
     let deadline = ContinuousClock.now + .seconds(seconds)
-    while !condition() {
+    while !(await condition()) {
         guard ContinuousClock.now < deadline else { throw Failure.timedOut(what) }
         try await Task.sleep(for: .milliseconds(20))
     }
@@ -355,6 +384,145 @@ struct FileTransferSessionTests {
         let resumedAt = starts.last.flatMap { start in host.hostEvents.dropFirst(start.offset + 1).first }
         guard case .progress(id, let bytes)? = resumedAt else { Issue.record("no resume point: \(String(describing: resumedAt))"); return }
         #expect(bytes >= 1_000_000 && bytes < 4 << 20, "picked up at \(bytes)")
+    }
+
+    // MARK: Files without the screen
+
+    /// Disconnect mid-upload on a Mac that keeps files: the screen goes, the file carries on to
+    /// the end on the same channel (never restarted), and the channel closes once idle.
+    @Test @MainActor func transferKeepsGoingAfterTheSessionEnds() async throws {
+        let host = try await MockFileHost(keepsFiles: true)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        files.chunkDelayForTesting = .milliseconds(30)
+        let session = ClientSession(identity: DeviceIdentity(), files: files)
+        session.fileLink.idleTimeout = .milliseconds(600)
+        session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
+        try await waitUntil("file channel") { files.isConnected }
+        #expect(session.fileLink.macKeepsFiles == true)
+        let source = try randomFile(bytes: 3 << 20, in: sourceDir, name: "Holiday.mov")
+        files.send([source], securityScoped: false)
+        try await waitUntil("under way") { (files.transfers.first?.bytesDone ?? 0) > 0 }
+
+        session.disconnect()
+        try await waitUntil("the Mac saw the screen go") { host.closedPrimaryCount == 1 }
+        #expect(files.isConnected, "the file channel stays")
+        #expect(files.transfers.first?.state == .active)
+        try await waitUntil("finished without the screen") { files.transfers.first?.state == .done }
+        #expect(try sha256(host.directory.appending(path: "Holiday.mov")) == sha256(source))
+        let id = try #require(files.transfers.first?.id)
+        #expect(host.starts(of: id) == 1, "carried on, not restarted")
+        try await waitUntil("closed once idle", seconds: 5) { !files.isConnected }
+        let engine = try #require(host.latestEngine)
+        try await waitUntil("the Mac's side closed too", seconds: 5) { await engine.hasClosed }
+        #expect(host.engineCount == 1 && host.filesOnlyHelloCount == 0)
+    }
+
+    /// Send Files from the device list: no screen session at all. The iPad opens a files-only
+    /// session that never asks for the screen, sends everything queued, and closes once idle.
+    @Test @MainActor func sendsFilesWithoutOpeningTheScreen() async throws {
+        let host = try await MockFileHost(keepsFiles: true)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let link = FileLink(files: files, identity: DeviceIdentity(), clientName: "Test iPad", clientModel: "iPad")
+        link.idleTimeout = .milliseconds(600)
+        link.update(SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port))
+        let sources = try (1...3).map { try randomFile(bytes: 300_000 * $0, in: sourceDir, name: "Scan \($0).pdf") }
+        files.send(sources, securityScoped: false)
+        try await waitUntil("all three sent") { files.transfers.count == 3 && files.transfers.allSatisfy { $0.state == .done } }
+        for source in sources {
+            #expect(try sha256(host.directory.appending(path: source.lastPathComponent)) == sha256(source))
+        }
+        #expect(host.filesOnlyHelloCount == 1 && host.screenHelloCount == 0)
+        #expect(host.filesOnlyStrayMessages.isEmpty, "a files-only session never asks for the screen")
+        #expect(link.macKeepsFiles == true)
+        try await waitUntil("closed once idle", seconds: 5) { !files.isConnected && link.phase == .idle }
+        try await waitUntil("its session closed too", seconds: 5) { host.closedPrimaryCount == 1 }
+    }
+
+    /// The file channel alone drops while the screen stays up: it comes back through a
+    /// files-only session and the file resumes.
+    @Test @MainActor func droppedFileChannelComesBackWithoutTheScreen() async throws {
+        let host = try await MockFileHost(keepsFiles: true)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        files.chunkDelayForTesting = .milliseconds(25)
+        let session = ClientSession(identity: DeviceIdentity(), files: files)
+        defer { session.disconnect() }
+        session.connect(to: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
+        try await waitUntil("file channel") { files.isConnected }
+        let source = try randomFile(bytes: 3 << 20, in: sourceDir, name: "Drawings.zip")
+        files.send([source], securityScoped: false)
+        try await waitUntil("under way") { (files.transfers.first?.bytesDone ?? 0) >= 600_000 }
+        files.chunkDelayForTesting = .zero
+        await host.latestEngine?.close()
+        try await waitUntil("finished", seconds: 20) { files.transfers.first?.state == .done }
+        #expect(session.state == .connected, "the screen never dropped")
+        #expect(host.filesOnlyHelloCount == 1, "the channel came back through a files-only session")
+        #expect(try sha256(host.directory.appending(path: "Drawings.zip")) == sha256(source))
+        let id = try #require(files.transfers.first?.id)
+        #expect(host.starts(of: id) == 2)
+    }
+
+    /// A Mac from before files-only sessions: nothing is sent without a screen, and the files say
+    /// why; the connection it answered is closed at once.
+    @Test @MainActor func olderMacExplainsItNeedsTheScreenForFiles() async throws {
+        let host = try await MockFileHost(keepsFiles: false)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let link = FileLink(files: files, identity: DeviceIdentity(), clientName: "Test iPad", clientModel: "iPad")
+        link.update(SavedDevice(name: "Old Mac", host: "127.0.0.1", port: host.port))
+        files.send([try randomFile(bytes: 1_000, in: sourceDir, name: "Note.txt")], securityScoped: false)
+        try await waitUntil("failed") { if case .failed = files.transfers.first?.state { true } else { false } }
+        guard case .failed(let reason) = files.transfers.first?.state else { return }
+        #expect(reason.contains("Update Vantage Host on Old Mac"))
+        #expect(host.engineCount == 0)
+        try await waitUntil("hung up") { host.closedPrimaryCount == 1 }
+        #expect(link.macKeepsFiles == false)
+        // The next file fails straight away, without another connection.
+        files.send([try randomFile(bytes: 1_000, in: sourceDir, name: "Note 2.txt")], securityScoped: false)
+        #expect(files.transfers.last?.state == .failed(reason))
+        #expect(host.connectionCount == 1)
+    }
+
+    /// Disconnect from an older Mac still takes the file channel down with the screen (and the
+    /// session screen asks first, see `RemoteSessionScreen.disconnect`).
+    @Test @MainActor func olderMacsFileChannelEndsWithTheSession() async throws {
+        let host = try await MockFileHost(keepsFiles: false)
+        defer { host.stop() }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let session = ClientSession(identity: DeviceIdentity(), files: files)
+        session.connect(to: SavedDevice(name: "Old Mac", host: "127.0.0.1", port: host.port), viewport: viewport)
+        try await waitUntil("file channel") { files.isConnected }
+        #expect(session.fileLink.macKeepsFiles == false)
+        session.disconnect()
+        try await waitUntil("closed with the session") { !files.isConnected }
+        let engine = try #require(host.latestEngine)
+        try await waitUntil("the Mac's side closed", seconds: 5) { await engine.hasClosed }
+    }
+
+    /// A Mac that doesn't know this iPad yet: files-only sessions can't pair, so the files say how.
+    @Test @MainActor func filesOnlyNeedsAPairedMac() async throws {
+        let host = try await MockFileHost(keepsFiles: true, refusesFilesOnlyUnpaired: true)
+        defer { host.stop() }
+        let sourceDir = try scratchDirectory("source")
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
+        let link = FileLink(files: files, identity: DeviceIdentity(), clientName: "Test iPad", clientModel: "iPad")
+        link.update(SavedDevice(name: "New Mac", host: "127.0.0.1", port: host.port))
+        files.send([try randomFile(bytes: 1_000, in: sourceDir, name: "Hello.txt")], securityScoped: false)
+        try await waitUntil("failed") { if case .failed = files.transfers.first?.state { true } else { false } }
+        guard case .failed(let reason) = files.transfers.first?.state else { return }
+        #expect(reason.contains("pair"))
+        #expect(link.phase == .unavailable(reason))
     }
 
     @Test @MainActor func olderHostNeverSeesAFileChannel() async throws {

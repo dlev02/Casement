@@ -11,7 +11,8 @@ struct RemoteSessionScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(DeviceStore.self) private var store
 
-    @State private var session = ClientSession()
+    /// Uses this Mac's shared `FileLink`, so files keep moving after the session closes.
+    @State private var session: ClientSession
     @State private var video = VideoStreamController()
     @State private var input = InputController()
     @State private var stickyModifiers: KeyModifiers = []
@@ -69,6 +70,11 @@ struct RemoteSessionScreen: View {
     /// the button works again if the Mac didn't answer).
     @State private var wakeRequested = false
     @State private var wakeTask: Task<Void, Never>?
+
+    init(device: SavedDevice) {
+        self.device = device
+        _session = State(initialValue: ClientSession(fileLink: FileTransferCenter.shared.link(for: device)))
+    }
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
@@ -269,17 +275,12 @@ struct RemoteSessionScreen: View {
             Button("Disconnect", role: .destructive) { endSession() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Files that haven't finished won't arrive.")
+            Text("This Mac's Vantage Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
         }
         // Files opened in Vantage from other apps join this session's queue.
         .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
             guard count > 0 else { return }
             for copy in SharedFileInbox.shared.take() { session.files.sendOutboxCopy(copy) }
-        }
-        .onChange(of: session.state) { _, state in
-            if state == .connected, !session.hostOffersFiles {
-                session.files.failWaiting("This Mac's Vantage Host can't receive files. Update Vantage Host on the Mac.")
-            }
         }
         #if DEBUG
         .onChange(of: session.files.isConnected) { _, connected in
@@ -354,8 +355,8 @@ struct RemoteSessionScreen: View {
 
     // MARK: Files
 
-    /// The Mac can take files right now.
-    private var canSendFiles: Bool { session.state == .connected && session.files.isConnected }
+    /// The Mac takes files (the file channel comes up on demand).
+    private var canSendFiles: Bool { session.state == .connected && session.hostOffersFiles }
 
     private var sendFileAction: SendFileAction {
         let active = session.files.transfers.filter { $0.state == .active }
@@ -742,10 +743,11 @@ struct RemoteSessionScreen: View {
         }
     }
 
-    /// Disconnect from the strip, the menu, or the overlay. The one confirmation Disconnect
-    /// ever asks for: files still moving would be lost.
+    /// Disconnect from the strip, the menu, or the overlay. Files keep moving without the screen
+    /// on a current Mac (the device list shows them). Only an older Mac, which would stop them,
+    /// gets the one confirmation Disconnect ever asks for.
     private func disconnect() {
-        if session.files.hasActiveTransfers {
+        if session.files.hasActiveTransfers, session.fileLink.macKeepsFiles == false {
             showDisconnectGuard = true
         } else {
             endSession()
@@ -766,6 +768,9 @@ struct RemoteSessionScreen: View {
         #if canImport(UIKit)
         macAudio.setWanted(false)
         #endif
+        // The Mac's transfers outlive this screen; stop reporting them here.
+        session.files.onReceived = nil
+        session.files.onSendFinished = nil
         session.disconnect()
     }
 

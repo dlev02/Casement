@@ -7,6 +7,14 @@ import VantageCore
 enum ClientOptions {
     static var seedHost: String? { value(for: "-VantageSeedHost") }
     static var autoConnectHost: String? { value(for: "-VantageAutoConnect") }
+    /// `autoConnectHost` the first time it's asked for, then nil: the launch opens the session
+    /// once, and Disconnect really goes back to the list.
+    static func takeAutoConnectHost() -> String? {
+        guard !autoConnectTaken else { return nil }
+        autoConnectTaken = true
+        return autoConnectHost
+    }
+    private static var autoConnectTaken = false
     static var pairingCode: String? { value(for: "-VantagePairingCode") }
     /// `-VantageTailscaleFixture 1` serves a fictional tailnet instead of calling the API.
     static var tailscaleFixture: [TailscaleDevice]? {

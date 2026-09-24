@@ -15,6 +15,9 @@ struct DeviceListScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var availability = HostAvailabilityStore()
     @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
+    /// Files keep moving with a Mac after its session closes; its row shows them.
+    private let transfers = FileTransferCenter.shared
+    @State private var transfersDevice: SavedDevice?
 
     var body: some View {
         @Bindable var store = store
@@ -42,6 +45,11 @@ struct DeviceListScreen: View {
             }
             .sheet(item: $editingDevice) { device in
                 AddDeviceSheet(existing: device)
+            }
+            .sheet(item: $transfersDevice) { device in
+                NavigationStack {
+                    TransfersView(files: transfers.link(for: device).files, macName: device.name)
+                }
             }
             .confirmationDialog(
                 deviceToDelete.map { "Remove “\($0.name)”?" } ?? "",
@@ -74,7 +82,7 @@ struct DeviceListScreen: View {
             }
             .animation(.smooth(duration: 0.3), value: logInStatus)
             .task {
-                if let host = ClientOptions.autoConnectHost, selectedDevice == nil {
+                if selectedDevice == nil, let host = ClientOptions.takeAutoConnectHost() {
                     selectedDevice = store.devices.first { $0.host == host }
                 }
                 if ClientOptions.openTailscaleDevices { showTailscaleDevices = true }
@@ -89,10 +97,9 @@ struct DeviceListScreen: View {
     private var listView: some View {
         List {
             ForEach(store.sortedDevices) { device in
-                Button { selectedDevice = device } label: {
-                    DeviceRow(device: device, availability: availability.statuses[device.id] ?? .checking)
-                }
-                .buttonStyle(.plain)
+                DeviceListItem(device: device, availability: availability.statuses[device.id] ?? .checking,
+                               files: transfers.files(for: device.id),
+                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device })
                 .swipeActions {
                     Button(role: .destructive) { deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
                     Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
@@ -109,10 +116,9 @@ struct DeviceListScreen: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], spacing: 16) {
                 ForEach(store.sortedDevices) { device in
-                    Button { selectedDevice = device } label: {
-                        DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking)
-                    }
-                    .buttonStyle(.plain)
+                    DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking,
+                               files: transfers.files(for: device.id),
+                               onOpen: { selectedDevice = device }, onShowTransfers: { transfersDevice = device })
                     #if os(visionOS)
                     .contentShape(.hoverEffect, .rect(cornerRadius: 20))
                     .hoverEffect()
@@ -129,6 +135,9 @@ struct DeviceListScreen: View {
 
     @ViewBuilder
     private func deviceMenu(for device: SavedDevice) -> some View {
+        if transfers.files(for: device.id)?.hasTransfers == true {
+            Button { transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
+        }
         Button { editingDevice = device } label: { Label("Edit", systemImage: "pencil") }
         if ScreenSharingPassword.canLogIn(device) {
             Button { deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
@@ -249,30 +258,73 @@ struct DeviceRow: View {
     }
 }
 
+/// A Mac in the list: its row opens the session, and while files move with it a line under the
+/// name shows them (its own button, so it isn't swallowed by the row's).
+private struct DeviceListItem: View {
+    let device: SavedDevice
+    let availability: HostAvailability
+    let files: FileTransferController?
+    let onOpen: () -> Void
+    let onShowTransfers: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onOpen) {
+                DeviceRow(device: device, availability: availability)
+            }
+            .buttonStyle(.plain)
+            if let files, files.hasActiveTransfers {
+                DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
+                    .padding(.leading, 58) // under the name, past the 44 pt icon and its spacing
+                    .padding(.bottom, 6)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: files?.hasActiveTransfers == true)
+    }
+}
+
+/// A Mac in the grid: the card opens the session; while files move with it a line at the
+/// bottom shows them.
 struct DeviceCard: View {
     let device: SavedDevice
     var availability: HostAvailability = .checking
+    var files: FileTransferController?
+    var onOpen: () -> Void = {}
+    var onShowTransfers: () -> Void = {}
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                DeviceIconTile(os: device.os, size: 48)
-                Spacer()
-                if let last = device.lastConnected {
-                    Text(lastConnectedText(last))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top) {
+                        DeviceIconTile(os: device.os, size: 48)
+                        Spacer()
+                        if let last = device.lastConnected {
+                            Text(lastConnectedText(last))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(device.name).font(.body.weight(.semibold)).lineLimit(1)
+                        Text(device.host).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        AvailabilityLabel(status: availability)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+                .accessibilityElement(children: .combine)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(device.name).font(.body.weight(.semibold)).lineLimit(1)
-                Text(device.host).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                AvailabilityLabel(status: availability)
+            .buttonStyle(.plain)
+            if let files, files.hasActiveTransfers {
+                DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .platformGlass(in: .rect(cornerRadius: 20))
-        .accessibilityElement(children: .combine)
+        .animation(.easeOut(duration: 0.2), value: files?.hasActiveTransfers == true)
     }
 }
 

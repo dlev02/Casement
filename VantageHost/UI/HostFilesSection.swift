@@ -43,9 +43,11 @@ struct HostFilesSection: View {
     }
 
     /// One "Send File to ⟨iPad⟩…" per iPad that can take files, most recent first. The one place
-    /// that decides which file channels are offered (and would dedupe two for the same iPad).
+    /// that decides which file channels are offered. File channels outlive their sessions, so an
+    /// iPad can briefly have two (the old one winding down, a new one up): offer its newest.
     private var sendTargets: [HostFileChannel] {
-        controller.fileChannels.reversed()
+        var seen = Set<String>()
+        return controller.fileChannels.reversed().filter { seen.insert($0.clientKey).inserted }
     }
 
     /// Where received files go, with its Finder icon; opens the folder.

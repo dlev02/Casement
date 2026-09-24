@@ -3,11 +3,12 @@ import Observation
 import VantageCore
 import os
 
-/// The session's files, both ways: a queue of files to send to the Mac (one at a time), what
-/// the Mac sends here, and the list the Transfers sheet shows.
+/// One Mac's files, both ways: a queue of files to send to it (one at a time), what it sends
+/// here, and the list the Transfers sheet shows. It belongs to the Mac's `FileLink`, so it lives
+/// as long as the app, not the session.
 ///
-/// It outlives connections. `ClientSession` attaches a `FileTransferEngine` each time the file
-/// channel comes up and detaches it when it drops; queued files wait for the next one. A file cut
+/// It outlives connections. The link attaches a `FileTransferEngine` each time the file channel
+/// comes up and detaches it when it drops; queued files wait for the next one. A file cut
 /// off by a dropped connection waits too, and carries on from where it stopped once the channel is
 /// back: sends are offered again under the same id (the Mac kept the partial file), and the Mac
 /// does the same with files it was sending here.
@@ -38,6 +39,8 @@ final class FileTransferController {
         var finishedAt: Date?
         /// Set while a file the connection cut off waits to resume.
         var interruptedAt: Date?
+        /// Which run of the queue it belongs to (see `Summary`).
+        var batch = 0
 
         var isActive: Bool { state == .waiting || state == .active }
         var fraction: Double {
@@ -48,6 +51,34 @@ final class FileTransferController {
         var secondsRemaining: Double? {
             guard state == .active, bytesPerSecond > 1, byteCount > bytesDone else { return nil }
             return Double(byteCount - bytesDone) / bytesPerSecond
+        }
+    }
+
+    /// The files that moved together: from the first one queued (or offered by the Mac) while
+    /// nothing was moving, until nothing is again. The session's capsule, the device list, and
+    /// Transfers all describe this ("3 of 12 · 38 GB left").
+    struct Summary: Equatable {
+        var count = 0
+        var finished = 0
+        var failed = 0
+        var sending = 0
+        var receiving = 0
+        var bytes: UInt64 = 0
+        var bytesDone: UInt64 = 0
+        var bytesPerSecond: Double = 0
+        /// The file moving now, else the next one waiting.
+        var current: Transfer?
+        /// What's left is waiting for a connection that dropped.
+        var isPaused = false
+
+        var isActive: Bool { finished < count }
+        var fraction: Double { bytes > 0 ? min(1, Double(bytesDone) / Double(bytes)) : (isActive ? 0 : 1) }
+        var bytesLeft: UInt64 { bytes - min(bytes, bytesDone) }
+        /// 1-based place of the file moving now ("3 of 12").
+        var position: Int { min(count, finished + 1) }
+        var secondsRemaining: Double? {
+            guard isActive, !isPaused, bytesPerSecond > 1, bytesLeft > 0 else { return nil }
+            return Double(bytesLeft) / bytesPerSecond
         }
     }
 
@@ -66,6 +97,7 @@ final class FileTransferController {
     static let resumeWindow: TimeInterval = 60 * 60
 
     private(set) var transfers: [Transfer] = []
+    private var currentBatch = 0
     /// The file channel is up, so files can move right now.
     private(set) var isConnected = false
     /// Called once per file received here, for the "Received …" notice.
@@ -110,7 +142,11 @@ final class FileTransferController {
 
     /// Something is still moving or waiting to.
     var hasActiveTransfers: Bool { transfers.contains { $0.isActive } }
-    /// Anything happened this session (the session menu shows Transfers… from then on).
+    /// Something is waiting for a file channel: a queued send, or a file cut off mid-way.
+    var hasPendingWork: Bool { hasActiveTransfers }
+    /// Called when files are queued, so the owner can bring a file channel up for them.
+    var onWork: (() -> Void)?
+    /// Anything happened with this Mac since the app started.
     var hasTransfers: Bool { !transfers.isEmpty }
     var activeCount: Int { transfers.filter(\.isActive).count }
 
@@ -170,8 +206,9 @@ final class FileTransferController {
         let id = UUID()
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { UInt64($0) } ?? 0
         sources[id] = source
-        transfers.append(Transfer(id: id, name: name, byteCount: size, direction: .sending, state: .waiting))
+        transfers.append(Transfer(id: id, name: name, byteCount: size, direction: .sending, state: .waiting, batch: batchForNewRow()))
         pumpIfNeeded()
+        if engine == nil { onWork?() }
     }
 
     func cancel(_ id: UUID) {
@@ -193,9 +230,50 @@ final class FileTransferController {
         }
     }
 
-    /// Removes finished rows from the list.
+    /// Removes finished rows from the list (a run still moving keeps its rows, so its count holds).
     func clearFinished() {
-        transfers.removeAll { !$0.isActive }
+        let running = hasActiveTransfers ? currentBatch : nil
+        transfers.removeAll { !$0.isActive && $0.batch != running }
+    }
+
+    /// The current (or last) run of files, summed up.
+    var summary: Summary {
+        var summary = Summary()
+        var anyMoving = false, anyInterrupted = false
+        // Newest last: walk back through this run only.
+        for transfer in transfers.reversed() {
+            guard transfer.batch == currentBatch else { break }
+            summary.count += 1
+            if transfer.direction == .sending { summary.sending += 1 } else { summary.receiving += 1 }
+            switch transfer.state {
+            case .done:
+                summary.finished += 1
+                summary.bytes += transfer.byteCount
+                summary.bytesDone += transfer.byteCount
+            case .failed, .cancelled:
+                summary.finished += 1
+                if case .failed = transfer.state { summary.failed += 1 }
+            case .active:
+                anyMoving = true
+                summary.bytes += transfer.byteCount
+                summary.bytesDone += transfer.bytesDone
+                summary.bytesPerSecond += transfer.bytesPerSecond
+                if summary.current?.state != .active { summary.current = transfer }
+            case .waiting:
+                anyInterrupted = anyInterrupted || transfer.interruptedAt != nil
+                summary.bytes += transfer.byteCount
+                summary.bytesDone += transfer.bytesDone
+                if summary.current == nil || summary.current?.state == .waiting { summary.current = transfer }
+            }
+        }
+        summary.isPaused = summary.isActive && !anyMoving && anyInterrupted
+        return summary
+    }
+
+    /// Starts a new run when nothing is moving; returns the run a new row joins.
+    private func batchForNewRow() -> Int {
+        if !hasActiveTransfers { currentBatch += 1 }
+        return currentBatch
     }
 
     private func pumpIfNeeded() {
@@ -208,8 +286,9 @@ final class FileTransferController {
             let lostConnection = await engine.hasClosed
             sending = nil
             settle(next.id, outcome, lostConnection: lostConnection)
-            // After a drop the rest waits for the next `attach`, not this closed engine.
-            if !lostConnection { pumpIfNeeded() }
+            // After a drop the rest waits for the next engine, not this closed one; that one may
+            // already be attached (its `attach` found this send still in the way).
+            if !lostConnection || (self.engine != nil && self.engine !== engine) { pumpIfNeeded() }
         }
     }
 
@@ -272,7 +351,8 @@ final class FileTransferController {
                 transfers[index].byteCount = item.byteCount
                 transfers[index].interruptedAt = nil
             } else {
-                transfers.append(Transfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction, state: .active))
+                transfers.append(Transfer(id: item.id, name: item.name, byteCount: item.byteCount, direction: item.direction, state: .active,
+                                          batch: batchForNewRow()))
             }
         case .progress(let id, let bytes):
             guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }

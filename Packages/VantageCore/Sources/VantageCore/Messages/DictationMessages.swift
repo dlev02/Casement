@@ -45,11 +45,18 @@ public struct ClientFeatures: Codable, Sendable, Equatable {
     public var macAudio: Bool?
     /// The client can open a file channel and speaks the file transfer kinds on it.
     public var fileTransfer: Bool?
+    /// This connection is a files-only session: authenticate and hand out a file channel token,
+    /// nothing else (no displays, capture, input, audio, clipboard, or Screen Recording check).
+    /// Sent with `fileTransfer`. A host that predates it treats the connection as an ordinary
+    /// session without a stream, so the client checks `HostCapabilities.filesOnlySessions`
+    /// before relying on it and hangs up if it's missing.
+    public var filesOnly: Bool?
 
-    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil) {
         self.dictation = dictation
         self.macAudio = macAudio
         self.fileTransfer = fileTransfer
+        self.filesOnly = filesOnly
     }
 }
 

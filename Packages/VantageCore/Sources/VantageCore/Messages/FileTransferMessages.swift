@@ -9,6 +9,11 @@ import Foundation
 // `Hello.features.fileTransfer`, the host answers with a token and `HostCapabilities.fileTransfer`,
 // and these kinds only ever appear on the file channel, so older peers never see them.
 //
+// The token can come from a screen session or from a files-only session
+// (`ClientFeatures.filesOnly`). A host with `HostCapabilities.filesOnlySessions` keeps the file
+// channel going after the session that issued its token ends; the client closes it once nothing
+// has moved for a while.
+//
 // One file, either direction: sender `fileOffer` → receiver `fileAccept` (or a rejection) → sender
 // `fileChunk`s in order → sender `fileComplete{sha256}` → receiver `fileResult`. Either side may
 // send `fileCancel` at any point. A sender re-offers an interrupted file with the same `id`; a

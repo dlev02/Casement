@@ -259,9 +259,13 @@ enum TransferFormat {
     }
 
     static func remaining(_ seconds: Double) -> String {
+        "\(duration(seconds)) left"
+    }
+
+    /// "40 sec", "2 min", "3 hr": one unit, rounded the way a person would say it.
+    static func duration(_ seconds: Double) -> String {
         let rounded = seconds < 60 ? max(1, seconds.rounded()) : (seconds / 60).rounded() * 60
-        let text = Duration.seconds(rounded).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 1))
-        return "\(text) left"
+        return Duration.seconds(rounded).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 1))
     }
 }
 

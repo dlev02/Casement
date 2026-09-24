@@ -286,7 +286,16 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   first. `HostController.accept` reads every connection's first message: `hello` starts a
   `HostSession`, `attachMedia` goes through `AttachTokenRegistry` (VantageCore: constant-time
   compare, single use, same peer address, 60 s, revoked when the session ends) to
-  `HostSession.attachFileChannel`; anything else is closed. Kinds (file channel only): `fileOffer`
+  `HostSession.attachFileChannel`; anything else is closed. **Files outlive the screen**: a
+  host that says `HostCapabilities.filesOnlySessions` hands the attached channel to
+  `HostController` (`fileChannels`), keeps it after its session ends (`HostFileChannel.sessionEnded`),
+  and closes it only when the iPad does, when that iPad's key is revoked, or after 2 min with
+  nothing moving (`detachedIdleLimit`). It also takes **files-only sessions**
+  (`Hello.features.filesOnly` + `fileTransfer`): authenticate (pairing still required, no pairing
+  code sent, no Screen Recording check, no whois), token, then `filesOnlyLoop` answers pings and
+  ignores everything else, so no displays, capture, input, audio, clipboard, lock monitor, or
+  power assertion ever start. They live in `HostController.fileSessions`, outside `status` and the
+  restart guard. Kinds (file channel only): `fileOffer`
   80, `fileAccept` 81 (`resumeOffset`, or `rejected`), `fileComplete` 82 (SHA-256),
   `fileResult` 83, `fileCancel` 84, `fileChunkToClient` 103 / `fileChunkToHost` 124
   (`id 16 B | offset u64 | bytes`, 256 KiB). Both ends run `FileTransferEngine` (VantageCore): one
@@ -313,9 +322,18 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   quarantine dictation WAVs and the Parakeet model), what happens on arrival (next bullet), menu
   Files section with "Send File to ⟨iPad⟩…" (`NSOpenPanel`), progress and cancel. The iPad's name
   comes from `tailscale whois` (iOS only reports "iPad"). Synthetic hosts save to
-  `$TMPDIR/VantageSynthetic/Received` and skip the arrival path. Client:
-  `FileTransferController` (`session.files`, outlives reconnects: queued files wait, one cut off
-  by a drop resumes) → `Documents/Received` (`UIFileSharingEnabled` +
+  `$TMPDIR/VantageSynthetic/Received` and skip the arrival path. Client: transfers
+  belong to the Mac, not the session: `FileTransferCenter.shared` keeps one `FileLink` per saved
+  device (the session, the device list, and visionOS windows share it). A link carries a
+  `FileTransferController` (`session.files`; queued files wait, one cut off by a drop resumes;
+  `summary` sums up the current run of files) and the channel: the screen session's token while
+  one is connected (`screenDidConnect`/`screenDidDrop`/`screenDidEnd`), else a files-only session of
+  its own (`FilesOnlySession.open`, primary kept open beside the channel) whenever work is queued
+  or the channel drops under a screen; it closes 30 s after nothing is moving and no screen is up
+  (`idleTimeout`), retries with backoff (16 tries, then the files fail with a reason). An older Mac
+  (no `filesOnlySessions`) keeps the old rule: the channel goes with the screen, which reconnects
+  both, and files queued without a screen fail with "Update Vantage Host…". Files land in
+  `Documents/Received` (`UIFileSharingEnabled` +
   `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
   `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts),
   session menu "Send File to Mac…" / "Transfers…", drop onto the Mac's screen (`FileDropDelegate`,
@@ -323,9 +341,12 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (Show / Share), `TransfersView` sheet, and "Open in Vantage" from other apps
   (`CFBundleDocumentTypes` public.data/public.content, rank Alternate → `onOpenURL` →
   `SharedFileInbox` copies it out, then the open session queues it, or the most recent Mac is
-  opened; waits for Face ID). Disconnect with files moving asks "Files are still
-  transferring. Disconnect anyway?" (the only Disconnect confirmation). If the file channel drops
-  after 10 s while the primary lives, the client drops the primary so both reconnect. Debug:
+  opened; waits for Face ID). Disconnect never asks on a current Mac: the screen goes and the
+  files keep moving; the device list then shows them on the Mac's row/card
+  (`DeviceTransferBadge`, "Sending 3 of 12 · 45% · 2 min", tap → Transfers; also the context menu's
+  Transfers…). Only an older Mac, which would stop them, gets "Files are still transferring.
+  Disconnect anyway?". Returning to the foreground retries every waiting file
+  (`FileTransferCenter.retryAll`). Debug:
   `-VantageSendTestFile <bytes>` queues random bytes once the channel is up, `-VantageSlowFiles <ms>`
   pauses before each chunk the app sends (`FileTransferConfiguration.chunkDelay`; keep it in the
   seconds for UI tests, since XCUITest waits for an idle app and steady progress never is), `-VantageDropHint 1`
@@ -333,10 +354,15 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `--send-file-on-connect <path>` sends a file to each client that attaches. Tests:
   `FileTransferTests` (VantageCore), `FileTransferSessionTests` (loopback `ClientSession` + mock
   host), `SessionUITests.testFilesMoveBothWays` (needs the synthetic host started with
-  `--send-file-on-connect`), `testDisconnectAsksWhileFilesAreMoving`, `testDropHint`,
+  `--send-file-on-connect`), `testDisconnectKeepsFilesMovingAndTheListShowsThem`, `testDropHint`,
   `testTransfersSheetScreens`; resume in `FileTransferTests` (`interruptedFileResumesOnANewConnection`
   both ways, `resumedFileThatDoesntMatchIsRefusedThenSentWhole`, `newChannelTakesOverAPartialFromAStaleOne`)
-  and `FileTransferSessionTests.interruptedUploadResumesWhereItStopped`. Each engine logs
+  and `FileTransferSessionTests.interruptedUploadResumesWhereItStopped`; without the screen in
+  `FileTransferSessionTests` (`transferKeepsGoingAfterTheSessionEnds`,
+  `sendsFilesWithoutOpeningTheScreen`, `droppedFileChannelComesBackWithoutTheScreen`,
+  `olderMacExplainsItNeedsTheScreenForFiles`, `olderMacsFileChannelEndsWithTheSession`,
+  `filesOnlyNeedsAPairedMac`). UI tests take `TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` to
+  use another synthetic host than 47821. Each engine logs
   "sent/received N bytes in M ms (X MiB/s)" (category `files`). Benchmark (opt in):
   `VANTAGE_BENCH_FILES=1 xcrun swift test --package-path Packages/VantageCore --filter FileTransferBenchmark`
   (2 GiB over loopback, prints MiB/s and peak footprint). Out of scope: a share extension (needs

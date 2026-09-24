@@ -7,8 +7,12 @@ import os
 
 /// One authenticated client session: authenticates the peer, negotiates a display, then runs the
 /// capture → encode → send pipeline and applies incoming input, clipboard, and commands.
+///
+/// A files-only session (`ClientFeatures.filesOnly`) stops after authenticating: it hands out a
+/// file channel token and answers pings, and never touches displays, capture, input, audio, the
+/// clipboard, the lock monitor, or power assertions, whatever the client sends.
 actor HostSession {
-    enum State: Equatable { case handshaking, streaming, closed }
+    enum State: Equatable { case handshaking, streaming, filesOnly, closed }
 
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "session")
     private let channel: MessageChannel
@@ -88,7 +92,9 @@ actor HostSession {
     func run(hello: Hello) async {
         do {
             log.info("channel ready; handshaking")
-            if try await handshake(hello) { try await receiveLoop() }
+            if try await handshake(hello) {
+                if state == .filesOnly { try await filesOnlyLoop() } else { try await receiveLoop() }
+            }
         } catch {
             log.error("session error: \(error.localizedDescription, privacy: .public)")
         }
@@ -105,7 +111,8 @@ actor HostSession {
 
         let nonce = AuthTranscript.randomNonce()
         let isPaired = trust.isTrusted(hello.clientPublicKey)
-        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: hello.isReadinessProbe == true ? nil : TailscaleCLI.whois(addr: peerDescription))
+        let lightweight = hello.isReadinessProbe == true || hello.features?.filesOnly == true
+        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription))
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
@@ -143,6 +150,24 @@ actor HostSession {
             return false // Never enumerate displays, start capture, or access the clipboard for a probe.
         }
 
+        if hello.features?.filesOnly == true {
+            // Files need no Screen Recording grant and no display: just the file channel's ticket.
+            guard hello.features?.fileTransfer == true else {
+                try await channel.send(.authResult(AuthResult(status: .denied, message: "Nothing to do on this connection.")))
+                throw SessionError.authFailed
+            }
+            clientTakesFiles = true
+            clientName = hello.clientName
+            clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
+            let token = attachTokens.issue(for: self, peer: peerHost)
+            let capabilities = HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: false, maxFPS: 0,
+                                                fileTransfer: true, filesOnlySessions: true)
+            try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
+            state = .filesOnly
+            log.info("files-only session for \(hello.clientName)")
+            return true
+        }
+
         if !HostOptions.shared.syntheticCapture, !ScreenCapture.preflightPermission() {
             try await channel.send(.authResult(AuthResult(status: .denied,
                 message: "On the Mac, grant Screen Recording to Vantage Host in System Settings → Privacy & Security, then reopen Vantage Host and retry.")))
@@ -163,7 +188,8 @@ actor HostSession {
         // so a session that got this far can always offer it.
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
                                             dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
-                                            audio: true, fileTransfer: clientTakesFiles ? true : nil)
+                                            audio: true, fileTransfer: clientTakesFiles ? true : nil,
+                                            filesOnlySessions: clientTakesFiles ? true : nil)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
         log.info("client authenticated: \(hello.clientName)")
@@ -212,6 +238,23 @@ actor HostSession {
                 return
             default:
                 break
+            }
+        }
+    }
+
+    /// A files-only session's primary connection: it only keeps the session (and its token) alive.
+    /// Anything that would touch the screen, input, audio, or clipboard is ignored.
+    private func filesOnlyLoop() async throws {
+        var ignored = 0
+        while let message = try await channel.receive() {
+            switch message {
+            case .ping(let ping):
+                channel.sendDetached(.pong(Pong(echoNanos: ping.sentAtNanos)))
+            case .disconnect:
+                return
+            default:
+                ignored += 1
+                if ignored == 1 { log.error("files-only session ignoring \(String(describing: message.kind), privacy: .public)") }
             }
         }
     }
@@ -493,9 +536,11 @@ actor HostSession {
     // MARK: Files
 
     /// A second connection presented this session's token: run file transfers on it. Anything
-    /// but a live, file-capable session with no file channel yet closes it.
+    /// but a live, file-capable session with no file channel yet closes it. Once attached, the
+    /// channel belongs to the controller and outlives this session: the client closes it when its
+    /// files are done.
     func attachFileChannel(_ fileChannel: MessageChannel) async {
-        guard state == .streaming, clientTakesFiles, fileEngine == nil else {
+        guard state == .streaming || state == .filesOnly, clientTakesFiles, fileEngine == nil else {
             log.error("refusing a file channel (session \(String(describing: self.state), privacy: .public), files \(self.clientTakesFiles, privacy: .public))")
             await fileChannel.close()
             return
@@ -505,17 +550,11 @@ actor HostSession {
         fileEngine = engine
         log.info("file channel attached; receiving into \(store.directory.path(percentEncoded: false), privacy: .public)")
         let host = peerHost, fallback = clientName
-        Task { [weak self] in
-            await engine.run()
-            await self?.fileChannelEnded(engine)
-        }
+        Task { await engine.run() }
         // The tailnet knows the device's real name; the app only gets "iPad" from iOS.
         let name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback
-        onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey))
-    }
-
-    private func fileChannelEnded(_ engine: FileTransferEngine) {
-        if fileEngine === engine { fileEngine = nil }
+        onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey,
+                                      receiveDirectory: store.directory, isFilesOnly: state == .filesOnly))
     }
 
     private func handleViewportChange(_ viewport: Viewport) async {
@@ -791,15 +830,16 @@ actor HostSession {
 
     private func teardown() async {
         guard state != .closed else { return }
+        let wasFilesOnly = state == .filesOnly
         state = .closed
         attachTokens.revoke(owner: self)
-        if let fileEngine {
-            self.fileEngine = nil
-            await fileEngine.close()
+        // The file channel, if any, carries on without the session (see `attachFileChannel`); a
+        // files-only session never started anything else.
+        if !wasFilesOnly {
+            dictationClips.removeAll()
+            await stopAudio()
+            await stopStreaming()
         }
-        dictationClips.removeAll()
-        await stopAudio()
-        await stopStreaming()
         await channel.close()
         onEnded(self)
     }
@@ -819,6 +859,13 @@ struct HostFileChannel: Sendable, Identifiable {
     let clientName: String
     /// The iPad's key fingerprint, the same on every connection it makes.
     let clientKey: String
+    /// Where its engine saves received files (the Settings choice when it attached).
+    let receiveDirectory: URL
+    /// Opened by a files-only session (no screen), e.g. Send Files from the iPad's device list.
+    var isFilesOnly = false
+    /// The session that issued the token has ended; the channel carries on until the iPad closes
+    /// it (or it sits idle for `HostController.detachedIdleLimit`).
+    var sessionEnded = false
     var id: ObjectIdentifier { ObjectIdentifier(session) }
 }
 

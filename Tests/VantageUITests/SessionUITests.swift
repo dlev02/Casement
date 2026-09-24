@@ -1,12 +1,15 @@
 import XCTest
 
-/// Requires the debug synthetic host on loopback port 47821 (see docs/testing).
+/// Requires the debug synthetic host on loopback port 47821 (see docs/testing), or wherever
+/// `VANTAGE_TEST_HOST` points (`TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:47851 xcodebuild test …`).
 nonisolated final class SessionUITests: XCTestCase {
+    static let host = ProcessInfo.processInfo.environment["VANTAGE_TEST_HOST"] ?? "127.0.0.1:47821"
+
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor func testToolbarCollapseDockAndForegroundRecovery() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let toggle = app.buttons["session.toolbar.collapse"]
@@ -41,7 +44,7 @@ nonisolated final class SessionUITests: XCTestCase {
     /// flick, and a slow drag all the way across (it used to stop at half the screen).
     @MainActor func testToolbarThrowsLandInTheIntendedCorner() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
                                "-vantage.toolbarCollapsed", "YES", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let toggle = app.buttons["session.toolbar.collapse"]
@@ -88,7 +91,7 @@ nonisolated final class SessionUITests: XCTestCase {
     /// The strip's own Disconnect button ends the session straight away, no confirmation.
     @MainActor func testDisconnectButtonReturnsToDeviceList() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let disconnect = app.buttons["session.toolbar.disconnect"]
@@ -104,7 +107,7 @@ nonisolated final class SessionUITests: XCTestCase {
     /// arrive and play with the buffer holding its depth, and it turns off again.
     @MainActor func testMacAudioToggleStreamsTheMacsSound() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810", "-VantageMacAudio", "0",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810", "-VantageMacAudio", "0",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let toggle = app.buttons["session.toolbar.macAudio"]
@@ -150,7 +153,7 @@ nonisolated final class SessionUITests: XCTestCase {
     /// notice appears, and the Transfers sheet lists both.
     @MainActor func testFilesMoveBothWays() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
                                "-VantageSendTestFile", "3145728",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
@@ -190,14 +193,15 @@ nonisolated final class SessionUITests: XCTestCase {
         XCTAssertTrue(send.waitForExistence(timeout: 5))
     }
 
-    /// Disconnect while a file is moving asks first; Cancel keeps the session, Disconnect ends it.
-    /// `-VantageSlowFiles 8000` holds each 256 KiB chunk for 8 s: the file stays in flight for the
-    /// whole test, and the UI goes quiet between chunks (XCUITest waits for an idle app before
-    /// every tap, so steady progress updates would stall it until the file finished).
-    @MainActor func testDisconnectAsksWhileFilesAreMoving() {
+    /// Disconnect while a file is moving: no question, the screen closes, the file carries on,
+    /// and the Mac's row in the device list shows it; tapping that opens Transfers, where it can
+    /// be cancelled. `-VantageSlowFiles 3000` holds each 256 KiB chunk for 3 s, so the file is
+    /// still moving throughout and the UI goes quiet between chunks (XCUITest waits for an idle
+    /// app before every tap).
+    @MainActor func testDisconnectKeepsFilesMovingAndTheListShowsThem() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
-                               "-VantageSendTestFile", "3145728", "-VantageSlowFiles", "8000",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
+                               "-VantageSendTestFile", "3145728", "-VantageSlowFiles", "3000",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let send = app.buttons["session.toolbar.sendFile"]
@@ -205,35 +209,32 @@ nonisolated final class SessionUITests: XCTestCase {
         wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sending"), evaluatedWith: send)], timeout: 10)
         screenshot("Send File with progress", app)
 
-        app.buttons["Session Options"].tap()
-        app.buttons["Transfers…"].tap()
-        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue((row.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: row.value))")
-        XCTAssertTrue(app.buttons["Cancel Vantage Test.bin"].exists)
-        screenshot("Transfers with a file moving", app)
-        app.buttons["Done"].tap()
-
         let disconnect = app.buttons["session.toolbar.disconnect"]
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
         disconnect.tap()
-        let guardAlert = app.alerts["Files are still transferring. Disconnect anyway?"]
-        XCTAssertTrue(guardAlert.waitForExistence(timeout: 3), app.debugDescription)
-        screenshot("Disconnect guard", app)
-        guardAlert.buttons["Cancel"].tap()
-        XCTAssertTrue(guardAlert.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(disconnect.exists, "Cancel keeps the session")
-
-        disconnect.tap()
-        XCTAssertTrue(guardAlert.waitForExistence(timeout: 3))
-        guardAlert.buttons["Disconnect"].tap()
         XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Disconnect doesn't ask any more")
+
+        let badge = app.buttons["devices.transfers"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue((badge.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: badge.value))")
+        screenshot("Device list with the transfer carrying on", app)
+        badge.tap()
+
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue((row.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: row.value))")
+        screenshot("Transfers from the device list", app)
+        app.buttons["Cancel Vantage Test.bin"].tap()
+        wait(for: [expectation(for: NSPredicate(format: "value == %@", "Cancelled"), evaluatedWith: row)], timeout: 5)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(badge.waitForNonExistence(timeout: 5), "nothing moving, so the row is plain again")
     }
 
     /// The "Drop to send" hint, forced on for a screenshot (a drag can't be scripted here).
     @MainActor func testDropHint() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810", "-VantageDropHint", "1",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810", "-VantageDropHint", "1",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         let hint = app.descendants(matching: .any)["session.dropHint"]
@@ -260,7 +261,7 @@ nonisolated final class SessionUITests: XCTestCase {
     /// the sheet follows each edit.
     @MainActor func testCustomizeControlsFromTheSession() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageAutoConnect", "127.0.0.1:47821", "-VantagePairingCode", "246810",
+        app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810",
                                "-vantage.toolbarCollapsed", "NO", "-vantage.toolbarDock", "bottomLeft", "-vantage.requireBiometrics", "NO"]
         app.launch()
         XCTAssertTrue(app.buttons["session.toolbar.collapse"].waitForExistence(timeout: 20))
@@ -407,7 +408,7 @@ nonisolated final class SessionUITests: XCTestCase {
 
     @MainActor func testAvailabilityAndAppearanceNavigation() {
         let app = XCUIApplication()
-        app.launchArguments = ["-VantageSeedHost", "127.0.0.1:47821", "-vantage.requireBiometrics", "NO"]
+        app.launchArguments = ["-VantageSeedHost", Self.host, "-vantage.requireBiometrics", "NO"]
         app.launch()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Host status: Available")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Settings"].tap()

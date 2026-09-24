@@ -85,6 +85,8 @@ struct ContentView: View {
             case .active:
                 reachability.refresh()
                 lock.authenticate()
+                // Files cut off while the app was away pick up where they stopped.
+                FileTransferCenter.shared.retryAll()
             case .background:
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes

@@ -154,9 +154,13 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// The host accepts a file channel (`attachMedia` with the session token) and the file
     /// transfer kinds on it. Nil from older hosts.
     public var fileTransfer: Bool?
+    /// The host accepts files-only sessions (`ClientFeatures.filesOnly`) and keeps a file channel
+    /// running after the session that opened it ends, until the client closes it. Nil from older
+    /// hosts, which close the file channel with the session.
+    public var filesOnlySessions: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
-                audio: Bool? = nil, fileTransfer: Bool? = nil) {
+                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -164,6 +168,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.dictationEngines = dictationEngines
         self.audio = audio
         self.fileTransfer = fileTransfer
+        self.filesOnlySessions = filesOnlySessions
     }
 }
 
@@ -171,8 +176,9 @@ public struct AuthResult: Codable, Sendable {
     public var status: AuthStatus
     public var message: String?
     /// Opaque token the client's file channel presents in `attachMedia` to join this session.
-    /// Single use, bound to this connection's peer address, and gone when the session ends. Only
-    /// sent to a client whose `Hello.features.fileTransfer` is true.
+    /// Single use, bound to this connection's peer address, and revoked when the session ends
+    /// (a channel that already attached may outlive it, see `HostCapabilities.filesOnlySessions`).
+    /// Only sent to a client whose `Hello.features.fileTransfer` is true.
     public var sessionToken: Data?
     public var displays: [DisplayInfo]?
     public var capabilities: HostCapabilities?

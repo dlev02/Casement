@@ -22,6 +22,8 @@ final class HostController {
     let trust = TrustStore()
     private let listener = TailscaleListener(port: HostOptions.shared.port)
     private var sessions: [HostSession] = []
+    /// Files-only sessions (Send Files from the iPad's device list): authenticated, no screen.
+    private var fileSessions: [HostSession] = []
     /// Tokens a session's second (file) connection presents to join it.
     private let attachTokens = AttachTokenRegistry<HostSession>()
     /// Connected clients with a file channel, most recent last.
@@ -30,8 +32,6 @@ final class HostController {
     private(set) var transfers: [HostTransfer] = []
     /// Notifications, the on-screen notice, Finder, and Dock progress for files as they move.
     private let arrivals = FileArrivals()
-    /// The folder each file channel saves into (Settings can change it for later channels).
-    private var receiveDirectories: [HostFileChannel.ID: URL] = [:]
     let loginItem = LoginItem()
     private var displayObservers: [any NSObjectProtocol] = []
 
@@ -47,6 +47,8 @@ final class HostController {
     private(set) var safeRestartStaged = false
 
     var fingerprint: String { identity.fingerprint }
+    /// A screen session is up (files-only sessions live in `fileSessions` and never count): the
+    /// restart guard and "is this Mac being watched" (`FileArrivals.isViewedRemotely`) go by it.
     var hasConnectedClients: Bool { !sessions.isEmpty }
 
     init() {
@@ -88,6 +90,8 @@ final class HostController {
     func stop() {
         listener.stop()
         sessions.removeAll()
+        fileSessions.removeAll()
+        for channel in fileChannels { Task { await channel.engine.close() } }
         status = .idle
     }
 
@@ -150,6 +154,8 @@ final class HostController {
 
     func revoke(_ fingerprint: String) {
         trust.revoke(fingerprint: fingerprint)
+        // A file channel can outlive its session, so it doesn't end with one: close it here.
+        for channel in fileChannels where channel.clientKey == fingerprint { Task { await channel.engine.close() } }
     }
 
     func openTailscaleAdmin() {
@@ -203,29 +209,47 @@ final class HostController {
                                   attachTokens: attachTokens,
                                   onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
                                   onEnded: { [weak self] ended in Task { @MainActor in self?.remove(ended) } })
-        sessions.append(session)
-        status = .connected(clientCount: sessions.count)
-        log.info("session created for \(peer, privacy: .public)")
+        // A files-only session isn't a connected screen: it stays out of the status and the
+        // restart guard, and shows up only as its transfers.
+        if hello.features?.filesOnly == true {
+            fileSessions.append(session)
+            log.info("files-only session created for \(peer, privacy: .public)")
+        } else {
+            sessions.append(session)
+            status = .connected(clientCount: sessions.count)
+            log.info("session created for \(peer, privacy: .public)")
+        }
         Task { await session.run(hello: hello) }
     }
 
     private func remove(_ session: HostSession) {
         sessions.removeAll { $0 === session }
-        fileChannels.removeAll { $0.session === session }
+        fileSessions.removeAll { $0 === session }
+        // Its file channel carries on until the iPad closes it.
+        for index in fileChannels.indices where fileChannels[index].session === session {
+            fileChannels[index].sessionEnded = true
+            watchDetached(fileChannels[index].engine)
+        }
         status = sessions.isEmpty ? .listening : .connected(clientCount: sessions.count)
     }
 
     // MARK: File transfer
 
+    /// How long a file channel whose session has ended may sit with nothing moving before the Mac
+    /// closes it. The iPad normally closes it itself after 30 s; this covers one that went away.
+    static let detachedIdleLimit: Duration = .seconds(120)
+
     private func fileChannelOpened(_ fileChannel: HostFileChannel) {
-        guard sessions.contains(where: { $0 === fileChannel.session }) else { return }
+        var fileChannel = fileChannel
+        // The session may have ended between the attach and now; the channel still runs.
+        fileChannel.sessionEnded = !(sessions + fileSessions).contains { $0 === fileChannel.session }
         fileChannels.removeAll { $0.session === fileChannel.session }
         fileChannels.append(fileChannel)
-        let store = HostFileStore.current
-        if let missing = store.unavailableChoice {
+        if fileChannel.sessionEnded { watchDetached(fileChannel.engine) }
+        log.info("file channel from \(fileChannel.clientName, privacy: .public) is up\(fileChannel.isFilesOnly ? " (files only)" : "", privacy: .public)")
+        if let missing = HostFileStore.current.unavailableChoice {
             log.error("can't save received files to \(missing, privacy: .public); using Downloads")
         }
-        receiveDirectories[fileChannel.id] = store.directory
         let engine = fileChannel.engine
         Task {
             for await event in engine.events {
@@ -235,7 +259,6 @@ final class HostController {
                 handle(event, on: fileChannel)
             }
             fileChannels.removeAll { $0.engine === engine }
-            if !fileChannels.contains(where: { $0.id == fileChannel.id }) { receiveDirectories[fileChannel.id] = nil }
         }
         resumeInterruptedSends(on: fileChannel)
         #if DEBUG
@@ -255,7 +278,9 @@ final class HostController {
                                               deviceName: channel.clientName, state: .active))
             }
             if let transfer = transfers.first(where: { $0.id == item.id }) {
-                arrivals.started(transfer, receivingInto: receiveDirectories[channel.id])
+                // The folder this channel's engine saves into (Settings can change it for later
+                // channels); a channel can outlive its session, so it travels with the channel.
+                arrivals.started(transfer, receivingInto: channel.receiveDirectory)
             }
         case .progress(let id, let bytes):
             if let index = transfers.firstIndex(where: { $0.id == id }) {
@@ -377,9 +402,27 @@ final class HostController {
         panel.prompt = "Send"
         NSApp.activate()
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        // The session may have ended while the panel was open.
-        guard let live = fileChannels.first(where: { $0.session === fileChannel.session }) else { return }
+        // The channel may have closed while the panel was open; another from the same iPad will do.
+        guard let live = fileChannels.first(where: { $0.engine === fileChannel.engine })
+                ?? fileChannels.last(where: { $0.clientKey == fileChannel.clientKey }) else { return }
         send(panel.urls, to: live)
+    }
+
+    /// Closes a file channel whose session has ended once nothing has moved on it for
+    /// `detachedIdleLimit`: the iPad normally closes it first, but it may have gone away.
+    private func watchDetached(_ engine: FileTransferEngine) {
+        Task {
+            var idleSince = ContinuousClock.now
+            while fileChannels.contains(where: { $0.engine === engine }) {
+                try? await Task.sleep(for: .seconds(15))
+                if await engine.isBusy { idleSince = .now; continue }
+                if ContinuousClock.now - idleSince >= Self.detachedIdleLimit {
+                    log.info("closing an idle file channel whose session ended")
+                    await engine.close()
+                    return
+                }
+            }
+        }
     }
 
     /// Keeps finished rows for a minute, and never more than a handful.

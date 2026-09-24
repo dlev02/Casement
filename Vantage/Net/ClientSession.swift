@@ -66,23 +66,35 @@ final class ClientSession {
     /// again once the host has said it can.
     private(set) var wantsMacAudio = false
 
-    /// Files to and from the Mac. Lives as long as the session screen, across reconnects.
-    let files: FileTransferController
+    /// This Mac's files and the channel that moves them. It belongs to the Mac, not the session
+    /// (`FileTransferCenter`), so transfers carry on after the session ends.
+    let fileLink: FileLink
+    /// Files to and from the Mac.
+    var files: FileTransferController { fileLink.files }
     /// The host can take a file channel. False for hosts that predate file transfer.
     var hostOffersFiles: Bool { capabilities?.fileTransfer == true }
-    private var fileEngine: FileTransferEngine?
-    private var fileChannelTask: Task<Void, Never>?
 
-    init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil) {
-        self.files = files ?? FileTransferController()
+    /// `fileLink` is the Mac's shared one; tests pass their own `files` (or neither) instead.
+    init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil, fileLink: FileLink? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")
-        self.identity = identity ?? (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
-        #if canImport(UIKit)
-        self.deviceName = UIDevice.current.name
+        let identity = identity ?? (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
+        self.identity = identity
+        self.deviceName = ClientSession.localDeviceName
         self.deviceModel = ClientSession.hardwareModel()
+        self.fileLink = fileLink ?? FileLink(files: files ?? FileTransferController(), identity: identity,
+                                             clientName: deviceName, clientModel: deviceModel)
+        self.fileLink.onLegacyChannelLost = { [weak self] in
+            guard let channel = self?.channel else { return }
+            Task { await channel.close() }
+        }
+    }
+
+    /// What the Mac shows for this device ("iPad" on iOS, which hides the user's device name).
+    static var localDeviceName: String {
+        #if canImport(UIKit)
+        UIDevice.current.name
         #else
-        self.deviceName = Host.current().localizedName ?? "iPad"
-        self.deviceModel = "iPad"
+        Host.current().localizedName ?? "iPad"
         #endif
     }
 
@@ -92,6 +104,7 @@ final class ClientSession {
         disconnect()
         pairingError = nil
         self.device = device
+        fileLink.update(device)
         do {
             let address = try ConnectionAddress(host: device.host, port: String(device.port))
             self.device?.host = address.host
@@ -132,7 +145,7 @@ final class ClientSession {
         connectionID = UUID()
         connectionTask?.cancel()
         connectionTask = nil
-        closeFileChannel()
+        fileLink.screenDidEnd() // files keep moving on a Mac that allows it
         let oldChannel = channel
         channel = nil
         state = .idle
@@ -189,7 +202,6 @@ final class ClientSession {
         guard let device else { return }
         while !Task.isCancelled, connectionID == id {
             var connectedAt: ContinuousClock.Instant?
-            closeFileChannel() // a new primary connection gets a new file channel
             state = reconnectAttempts == 0 ? .connecting : .reconnecting
             activeConfig = nil
             hostStatus = nil
@@ -230,9 +242,7 @@ final class ClientSession {
                 }
                 state = .connected
                 connectedAt = .now
-                if let fileToken, hostOffersFiles {
-                    openFileChannel(token: fileToken, host: device.host, port: port, id: id)
-                }
+                fileLink.screenDidConnect(token: fileToken, capabilities: capabilities, host: device.host, port: port)
                 // No video for a while (the Mac's display asleep, a static screen) is normal:
                 // only the connection itself ending brings a reconnect.
                 while let message = try await channel.receive() {
@@ -240,7 +250,7 @@ final class ClientSession {
                     if case .disconnect = message {
                         await channel.close()
                         self.channel = nil
-                        closeFileChannel()
+                        fileLink.screenDidEnd()
                         state = .failed("The Mac ended the session.")
                         return
                     }
@@ -252,7 +262,7 @@ final class ClientSession {
                 await channel.close()
                 guard connectionID == id, !Task.isCancelled else { return }
                 self.channel = nil
-                closeFileChannel()
+                fileLink.screenDidEnd()
                 state = .failed(error.message)
                 return
             } catch {
@@ -262,10 +272,11 @@ final class ClientSession {
             await channel.close()
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
-            closeFileChannel() // files wait for the next connection's file channel
+            fileLink.screenDidDrop() // an older Mac's file channel goes too; files wait for the next one
             if let connectedAt, ContinuousClock.now - connectedAt > .seconds(10) { reconnectAttempts = 0 }
             reconnectAttempts += 1
             guard reconnectAttempts <= 40 else {
+                fileLink.screenDidEnd()
                 state = .failed("Couldn’t reach the Mac. Check that Vantage Host and Tailscale are running on both devices.")
                 return
             }
@@ -311,57 +322,6 @@ final class ClientSession {
         }
     }
 
-    // MARK: File channel
-
-    /// Opens the session's second connection for files: same host and port, background service
-    /// class, `attachMedia` with the token first. It lives as long as this primary connection. If
-    /// it drops on its own after being up a while, the primary is dropped too so both come back
-    /// together; one refused straight away just leaves files unavailable until the next connect.
-    private func openFileChannel(token: Data, host: String, port: NWEndpoint.Port, id: UUID) {
-        let files = self.files
-        fileChannelTask = Task {
-            let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: VantageNetwork.bulkParameters())
-            let channel = MessageChannel(connection: connection, label: "vantage.client.files", maxBufferedMessages: 64)
-            do {
-                try await channel.start()
-                try await channel.send(.attachMedia(AttachMedia(sessionToken: token)))
-            } catch {
-                log.error("file channel didn't open: \(error.localizedDescription, privacy: .public)")
-                await channel.close()
-                return
-            }
-            guard connectionID == id, !Task.isCancelled else { await channel.close(); return }
-            let engine = FileTransferEngine(channel: channel, role: .client, configuration: files.configuration)
-            fileEngine = engine
-            files.attach(engine)
-            let opened = ContinuousClock.now
-            await withTaskCancellationHandler {
-                await engine.run()
-            } onCancel: {
-                Task { await engine.close() }
-            }
-            files.detach(engine)
-            if fileEngine === engine { fileEngine = nil }
-            guard connectionID == id, !Task.isCancelled, state == .connected else { return }
-            if ContinuousClock.now - opened > .seconds(10) {
-                log.error("file channel dropped mid-session; reconnecting")
-                await self.channel?.close()
-            } else {
-                log.error("the Mac closed the file channel; file transfer is off until the next connection")
-            }
-        }
-    }
-
-    private func closeFileChannel() {
-        fileChannelTask?.cancel()
-        fileChannelTask = nil
-        if let engine = fileEngine {
-            fileEngine = nil
-            files.detach(engine)
-            Task { await engine.close() }
-        }
-    }
-
     /// The host took the stream request: it said how it's doing or started sending.
     private static func answersStream(_ message: Message) -> Bool {
         switch message {
@@ -397,7 +357,7 @@ final class ClientSession {
     }
 
     #if canImport(UIKit)
-    private static func hardwareModel() -> String {
+    static func hardwareModel() -> String {
         var systemInfo = utsname()
         uname(&systemInfo)
         let mirror = Mirror(reflecting: systemInfo.machine)
@@ -407,6 +367,8 @@ final class ClientSession {
             }
         }
     }
+    #else
+    static func hardwareModel() -> String { "iPad" }
     #endif
 }
 
