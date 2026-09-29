@@ -59,12 +59,16 @@ public sealed class FileEngineTests : IDisposable
         _ = host.RunAsync();
         _ = client.RunAsync();
         var up = MakeFile("Up.bin", 3_000_000);
-        var down = MakeFile("Down <1>.bin", 2_500_000);
+        // A Mac can name a file "Down <1>.bin"; Windows can't create one to send, so there the
+        // renaming is left to FileNamesTests.
+        var downName = OperatingSystem.IsWindows() ? "Down 1.bin" : "Down <1>.bin";
+        var savedDown = OperatingSystem.IsWindows() ? "Down 1.bin" : "Down -1-.bin";
+        var down = MakeFile(downName, 2_500_000);
         var results = await Task.WhenAll(client.SendAsync(up), host.SendAsync(down)).WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(new FileTransferOutcome.Sent("Up.bin"), results[0]);
-        Assert.Equal(new FileTransferOutcome.Sent("Down -1-.bin"), results[1]);
+        Assert.Equal(new FileTransferOutcome.Sent(savedDown), results[1]);
         Assert.Equal(File.ReadAllBytes(up), File.ReadAllBytes(Path.Combine(_root, "host", "Up.bin")));
-        Assert.Equal(File.ReadAllBytes(down), File.ReadAllBytes(Path.Combine(_root, "client", "Down -1-.bin")));
+        Assert.Equal(File.ReadAllBytes(down), File.ReadAllBytes(Path.Combine(_root, "client", savedDown)));
 
         // The same name again gets a Finder-style number, and empty files work.
         Assert.Equal(new FileTransferOutcome.Sent("Up 2.bin"), await client.SendAsync(up));
