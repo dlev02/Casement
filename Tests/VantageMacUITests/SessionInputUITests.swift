@@ -1,4 +1,3 @@
-import AppKit
 import XCTest
 
 /// The Mac client's session surface: the pointer maps onto the Mac with its edges reachable, and
@@ -8,37 +7,14 @@ import XCTest
 /// The synthetic host runs on this same Mac, so the client would start in View Only
 /// (`-VantageAllowSelfControl 1` keeps input on). `-VantagePointerProbe 1` exposes the Mac
 /// position last sent as `session.pointerProbe`'s value ("x y of width height"), and
-/// `-VantageKeyProbe 1` the keys sent lately as `session.keyProbe`'s. Needs Automation Mode
+/// `-VantageKeyProbe 1` the keys sent lately as `session.keyProbe`'s label. Needs Automation Mode
 /// (`automationmodetool enable-automationmode-without-authentication`, as an admin).
 nonisolated final class SessionInputUITests: XCTestCase {
-    static let host = ProcessInfo.processInfo.environment["VANTAGE_INPUT_HOST"] ?? "127.0.0.1:47857"
-    nonisolated(unsafe) private static var syntheticHost: NSRunningApplication?
+    nonisolated(unsafe) private static var host = "127.0.0.1:47857"
 
     override class func setUp() {
         super.setUp()
-        guard ProcessInfo.processInfo.environment["VANTAGE_INPUT_HOST"] == nil else { return }
-        // …/Debug/VantageMacUITests-Runner.app/Contents/PlugIns/VantageMacUITests.xctest
-        let products = Bundle(for: SessionInputUITests.self).bundleURL
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let port = String(host.split(separator: ":").last ?? "47857")
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.createsNewApplicationInstance = true
-        configuration.activates = false
-        configuration.arguments = ["--synthetic-capture", "--port", port, "--pairing-code", "246810", "--exit-after", "600"]
-        let started = XCTestExpectation(description: "synthetic host")
-        NSWorkspace.shared.openApplication(at: products.appending(path: "VantageHost.app"), configuration: configuration) { running, _ in
-            syntheticHost = running
-            started.fulfill()
-        }
-        _ = XCTWaiter.wait(for: [started], timeout: 20)
-        Thread.sleep(forTimeInterval: 1) // let the listener come up
-    }
-
-    override class func tearDown() {
-        syntheticHost?.terminate()
-        syntheticHost = nil
-        super.tearDown()
+        host = SyntheticHost.address(environmentVariable: "VANTAGE_INPUT_HOST", defaultPort: 47857)
     }
 
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -105,7 +81,7 @@ nonisolated final class SessionInputUITests: XCTestCase {
         app.typeKey("q", modifierFlags: .command)
         let keys = app.descendants(matching: .any)["session.keyProbe"].firstMatch
         XCTAssertTrue(keys.waitForExistence(timeout: 5))
-        XCTAssertTrue((keys.value as? String ?? "").contains("0xc down command"), "⌘Q went to the Mac: \(keys.value ?? "")")
+        XCTAssertTrue(keys.label.contains("0xc down command"), "⌘Q went to the Mac: \(keys.label)")
         XCTAssertEqual(app.state, .runningForeground, "and Vantage is still running")
 
         // Shortcuts off: ⌘W closes the session window instead.

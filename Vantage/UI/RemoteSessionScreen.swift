@@ -962,14 +962,15 @@ extension RemoteSessionScreen {
     }
 
     #if DEBUG
-    /// `-VantageKeyProbe 1`: the keys sent lately, as `session.keyProbe`'s value.
+    /// `-VantageKeyProbe 1`: the keys sent lately, as `session.keyProbe`'s label.
     @ViewBuilder var keyProbeElement: some View {
         if MacSessionOptions.keyProbe {
             Color.clear
                 .frame(width: 1, height: 1)
                 .accessibilityElement()
                 .accessibilityIdentifier("session.keyProbe")
-                .accessibilityValue(keyProbe.value)
+                // A label, not a value: macOS doesn't report a plain element's value to UI tests.
+                .accessibilityLabel(keyProbe.value)
                 .allowsHitTesting(false)
         }
     }

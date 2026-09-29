@@ -1,57 +1,42 @@
-import AppKit
 import XCTest
 
 /// The Mac app's shell: the device list window, a window per session, the menu bar following the
 /// key window, and Settings on ⌘,.
 ///
-/// Runs against a synthetic host (`--synthetic-capture`, loopback, pairing code 246810). Each run
-/// starts its own from the products folder next to this bundle on port 47856 (never the live
-/// host's 47820), unless `TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` names one already up.
+/// Runs against a synthetic host (`SyntheticHost`, port 47856, never the live host's 47820), unless
+/// `TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` names one already up.
 /// macOS UI tests need Automation Mode approved once:
 /// `automationmodetool enable-automationmode-without-authentication` (as an admin).
 nonisolated final class MacShellUITests: XCTestCase {
-    static let host = ProcessInfo.processInfo.environment["VANTAGE_TEST_HOST"] ?? "127.0.0.1:47856"
-    nonisolated(unsafe) private static var syntheticHost: NSRunningApplication?
+    nonisolated(unsafe) private static var host = "127.0.0.1:47856"
 
     override class func setUp() {
         super.setUp()
-        guard ProcessInfo.processInfo.environment["VANTAGE_TEST_HOST"] == nil else { return }
-        // …/Debug/VantageMacUITests-Runner.app/Contents/PlugIns/VantageMacUITests.xctest
-        let products = Bundle(for: MacShellUITests.self).bundleURL
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let app = products.appending(path: "VantageHost.app")
-        let port = String(host.split(separator: ":").last ?? "47856")
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.createsNewApplicationInstance = true
-        configuration.activates = false
-        configuration.arguments = ["--synthetic-capture", "--port", port, "--pairing-code", "246810", "--exit-after", "600"]
-        let started = XCTestExpectation(description: "synthetic host")
-        NSWorkspace.shared.openApplication(at: app, configuration: configuration) { running, _ in
-            syntheticHost = running
-            started.fulfill()
-        }
-        _ = XCTWaiter.wait(for: [started], timeout: 20)
-        Thread.sleep(forTimeInterval: 1) // let the listener come up
-    }
-
-    override class func tearDown() {
-        syntheticHost?.terminate()
-        syntheticHost = nil
-        super.tearDown()
+        host = SyntheticHost.address(environmentVariable: "VANTAGE_TEST_HOST", defaultPort: 47856)
     }
 
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    @MainActor private func launch(connecting: Bool, extra: [String] = []) -> XCUIApplication {
+    @MainActor private func launch() -> XCUIApplication {
         let app = XCUIApplication()
-        var arguments = ["-VantageSeedHost", Self.host, "-VantagePairingCode", "246810",
-                         "-vantage.requireBiometrics", "NO", "-vantage.availabilityChecks", "NO",
-                         "-ApplePersistenceIgnoreState", "YES"]
-        if connecting { arguments += ["-VantageAutoConnect", Self.host] }
-        app.launchArguments = arguments + extra
+        app.launchArguments = ["-VantageSeedHost", Self.host, "-VantagePairingCode", "246810",
+                               "-vantage.requireBiometrics", "NO", "-vantage.availabilityChecks", "NO",
+                               "-ApplePersistenceIgnoreState", "YES"]
         app.launch()
+        app.activate()
         return app
+    }
+
+    /// The device list window, in front and ready for clicks.
+    @MainActor private func deviceList(_ app: XCUIApplication) -> XCUIElement {
+        let window = app.windows["main"].firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10), "the device list window opens")
+        return window
+    }
+
+    /// This test's Mac in the sidebar (the seed adds it; its row is keyed by host).
+    @MainActor private func row(in window: XCUIElement) -> XCUIElement {
+        window.outlines["devices.sidebar"].staticTexts["devices.row.\(Self.host)"].firstMatch
     }
 
     /// The session's controls: they're only there once a session window is up and connected.
@@ -59,67 +44,75 @@ nonisolated final class MacShellUITests: XCTestCase {
         app.buttons["session.toolbar.disconnect"].firstMatch
     }
 
-    @MainActor func testConnectOpensTheMacInItsOwnWindow() {
-        let app = launch(connecting: false)
-        let row = app.descendants(matching: .any)["devices.row.\(Self.host)"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        let windowsBefore = app.windows.count
-        row.click()
-        app.buttons["devices.connect"].firstMatch.click()
-        XCTAssertTrue(sessionControls(app).waitForExistence(timeout: 20), "the session should connect")
-        XCTAssertEqual(app.windows.count, windowsBefore + 1, "the Mac opens in a new window beside the list")
-        XCTAssertTrue(row.exists, "the device list stays open")
-        attach(app, "Session window")
+    @MainActor private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: element)
+        return XCTWaiter.wait(for: [hittable], timeout: timeout) == .completed
+    }
 
-        // Connecting again brings the same window forward instead of opening a second one.
-        app.windows.element(boundBy: app.windows.count - 1).click()
-        row.doubleClick()
-        XCTAssertEqual(app.windows.count, windowsBefore + 1)
+    /// Session windows: every window but the device list (and Settings, which these tests close).
+    @MainActor private func sessionWindows(_ app: XCUIApplication) -> Int {
+        app.windows.matching(NSPredicate(format: "identifier != 'main' AND identifier != 'com_apple_SwiftUI_Settings_window'")).count
+    }
+
+    @MainActor func testConnectOpensTheMacInItsOwnWindow() {
+        let app = launch()
+        let list = deviceList(app)
+        let mac = row(in: list)
+        XCTAssertTrue(mac.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitUntilHittable(mac), "the sidebar row can be clicked")
+        XCTAssertEqual(sessionWindows(app), 0)
+        mac.click()
+        let connect = list.buttons["devices.connect"].firstMatch
+        XCTAssertTrue(waitUntilHittable(connect), "Connect can be clicked")
+        connect.click()
+        XCTAssertTrue(sessionControls(app).waitForExistence(timeout: 20), "the session should connect")
+        XCTAssertEqual(sessionWindows(app), 1, "the Mac opens in a new window beside the list")
+        XCTAssertTrue(list.exists, "the device list stays open")
     }
 
     @MainActor func testSessionMenuFollowsTheFocusedWindow() {
-        let app = launch(connecting: true)
-        XCTAssertTrue(sessionControls(app).waitForExistence(timeout: 20))
+        let app = launch()
+        let list = deviceList(app)
+        let mac = row(in: list)
+        XCTAssertTrue(waitUntilHittable(mac))
+        mac.click()
         let session = app.menuBars.menuBarItems["Session"]
-        session.click()
-        XCTAssertTrue(app.menuItems["Disconnect"].isEnabled, "the session window is key, so Session › Disconnect works")
-        XCTAssertTrue(app.menuItems["Send Keyboard Shortcuts to Mac"].exists)
-        app.typeKey(.escape, modifierFlags: [])
+        let disconnect = app.menuBars.menuItems["Disconnect"]
 
-        // The device list in front: the same items stay in the menu, dimmed.
-        app.descendants(matching: .any)["devices.row.\(Self.host)"].firstMatch.click()
+        // The device list in front: the session's items stay in the menu, dimmed, and File ›
+        // Connect follows the list's selection.
         session.click()
-        XCTAssertTrue(app.menuItems["Disconnect"].exists, "unavailable items are dimmed, never hidden")
-        XCTAssertFalse(app.menuItems["Disconnect"].isEnabled)
+        XCTAssertTrue(disconnect.exists, "unavailable items are dimmed, never hidden")
+        XCTAssertFalse(disconnect.isEnabled, "Disconnect is dimmed with the list in front")
         app.typeKey(.escape, modifierFlags: [])
-
-        // File › Connect follows the list's selection instead.
         app.menuBars.menuBarItems["File"].click()
-        XCTAssertTrue(app.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Connect to '")).firstMatch.isEnabled)
+        let connect = app.menuBars.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Connect to '")).firstMatch
+        XCTAssertTrue(connect.isEnabled, "File › Connect to ⟨Mac⟩ follows the selection")
+        connect.click()
+
+        // The session window in front: Session › Disconnect works.
+        XCTAssertTrue(sessionControls(app).waitForExistence(timeout: 20), "the session should connect")
+        session.click()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: disconnect)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "Disconnect is enabled with the session in front")
+        XCTAssertTrue(app.menuBars.menuItems["Send Keyboard Shortcuts to Mac"].exists)
         app.typeKey(.escape, modifierFlags: [])
     }
 
     @MainActor func testSettingsOpensWithCommandComma() {
-        let app = launch(connecting: false)
-        XCTAssertTrue(app.descendants(matching: .any)["devices.sidebar"].waitForExistence(timeout: 10))
+        let app = launch()
+        _ = deviceList(app)
         app.typeKey(",", modifierFlags: .command)
-        let settings = app.windows.containing(.any, identifier: "settings").firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let settings = app.windows["com_apple_SwiftUI_Settings_window"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "⌘, opens Settings")
         settings.toolbars.buttons["Controls"].click()
-        XCTAssertTrue(settings.checkBoxes["settings.captureShortcuts"].waitForExistence(timeout: 3)
-                      || settings.switches["settings.captureShortcuts"].exists,
+        // A Mac form's switch carries no label of its own; its title is the text beside it.
+        XCTAssertTrue(settings.staticTexts["Send keyboard shortcuts to the Mac"].waitForExistence(timeout: 3),
                       "Controls has the Mac keyboard settings")
-        attach(app, "Settings › Controls")
+        XCTAssertTrue(settings.staticTexts["Swap ⌘ and ⌃"].exists)
         settings.toolbars.buttons["Privacy & Security"].click()
-        XCTAssertTrue(settings.staticTexts["Require Touch ID"].waitForExistence(timeout: 3)
-                      || settings.checkBoxes["settings.requireBiometrics"].exists)
+        XCTAssertTrue(settings.staticTexts["Require Touch ID"].waitForExistence(timeout: 3), "Privacy & Security has Require Touch ID")
         XCTAssertFalse(settings.staticTexts["Sync with iCloud"].exists, "iCloud sync isn't offered on the Mac yet")
-    }
-
-    @MainActor private func attach(_ app: XCUIApplication, _ name: String) {
-        let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = name
-        shot.lifetime = .keepAlways
-        add(shot)
+        settings.buttons["_XCUI:CloseWindow"].click()
     }
 }

@@ -11,6 +11,24 @@
   </BuildActionEntries>
  </BuildAction>
  <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">
+  <PreActions>
+   <ExecutionAction ActionType="Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+    <ActionContent title="Start the synthetic hosts" scriptText="/bin/zsh &quot;$SRCROOT/scripts/mac-ui-test-hosts.sh&quot; start &quot;$BUILT_PRODUCTS_DIR&quot;&#10;" shellToInvoke="/bin/zsh">
+     <EnvironmentBuildable>
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="VantageHost.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
+     </EnvironmentBuildable>
+    </ActionContent>
+   </ExecutionAction>
+  </PreActions>
+  <PostActions>
+   <ExecutionAction ActionType="Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+    <ActionContent title="Stop the synthetic hosts" scriptText="/bin/zsh &quot;$SRCROOT/scripts/mac-ui-test-hosts.sh&quot; stop&#10;" shellToInvoke="/bin/zsh">
+     <EnvironmentBuildable>
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="VantageHost.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
+     </EnvironmentBuildable>
+    </ActionContent>
+   </ExecutionAction>
+  </PostActions>
   <Testables><TestableReference skipped="NO" parallelizable="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="D10000000000000000000007" BuildableName="VantageMacUITests.xctest" BlueprintName="VantageMacUITests" ReferencedContainer="container:Vantage.xcodeproj"/></TestableReference></Testables>
  </TestAction>
 </Scheme>

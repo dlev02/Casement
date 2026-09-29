@@ -544,8 +544,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   overlay; the cursor is blank over the picture only while input is on.
   `NSTextInputClient.insertText` types Character Viewer and emoji text; `keyDown` never calls
   `interpretKeyEvents`. `sendsInput` = connected, not View Only, and not `AppLock.shared.isLocked`.
-  DEBUG: `-VantagePointerProbe 1` gives `session.pointerProbe`; `-VantageKeyProbe 1` gives
-  `session.keyProbe`, the last 8 keys sent ("0xc down command").
+  DEBUG: `-VantagePointerProbe 1` gives `session.pointerProbe`'s value; `-VantageKeyProbe 1` gives
+  `session.keyProbe`'s label (macOS doesn't report a plain element's value to UI tests), the last
+  8 keys sent ("0xc down command").
 - **Keyboard** (`KeyboardCapture`; pure `KeyTranslator`, `KeyCapturePolicy`): a local `NSEvent`
   monitor sees keys before the menu bar. It acts only when the session window is key, the session
   view has focus and input is on; a text field keeps its typing, and host-stamped events are
@@ -636,14 +637,22 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   (`-vantage.savedDevices '<hex of the JSON array>'`, `-vantage.availabilityChecks NO`,
   `-ApplePersistenceIgnoreState YES`) rather than editing it, and quit a build with
   `pkill -f <its path>`: `tell application id … to quit` can quit another checkout's copy.
-- **UI tests** (`Tests/VantageMacUITests`, target `VantageMacUITests`, shared scheme of the same
-  name, which also builds `VantageHost`): `MacShellUITests` starts its own synthetic host from the
-  products folder on port 47856 (`TEST_RUNNER_VANTAGE_TEST_HOST=127.0.0.1:<port>` uses one
-  already running) and covers `testConnectOpensTheMacInItsOwnWindow`,
-  `testSessionMenuFollowsTheFocusedWindow`, `testSettingsOpensWithCommandComma`. macOS UI tests
-  need Automation Mode approved once by an admin (`automationmodetool
-  enable-automationmode-without-authentication`); until then `scripts/check.sh` only builds them
-  (`build-for-testing`).
+- **UI tests** (`Tests/VantageMacUITests`, target and shared scheme `VantageMacUITests`, which
+  also builds `VantageHost`): `MacShellUITests` (connect opens a window of its own, the Session
+  menu follows the key window, ⌘, opens Settings) and `SessionInputUITests` (pointer edges in full
+  screen, ⌘Q goes to the Mac). The scheme's test pre-action runs `scripts/mac-ui-test-hosts.sh
+  start`: the `VantageHost` built beside the tests, from its executable, synthetic, on 47856 and
+  47857 (pairing code 246810); the post-action stops them. The tests can't start hosts
+  themselves: the macOS UI test runner is sandboxed, so a host it spawns can't listen, and one it
+  opens through LaunchServices (by bundle id or `NSWorkspace.openApplication`) loses its
+  arguments, which once left argument-less real hosts fighting the live one on 47820.
+  `SyntheticHost.address` waits for the listener; `TEST_RUNNER_VANTAGE_TEST_HOST` /
+  `TEST_RUNNER_VANTAGE_INPUT_HOST=127.0.0.1:<port>` point a suite at another host. Tests launch
+  with `-ApplePersistenceIgnoreState YES` and argument-domain settings, which pin a setting for
+  the launch (a settings tab passed that way can't be changed by clicking). A session window
+  covers the device list, so a test checks the list's state before connecting rather than trying
+  to bring the list back. Needs Automation Mode, approved once by an admin (`automationmodetool
+  enable-automationmode-without-authentication`); `scripts/check.sh` only builds them.
 
 ## Build & test
 
