@@ -1,8 +1,8 @@
 import SwiftUI
 import VantageCore
 
-/// Lists the tailnet's devices from the Tailscale API so a Mac can be added with one tap.
-/// Macs are probed for a running Vantage Host; other platforms are shown but can't be added.
+/// Lists the tailnet's devices from the Tailscale API so a Mac or PC can be added with one tap.
+/// Macs and PCs are probed for a running Vantage Host; other platforms are shown but can't be added.
 struct TailscaleDevicesSheet: View {
     @Environment(DeviceStore.self) private var store
     @Environment(TailscaleAccount.self) private var account
@@ -62,26 +62,26 @@ struct TailscaleDevicesSheet: View {
             List {
                 if macs.isEmpty {
                     Section {
-                        Text("No Macs on this tailnet yet.").foregroundStyle(.secondary)
+                        Text("No Macs or PCs on this tailnet yet.").foregroundStyle(.secondary)
                     } header: {
-                        Text("Macs")
+                        Text("Macs and PCs")
                     }
                 } else {
                     Section {
                         ForEach(macs) { device in macRow(device) }
                     } header: {
-                        Text("Macs")
+                        Text("Macs and PCs")
                     } footer: {
-                        Text("To control a Mac, install Vantage Host on it, grant Screen Recording and Accessibility, and pair once with the code it shows.")
+                        Text("To control a Mac or PC, install Vantage Host on it and pair once with the code it shows. On a Mac, also grant Screen Recording and Accessibility.")
                     }
                 }
                 if !unsupported.isEmpty {
                     Section {
                         ForEach(unsupported) { device in unsupportedRow(device) }
                     } header: {
-                        Text("Not Supported Yet")
+                        Text("Not Supported")
                     } footer: {
-                        Text("Vantage Host runs on macOS only. Windows and Linux hosting may come later; iPhones, iPads, and Android devices can't be controlled.")
+                        Text("Vantage Host runs on Macs and Windows PCs. Linux computers, iPhones, iPads, and Android devices can't be controlled.")
                     }
                 }
             }
@@ -92,7 +92,7 @@ struct TailscaleDevicesSheet: View {
     private func macRow(_ device: TailscaleDevice) -> some View {
         let existing = isAlreadySaved(device)
         return HStack(spacing: 14) {
-            DeviceIconTile(os: "macOS", size: 44)
+            DeviceIconTile(os: device.os, size: 44)
             VStack(alignment: .leading, spacing: 3) {
                 Text(device.displayName).font(.body.weight(.semibold)).lineLimit(1)
                 Text(device.magicDNSName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -151,7 +151,7 @@ struct TailscaleDevicesSheet: View {
         case .ready: "Vantage Host is ready"
         case .online: "Vantage Host is running"
         case .pairingRequired: "Vantage Host is running · pair to connect"
-        case .needsPermission: "Vantage Host needs Mac permissions"
+        case .needsPermission: device.platform == .windows ? "Vantage Host needs permissions" : "Vantage Host needs Mac permissions"
         case .incompatible: "Vantage Host needs an update"
         case .unavailable: device.isRecentlySeen ? "Vantage Host isn't reachable" : "Last seen \(lastSeenText(device))"
         case .checking: "Checking…"
@@ -160,10 +160,9 @@ struct TailscaleDevicesSheet: View {
 
     private func unsupportedReason(_ platform: TailscaleDevice.Platform) -> String {
         switch platform {
-        case .windows: "Windows hosting isn't available yet"
-        case .linux: "Linux hosting isn't available yet"
+        case .linux: "Linux hosting isn't available"
         case .iOS, .android: "Can't be controlled remotely"
-        case .mac: ""
+        case .mac, .windows: ""
         case .other: "Not supported"
         }
     }
@@ -191,7 +190,8 @@ struct TailscaleDevicesSheet: View {
 
     private func add(_ device: TailscaleDevice) {
         let host = device.tailnetIPv4 ?? device.magicDNSName
-        store.add(SavedDevice(name: device.displayName, host: host))
+        store.add(SavedDevice(name: device.displayName, host: host,
+                              os: device.platform == .windows ? HostPlatform.windows.savedOS : HostPlatform.macOS.savedOS))
         withAnimation(.snappy) { _ = justAdded.insert(device.id) }
     }
 
@@ -207,7 +207,7 @@ struct TailscaleDevicesSheet: View {
         }
     }
 
-    /// Probes each Mac for a running Vantage Host using the normal readiness check.
+    /// Probes each Mac and PC for a running Vantage Host using the normal readiness check.
     private func probeMacs() async {
         let identity = (try? KeychainStore(service: "com.benjaminlevinson.vantage.client").loadOrCreateIdentity()) ?? DeviceIdentity()
         let targets = macs

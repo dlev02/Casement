@@ -103,7 +103,7 @@ struct ControlSettings: View {
             } header: {
                 Text("Session Controls")
             } footer: {
-                Text("Choose which controls float over a session and in what order. A Mac can have its own set, from its settings or the Session menu. You can also drag the controls to any corner of the window.")
+                Text("Choose which controls float over a session and in what order. A Mac or PC can have its own set, from its settings or the Session menu. You can also drag the controls to any corner of the window.")
             }
             #else
             #if os(visionOS)
@@ -174,7 +174,7 @@ struct ControlSettings: View {
             } header: {
                 Text("Session Controls")
             } footer: {
-                Text("Choose which controls show and in what order. A Mac can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
+                Text("Choose which controls show and in what order. A Mac or PC can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
             }
 
             if Haptics.isSupported {
@@ -296,7 +296,7 @@ struct ConnectionSettings: View {
             } header: {
                 Text("Network")
             } footer: {
-                Text("Vantage only connects to Macs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
+                Text("Vantage only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
             }
 
             Section {
@@ -459,6 +459,8 @@ struct HelpScreen: View {
         FAQSection("Getting Connected", [
             FAQEntry("What do I need on the Mac?",
                      "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
+            FAQEntry("Can I control a Windows PC?",
+                     "Yes, with Vantage Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, the controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
             siriEntry,

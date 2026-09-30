@@ -46,8 +46,8 @@ nonisolated struct TailscaleDevice: Codable, Identifiable, Sendable, Equatable {
             case .other: "display"
             }
         }
-        /// Only Macs can run Vantage Host today.
-        var isSupported: Bool { self == .mac }
+        /// Macs and Windows PCs run Vantage Host.
+        var isSupported: Bool { self == .mac || self == .windows }
     }
 
     var platform: Platform {

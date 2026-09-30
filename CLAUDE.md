@@ -62,12 +62,13 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (`GET /api/v2/tailnet/-/devices`) with either an API access token or an OAuth client
   (`client_credentials` at `/api/v2/oauth/token`, tokens cached ~1 h). Tailscale has no end-user
   sign-in for third-party apps, so the user pastes a key from the admin console; it lives in the
-  Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs (probed with `HostAvailabilityProbe`) and greys out
+  Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs and PCs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
   `-VantageOpenTailscaleDevices 1` opens the picker on launch,
-  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac|transfers` presents one
+  `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac|controlStripPC|editPC|transfers` presents one
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
-  `controlStripMac` edits the first saved Mac, so pair it with `-VantageSeedSamples 1`).
+  `controlStripMac` edits the first saved Mac and `controlStripPC`/`editPC` the first PC, so pair
+  them with `-VantageSeedSamples 1`, which includes one PC).
 - **App lock** (Face ID, Settings → Privacy & Security): on iOS the view tree stays alive while
   locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
@@ -149,8 +150,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `-VantageHapticProbe 1` lists what played as `session.hapticProbe`'s value. Tests:
   `HapticTests` (connection rules), `HapticsUITests` (its synthetic host must not run
   `--send-file-on-connect`: a file arriving plays `.success`). Feel still needs an iPhone.
-- **Mac shortcuts and password**: `MacShortcut` (`Vantage/Model/MacShortcut.swift`) sends
-  system-default chords (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
+- **Mac shortcuts and password**: `HostShortcut` (`Vantage/Model/HostShortcut.swift`; `MacShortcut`
+  is a typealias) sends system-default chords; for a Mac (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with
   the left/right device bit) and come up after the key, and arrow/function/navigation keys carry
   Fn (arrows and the keypad also the keypad bit). macOS stores its shortcuts with those bits
@@ -166,7 +167,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `.cgSessionEventTap`: a HID-tap post buys nothing and runs through every other app's HID tap.
   `--log-input-events` (DEBUG host) logs each key event reaching the session with its flags
   (listen-only tap; text keys typed on the Mac itself are logged without a key code). Tests:
-  `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`.
+  `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`. A PC's shortcuts: see Windows hosts
+  on the client.
   `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
   Keychain (when-unlocked class); the key button types it plus Return through the host. When
   `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
@@ -176,6 +178,32 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Secure Input. Shifted characters get an explicit Shift_L. The live handshake test is opt-in:
   `VANTAGE_LIVE_SCREEN_SHARING=1 xcrun swift test --package-path Packages/VantageCore` (a bogus
   account, expects a clean rejection). A real sign-in still needs a device check.
+- **Windows hosts on the client**: what the host runs is `ClientSession.hostPlatform` in a session,
+  else `SavedDevice.platform` (from `os`; "Windows" = PC, anything else a Mac). `DeviceStore.recordPlatform`
+  stores what a session or the list's availability probe heard (`recordPlatforms`, nil from an old
+  host = Mac), so the list shows the `pc` symbol and a PC's settings before it is next opened;
+  `TailscaleDevicesSheet` adds PCs as "Windows" (`TailscaleDevice.Platform.isSupported` = Mac or
+  Windows). **Names**: every user-facing string naming the host goes through `HostNoun`
+  ("Mac"/"PC", `the`, `thePossessive`, …): pairing prompt, `MacScreenNote`, lock banner (a locked PC
+  says "Unlock it at the PC, or sign in with Remote Desktop"; no password button), session menu,
+  Transfers, `FileLink` failures, device list and Mac detail, the Mac app's Session ▸ PC submenu
+  and toolbar. App Intents and widgets still say Mac. **Shortcuts**: the strip's shortcut items are
+  slots (`HostShortcut.forItem`): spotlight = ⌘Space / Search (Win S, kVK 0x01 + ⌘), missionControl
+  = ⌃↑ / Task View (Win Tab), applicationWindows = ⌃↓ / Switch Apps (Alt Tab, 0x30 + ⌥),
+  showDesktop = F11 / Win D; `startMenu` (the Windows key alone: 0x37 down and up) and
+  `taskManager` (Ctrl Shift Esc: 0x35 + ⌃⇧) exist for a PC only. The Windows host maps ⌘ to the
+  Windows key literally, so shortcuts are sent as written. `StripItem.label(for:)`/`detail(for:)`/
+  `symbol(for:)` name an item per host (nil = any host, for the default editor);
+  `keycapText(for:)` draws a PC's modifiers as "ctrl"/"alt"/"win"; strip modifiers are always sent
+  as labelled. `StripItem.unavailable(on:)` joins `unavailableHere` with what the host can't use
+  (a Mac: Start, Task Manager; a PC: Mac Audio, Type Password) for the strip and the per-device
+  editor; the default editor shows everything. Both standards gained Start and Task Manager
+  (`standardHistory`, `macStandardHistory`). **Mac-only features** a PC hides: Mac Audio (strip,
+  session menu; the Mac menu bar dims it), Type Password and saved passwords, Log In with Screen
+  Sharing (`ScreenSharingPassword.canLogIn`), home address, virtual display, codec choice; dictation
+  on the PC falls back to this device since a PC advertises no `dictationEngines`. Sleep Display
+  and Lock stay. Checked against the Windows synthetic host's input log (`--input-log`): every PC
+  shortcut arrives as the scan codes above.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture
@@ -520,6 +548,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Dictate
   ⌃⌥⌘D, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
+  (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)
   Screen/Wake Display, Customize Controls…, Disconnect ⌃⌥⌘W); View adds Hide/Show Controls ⌃⌥⌘C,
   Actual Size ⌃⌥⌘0, Full Screen ⌃⌥⌘F, Sort Macs By; Help › Vantage Help. Session shortcuts all
   hold ⌃⌥⌘, the one chord a capturing session leaves to Vantage. Items read
@@ -591,7 +620,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   alive, so sessions stay connected. Never swap a Mac window's view for the lock: that
   disconnects the session. The session's input capture must also ignore input while locked.
 - **Control strip**: shown as on iPad. The Mac's default is `ControlStripLayout.macStandard`
-  (Spotlight, Mission Control, Application Windows, Show Desktop, Type Password, Send Clipboard,
+  (Start, Spotlight, Mission Control, Application Windows, Show Desktop, Task Manager, Type Password, Send Clipboard,
   Dictate; `platformStandard` picks it). `StripItem.unavailableHere` (`.keyboard` on the Mac) is
   skipped by `visibleItems()`/`hiddenItems()`, never removed: a layout synced from an iPad keeps
   its Keyboard button, and editor changes go through `replacingVisible(with:)`, which puts it

@@ -13,6 +13,8 @@ struct MacScreenNote: View {
     }
 
     let kind: Kind
+    /// "Mac" or "PC".
+    var host = HostNoun.mac
     /// Wake/Retry was sent and the Mac hasn't answered yet.
     let isWaking: Bool
     /// There's a frozen frame behind to dim; otherwise the background is nearly black.
@@ -36,7 +38,9 @@ struct MacScreenNote: View {
     }
 
     private var symbol: String { kind == .asleep ? "moon.zzz.fill" : "display" }
-    private var title: String { kind == .asleep ? "The Mac's display is asleep" : "Waiting for the Mac's screen…" }
+    private var title: String {
+        kind == .asleep ? "\(host.thePossessiveCapitalized) display is asleep" : "Waiting for \(host.thePossessive) screen…"
+    }
     private var subtitle: String {
         switch (kind, isWaking) {
         case (.asleep, false): "Tap anywhere to wake it"
@@ -48,10 +52,10 @@ struct MacScreenNote: View {
     private var buttonTitle: String { kind == .asleep ? "Wake" : "Retry" }
     private var buttonLabel: String {
         switch (kind, isWaking) {
-        case (.asleep, false): "Wake the Mac's display"
-        case (.asleep, true): "Waking the Mac's display"
-        case (.unavailable, false): "Try to show the Mac's screen again"
-        case (.unavailable, true): "Trying to show the Mac's screen again"
+        case (.asleep, false): "Wake \(host.thePossessive) display"
+        case (.asleep, true): "Waking \(host.thePossessive) display"
+        case (.unavailable, false): "Try to show \(host.thePossessive) screen again"
+        case (.unavailable, true): "Trying to show \(host.thePossessive) screen again"
         }
     }
 

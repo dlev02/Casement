@@ -19,15 +19,21 @@ struct ControlStripEditor: View {
     /// Edits the default layout (Settings → Controls).
     init() { mac = nil }
 
-    /// Edits one Mac's layout; nil means it uses the default.
-    init(macName: String, layout: Binding<ControlStripLayout?>) {
-        mac = MacTarget(name: macName, layout: layout)
+    /// Edits one Mac's or PC's layout; nil means it uses the default. `platform` names the
+    /// controls for that host and leaves out the ones it can't use.
+    init(macName: String, platform: HostPlatform? = .macOS, layout: Binding<ControlStripLayout?>) {
+        mac = MacTarget(name: macName, platform: platform, layout: layout)
     }
 
     private struct MacTarget {
         let name: String
+        let platform: HostPlatform?
         let layout: Binding<ControlStripLayout?>
     }
+
+    /// The host being edited for; nil for the default layout, which shows every control.
+    private var platform: HostPlatform? { mac?.platform }
+    private var unavailable: Set<StripItem> { StripItem.unavailable(on: platform) }
 
     var body: some View {
         List {
@@ -84,7 +90,7 @@ struct ControlStripEditor: View {
     /// What this device shows of the layout. A Mac skips controls it can't use (the on-screen
     /// keyboard), and every edit goes through `replacingVisible`, so a layout synced from an
     /// iPad keeps them.
-    private var visible: ControlStripLayout { ControlStripLayout(items: layout.visibleItems()) }
+    private var visible: ControlStripLayout { ControlStripLayout(items: layout.visibleItems(excluding: unavailable)) }
 
     /// Pinned above the list so it stays in view while editing further down, except where there
     /// isn't the height for it (iPhone in landscape) and on visionOS, where it scrolls with the list.
@@ -113,7 +119,7 @@ struct ControlStripEditor: View {
     private func update(_ change: (inout ControlStripLayout) -> Void) {
         var edited = visible
         change(&edited)
-        let next = layout.replacingVisible(with: edited.items)
+        let next = layout.replacingVisible(with: edited.items, unavailable: unavailable)
         guard next != layout else { return }
         withAnimation(motion) {
             if let mac { mac.layout.wrappedValue = next } else { defaultLayout = next }
@@ -123,14 +129,14 @@ struct ControlStripEditor: View {
     // MARK: Sections
 
     private var preview: some View {
-        ControlStripPreview(items: visible.items, dock: dock)
+        ControlStripPreview(items: visible.items, dock: dock, host: platform)
             .id(reduceMotion ? visible.rawValue : "")
             .transition(.opacity)
     }
 
     private func macSection(_ mac: MacTarget) -> some View {
         Section {
-            Toggle("Customize for This Mac", isOn: Binding(
+            Toggle("Customize for This \(HostNoun(mac.platform).name)", isOn: Binding(
                 get: { mac.layout.wrappedValue != nil },
                 set: { on in withAnimation(motion) { mac.layout.wrappedValue = on ? defaultLayout : nil } }))
             if !isEditable {
@@ -151,7 +157,7 @@ struct ControlStripEditor: View {
             }
         } footer: {
             Text(isEditable
-                 ? "Only \(mac.name) uses these controls. Other Macs keep the default layout."
+                 ? "Only \(mac.name) uses these controls. Other Macs and PCs keep the default layout."
                  : "Uses the layout from Settings → Controls.")
                 .wrapsInFooter()
         }
@@ -160,7 +166,7 @@ struct ControlStripEditor: View {
     private var shownSection: some View {
         Section {
             ForEach(visible.items) { item in
-                StripItemRow(item: item, control: isEditable ? .remove : .none, reorderable: isEditable) {
+                StripItemRow(item: item, host: platform, control: isEditable ? .remove : .none, reorderable: isEditable) {
                     update { $0.remove(item) }
                 }
                 .accessibilityActions {
@@ -185,7 +191,7 @@ struct ControlStripEditor: View {
             Text("Shown")
         } footer: {
             Text(mac == nil
-                 ? "The menu and the collapse button are always at the end. Macs you've customized keep their own controls."
+                 ? "The menu and the collapse button are always at the end. Macs and PCs you've customized keep their own controls. Start and Task Manager show only for a PC, Type Password and Mac Audio only for a Mac."
                  : "The menu and the collapse button are always at the end.")
                 .wrapsInFooter()
         }
@@ -194,12 +200,12 @@ struct ControlStripEditor: View {
 
     private var moreSection: some View {
         Section("More Controls") {
-            ForEach(visible.hiddenItems()) { item in
-                StripItemRow(item: item, control: isEditable ? .add : .none, reorderable: false) {
+            ForEach(visible.hiddenItems(excluding: unavailable)) { item in
+                StripItemRow(item: item, host: platform, control: isEditable ? .add : .none, reorderable: false) {
                     update { $0.add(item) }
                 }
             }
-            if visible.hiddenItems().isEmpty {
+            if visible.hiddenItems(excluding: unavailable).isEmpty {
                 Text("Every control is shown.")
                     .foregroundStyle(.secondary)
             }
@@ -252,8 +258,9 @@ struct MacControlStripEditor: View {
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
+        let device = store.devices.first { $0.id == deviceID }
         ControlStripEditor(
-            macName: store.devices.first { $0.id == deviceID }?.name ?? "This Mac",
+            macName: device?.name ?? "This Mac", platform: device?.platform ?? .macOS,
             layout: Binding(get: { store.devices.first { $0.id == deviceID }?.controlStrip },
                             set: { store.setControlStrip($0, for: deviceID) }))
     }
@@ -266,6 +273,8 @@ private struct StripItemRow: View {
     enum Control { case add, remove, none }
 
     let item: StripItem
+    /// Names the control for this host; nil describes it for any host.
+    var host: HostPlatform?
     let control: Control
     /// Shows a grip on the Mac, where rows reorder by dragging with no edit mode to show handles.
     var reorderable = false
@@ -276,16 +285,16 @@ private struct StripItemRow: View {
     var body: some View {
         HStack(spacing: 4) {
             switch control {
-            case .remove: circleButton("minus.circle.fill", tint: .red, label: "Remove \(item.label)")
-            case .add: circleButton("plus.circle.fill", tint: .green, label: "Add \(item.label)")
+            case .remove: circleButton("minus.circle.fill", tint: .red, label: "Remove \(item.label(for: host))")
+            case .add: circleButton("plus.circle.fill", tint: .green, label: "Add \(item.label(for: host))")
             case .none: EmptyView()
             }
             HStack(spacing: 12) {
                 // Decorative; at accessibility sizes the name needs the room more.
-                if !dynamicTypeSize.isAccessibilitySize { StripItemTile(item: item) }
+                if !dynamicTypeSize.isAccessibilitySize { StripItemTile(item: item, host: host) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.label)
-                    Text(item.detail)
+                    Text(item.label(for: host))
+                    Text(item.detail(for: host))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -302,8 +311,8 @@ private struct StripItemRow: View {
             // reorder handle takes its name from the row's label, so a description folded into
             // the label would make it "Reorder Escape, Esc key".
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.label)
-            .accessibilityValue(item.detail)
+            .accessibilityLabel(item.label(for: host))
+            .accessibilityValue(item.detail(for: host))
             // Read the name before the button, which also gives the reorder handle "Reorder
             // Escape" rather than "Reorder Remove Escape".
             .accessibilitySortPriority(1)
@@ -334,6 +343,7 @@ private struct StripItemRow: View {
 /// A Settings-style icon: the control's symbol on a rounded square tinted by its group.
 private struct StripItemTile: View {
     let item: StripItem
+    var host: HostPlatform?
     @ScaledMetric(relativeTo: .body) private var scaledSide: CGFloat = 30
     /// Grows with the text, but not so far that the name has no room left at the largest sizes.
     private var side: CGFloat { min(scaledSide, 40) }
@@ -343,10 +353,19 @@ private struct StripItemTile: View {
             .fill(item.tileTint.gradient)
             .frame(width: side, height: side)
             .overlay {
-                Image(systemName: item.symbol)
-                    .symbolVariant(.fill)
-                    .font(.system(size: side * 0.5, weight: .semibold))
-                    .foregroundStyle(.white)
+                Group {
+                    if let keycap = item.keycapText(for: host) {
+                        Text(keycap)
+                            .font(.system(size: side * 0.34, weight: .bold))
+                            .minimumScaleFactor(0.6)
+                            .padding(.horizontal, 2)
+                    } else {
+                        Image(systemName: item.symbol(for: host))
+                            .symbolVariant(.fill)
+                            .font(.system(size: side * 0.5, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(.white)
             }
             .accessibilityHidden(true)
     }
@@ -371,6 +390,7 @@ extension StripItem {
 struct ControlStripPreview: View {
     let items: [StripItem]
     var dock: ToolbarDock = .bottomLeft
+    var host: HostPlatform?
 
     /// A miniature: small enough that the strip wraps as it would across a whole iPad or a
     /// landscape iPhone rather than across this sheet, still big enough to read every symbol.
@@ -380,7 +400,7 @@ struct ControlStripPreview: View {
         ControlStrip(
             isCollapsed: .constant(false), dock: .constant(dock), stickyModifiers: .constant([]),
             touchMode: .constant(.trackpad), onKey: { _, _ in }, onShowKeyboard: {}, onSendClipboard: {},
-            onSendPassword: {}, onHostCommand: { _ in }, onDisconnect: {}, items: items, isPreview: true)
+            onSendPassword: {}, onHostCommand: { _ in }, onDisconnect: {}, items: items, host: host, isPreview: true)
             .allowsHitTesting(false)
             .scaleEffect(Self.scale)
             .modifier(ScaledLayout(scale: Self.scale))
@@ -398,7 +418,7 @@ struct ControlStripPreview: View {
             .environment(\.colorScheme, .dark)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Preview of the session controls")
-            .accessibilityValue(items.isEmpty ? "Menu and collapse button only" : items.map(\.label).joined(separator: ", "))
+            .accessibilityValue(items.isEmpty ? "Menu and collapse button only" : items.map { $0.label(for: host) }.joined(separator: ", "))
     }
 }
 

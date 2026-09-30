@@ -88,6 +88,13 @@ struct RemoteSessionScreen: View {
 
     private var isLive: Bool { session.state == .connected && hasVideo }
 
+    /// The saved device as it is now (edits and what the host said arrive through the store).
+    private var savedDevice: SavedDevice { store.devices.first { $0.id == device.id } ?? device }
+    /// What the host runs: what it said in this session, else what the saved device remembers.
+    private var hostPlatform: HostPlatform { session.hostPlatform ?? savedDevice.platform }
+    /// "Mac" or "PC", for everything the session says about the host.
+    private var host: HostNoun { HostNoun(hostPlatform) }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -106,7 +113,7 @@ struct RemoteSessionScreen: View {
             #endif
 
             if let screenNote {
-                MacScreenNote(kind: screenNote, isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
+                MacScreenNote(kind: screenNote, host: host, isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
                     .transition(.opacity)
             } else if !isLive {
                 connectionOverlay
@@ -123,7 +130,7 @@ struct RemoteSessionScreen: View {
                 #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
                 if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
-                    HostStatusBanner(status: status)
+                    HostStatusBanner(status: status, host: host)
                         .padding(.top, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -216,8 +223,8 @@ struct RemoteSessionScreen: View {
             wakeTask?.cancel()
             wakeRequested = false
             switch note {
-            case .asleep?: AccessibilityNotification.Announcement("The Mac's display is asleep").post()
-            case .unavailable?: AccessibilityNotification.Announcement("Waiting for the Mac's screen").post()
+            case .asleep?: AccessibilityNotification.Announcement("\(host.thePossessiveCapitalized) display is asleep").post()
+            case .unavailable?: AccessibilityNotification.Announcement("Waiting for \(host.thePossessive) screen").post()
             case nil: break
             }
         }
@@ -262,6 +269,8 @@ struct RemoteSessionScreen: View {
         .onChange(of: session.state) { _, state in
             if state == .connected {
                 store.markConnected(device)
+                // Hosts before the platform field are all Macs.
+                store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
                 if session.dictationEngines?.contains(.parakeet) == true {
                     // Lets Settings → Controls offer Parakeet once any Mac has advertised it.
                     UserDefaults.standard.set(true, forKey: DictationEnginePreference.macOffersParakeetKey)
@@ -326,7 +335,7 @@ struct RemoteSessionScreen: View {
         }
         .sheet(isPresented: $showTransfers) {
             NavigationStack {
-                TransfersView(files: session.files, macName: device.name, canSend: canSendFiles)
+                TransfersView(files: session.files, macName: device.name, host: host, canSend: canSendFiles)
             }
             .appLockCurtain()
         }
@@ -403,7 +412,8 @@ struct RemoteSessionScreen: View {
             items: stripItems,
             onCustomize: { showStripEditor = true },
             macAudio: macAudioToggle,
-            files: sendFileAction
+            files: sendFileAction,
+            host: hostPlatform
         )
     }
 
@@ -418,7 +428,7 @@ struct RemoteSessionScreen: View {
             : Double(active.reduce(0) { $0 + $1.bytesDone }) / Double(max(1, active.reduce(0) { $0 + $1.byteCount }))
         return SendFileAction(
             unavailableReason: session.state == .connected && !session.hostOffersFiles
-                ? "This Mac's Vantage Host can't receive files. Update Vantage Host on the Mac." : nil,
+                ? "This \(host.name)'s Vantage Host can't receive files. Update Vantage Host on \(host.the)." : nil,
             progress: progress,
             hasTransfers: session.files.hasTransfers,
             onSend: { showFileImporter = true },
@@ -543,7 +553,7 @@ struct RemoteSessionScreen: View {
     /// (the Mac client has no on-screen keyboard). Read from the store rather than `device` so
     /// edits made mid-session (or synced in) show up straight away.
     private var stripItems: [StripItem] {
-        (store.devices.first { $0.id == device.id }?.controlStrip ?? defaultStripLayout).visibleItems()
+        (savedDevice.controlStrip ?? defaultStripLayout).visibleItems(excluding: StripItem.unavailable(on: hostPlatform))
     }
 
     private var connectionOverlay: some View {
@@ -558,7 +568,7 @@ struct RemoteSessionScreen: View {
                 ProgressView().controlSize(.large).tint(.white)
                 Text("Reconnecting…").foregroundStyle(.white)
             case .pairingRequired:
-                PairingPrompt(errorMessage: session.pairingError) { code in
+                PairingPrompt(host: host, errorMessage: session.pairingError) { code in
                     session.connect(to: device, viewport: currentViewport(), pairingCode: code)
                 }
             case .failed(let message):
@@ -703,6 +713,7 @@ struct RemoteSessionScreen: View {
     /// keystrokes while a password field, auth dialog, or the lock screen holds Secure Event Input,
     /// so those go through the Mac's own Screen Sharing server instead (it needs the account name).
     private func sendPassword() {
+        guard !host.isWindows else { return } // a PC has no saved password to type (Macs only)
         guard let password = DeviceSecrets.password(for: device) else {
             passwordPrompt = .missing
             return
@@ -892,27 +903,27 @@ extension RemoteSessionScreen {
             Toggle(isOn: $isViewOnly) {
                 Label("View Only", systemImage: "eye")
             }
-            .help("Watch the Mac without sending the pointer or keys")
+            .help("Watch \(host.the) without sending the pointer or keys")
             .accessibilityIdentifier("session.mac.viewOnly")
             Toggle(isOn: $capturesShortcuts) {
                 Label("Send Keyboard Shortcuts", systemImage: "command")
             }
-            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to the Mac. ⌃⌥⌘ shortcuts stay with Vantage."
+            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to \(host.the). ⌃⌥⌘ shortcuts stay with Vantage."
                                     : "⌘Q, ⌘W, ⌘H, ⌘M and ⌘, act on Vantage")
             .accessibilityIdentifier("session.mac.captureShortcuts")
             Menu {
-                ForEach(MacShortcut.sessionMenu) { shortcut in
+                ForEach(HostShortcut.sessionMenu(for: hostPlatform)) { shortcut in
                     Button { input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) } label: {
                         Label(shortcut.label, systemImage: shortcut.symbol)
                     }
                 }
                 Divider()
                 Button { sendHostCommand(.sleepDisplay) } label: { Label("Sleep Display", systemImage: "moon") }
-                Button { sendHostCommand(.lockScreen) } label: { Label("Lock Mac", systemImage: "lock") }
+                Button { sendHostCommand(.lockScreen) } label: { Label("Lock \(host.name)", systemImage: "lock") }
             } label: {
-                Label("Mac", systemImage: "macbook")
+                Label(host.name, systemImage: host.symbol)
             }
-            .help("Mac shortcuts")
+            .help("\(host.name) shortcuts")
             .disabled(session.state != .connected)
             Button { showFileImporter = true } label: {
                 Label("Send File", systemImage: StripItem.sendFile.symbol)
@@ -935,6 +946,8 @@ extension RemoteSessionScreen {
     var sessionCommands: SessionCommands {
         SessionCommands(
             macName: device.name,
+            host: host,
+            shortcuts: HostShortcut.sessionMenu(for: hostPlatform),
             isConnected: session.state == .connected,
             capturesShortcuts: capturesShortcuts,
             toggleShortcutCapture: { capturesShortcuts.toggle() },
@@ -947,6 +960,7 @@ extension RemoteSessionScreen {
             sendFile: { showFileImporter = true },
             showTransfers: { showTransfers = true },
             sendClipboard: sendClipboard,
+            canTypePassword: !host.isWindows,
             typePassword: sendPassword,
             sendShortcut: { input.tapChord(keyCode: $0.keyCode, modifiers: $0.modifiers) },
             hostCommand: sendHostCommand,
@@ -1008,14 +1022,24 @@ private struct ThisMacBanner: View {
 import UIKit
 #endif
 
-/// Explains why input may be ignored: the Mac is locked or a secure field has focus.
+/// Explains why input may be ignored: the host is locked or a secure field has focus. A locked
+/// PC can't be unlocked from here (there's no saved password to type), so it says where to go.
 struct HostStatusBanner: View {
     let status: HostStatus
+    var host = HostNoun.mac
+
+    private var text: String {
+        if host.isWindows {
+            if status.isScreenLocked { return "The PC is locked. Unlock it at the PC, or sign in with Remote Desktop." }
+            return status.message ?? "Typing is blocked by a Windows security prompt"
+        }
+        return status.message ?? (status.isScreenLocked ? "The Mac is locked" : "Typing is blocked by a secure field")
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: status.isScreenLocked ? "lock.fill" : "key.fill")
-            Text(status.message ?? (status.isScreenLocked ? "The Mac is locked" : "Typing is blocked by a secure field"))
+            Text(text)
                 .font(.callout)
             Spacer(minLength: 0)
         }

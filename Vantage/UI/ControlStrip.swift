@@ -30,6 +30,9 @@ struct ControlStrip: View {
     var macAudio = MacAudioToggle()
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
+    /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
+    /// shortcuts they send. Nil (the default layout's preview) shows the Mac's names.
+    var host: HostPlatform?
     /// A picture of the strip for the controls editor: plain glass, and nothing for VoiceOver
     /// (the editor describes it instead).
     var isPreview = false
@@ -38,6 +41,8 @@ struct ControlStrip: View {
     /// The last modifier the user tapped, for its haptic. Modifiers that clear themselves after a
     /// key press stay quiet; only your own tap latches or releases one.
     @State private var modifierTap = ModifierTap()
+
+    private var noun: HostNoun { HostNoun(host) }
 
     var body: some View {
         if isPreview {
@@ -212,10 +217,7 @@ struct ControlStrip: View {
         case .upArrow: keyButton(item, 0x7E)
         case .downArrow: keyButton(item, 0x7D)
         case .rightArrow: keyButton(item, 0x7C)
-        case .spotlight: shortcutButton(.spotlight)
-        case .missionControl: shortcutButton(.missionControl)
-        case .applicationWindows: shortcutButton(.applicationWindows)
-        case .showDesktop: shortcutButton(.showDesktop)
+        case .startMenu, .spotlight, .missionControl, .applicationWindows, .showDesktop, .taskManager: shortcutButton(item)
         case .typePassword: passwordButton
         case .sendClipboard: clipboardButton
         case .sendFile: sendFileButton
@@ -271,7 +273,7 @@ struct ControlStrip: View {
         .disabled(files.unavailableReason != nil)
         .accessibilityLabel(StripItem.sendFile.label)
         .accessibilityValue(files.progress.map { "Sending, \(Int(($0 * 100).rounded())) percent" } ?? "")
-        .accessibilityHint(files.unavailableReason ?? "Choose files on \(LocalDevice.this) to send to the Mac's Downloads folder.")
+        .accessibilityHint(files.unavailableReason ?? "Choose files on \(LocalDevice.this) to send to \(noun.thePossessive) Downloads folder.")
         .accessibilityIdentifier("session.toolbar.sendFile")
         .contextMenu {
             Button(action: files.onSend) {
@@ -293,7 +295,7 @@ struct ControlStrip: View {
             Image(systemName: StripItem.sendClipboard.symbol)
         }
         .buttonStyle(StripButtonStyle())
-        .accessibilityLabel("Send Clipboard to Mac")
+        .accessibilityLabel("Send Clipboard to \(noun.name)")
     }
 
     private var passwordButton: some View {
@@ -305,17 +307,21 @@ struct ControlStrip: View {
         .accessibilityHint("Types this Mac's saved password and presses Return.")
     }
 
-    private func shortcutButton(_ shortcut: MacShortcut) -> some View {
-        Button { guarded { send(shortcut) } } label: {
-            Image(systemName: shortcut.symbol)
+    /// The host's shortcut for this slot. Start and Task Manager have none on a Mac, where the
+    /// strip never shows them; the default layout's preview shows them as on a PC.
+    @ViewBuilder private func shortcutButton(_ item: StripItem) -> some View {
+        if let shortcut = HostShortcut.forItem(item, on: host) ?? HostShortcut.forItem(item, on: .windows) {
+            Button { guarded { send(shortcut) } } label: {
+                Image(systemName: shortcut.symbol)
+            }
+            .buttonStyle(StripButtonStyle())
+            .accessibilityLabel(shortcut.label)
         }
-        .buttonStyle(StripButtonStyle())
-        .accessibilityLabel(shortcut.label)
     }
 
-    /// Mac shortcuts ignore whatever modifiers are being held — ⌃↑ means Mission Control, not
+    /// Shortcuts ignore whatever modifiers are being held — ⌃↑ means Mission Control, not
     /// ⇧⌃↑ — and clear them, the same as tapping a key.
-    private func send(_ shortcut: MacShortcut) {
+    private func send(_ shortcut: HostShortcut) {
         onKey(shortcut.keyCode, shortcut.modifiers)
         if !stickyModifiers.isEmpty {
             withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
@@ -363,13 +369,15 @@ struct ControlStrip: View {
             #endif
 
             Section {
-                Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
-                    Label(StripItem.macAudio.label, systemImage: StripItem.macAudio.symbol)
+                if !noun.isWindows { // a PC has no audio to send
+                    Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
+                        Label(StripItem.macAudio.label, systemImage: StripItem.macAudio.symbol)
+                    }
+                    .disabled(macAudio.unavailableReason != nil)
+                    .accessibilityIdentifier("session.menu.macAudio")
                 }
-                .disabled(macAudio.unavailableReason != nil)
-                .accessibilityIdentifier("session.menu.macAudio")
                 Button(action: files.onSend) {
-                    Label("Send File to Mac…", systemImage: StripItem.sendFile.symbol)
+                    Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
                 }
                 .disabled(files.unavailableReason != nil)
                 .accessibilityIdentifier("session.menu.sendFile")
@@ -378,22 +386,24 @@ struct ControlStrip: View {
                 }
                 .accessibilityIdentifier("session.menu.transfers")
                 Button(action: onSendClipboard) {
-                    Label("Send Clipboard to Mac", systemImage: "doc.on.clipboard")
+                    Label("Send Clipboard to \(noun.name)", systemImage: "doc.on.clipboard")
                 }
-                Button(action: onSendPassword) {
-                    Label("Type Password", systemImage: "key.radiowaves.forward")
+                if !noun.isWindows { // saved-password typing is for a Mac
+                    Button(action: onSendPassword) {
+                        Label("Type Password", systemImage: "key.radiowaves.forward")
+                    }
                 }
             }
 
-            Section("Mac") {
-                ForEach(MacShortcut.sessionMenu) { shortcut in
+            Section(noun.name) {
+                ForEach(HostShortcut.sessionMenu(for: host)) { shortcut in
                     Button { send(shortcut) } label: { Label(shortcut.label, systemImage: shortcut.symbol) }
                 }
                 Button { onHostCommand(.sleepDisplay) } label: {
                     Label("Sleep Display", systemImage: "moon")
                 }
                 Button { onHostCommand(.lockScreen) } label: {
-                    Label("Lock Mac", systemImage: "lock")
+                    Label("Lock \(noun.name)", systemImage: "lock")
                 }
             }
 
@@ -446,10 +456,14 @@ struct ControlStrip: View {
                 modifierTap = ModifierTap(count: modifierTap.count + 1, latched: !isOn)
             }
         } label: {
-            Image(systemName: item.symbol)
+            if let keycap = item.keycapText(for: host) {
+                Text(keycap).font(.system(size: 13, weight: .semibold)).fixedSize()
+            } else {
+                Image(systemName: item.symbol)
+            }
         }
         .buttonStyle(StripButtonStyle(isActive: isOn))
-        .accessibilityLabel(item.label)
+        .accessibilityLabel(item.label(for: host))
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }

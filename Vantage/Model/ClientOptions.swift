@@ -103,6 +103,8 @@ enum DebugScreen: String, Identifiable {
     case settings, controls, security, help, about, tailscale, tailscaleOAuth, tailscaleToken, addDevice, widgets
     /// The controls editor for the default layout, and for the first saved Mac.
     case controlStrip, controlStripMac
+    /// The controls editor and the Edit sheet for the first saved PC (`-VantageSeedSamples 1` has one).
+    case controlStripPC, editPC
     /// The Transfers sheet with one row in each state.
     case transfers
     var id: String { rawValue }

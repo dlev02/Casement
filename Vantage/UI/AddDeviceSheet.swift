@@ -2,6 +2,10 @@ import SwiftUI
 import VantageCore
 
 /// Adds or edits a device by MagicDNS name or Tailscale IP. No credentials required for v1.
+///
+/// A PC (known once its host has answered) has none of the Mac-only settings: the codec (its
+/// host sends H.264), the BetterDisplay virtual display, and the saved password, which types
+/// through macOS Screen Sharing.
 struct AddDeviceSheet: View {
     @Environment(DeviceStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -40,55 +44,32 @@ struct AddDeviceSheet: View {
                     }
                 }
                 Section {
-                    Picker("Codec", selection: $codec) {
-                        Text("HEVC").tag(VideoCodec.hevc)
-                        Text("H.264").tag(VideoCodec.h264)
+                    if !isPC {
+                        Picker("Codec", selection: $codec) {
+                            Text("HEVC").tag(VideoCodec.hevc)
+                            Text("H.264").tag(VideoCodec.h264)
+                        }
                     }
                     #if !os(macOS) // a Mac's own mouse and trackpad already scroll the way it's set up
                     Toggle("Natural Scrolling", isOn: $naturalScroll)
                     #endif
                     NavigationLink {
-                        ControlStripEditor(macName: name.isEmpty ? "This Mac" : name, layout: $controlStrip)
+                        ControlStripEditor(macName: name.isEmpty ? "This \(hostNoun.name)" : name, platform: platform, layout: $controlStrip)
                     } label: {
                         LabeledContent("Controls", value: controlStrip == nil ? "Default" : "Custom")
                     }
                 } header: {
                     Text("Preferences")
                 } footer: {
-                    Text(codec == .hevc
-                         ? "HEVC looks better at the same bandwidth. Switch to H.264 if this Mac's video ever fails to decode."
-                         : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
+                    if !isPC {
+                        Text(codec == .hevc
+                             ? "HEVC looks better at the same bandwidth. Switch to H.264 if this Mac's video ever fails to decode."
+                             : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
+                    }
                 }
 
-                Section {
-                    Toggle("Virtual Display", isOn: $useVirtualDisplay)
-                } footer: {
-                    Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Vantage connects only over your Tailscale network.")
-                }
-
-                Section {
-                    TextField("Account Name", text: $username)
-                        .textContentType(.username)
-                        #if canImport(UIKit)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .autocorrectionDisabled()
-                    SecureField("Mac Password", text: $password)
-                        .textContentType(.password)
-                        #if canImport(UIKit)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .autocorrectionDisabled()
-                    TextField("Home Network Address (optional)", text: $homeAddress)
-                        #if canImport(UIKit)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.numbersAndPunctuation)
-                        #endif
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Mac Sign-In")
-                } footer: {
-                    Text("Optional, kept in this device's Keychain. The key button types the password and Return. Where macOS blocks typing (password fields, the lock screen), Vantage types it through the Mac's Screen Sharing instead, so turn that on for this account. The home network address, like 192.168.1.20, lets Log In reach the Mac at its login window after a restart, through a Tailscale subnet router.")
+                if !isPC {
+                    macSections
                 }
             }
             .navigationTitle(existing == nil ? "Add Device" : "Edit Device")
@@ -106,6 +87,46 @@ struct AddDeviceSheet: View {
         #if os(macOS)
         .frame(minWidth: 480, idealWidth: 520, minHeight: 520, idealHeight: 640)
         #endif
+    }
+
+    /// What the device runs, as far as Vantage knows (a new device counts as a Mac until its host
+    /// answers).
+    private var platform: HostPlatform { existing?.platform ?? .macOS }
+    private var isPC: Bool { platform == .windows }
+    private var hostNoun: HostNoun { HostNoun(platform) }
+
+    /// Settings only a Mac has: the virtual display and the saved password.
+    @ViewBuilder private var macSections: some View {
+        Section {
+            Toggle("Virtual Display", isOn: $useVirtualDisplay)
+        } footer: {
+            Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Vantage connects only over your Tailscale network.")
+        }
+
+        Section {
+            TextField("Account Name", text: $username)
+                .textContentType(.username)
+                #if canImport(UIKit)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
+            SecureField("Mac Password", text: $password)
+                .textContentType(.password)
+                #if canImport(UIKit)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
+            TextField("Home Network Address (optional)", text: $homeAddress)
+                #if canImport(UIKit)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.numbersAndPunctuation)
+                #endif
+                .autocorrectionDisabled()
+        } header: {
+            Text("Mac Sign-In")
+        } footer: {
+            Text("Optional, kept in this device's Keychain. The key button types the password and Return. Where macOS blocks typing (password fields, the lock screen), Vantage types it through the Mac's Screen Sharing instead, so turn that on for this account. The home network address, like 192.168.1.20, lets Log In reach the Mac at its login window after a restart, through a Tailscale subnet router.")
+        }
     }
 
     private func populate() {
@@ -145,8 +166,10 @@ struct AddDeviceSheet: View {
         } else {
             device = store.add(device)
         }
-        DeviceSecrets.setPassword(password, for: device)
-        if !password.isEmpty { DeviceSecrets.setUsername(username, for: device) }
+        if !isPC { // a PC's section is hidden, so nothing typed here to save or clear
+            DeviceSecrets.setPassword(password, for: device)
+            if !password.isEmpty { DeviceSecrets.setUsername(username, for: device) }
+        }
         dismiss()
     }
 }

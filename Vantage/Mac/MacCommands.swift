@@ -72,7 +72,7 @@ struct MacCommands: Commands {
         let connected = session?.isConnected == true
         let canType = connected && session?.isViewOnly != true
 
-        Toggle("Send Keyboard Shortcuts to Mac", isOn: toggle(\.capturesShortcuts) { $0.toggleShortcutCapture() })
+        Toggle("Send Keyboard Shortcuts to \(hostName)", isOn: toggle(\.capturesShortcuts) { $0.toggleShortcutCapture() })
             .keyboardShortcut("k", modifiers: Self.vantageChord)
             .disabled(session == nil)
         Toggle("View Only", isOn: toggle(\.isViewOnly) { $0.toggleViewOnly() })
@@ -96,9 +96,9 @@ struct MacCommands: Commands {
             .disabled(!canType)
         Button("Type Password") { session?.typePassword() }
             .keyboardShortcut("p", modifiers: Self.vantageChord)
-            .disabled(!canType)
-        Menu("Mac") {
-            ForEach(MacShortcut.sessionMenu) { shortcut in
+            .disabled(!canType || session?.canTypePassword != true)
+        Menu(hostName) {
+            ForEach(session?.shortcuts ?? HostShortcut.sessionMenu) { shortcut in
                 Button(shortcut.label) { session?.sendShortcut(shortcut) }
             }
             .disabled(!canType)
@@ -119,6 +119,9 @@ struct MacCommands: Commands {
             .keyboardShortcut("w", modifiers: Self.vantageChord)
             .disabled(session == nil)
     }
+
+    /// "Mac" or "PC" for the focused session (a Mac when there's none).
+    private var hostName: String { (session?.host ?? .mac).name }
 
     /// A menu checkbox for one of the session's switches.
     private func toggle(_ value: KeyPath<SessionCommands, Bool>, _ flip: @escaping (SessionCommands) -> Void) -> Binding<Bool> {

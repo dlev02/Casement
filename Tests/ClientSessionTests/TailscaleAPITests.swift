@@ -22,7 +22,8 @@ struct TailscaleAPITests {
         #expect(devices[0].displayName == "Studio")
         #expect(devices[0].lastSeenDate == nil)
         #expect(devices[0].isRecentlySeen)
-        #expect(devices[1].platform == .windows && !devices[1].platform.isSupported)
+        #expect(devices[1].platform == .windows && devices[1].platform.isSupported)
+        #expect(!devices[2].platform.isSupported)
         #expect(devices[2].platform == .iOS)
         #expect(devices[2].displayName == "phone")
     }

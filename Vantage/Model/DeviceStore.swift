@@ -91,6 +91,7 @@ final class DeviceStore {
                 SavedDevice(name: "My Mac", host: "studio-mac.example.ts.net", lastConnected: Date().addingTimeInterval(-300), connectionCount: 42),
                 SavedDevice(name: "Office Mac", host: "office-mac.example.ts.net", os: "macOS", lastConnected: Date().addingTimeInterval(-86_400 * 3), connectionCount: 7),
                 SavedDevice(name: "MacBook Air", host: "macbook-air.example.ts.net", lastConnected: nil, connectionCount: 0),
+                SavedDevice(name: "Drew's PC", host: "drew-pc.example.ts.net", os: "Windows", lastConnected: Date().addingTimeInterval(-3_600), connectionCount: 3),
             ])
         }
     }
@@ -162,6 +163,23 @@ final class DeviceStore {
         devices[index].playMacAudio = on
         devices[index].updatedAt = Date()
         save()
+    }
+
+    /// Records what a device's host said it runs (its session, or the list's availability
+    /// check), so a PC is shown and controlled as a PC before the next connection. Stamped like
+    /// any other edit so other devices learn it too; nothing happens while it's unchanged.
+    func recordPlatform(_ platform: HostPlatform, for id: UUID) {
+        let os = platform.savedOS
+        guard let index = devices.firstIndex(where: { $0.id == id }),
+              devices[index].platform != platform, devices[index].os != os else { return }
+        devices[index].os = os
+        devices[index].updatedAt = Date()
+        save()
+    }
+
+    /// `recordPlatform` for every device an availability check heard from.
+    func recordPlatforms(_ platforms: [UUID: HostPlatform]) {
+        for (id, platform) in platforms { recordPlatform(platform, for: id) }
     }
 
     private func load() {

@@ -326,7 +326,7 @@ enum FilesOnlySession {
             case .versionMismatch:
                 throw Failure.incompatible
             case .denied, .badSignature:
-                throw Failure.refused(result.message ?? "The Mac refused the connection.")
+                throw Failure.refused(result.message ?? "\(device.hostNoun.theCapitalized) refused the connection.")
             }
         } catch {
             await channel.close()

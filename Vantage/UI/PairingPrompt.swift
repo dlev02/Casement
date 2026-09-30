@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Prompts for the six-digit pairing code shown on the Mac.
+/// Prompts for the six-digit pairing code shown on the Mac or PC.
 struct PairingPrompt: View {
+    var host = HostNoun.mac
     @State private var code = ""
     @FocusState private var isCodeFocused: Bool
     var errorMessage: String? = nil
@@ -11,7 +12,7 @@ struct PairingPrompt: View {
         VStack(spacing: 16) {
             Image(systemName: "key.horizontal.fill").font(.largeTitle).foregroundStyle(.tint)
             Text("Enter Pairing Code").font(.headline).foregroundStyle(.white)
-            Text("Open Vantage Host on your Mac and choose “Show pairing code.”")
+            Text("Open Vantage Host on your \(host.name) and choose “Show pairing code.”")
                 .font(.caption).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.circle.fill")

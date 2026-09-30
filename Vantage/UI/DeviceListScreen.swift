@@ -49,6 +49,7 @@ struct DeviceListScreen: View {
                 guard scenePhase == .active, selectedDevice == nil, availabilityChecks else { return }
                 await availability.monitor(store.devices)
             }
+            .onChange(of: availability.platforms) { _, platforms in store.recordPlatforms(platforms) }
         }
     }
 
@@ -188,7 +189,7 @@ private struct DeviceActionPresentations: ViewModifier {
             }
             .sheet(item: $actions.transfersDevice) { device in
                 NavigationStack {
-                    TransfersView(files: transfers.link(for: device).files, macName: device.name)
+                    TransfersView(files: transfers.link(for: device).files, macName: device.name, host: device.hostNoun)
                 }
                 #if os(macOS)
                 .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
@@ -208,7 +209,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 Button("Remove Device", role: .destructive) { store.remove(device) }
                 Button("Cancel", role: .cancel) {}
             } message: { device in
-                Text("\(device.host) will be removed from this device list. The Mac itself is not affected, and you can add it again later.")
+                Text("\(device.host) will be removed from this device list. \(device.hostNoun.theCapitalized) itself is not affected, and you can add it again later.")
             }
             .confirmationDialog(
                 actions.deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
@@ -294,7 +295,7 @@ struct DeviceListEmptyState: View {
         ContentUnavailableView {
             Label("No Devices", systemImage: "display")
         } description: {
-            Text("Add your Mac to start a remote session over Tailscale.")
+            Text("Add your Mac or PC to start a remote session over Tailscale.")
         } actions: {
             Button("Add from Tailscale") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
             Button("Add Manually") { actions.showAddDevice = true }.buttonStyle(.glass)

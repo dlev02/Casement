@@ -7,7 +7,7 @@ import Testing
         #expect(ControlStripLayout.standard.items == [
             .control, .option, .command, .shift,
             .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
-            .spotlight, .missionControl, .typePassword,
+            .startMenu, .spotlight, .missionControl, .taskManager, .typePassword,
             .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
         ])
         #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard])
@@ -15,7 +15,8 @@ import Testing
 
     @Test func macStartsWithWhatAKeyboardCantDo() {
         #expect(ControlStripLayout.macStandard.items == [
-            .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard, .dictate,
+            .startMenu, .spotlight, .missionControl, .applicationWindows, .showDesktop, .taskManager, .typePassword,
+            .sendClipboard, .dictate,
         ])
         #expect(!ControlStripLayout.macStandard.contains(.keyboard))
     }
@@ -141,7 +142,7 @@ import Testing
     /// File the same way, once.
     @Test func layoutsSavedAsTheMacAudioStandardPickUpSendFileOnce() throws {
         let defaults = try #require(UserDefaults(suiteName: "ControlStripLayoutTests.\(UUID())"))
-        #expect(ControlStripLayout.standardHistory.count == 3)
+        #expect(ControlStripLayout.standardHistory.count == 4)
         let macAudioStandard = ControlStripLayout.standardHistory[1]
         #expect(macAudioStandard.contains(.macAudio) && !macAudioStandard.contains(.sendFile))
         defaults.set(1, forKey: ControlStripLayout.standardVersionKey)
@@ -150,7 +151,7 @@ import Testing
         // Version 1 had already moved the oldest standard; a layout still equal to it was chosen.
         #expect(perMac == [nil, ControlStripLayout.standardHistory[0]])
         #expect(ControlStripLayout(rawValue: defaults.string(forKey: ControlStripLayout.defaultsKey)!) == .standard)
-        #expect(defaults.integer(forKey: ControlStripLayout.standardVersionKey) == 2)
+        #expect(defaults.integer(forKey: ControlStripLayout.standardVersionKey) == 3)
     }
 
     // MARK: Wrapping
@@ -161,7 +162,7 @@ import Testing
         let items = ControlStripLayout.standard.items
         let rows = ControlStripLayout.rows(items, count: 3) { $0.category }
         #expect(rows.flatMap { $0 } == items)
-        #expect(widths(rows) == [4, 6, 8]) // modifiers | keys | shortcuts + actions
+        #expect(widths(rows) == [10, 5, 5]) // modifiers + keys | shortcuts | actions
         for row in rows.dropFirst() {
             let before = items[items.firstIndex(of: row[0])! - 1]
             #expect(before.category != row[0].category)
@@ -170,7 +171,7 @@ import Testing
 
     @Test func twoRowsAreAsEvenAsTheGroupsAllow() {
         let rows = ControlStripLayout.rows(ControlStripLayout.standard.items, count: 2) { $0.category }
-        #expect(widths(rows) == [10, 8])
+        #expect(widths(rows) == [10, 10])
     }
 
     @Test func oneRowAndTooFewControlsStayTogether() {

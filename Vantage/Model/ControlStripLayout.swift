@@ -1,13 +1,19 @@
 import Foundation
+import VantageCore
 
 /// One control the session strip can show. Everything the editor, storage, and sync need to know
 /// about a control lives here, so a new case only needs its rows below and a button in
 /// `ControlStrip`. The session menu and the collapse button aren't items: they're always there,
 /// always last.
+///
+/// The shortcut controls are slots, not chords: Spotlight is ⌘Space on a Mac and Search (Win S)
+/// on a PC, and so on (`HostShortcut.forItem`), so one saved layout suits both. `label(for:)`,
+/// `symbol(for:)` and `detail(for:)` name a control for the host at hand; the plain `label`,
+/// `symbol` and `detail` describe it for any host (the default layout's editor).
 nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendable {
     case control, option, command, shift
     case escape, tab, leftArrow, upArrow, downArrow, rightArrow
-    case spotlight, missionControl, applicationWindows, showDesktop, typePassword, sendClipboard
+    case startMenu, spotlight, missionControl, applicationWindows, showDesktop, taskManager, typePassword, sendClipboard
     case sendFile, macAudio, dictate, keyboard, disconnect
 
     /// Groups the strip separates with a thin divider, and the editor tints alike.
@@ -17,7 +23,24 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
 
     var id: String { rawValue }
 
-    var label: String {
+    var label: String { label(for: nil) }
+    var symbol: String { symbol(for: nil) }
+    var detail: String { detail(for: nil) }
+
+    /// The control's name on this host; nil describes it for any host.
+    func label(for platform: HostPlatform?) -> String {
+        if platform == .windows {
+            switch self {
+            case .control: return "Ctrl"
+            case .option: return "Alt"
+            case .command: return "Windows Key"
+            default: if let shortcut = HostShortcut.forItem(self, on: .windows) { return shortcut.label }
+            }
+        }
+        return macLabel
+    }
+
+    private var macLabel: String {
         switch self {
         case .control: "Control"
         case .option: "Option"
@@ -29,6 +52,8 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .upArrow: "Up Arrow"
         case .downArrow: "Down Arrow"
         case .rightArrow: "Right Arrow"
+        case .startMenu: "Start"
+        case .taskManager: "Task Manager"
         case .spotlight: "Spotlight"
         case .missionControl: "Mission Control"
         case .applicationWindows: "Application Windows"
@@ -43,7 +68,9 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         }
     }
 
-    var symbol: String {
+    /// The glyph on the strip and in the editor. A PC's Ctrl, Alt and Windows keys show as words
+    /// instead (`keycapText(for:)`).
+    func symbol(for platform: HostPlatform?) -> String {
         switch self {
         case .control: "control"
         case .option: "option"
@@ -55,6 +82,8 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .upArrow: "chevron.up"
         case .downArrow: "chevron.down"
         case .rightArrow: "chevron.right"
+        case .startMenu: HostShortcut.start.symbol
+        case .taskManager: HostShortcut.taskManager.symbol
         case .spotlight: "magnifyingglass"
         case .missionControl: "rectangle.3.group"
         case .applicationWindows: "rectangle.on.rectangle"
@@ -69,8 +98,45 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         }
     }
 
+    /// A PC's modifier keys as keycap words ("ctrl", "alt", "win"), since SF Symbols has no
+    /// glyph for them; nil where the symbol says it.
+    func keycapText(for platform: HostPlatform?) -> String? {
+        guard platform == .windows else { return nil }
+        switch self {
+        case .control: return "ctrl"
+        case .option: return "alt"
+        case .command: return "win"
+        default: return nil
+        }
+    }
+
     /// One line under the name in the editor: the chord it sends, or what it does.
-    var detail: String {
+    func detail(for platform: HostPlatform?) -> String {
+        let host = platform == nil ? "the computer" : HostNoun(platform).the
+        switch (self, platform) {
+        case (.control, .windows?): return "Holds Ctrl for the next key"
+        case (.option, .windows?): return "Holds Alt for the next key"
+        case (.command, .windows?): return "Holds the Windows key for the next key"
+        case (.control, nil): return "Holds ⌃ for the next key (Ctrl on a PC)"
+        case (.option, nil): return "Holds ⌥ for the next key (Alt on a PC)"
+        case (.command, nil): return "Holds ⌘ for the next key (the Windows key on a PC)"
+        case (.startMenu, _): return platform == nil ? "Windows key: opens Start. PCs only" : "Windows key: opens Start"
+        case (.taskManager, _): return platform == nil ? "Ctrl Shift Esc. PCs only" : "Ctrl Shift Esc"
+        case (.spotlight, .windows?), (.missionControl, .windows?), (.applicationWindows, .windows?), (.showDesktop, .windows?):
+            return HostShortcut.forItem(self, on: .windows)?.chord ?? ""
+        case (.spotlight, nil): return "⌘ Space: Spotlight, or whatever you've set there, like Raycast. Search (Win S) on a PC"
+        case (.missionControl, nil): return "⌃ ↑. Task View (Win Tab) on a PC"
+        case (.applicationWindows, nil): return "⌃ ↓. Switch Apps (Alt Tab) on a PC"
+        case (.showDesktop, nil): return "F11. Win D on a PC"
+        case (.typePassword, nil): return "Types the Mac's saved password. Macs only"
+        case (.macAudio, nil): return "Hear the Mac's sound on this iPad. Macs only"
+        case (.sendClipboard, _): return "Sends your clipboard to \(host)"
+        case (.sendFile, _): return "Sends a file from this iPad to \(host)"
+        default: return macDetail
+        }
+    }
+
+    private var macDetail: String {
         switch self {
         case .control: "Holds ⌃ for the next key"
         case .option: "Holds ⌥ for the next key"
@@ -82,6 +148,8 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .upArrow: "↑ key"
         case .downArrow: "↓ key"
         case .rightArrow: "→ key"
+        case .startMenu: "Windows key"
+        case .taskManager: "Ctrl Shift Esc"
         case .spotlight: "⌘ Space: Spotlight, or whatever you've set there, like Raycast"
         case .missionControl: "⌃ ↑"
         case .applicationWindows: "⌃ ↓"
@@ -100,7 +168,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         switch self {
         case .control, .option, .command, .shift: .modifiers
         case .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow: .keys
-        case .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard: .shortcuts
+        case .startMenu, .spotlight, .missionControl, .applicationWindows, .showDesktop, .taskManager, .typePassword, .sendClipboard: .shortcuts
         case .sendFile, .macAudio, .dictate, .keyboard, .disconnect: .actions
         }
     }
@@ -113,6 +181,17 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         #else
         []
         #endif
+    }
+
+    /// `unavailableHere` plus what the host can't use: Start and Task Manager are for a PC, and a
+    /// PC has no Mac Audio or saved-password typing. Nil (the default layout's editor, before
+    /// any host is known) leaves them all in.
+    static func unavailable(on platform: HostPlatform?) -> Set<StripItem> {
+        switch platform {
+        case nil: unavailableHere
+        case .windows?: unavailableHere.union([.macAudio, .typePassword])
+        default: unavailableHere.union([.startMenu, .taskManager])
+        }
     }
 }
 
@@ -139,19 +218,29 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
     static let defaultsKey = "vantage.controlStrip"
 
     /// What the strip shows until someone customizes it.
+    /// Start and Task Manager only show for a PC, Type Password and Mac Audio only for a Mac.
     static let standard = ControlStripLayout(items: [
         .control, .option, .command, .shift,
         .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
-        .spotlight, .missionControl, .typePassword,
+        .startMenu, .spotlight, .missionControl, .taskManager, .typePassword,
         .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
     ])
 
     /// What the strip shows on a Mac until someone customizes it. The Mac has a keyboard (and
     /// the menu bar and ⌃⌥⌘ shortcuts), so it starts with only what a keyboard can't easily do.
     static let macStandard = ControlStripLayout(items: [
-        .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard,
-        .dictate,
+        .startMenu, .spotlight, .missionControl, .applicationWindows, .showDesktop, .taskManager, .typePassword,
+        .sendClipboard, .dictate,
     ])
+
+    /// Every Mac-client standard that has shipped, oldest first; the last is `macStandard`.
+    static let macStandardHistory: [ControlStripLayout] = [
+        ControlStripLayout(items: [
+            .spotlight, .missionControl, .applicationWindows, .showDesktop, .typePassword, .sendClipboard,
+            .dictate,
+        ]),
+        macStandard, // + Start, Task Manager
+    ]
 
     /// The standard layout for the device this runs on.
     static var platformStandard: ControlStripLayout {
@@ -177,7 +266,13 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
             .spotlight, .missionControl, .typePassword,
             .macAudio, .dictate, .keyboard, .disconnect,
         ]),
-        standard, // + Send File
+        ControlStripLayout(items: [ // + Send File
+            .control, .option, .command, .shift,
+            .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,
+            .spotlight, .missionControl, .typePassword,
+            .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
+        ]),
+        standard, // + Start, Task Manager (PCs)
     ]
 
     /// Where `upgradeSavedLayouts` records the standard it last brought layouts up to.
@@ -185,10 +280,13 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
 
     /// A saved layout that is exactly an earlier standard was never really customized: the editor
     /// saves the whole list even on Reset to Default. It moves to the current standard, so new
-    /// controls (Mac Audio, Send File) show up for people who opened the editor. Anything else is kept.
+    /// controls (Mac Audio, Send File) show up for people who opened the editor. The Mac client's
+    /// own standard moves the same way. Anything else is kept.
     func upgraded(fromStandardVersion version: Int) -> ControlStripLayout {
         let earlier = Self.standardHistory.prefix(Self.standardHistory.count - 1).dropFirst(max(0, version))
-        return earlier.contains(self) ? Self.standard : self
+        if earlier.contains(self) { return Self.standard }
+        if Self.macStandardHistory.dropLast().contains(self) { return Self.macStandard }
+        return self
     }
 
     /// Runs once per new standard: brings the default layout in `defaults` forward, and returns
@@ -204,7 +302,8 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
         defaults.set(current, forKey: standardVersionKey)
         return perMac.map { layout in
             guard let layout else { return nil }
-            return layout.upgraded(fromStandardVersion: version) == standard ? nil : layout
+            let upgraded = layout.upgraded(fromStandardVersion: version)
+            return upgraded == standard ? nil : upgraded
         }
     }
 

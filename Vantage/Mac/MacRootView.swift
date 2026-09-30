@@ -60,6 +60,7 @@ struct MacRootView: View {
             guard availabilityKey != "paused" else { return }
             await availability.monitor(store.devices)
         }
+        .onChange(of: availability.platforms) { _, platforms in store.recordPlatforms(platforms) }
         .onChange(of: requireBiometrics) { _, _ in store.refreshSpotlight() }
         #if DEBUG
         .sheet(item: $debugScreen) { screen in
@@ -126,8 +127,8 @@ struct MacRootView: View {
                             files: transfers.files(for: device.id), actions: actions)
                 .id(device.id)
         } else {
-            ContentUnavailableView("Select a Mac", systemImage: "macbook",
-                                   description: Text("Choose a Mac in the sidebar to connect to it, send it files, or change its settings."))
+            ContentUnavailableView("Select a Mac or PC", systemImage: "macbook",
+                                   description: Text("Choose one in the sidebar to connect to it, send it files, or change its settings."))
         }
     }
 
@@ -223,17 +224,27 @@ private struct MacDeviceDetail: View {
                 Text("Connection")
             }
 
-            Section {
-                Toggle("Play Mac Audio", isOn: Binding(get: { device.playMacAudio ?? false },
-                                                      set: { store.setPlayMacAudio($0, for: device.id) }))
-                LabeledContent("Video", value: (device.preferredCodec ?? .hevc) == .hevc ? "HEVC" : "H.264")
-                LabeledContent("Virtual Display", value: device.useVirtualDisplay == true ? "On" : "Off")
-                LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
-                LabeledContent("Mac Sign-In", value: DeviceSecrets.password(for: device) == nil ? "Not Saved" : "Saved")
-            } header: {
-                Text("Session")
-            } footer: {
-                Text("Play Mac Audio brings \(device.name)'s sound to this Mac while you're connected. Change the rest with Edit.")
+            if device.platform == .windows {
+                Section {
+                    LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
+                } header: {
+                    Text("Session")
+                } footer: {
+                    Text("Change these with Edit.")
+                }
+            } else {
+                Section {
+                    Toggle("Play Mac Audio", isOn: Binding(get: { device.playMacAudio ?? false },
+                                                          set: { store.setPlayMacAudio($0, for: device.id) }))
+                    LabeledContent("Video", value: (device.preferredCodec ?? .hevc) == .hevc ? "HEVC" : "H.264")
+                    LabeledContent("Virtual Display", value: device.useVirtualDisplay == true ? "On" : "Off")
+                    LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
+                    LabeledContent("Mac Sign-In", value: DeviceSecrets.password(for: device) == nil ? "Not Saved" : "Saved")
+                } header: {
+                    Text("Session")
+                } footer: {
+                    Text("Play Mac Audio brings \(device.name)'s sound to this Mac while you're connected. Change the rest with Edit.")
+                }
             }
         }
         .formStyle(.grouped)

@@ -13,6 +13,8 @@ import AppKit
 struct TransfersView: View {
     let files: FileTransferController
     let macName: String
+    /// "Mac" or "PC", where the text names the kind of computer.
+    var host = HostNoun.mac
     /// Nil hides Send File… (the debug screen has no session to send over).
     var canSend = true
     @Environment(\.dismiss) private var dismiss
@@ -27,7 +29,7 @@ struct TransfersView: View {
                 ContentUnavailableView {
                     Label("No Transfers Yet", systemImage: "arrow.up.arrow.down")
                 } description: {
-                    Text("Files you send to \(macName) or receive from it show up here. Use Send File, or drop files onto the Mac.")
+                    Text("Files you send to \(macName) or receive from it show up here. Use Send File, or drop files onto \(host.the).")
                 } actions: {
                     if canSend {
                         Button("Send File…") { showImporter = true }

@@ -77,6 +77,11 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// toggle). Optional so devices saved by earlier builds decode; nil means off.
     var playMacAudio: Bool?
 
+    /// What the device runs, from `os` (recorded from the host itself once it has answered).
+    var platform: HostPlatform { HostPlatform(savedOS: os) }
+    /// "Mac" or "PC" for this device.
+    var hostNoun: HostNoun { HostNoun(platform) }
+
     init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil) {
         self.id = id
         self.name = name

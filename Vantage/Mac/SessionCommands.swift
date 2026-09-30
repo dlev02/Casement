@@ -11,6 +11,10 @@ import VantageCore
 /// (`RemoteInteractionNSView`) holds the keyboard focus, which SwiftUI's view focus doesn't see.
 struct SessionCommands {
     let macName: String
+    /// "Mac" or "PC": names the Session menu's host submenu and its items.
+    var host = HostNoun.mac
+    /// The host's shortcuts for that submenu (`HostShortcut.sessionMenu(for:)`).
+    var shortcuts: [HostShortcut] = HostShortcut.sessionMenu
     var isConnected: Bool
 
     /// "Send Keyboard Shortcuts to Mac": ⌘Q, ⌘W and the rest go to the remote Mac.
@@ -28,11 +32,14 @@ struct SessionCommands {
     let sendFile: () -> Void
     let showTransfers: () -> Void
     let sendClipboard: () -> Void
+    /// A PC has no saved password to type.
+    var canTypePassword = true
     let typePassword: () -> Void
 
-    /// Spotlight, Mission Control, App Windows, Show Desktop, App Switcher (`MacShortcut`).
-    let sendShortcut: (MacShortcut) -> Void
-    /// Sleep Display, Lock Mac.
+    /// One of `shortcuts`: Spotlight, Mission Control and the rest on a Mac, Start, Search, Task
+    /// View and the rest on a PC.
+    let sendShortcut: (HostShortcut) -> Void
+    /// Sleep Display, Lock Mac (or PC).
     let hostCommand: (HostCommand) -> Void
     let wake: () -> Void
 

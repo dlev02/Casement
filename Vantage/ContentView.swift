@@ -193,8 +193,12 @@ struct DebugScreenView: View {
         case .transfers: TransfersFixtureScreen()
         case .controlStrip: ControlStripEditor()
         case .controlStripMac: MacControlStripEditor(deviceID: store.devices.first?.id ?? UUID())
+        case .controlStripPC: MacControlStripEditor(deviceID: firstPC?.id ?? UUID())
+        case .editPC: AddDeviceSheet(existing: firstPC)
         }
     }
+
+    private var firstPC: SavedDevice? { store.devices.first { $0.platform == .windows } }
 }
 #endif
 

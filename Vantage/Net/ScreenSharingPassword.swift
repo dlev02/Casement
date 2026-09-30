@@ -17,8 +17,11 @@ enum ScreenSharingPassword {
                                           username: username, password: password)
     }
 
+    /// A Mac with a saved account name and password. A PC has neither Screen Sharing nor a
+    /// saved password.
     static func canLogIn(_ device: SavedDevice) -> Bool {
-        DeviceSecrets.password(for: device) != nil && DeviceSecrets.username(for: device) != nil
+        device.platform != .windows
+            && DeviceSecrets.password(for: device) != nil && DeviceSecrets.username(for: device) != nil
     }
 
     /// Types the password at the Mac's login or lock screen without a Vantage session. Tries the
