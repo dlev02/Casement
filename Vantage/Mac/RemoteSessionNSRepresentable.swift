@@ -13,6 +13,8 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
     var sendsInput: Bool
     var capturesShortcuts: Bool
     var swapsCommandAndControl: Bool
+    /// The modifier of the host's paste chord: ⌘ on a Mac, Ctrl on a PC.
+    var pasteModifier: KeyModifiers = .command
     var stickyModifiers: KeyModifiers
     /// Just before ⌘V goes to the Mac.
     var onPaste: () -> Void
@@ -27,6 +29,7 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
     func updateNSView(_ view: RemoteInteractionNSView, context: Context) {
         view.keyboard.capturesShortcuts = capturesShortcuts
         view.keyboard.swapsCommandAndControl = swapsCommandAndControl
+        view.keyboard.pasteModifier = pasteModifier
         view.keyboard.onPaste = onPaste
         #if DEBUG
         view.keyboard.probe = keyProbe

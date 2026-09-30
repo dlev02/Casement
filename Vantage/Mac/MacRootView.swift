@@ -226,6 +226,7 @@ private struct MacDeviceDetail: View {
 
             if device.platform == .windows {
                 Section {
+                    LabeledContent("⌘ Acts as Ctrl", value: device.keyRemap.swapsCommandAndControl ? "On" : "Off")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                 } header: {
                     Text("Session")

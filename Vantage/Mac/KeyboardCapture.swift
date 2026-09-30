@@ -39,7 +39,7 @@ final class KeyboardCapture {
             updatePresentation()
         }
     }
-    /// "Swap ⌘ and ⌃" (`vantage.mac.swapCommandControl`).
+    /// "Swap ⌘ and ⌃" (`vantage.mac.swapCommandControl`) for a Mac, "⌘ acts as Ctrl" for a PC.
     var swapsCommandAndControl: Bool {
         get { translator.swapsCommandAndControl }
         set {
@@ -48,9 +48,11 @@ final class KeyboardCapture {
             translator.swapsCommandAndControl = newValue
         }
     }
-    /// Called just before ⌘V goes over, so a clipboard copied here since the last sync can go
-    /// first and the paste on the Mac has it.
+    /// Called just before ⌘V goes over (Ctrl+V to a PC), so a clipboard copied here since the
+    /// last sync can go first and the paste there has it.
     var onPaste: (() -> Void)?
+    /// The host's paste chord's modifier, as sent (after any swap): ⌘ on a Mac, Ctrl on a PC.
+    var pasteModifier: KeyModifiers = .command
     /// The keyboard went elsewhere: the view lets go of its mouse buttons too.
     var onLostKeyboard: (() -> Void)?
     #if DEBUG
@@ -143,8 +145,8 @@ final class KeyboardCapture {
             guard KeyCapturePolicy.route(keyCode: event.keyCode, modifiers: pressed, capturesShortcuts: capturesShortcuts) == .forward else {
                 return false
             }
-            if event.keyCode == 0x09, !event.isARepeat, translator.modifiers(fromFlags: flags).contains(.command) {
-                onPaste?() // ⌘V on the remote Mac
+            if event.keyCode == 0x09, !event.isARepeat, translator.modifiers(fromFlags: flags).contains(pasteModifier) {
+                onPaste?() // ⌘V on the remote Mac, Ctrl+V on a PC
             }
             send(translator.translate(.keyDown, keyCode: event.keyCode, flags: flags, isRepeat: event.isARepeat))
             return true

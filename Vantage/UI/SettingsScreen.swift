@@ -240,7 +240,7 @@ struct ControlSettings: View {
         } header: {
             Text("Keyboard")
         } footer: {
-            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Vantage instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, which suits a PC.")
+            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Vantage instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, for a Mac; a PC has its own ⌘ Acts as Ctrl in its settings, on unless you turn it off.")
         }
     }
     #endif
@@ -460,7 +460,7 @@ struct HelpScreen: View {
             FAQEntry("What do I need on the Mac?",
                      "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Can I control a Windows PC?",
-                     "Yes, with Vantage Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, the controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
+                     "Yes, with Vantage Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
             siriEntry,

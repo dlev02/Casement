@@ -10,7 +10,9 @@ final class RemoteInteractionView: UIView {
     private let displayLayer: AVSampleBufferDisplayLayer
     private var hardwareModifiers: KeyModifiers = []
     private var stickyModifiers: KeyModifiers = []
-    private var heldModifiers: KeyModifiers { hardwareModifiers.union(stickyModifiers) }
+    /// The keyboard's modifiers as the host should see them ("⌘ acts as Ctrl" on a PC), plus the
+    /// strip's, which are sent as labelled.
+    private var heldModifiers: KeyModifiers { input.keyRemap.modifiers(hardwareModifiers).union(stickyModifiers) }
 
     /// Runs the action the user assigned to an Apple Pencil squeeze or double-tap.
     var onPencilAction: ((PencilAction) -> Void)?

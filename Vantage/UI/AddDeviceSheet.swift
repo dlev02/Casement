@@ -3,9 +3,9 @@ import VantageCore
 
 /// Adds or edits a device by MagicDNS name or Tailscale IP. No credentials required for v1.
 ///
-/// A PC (known once its host has answered) has none of the Mac-only settings: the codec (its
-/// host sends H.264), the BetterDisplay virtual display, and the saved password, which types
-/// through macOS Screen Sharing.
+/// A PC (known once its host has answered) gets "⌘ Acts as Ctrl" instead of the Mac-only
+/// settings: the codec (its host sends H.264), the BetterDisplay virtual display, and the saved
+/// password, which types through macOS Screen Sharing.
 struct AddDeviceSheet: View {
     @Environment(DeviceStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -20,6 +20,7 @@ struct AddDeviceSheet: View {
     @State private var password = ""
     @State private var username = ""
     @State private var homeAddress = ""
+    @State private var commandSendsControl = true
     /// Kept here and saved with the rest, so Cancel also discards a controls change.
     @State private var controlStrip: ControlStripLayout?
     @State private var validationError: String?
@@ -68,7 +69,17 @@ struct AddDeviceSheet: View {
                     }
                 }
 
-                if !isPC {
+                if isPC {
+                    Section {
+                        Toggle("⌘ Acts as Ctrl", isOn: $commandSendsControl)
+                    } header: {
+                        Text("Keyboard")
+                    } footer: {
+                        Text(commandSendsControl
+                             ? "Your keyboard's ⌘ presses Ctrl on the PC and Control presses the Windows key, so ⌘C, ⌘V and ⌘Z work as they do on a Mac. The Ctrl, Alt and Win buttons in the session controls always send those keys."
+                             : "Keys go to the PC as they are: ⌘ is the Windows key and Control is Ctrl. The Ctrl, Alt and Win buttons in the session controls always send those keys.")
+                    }
+                } else {
                     macSections
                 }
             }
@@ -141,6 +152,7 @@ struct AddDeviceSheet: View {
         username = DeviceSecrets.username(for: existing) ?? ""
         homeAddress = existing.homeAddress ?? ""
         controlStrip = existing.controlStrip
+        commandSendsControl = existing.commandSendsControl ?? true
     }
 
     private func save() {
@@ -161,6 +173,7 @@ struct AddDeviceSheet: View {
         let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         device.homeAddress = home.isEmpty ? nil : home
         device.controlStrip = controlStrip
+        if isPC { device.commandSendsControl = commandSendsControl }
         if existing != nil {
             store.update(device)
         } else {

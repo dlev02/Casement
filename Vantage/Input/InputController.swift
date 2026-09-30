@@ -18,6 +18,9 @@ final class InputController {
     var mode: TouchMode = .trackpad
     var trackpadSensitivity: Double = 1.5
     var naturalScroll = true
+    /// "⌘ acts as Ctrl" for a PC. Applies to the hardware keyboard only: callers pass modifiers
+    /// already remapped (`keyRemap.modifiers`) with the strip's sticky ones added as they are.
+    var keyRemap = KeyRemap.none
 
     /// Point size of the streamed display (set from StreamConfig).
     var displayPointSize: CGSize = CGSize(width: 1210, height: 834)
@@ -77,9 +80,11 @@ final class InputController {
 
     // MARK: Keyboard
 
+    /// A hardware keyboard key. Its key code goes through `keyRemap` (⌘ ↔ ⌃ on a PC);
+    /// `modifiers` are sent as given.
     func key(hidUsage: UInt16, isDown: Bool, modifiers: KeyModifiers, isRepeat: Bool = false) {
         guard let keyCode = HIDKeyMap.virtualKey(forHIDUsage: hidUsage) else { return }
-        send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: isDown, modifiers: modifiers, isRepeat: isRepeat)))
+        send?(.keyEvent(KeyEvent(keyCode: keyRemap.keyCode(keyCode), isDown: isDown, modifiers: modifiers, isRepeat: isRepeat)))
     }
 
     /// A key by macOS virtual key code, the wire's own format (the Mac client's `NSEvent.keyCode`).

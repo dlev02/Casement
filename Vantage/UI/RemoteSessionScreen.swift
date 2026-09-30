@@ -94,6 +94,8 @@ struct RemoteSessionScreen: View {
     private var hostPlatform: HostPlatform { session.hostPlatform ?? savedDevice.platform }
     /// "Mac" or "PC", for everything the session says about the host.
     private var host: HostNoun { HostNoun(hostPlatform) }
+    /// "⌘ acts as Ctrl" for a PC; nothing for a Mac.
+    private var keyRemap: KeyRemap { KeyRemap.forHost(hostPlatform, commandSendsControl: savedDevice.commandSendsControl) }
 
     var body: some View {
         ZStack {
@@ -297,6 +299,7 @@ struct RemoteSessionScreen: View {
             }
         }
         .onChange(of: touchMode) { _, newValue in input.mode = newValue }
+        .onChange(of: keyRemap, initial: true) { _, remap in input.keyRemap = remap }
         .onChange(of: trackpadSensitivity) { _, newValue in input.trackpadSensitivity = newValue }
         .onChange(of: naturalScroll) { _, newValue in input.naturalScroll = newValue }
         .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
@@ -855,18 +858,25 @@ extension RemoteSessionScreen {
     @ViewBuilder var macSessionSurface: some View {
         #if DEBUG
         RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
-                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsCommandAndControl,
+                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
+                                     pasteModifier: host.isWindows ? .control : .command,
                                      stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard,
                                      keyProbe: MacSessionOptions.keyProbe ? keyProbe : nil)
         #else
         RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
-                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsCommandAndControl,
+                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
+                                     pasteModifier: host.isWindows ? .control : .command,
                                      stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard)
         #endif
     }
 
-    /// ⌘V on the Mac: something copied here since the last sync goes over first, so the paste
-    /// on the Mac has it (the host writes it before it posts the key).
+    /// A PC follows its own "⌘ acts as Ctrl" (on unless turned off); a Mac, Settings' "Swap ⌘ and ⌃".
+    private var swapsKeys: Bool {
+        host.isWindows ? keyRemap.swapsCommandAndControl : swapsCommandAndControl
+    }
+
+    /// ⌘V on the Mac (Ctrl+V on a PC): something copied here since the last sync goes over
+    /// first, so the paste there has it (the host writes it before it posts the key).
     private func pasteThroughClipboard() {
         if let payload = ClipboardSync.changedPayload() { session.send(.clipboard(payload)) }
     }

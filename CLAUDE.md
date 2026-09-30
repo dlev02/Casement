@@ -202,8 +202,13 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   session menu; the Mac menu bar dims it), Type Password and saved passwords, Log In with Screen
   Sharing (`ScreenSharingPassword.canLogIn`), home address, virtual display, codec choice; dictation
   on the PC falls back to this device since a PC advertises no `dictationEngines`. Sleep Display
-  and Lock stay. Checked against the Windows synthetic host's input log (`--input-log`): every PC
-  shortcut arrives as the scan codes above.
+  and Lock stay. **⌘ acts as Ctrl** (`SavedDevice.commandSendsControl`, nil = on; Edit sheet toggle
+  for a PC): `KeyRemap` swaps 0x37↔0x3B, 0x36↔0x3E and the ⌘/⌃ bits for keyboard keys only (the
+  iPad's hardware keyboard in `InputController.key(hidUsage:)` + `RemoteInteractionView.heldModifiers`,
+  the Mac client through `KeyTranslator`, where a PC uses its own setting instead of Settings' Swap ⌘
+  and ⌃, and ⌘V paste-through watches for Ctrl+V); strip modifiers and shortcuts never go through it.
+  Test: `KeyRemapTests`. Checked against the Windows synthetic host's input log (`--input-log`):
+  every PC shortcut and remapped ⌘/⌃ key arrives as the scan codes above.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture

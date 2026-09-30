@@ -96,14 +96,7 @@ nonisolated struct KeyTranslator: Sendable {
 
     /// The key code to send for a local modifier key.
     func sentKeyCode(forModifierKey keyCode: UInt16) -> UInt16 {
-        guard swapsCommandAndControl else { return keyCode }
-        switch keyCode {
-        case 0x37: return 0x3B // left ⌘ → left ⌃
-        case 0x36: return 0x3E // right ⌘ → right ⌃
-        case 0x3B: return 0x37
-        case 0x3E: return 0x36
-        default: return keyCode
-        }
+        KeyRemap(swapsCommandAndControl: swapsCommandAndControl).keyCode(keyCode) // ⌘ ↔ ⌃, left and right
     }
 
     // MARK: Modifiers

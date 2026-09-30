@@ -76,13 +76,19 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// Play this Mac's sound on this device when a session starts (the strip's Mac Audio
     /// toggle). Optional so devices saved by earlier builds decode; nil means off.
     var playMacAudio: Bool?
+    /// On a PC, the keyboard's ⌘ presses Ctrl (and Control the Windows key), so ⌘C copies as it
+    /// does on a Mac (`KeyRemap`). Nil means on for a PC; a Mac ignores it. Optional so devices
+    /// saved by earlier builds decode.
+    var commandSendsControl: Bool?
 
     /// What the device runs, from `os` (recorded from the host itself once it has answered).
     var platform: HostPlatform { HostPlatform(savedOS: os) }
     /// "Mac" or "PC" for this device.
     var hostNoun: HostNoun { HostNoun(platform) }
+    /// The keyboard remapping this device's sessions use.
+    var keyRemap: KeyRemap { KeyRemap.forHost(platform, commandSendsControl: commandSendsControl) }
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil, commandSendsControl: Bool? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -97,6 +103,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.homeAddress = homeAddress
         self.controlStrip = controlStrip
         self.playMacAudio = playMacAudio
+        self.commandSendsControl = commandSendsControl
     }
 }
 
