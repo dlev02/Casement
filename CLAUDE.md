@@ -1,4 +1,15 @@
-# Vantage — agent guide
+# Vantage (Porthole) — agent guide
+
+**Naming**: the product is **Porthole** (renamed from Vantage on 2026-09-30). Everything a person
+sees says Porthole / Porthole Host: display names (`INFOPLIST_KEY_CFBundleDisplayName`, the client's
+`CFBundleName` in `Vantage/Info.plist` for the Mac menu bar), permission prompts, UI text, the FAQ,
+the Windows tray app and Start-menu shortcut, and the docs. The code keeps **Vantage**: project,
+targets, schemes, module and type names, bundle IDs (`com.benjaminlevinson.vantage…`), the
+`vantage://` scheme, defaults keys (`vantage.*`), Keychain items, debug flags (`-Vantage…`), log
+subsystems, and on-disk locations (`Application Support/Vantage Host/Models`, `…/Vantage/catalog.json`,
+`%LOCALAPPDATA%\Vantage Host`, the Windows Run value, DPAPI entropy, firewall rule), because
+renaming those would orphan existing installs. New user-facing text says Porthole; this guide
+still says Vantage when it means the code. The GitHub repo is `dlev02/Porthole`.
 
 Vantage is a native Apple remote-desktop app: an iPadOS client controls a macOS host over
 Tailscale only. It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
@@ -41,6 +52,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
   guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
+  Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
+  sends `disconnect` ("This device was removed from the Mac.") and tears down
+  (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does; the client shows "The Mac
+  ended the session." and doesn't reconnect.
   The host names its OS in `Challenge.hostPlatform` and `HostCapabilities.platform` (`HostPlatform`,
   a string wrapper: `macos`, `windows`, unknown values still decode; nil from older hosts means a
   Mac). The client keeps it as `ClientSession.hostPlatform` (from the challenge, then the
@@ -616,13 +631,30 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `com.benjaminlevinson.vantage` out of video capture for a loopback peer. Test:
   `InjectedEventMarkerTests`.
 - **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
-  Security, About, each a grouped form in its own `NavigationStack`; the last tab is remembered
+  Security (`hand.raised`), each a grouped form in its own `NavigationStack`; the last tab is remembered
   (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Controls on the Mac:
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
   off; `MacKeyboardSettings` has the keys), Dictation, Session Controls; no touch, trackpad,
   on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
   iCloud sync until the Mac is signed for it. Add Device hides Natural Scrolling (the Mac's own
   mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
+  About isn't a tab: Vantage › About Vantage (`CommandGroup(replacing: .appInfo)`) opens
+  `Window("About Vantage")` (`MacAboutWindow`) showing `AboutScreen`.
+- **Mac look** (HIG pass, 2026-09-30): words that name a gesture use `LocalDevice.tap` ("click" on
+  the Mac) and `LocalDevice.this`; "this Mac" always means the local machine, so the remote one is
+  named (`device.name`, `HostNoun`). Buttons sitting on a glass card (dictation panel, screen
+  note, pairing prompt, connection overlay) use `.onCard`/`.onCardProminent` (`PlatformGlass.swift`:
+  bordered on the Mac and visionOS, glass on iOS), never glass on glass. On the Mac the strip's
+  buttons are 36 pt with a hover highlight and plain (not interactive) glass; every strip button
+  has a `.help` tag. The detail pane has one large prominent button (Connect); the sidebar's
+  Tailscale banner is a flat fill, not glass. View has one full-screen item: `VantageApp.init`
+  registers `NSFullScreenMenuItemEverywhere = false` (the app delegate is too late) and ours reads
+  Enter/Exit Full Screen from `SessionWindowShape.isFullScreen`. ⌫ in the sidebar removes the
+  selected Mac (`.onDeleteCommand`, same confirmation as the menu's Remove).
+  Accessibility on every platform: the remote picture is one element, "Screen of ⟨name⟩"
+  (`.allowsDirectInteraction` on iOS so VoiceOver users' touches reach the host; a group on the
+  Mac); banners (host status, Mac audio, password sent, reconnecting, pairing errors) are combined
+  and announced; content behind the Mac's lock curtain is hidden from VoiceOver.
 - **App lock**: `AppLock.shared` locks on `com.apple.screenIsLocked`, display sleep, system sleep,
   and a fast-user switch away, and asks again when `com.apple.screenIsUnlocked` arrives with Vantage
   in front or when it next becomes active. `appLockCurtain()` lays `LockOverlay` over every Mac
@@ -674,7 +706,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Shared container**: every checkout's Debug build has the same bundle id, so they share one
   sandbox container (saved Macs, defaults, window state). Test with argument-domain overrides
   (`-vantage.savedDevices '<hex of the JSON array>'`, `-vantage.availabilityChecks NO`,
-  `-ApplePersistenceIgnoreState YES`) rather than editing it, and quit a build with
+  `-ApplePersistenceIgnoreState YES`, and `-VantageReadOnlyDevices 1` so a session's bookkeeping
+  never saves the overridden list over the real one) rather than editing it, and quit a build with
   `pkill -f <its path>`: `tell application id … to quit` can quit another checkout's copy.
 - **UI tests** (`Tests/VantageMacUITests`, target and shared scheme `VantageMacUITests`, which
   also builds `VantageHost`): `MacShellUITests` (connect opens a window of its own, the Session
@@ -692,6 +725,35 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   covers the device list, so a test checks the list's state before connecting rather than trying
   to bring the list back. Needs Automation Mode, approved once by an admin (`automationmodetool
   enable-automationmode-without-authentication`); `scripts/check.sh` only builds them.
+
+## Distribution, policies, and the public repo
+
+- **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
+  also let Drew ship their work through app stores, which is what keeps the App Store build
+  possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
+  CC BY 4.0, NSec/Vortice MIT); check any new one.
+- **Docs**: `README.md` (users first: features, platforms, first connection, building),
+  `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
+  `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
+  user's own hosts, Screen Sharing on 5900, `api.tailscale.com`, Hugging Face for Parakeet): a new
+  destination or a new stored secret means updating `PRIVACY.md` and the FAQ's Privacy answers.
+- **Nothing personal in tracked files**: never commit a real tailnet name, Tailscale IP, node or
+  user ID, SSH user, or email, even in research notes or test fixtures. Use `tail1234.ts.net`,
+  `100.64.0.x` / `fd7a:115c:a1e0::x`, and `you@your-pc`; scripts take such targets from the
+  environment (`PC=… WindowsHost/scripts/push.sh`). Older commits still carry some; the repo's
+  history needs a rewrite before it goes public.
+- **In the app**: About links Source Code, Privacy Policy, and Report a Problem (`AppInfo`
+  `githubURL`/`privacyURL`/`supportURL`, GitHub URLs; they work once the repo is public). The
+  Ko-fi donation link lives only on GitHub: App Review guideline 3.1.1 rejects in-app links that
+  take money outside in-app purchase, so never add it to the app.
+- **App Store readiness**: `Vantage/PrivacyInfo.xcprivacy` declares UserDefaults (CA92.1), file
+  timestamps (C617.1, 3B52.1: `FileTransferEngine`'s partials and user-picked files), disk space
+  (E174.1: the free-space check before a receive), and system boot time (35F9.1: uptime clocks for
+  latency); the widget's declares UserDefaults. Add a category whenever code starts using another
+  required-reason API. `ITSAppUsesNonExemptEncryption = NO` (both Vantage configs): all crypto is
+  Apple's (CryptoKit, CommonCrypto for the ARD login) and used for authentication and integrity.
+  Vantage Host can't be on the Mac App Store (unsandboxed, CGEvent injection); it ships as a
+  notarized Developer ID download.
 
 ## Build & test
 
@@ -745,6 +807,11 @@ xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0
 
 `--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the
 whole encode → transport → decode → display path runs without Screen Recording access.
+`--synthetic-image <png>` (DEBUG) streams that picture instead, and the pretend display takes the
+picture's size at 2x (a 2752 × 2064 picture fills a 13" iPad in landscape). The README screenshots
+use it with the made-up desktops in `docs/images/source/` (HTML, rendered with headless Chrome:
+`"Google Chrome" --headless=new --force-device-scale-factor=2 --window-size=1376,1032
+--screenshot=out.png file://…/mac-desktop.html`); never screenshot a real desktop for the README.
 
 To test against the **real** host (display capture + CGEvent input) from the simulator, launch the
 Debug host with `--pairing-code 246810` and no `--synthetic-capture`, then auto-connect the

@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in Porthole or Porthole Host isn't working right.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Controlling from
+      multiple: true
+      options: [iPad, iPhone, Mac, Apple Vision Pro]
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Controlling
+      multiple: true
+      options: [Mac, Windows PC]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Porthole (Settings › About), Porthole Host, and the operating systems on both devices.
+      placeholder: "Porthole 1.0 (12), Porthole Host 1.0, iPadOS 26.1, macOS 26.1"
+  - type: dropdown
+    id: tailscale
+    attributes:
+      label: Does Tailscale show both devices as connected?
+      options: ["Yes", "No", "Not sure"]
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots or screen recordings help a lot. Please blur anything private on your screen.

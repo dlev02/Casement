@@ -1,6 +1,6 @@
-# Vantage Host for Windows
+# Porthole Host for Windows
 
-A Windows host for the Vantage iPad/iPhone/Vision Pro client: the same wire protocol as the Mac
+A Windows host for the Porthole iPad/iPhone/Vision Pro client: the same wire protocol as the Mac
 host (`VantageHost/`), written in C# on .NET 10 LTS. The byte-level contract is
 `docs/research/windows-host-protocol.md`; when it and the Swift code disagree, the Swift code in
 `Packages/VantageCore` and `VantageHost` wins.
@@ -168,6 +168,6 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\publ
 publishes `VantageHost.exe` self-contained into `%LOCALAPPDATA%\Programs\Vantage Host\` with a
 Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed code). Left-click
 the tray icon for the window (General shows the tailnet address and Show Pairing Code), right-click
-for the menu; turn on "Start Vantage Host when I sign in" there. Closing the window keeps it in the
+for the menu; turn on "Start Porthole Host when I sign in" there. Closing the window keeps it in the
 tray; Quit is in the tray menu and on the About page. Drew's iPad then pairs with
 `<pc-address>:47820`.

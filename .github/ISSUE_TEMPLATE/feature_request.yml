@@ -1,0 +1,11 @@
+name: Feature request
+description: An idea that would make Porthole better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Porthole to do?
+      description: Describe the situation you're in and what would help. It's fine to name an app that does it well.
+    validations:
+      required: true

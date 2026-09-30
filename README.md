@@ -1,124 +1,207 @@
-# Vantage
+<p align="center">
+  <img src="brand/vantage-mac-master.png" width="128" alt="Porthole app icon">
+</p>
 
-A native remote desktop for controlling your Mac from an iPad or iPhone over Tailscale.
+<h1 align="center">Porthole</h1>
 
-**Private development preview.** The macOS host and iPadOS/iOS client are implemented. Windows hosting is not implemented. This is source code for local builds, not a signed installer or an App Store release. Basic real-Mac video, pointer control, and software-keyboard typing are user-verified on a physical iPad; see the [verification report](docs/testing/2026-09-22.md) for remaining checks.
+<p align="center">
+  <b>A free, private remote desktop for your Mac and PC.</b><br>
+  Control them from an iPad, iPhone, Mac, or Apple Vision Pro, over your own Tailscale network.<br>
+  No account, no relay server, no tracking.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/iOS%20%7C%20iPadOS%20%7C%20macOS%20%7C%20visionOS-26%2B-black" alt="iOS, iPadOS, macOS, visionOS 26 or later">
+  <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-black" alt="Hosts: macOS and Windows">
+  <a href="https://ko-fi.com/dlev384895"><img src="https://img.shields.io/badge/Ko--fi-support%20Porthole-FF5E5B?logo=ko-fi&logoColor=white" alt="Support Porthole on Ko-fi"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/ipad-session.png" width="820" alt="Porthole on iPad controlling a Mac, with the control strip in the corner">
+</p>
+
+<table>
+  <tr>
+    <td width="22%" valign="top"><img src="docs/images/iphone-devices.png" alt="Porthole on iPhone listing Macs and a PC"></td>
+    <td width="39%" valign="top"><img src="docs/images/mac-client.png" alt="Porthole for Mac with its sidebar of computers"></td>
+    <td width="39%" valign="top"><img src="docs/images/mac-pc-session.png" alt="Porthole for Mac controlling a Windows PC, with Start and Task Manager in the control strip"></td>
+  </tr>
+  <tr>
+    <td align="center">iPhone</td>
+    <td align="center">Mac</td>
+    <td align="center">A Mac controlling a PC</td>
+  </tr>
+</table>
+
+<sub>Screenshots show made-up desktops streamed from a test host.</sub>
+
+## Getting Porthole
+
+Porthole is in **beta**. For now you build it yourself from this repository (see [Building from source](#building-from-source)).
+
+On the way:
+
+- **The App Store.** Porthole for iPhone, iPad, Mac, and Apple Vision Pro, free.
+- **Signed downloads of Porthole Host** for Mac (notarized by Apple) and Windows, from this page's Releases, so it installs without warnings or a build step.
+
+Porthole will stay free, with no ads, subscriptions, or in-app purchases. Publishing does cost money: Apple's developer program is $99 a year, and signing the Windows host costs extra. If Porthole is useful to you, [a coffee on Ko-fi](https://ko-fi.com/dlev384895) helps keep it on the store.
 
 ## What it does
 
-- Streams a Mac display using ScreenCaptureKit and hardware HEVC or H.264 encoding.
-- Supports touch, trackpad-style gestures, hardware keyboards, and an on-screen command strip that adapts to iPad and iPhone widths.
-- Collapses the session toolbar to a compact keyboard control; drag it between all four corners, with your position remembered.
-- Offers Automatic, Light, and Dark appearance in organized settings.
-- Checks saved hosts for authenticated availability and required Mac permissions without capturing desktop previews.
-- Pairs a client using a six-digit code, then remembers its device identity.
-- Shares text, rich text, and PNG clipboard content. Sending the iPad clipboard is an explicit action.
-- Reconnects after a dropped connection and immediately when returning to an open session from another app.
-- Offers start-at-login on the Mac and an optional device-authentication lock on the client.
-- Uses coordinated Vantage icons on Mac, iPad, and iPhone, with a Windows `.ico` ready for future packaging.
-- Can request a virtual display through BetterDisplay's CLI, with a main-display fallback. This integration still needs a live test.
+**See your screen, sharp and fast.** Hardware HEVC or H.264 encoding with low-latency settings, colour-accurate from end to end. Bitrate and frame rate adapt to your connection; text stays crisp and motion stays smooth. Optionally, a Mac can make a virtual display shaped like your iPad (with [BetterDisplay](https://github.com/waydabber/BetterDisplay)).
 
-## Requirements
+**Control it naturally.**
+- *iPad and iPhone:* Trackpad or Direct Touch, two- and three-finger clicks, scrolling with momentum, Apple Pencil, and a hardware keyboard, mouse, or trackpad. Move the pointer into a screen edge or corner and the Mac's Dock, menu bar, and hot corners respond.
+- *Mac:* each computer opens in its own window. Your keyboard shortcuts go through, and full screen really is full screen.
+- *Apple Vision Pro:* look and pinch, in windows that keep the computer's shape.
+- A **control strip** you can customize per computer, with Mission Control, Spotlight, Show Desktop, and the modifier keys (or Start, Task View, and Task Manager on a PC). Drag it to any corner or collapse it.
 
-| Component | Requirement |
-| --- | --- |
-| Mac host | macOS 26 or later, an unlocked logged-in session |
-| Client | iPadOS 26 or iOS 26 or later |
-| Network | Tailscale connected on both devices in the same tailnet, with access to TCP port 47820 |
-| Build tools | Regular Xcode 27; verified with build 27A266a |
-| Signing | Your own development team for physical-device installation |
-| Optional | BetterDisplay and its CLI for viewport-sized virtual displays |
+**Move files both ways.** Drop files onto the screen, send them from another app, or send them from the device list without opening the screen at all. Big transfers resume where they stopped after a dropped connection and keep going after you disconnect.
 
-Vantage uses its own protocol. It does not connect to Windows RDP, VNC, or Apple's built-in Screen Sharing service.
+**Hear your Mac.** Stream the Mac's sound to your device with low latency (Opus).
 
-## Build
+**Dictate.** Speak and Porthole types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
 
-Open `Vantage.xcodeproj` in **regular Xcode**. Select your development team for both targets if needed; preserve bundle identifiers for an existing installation.
+**Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device; your device's clipboard is sent only when you ask.
 
-Or build from the repository root:
+**Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Porthole Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
 
-```sh
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcodebuild build -project Vantage.xcodeproj -scheme VantageHost \
-  -destination 'platform=macOS' -derivedDataPath .deriveddata
-xcodebuild build -project Vantage.xcodeproj -scheme Vantage \
-  -destination 'generic/platform=iOS Simulator' -derivedDataPath .deriveddata
-```
+**Fit right in.** Siri and Shortcuts ("Connect to Studio in Porthole"), Spotlight, Home Screen widgets, a Control Center control, Face ID or Touch ID app lock, and iCloud Keychain sync for saved passwords.
 
-The products are `.deriveddata/Build/Products/Debug/VantageHost.app` and `.deriveddata/Build/Products/Debug-iphonesimulator/Vantage.app`. To install on an actual iPad or iPhone, select that device as the `Vantage` scheme's run destination in Xcode and build/run with your signing team.
+**Keep it private.** Everything travels directly between your devices inside Tailscale's encrypted tunnel. Each device has its own key and pairs once with a six-digit code. See the [privacy policy](PRIVACY.md).
+
+## Platforms
+
+| | Requirement | Notes |
+| --- | --- | --- |
+| **Porthole** for iPad and iPhone | iPadOS or iOS 26 | Universal app with widgets and Siri |
+| **Porthole** for Mac | macOS 26 | Native, sandboxed, one window per computer |
+| **Porthole** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
+| **Porthole Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
+| **Porthole Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Mac audio, Type Password, and the virtual display are Mac-only |
+
+Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Porthole Host listens on TCP port 47820, and only to Tailscale addresses. Porthole has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
 
 ## First connection
 
-1. Connect Tailscale on the Mac and iPad/iPhone. Complete any pending Tailscale sign-in on the client.
-2. Launch **Vantage Host** on the Mac. It lives in the menu bar, rather than opening a normal window.
-3. Use its **Grant Screen Recording** and **Grant Accessibility (input)** buttons. Approve Vantage Host in **System Settings → Privacy & Security → Screen & System Audio Recording / Accessibility**. Reopen the same host build after approving if macOS requests it.
-4. In the client, tap **+**. **Add from Tailscale…** signs in with a read-only key from the Tailscale admin console (API access token or OAuth client with the `devices:core:read` scope) and lists your tailnet's Macs with a live check for Vantage Host; Windows, Linux, and mobile devices are shown but can't be added yet. **Add Manually…** takes the Mac's Tailscale IP or MagicDNS name, a display name, and port **47820**; pasted `host:port` addresses are accepted. Then tap the Mac's card or row to connect.
-5. Select the device. In the Mac menu, choose **Show pairing code**, then enter that code in the client and tap **Pair**. A code is consumed once; generate another for each new device.
-6. In a session, use **Session Options** for touch mode, **Send Clipboard to Mac**, or **Disconnect**. The keyboard button opens or closes software input; its **Done** button dismisses it.
+1. **Install Tailscale** on the computer and on your iPad, iPhone, Mac, or Vision Pro, and sign in to the same tailnet on both.
+2. **Start Porthole Host** on the computer.
+   - *Mac:* it lives in the menu bar. Use its **Grant Screen Recording** and **Grant Accessibility** buttons, approve Porthole Host in System Settings › Privacy & Security, and reopen it if macOS asks.
+   - *Windows:* it lives in the notification area. See [`WindowsHost/README.md`](WindowsHost/README.md).
+3. **Add the computer** in Porthole with **+**.
+   - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Porthole Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
+   - **Add Manually…** takes the computer's Tailscale IP address or MagicDNS name.
+4. **Pair.** Choose **Show pairing code** in Porthole Host and type the six digits into Porthole. A code lasts 10 minutes and works once. After that, the device connects straight away.
 
-Drag either the expanded toolbar or its compact control to move it to a top or bottom corner. Tap the chevron to collapse or expand. Settings separates Appearance, Controls, Connection, and Privacy & Security. An **Available** host has answered an authenticated probe and reports both Mac permissions granted; older hosts show **Host online** until updated. Checks run only while the device list is visible.
-
-Optional: enable **Start Vantage Host at login** in the host's **Settings → Reboot** tab. The Mac must still finish login after a restart.
+The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation, locked Macs, and restarts in more detail.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Cannot connect / reconnecting | Tailscale is connected on both devices, the host is running, the address and port are correct, and tailnet policy permits the connection. Close remains available while retrying. |
-| Pairing prompt returns | Generate a fresh code on the Mac. Verify all six digits; codes are single use. |
-| Screen Recording error | Approve the host on the Mac, reopen it, and choose Retry on the client. |
-| Video works but input does not | Approve Accessibility for the exact host build. Check whether the Mac is locked or a secure field is focused. |
-| Mac rebooted and is unreachable | Log in locally. Vantage cannot unlock FileVault at pre-boot or type at the login window. |
-| Virtual screen not created | Confirm BetterDisplay's CLI is available. Vantage falls back to the main display. |
-| Simulator cannot reach the Tailscale address | Use the loopback synthetic check below. Simulator behavior does not establish physical tailnet connectivity. |
+| Can't connect, or keeps reconnecting | Tailscale is connected on both devices, Porthole Host is running, and your tailnet's access rules allow TCP port 47820. |
+| The pairing code is rejected | Show a fresh code on the computer. Codes expire after 10 minutes and after 5 wrong tries. |
+| "Grant Screen Recording" | Approve Porthole Host in System Settings › Privacy & Security › Screen & System Audio Recording, reopen it, then choose Retry. |
+| Video works but clicks and typing don't | Approve Accessibility for Porthole Host. If only typing fails, the Mac is locked or a password field has focus: use Type Password. |
+| "Waiting for the Mac's screen…" | The display is asleep or reconfiguring. Choose Wake, or wait: Porthole keeps trying. |
+| The computer restarted and is unreachable | Tailscale starts only after someone logs in. See "Restarts & Locked Macs" in the in-app FAQ for Restart Safely, subnet routers, and Log In with Screen Sharing. |
+| Virtual display isn't created | It needs BetterDisplay and its command-line tool. Without them, Porthole streams the main display. |
 
-## Development checks
+## Building from source
+
+You need a Mac with **Xcode 27** (the regular release, not a beta) and, to run on a device, your own Apple development team.
+
+1. Open `Vantage.xcodeproj`. For each target, choose your team under Signing & Capabilities. If you're installing on your own devices, also change the bundle identifiers (`com.benjaminlevinson.vantage…`) to your own.
+2. Run the **VantageHost** scheme on the Mac you want to control.
+3. Run the **Vantage** scheme on your iPad, iPhone, Mac, or Vision Pro.
+
+From the command line:
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcrun swift test --package-path Packages/VantageCore
-xcrun swift test
+xcodebuild build -project Vantage.xcodeproj -scheme VantageHost -destination 'platform=macOS' -derivedDataPath .deriveddata
+xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generic/platform=iOS Simulator' -derivedDataPath .deriveddata
+xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platform=macOS' -derivedDataPath .deriveddata
 ```
 
-The first suite checks wire encoding, identities, geometry, and real loopback transport. The root package compiles actual client source and tests pairing, bad-code retry, reconnect and foreground recovery, canceled handshakes, authenticated availability probes, address parsing, and toolbar docking. It also stress-tests four concurrent synthetic renderers.
+The Windows host is C# on .NET 10. It builds and tests on a Mac, while the tray app itself builds on Windows. See [`WindowsHost/README.md`](WindowsHost/README.md).
 
-For a permission-free video check, build both debug targets, start a simulator, and substitute its ID for `SIMULATOR_ID`:
+### Tests
 
 ```sh
-open -n .deriveddata/Build/Products/Debug/VantageHost.app \
-  --args --synthetic-capture --port 47821 --pairing-code 246810
-xcrun simctl install SIMULATOR_ID .deriveddata/Build/Products/Debug-iphonesimulator/Vantage.app
-xcrun simctl launch SIMULATOR_ID com.benjaminlevinson.vantage \
-  -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
+scripts/check.sh    # both Swift test suites, the host, and the iOS and macOS clients
 ```
 
-The debug-only port override keeps the test host separate from the normal host on port 47820. Synthetic mode renders a moving test pattern and does not capture the desktop, inject input, apply host commands, or read/write the real clipboard. Its paired-device records are separate from normal host records. The fixed code and synthetic launch arguments are debug-only. **Quit the test host after testing. Use the normal host on port 47820 for your real desktop.**
+Or run the pieces: `xcrun swift test --package-path Packages/VantageCore` (protocol, identity, transport, file transfer), `xcrun swift test` (the real client session code against a loopback host), and `cd WindowsHost && dotnet test --solution Vantage.Windows.slnx`. Golden wire vectors keep the Swift and C# sides byte-compatible.
 
-With that synthetic host running, native UI tests cover availability, appearance selection, toolbar collapse/expansion and dragging, and returning from the Home Screen:
+To try the whole video path without granting any permissions, start a synthetic host (debug builds only). It streams a test pattern and never touches your real screen, input, or clipboard:
 
 ```sh
-xcodebuild test -project Vantage.xcodeproj -scheme VantageUITests \
-  -destination 'platform=iOS Simulator,id=SIMULATOR_ID' \
-  -derivedDataPath .deriveddata -parallel-testing-enabled NO
+open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture --port 47821 --pairing-code 246810
+xcrun simctl launch booted com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
-## Architecture and boundaries
+Quit the synthetic host afterwards, and leave port 47820 to the real host.
+
+## How it works
 
 ```text
-Mac: ScreenCaptureKit → VideoToolbox → VantageCore framed TCP
-                                           ↕ Tailscale
-Client: AVSampleBufferDisplayLayer ← VantageCore
-          touch / keyboard / clipboard → Mac
+Mac host:      ScreenCaptureKit ─→ VideoToolbox (HEVC/H.264) ─┐
+Windows host:  Graphics Capture ─→ Media Foundation (H.264) ──┤
+                                                              │  one framed TCP stream per session,
+                                                              │  plus a second one for files,
+                                                              ▼  inside Tailscale's WireGuard tunnel
+Client:        AVSampleBufferDisplayLayer ←── VantageCore ←───┘
+               touch, pointer, keyboard, clipboard, mic ──→ CGEvent / SendInput on the host
 ```
 
-- `VantageHost/`: menu-bar app, screen capture, encoder, input injection, permissions, and host lifecycle.
-- `Vantage/`: SwiftUI client, saved devices, connection lifecycle, rendering, and input.
-- `Packages/VantageCore/`: protocol, Ed25519 identity, network transport, and core tests.
-- `Tests/ClientSessionTests/`: actual-client loopback regression tests.
-- [Icon sources](brand/README.md): approved artwork and cross-platform exports.
-- [Research](docs/research/README.md): engineering notes and source references.
-- [Agent guide](CLAUDE.md): repository conventions and implementation notes.
+| Path | What's there |
+| --- | --- |
+| [`Vantage/`](Vantage) | The client for iPhone, iPad, Mac, and Vision Pro (SwiftUI, plus AppKit and UIKit for input) |
+| [`VantageHost/`](VantageHost) | The Mac host: capture, encoding, input, audio, dictation, files, and the menu-bar app |
+| [`Packages/VantageCore/`](Packages/VantageCore) | Shared Swift package: wire protocol, transport, identity, file transfer |
+| [`WindowsHost/`](WindowsHost) | The Windows host in C#, with a synthetic host for testing from a Mac |
+| [`VantageWidgets/`](VantageWidgets), [`Shared/`](Shared) | Widgets and the code they share with the app |
+| [`docs/research/`](docs/research/README.md) | Engineering notes behind the harder decisions, with sources |
+| [`CLAUDE.md`](CLAUDE.md) | The engineering guide: architecture, conventions, debug flags, and gotchas |
 
-Encryption is supplied by Tailscale's tunnel; Vantage's TCP stream does not add TLS. The host accepts tailnet addresses and local loopback, then requires device authentication/pairing. Use it only on a trusted tailnet. This preview has not had a comprehensive security audit; host identity pinning and expiring/rate-limited pairing should be reviewed before broader distribution.
+## Privacy and security
 
-Known limits: no Windows host, file transfer, remote audio, login-window control, or FileVault pre-boot access. Physical keyboard/trackpad behavior, clipboard, BetterDisplay provisioning, sleep/wake, and launch-at-login still need device testing. Distribution packaging is unfinished.
+Porthole collects nothing. There are no Porthole servers, and the developer never sees your screen, files, or keys. Porthole relies on Tailscale for encryption and adds per-device Ed25519 keys and pairing on top. Porthole Host refuses anything outside Tailscale's address ranges. It hasn't had an independent security audit.
+
+- [Privacy Policy](PRIVACY.md)
+- [Terms of Use](TERMS.md)
+- [Security policy and reporting](SECURITY.md)
+
+## Limits
+
+- The computer has to be on, awake enough to reach, and logged in. Tailscale can't wake a sleeping Mac, and nothing can get past FileVault's pre-boot screen remotely (Restart Safely avoids it for planned restarts).
+- There's no curtain mode: someone at the computer sees what you're doing.
+- Windows hosts don't stream sound, type saved passwords, or make virtual displays yet.
+- Porthole streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
+
+## Support Porthole
+
+Porthole is a personal project, built to be the remote desktop I wanted. If it's useful to you, you can [buy me a coffee on Ko-fi](https://ko-fi.com/dlev384895). It helps cover the App Store and code-signing fees. Stars, bug reports, and ideas help too.
+
+## Why "Porthole"?
+
+A porthole is the little round window in the side of a ship: you look through it at somewhere you
+aren't, and it's sturdy enough to keep the sea out. That's the whole app, really. It's a small
+window onto a computer that's somewhere else, it only opens onto your own private network, and
+nothing leaks in from outside.
+
+The project started life as **Vantage** (a good spot to see from). That name still lives on in the
+code (the Xcode project, targets, bundle identifiers, and the `VantageCore` package), which keeps
+existing installs, pairings, and saved settings working. Everything you see in the apps says Porthole.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Porthole is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
+
+It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT). Porthole isn't affiliated with Apple, Microsoft, or Tailscale.

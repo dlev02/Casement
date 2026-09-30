@@ -13,6 +13,7 @@ for API specifics; each flags uncertainty explicitly and lists sources.
 | `secure-input-and-reboot.md` | How Screens types passwords, keys-only RFB/ARD client, reboot survival with FileVault, restart interception | Screens is a VNC client to `screensharingd` (privileged, exempt from Secure Input); ARD type 30 still works on 27; client connects straight to `:5900` over Tailscale; `fdesetup authrestart` supported here; pre-boot needs SSH unlock via a subnet router |
 | `audio-dictation-files.md` | Mac→iPad audio, iPad mic→Mac dictation, file transfer | MacWhisper's bundled `mw transcribe` CLI gives ~1–2 s MacWhisper-quality transcripts; on-iPad `SpeechTranscriber` for a no-Mac-change path; Opus works both sides; Taildrop has no iOS API but `tailscale file cp` works from the Mac |
 | `product-and-host-lifecycle.md` | Screens 5 / Jump feature inventory, host lifecycle, power, locking | Feature checklist mirrored from Screens 5 strings; `SACLockScreenImmediate` still resolves; curtain-mode-by-CGEvent is impossible (Secure Input); prevent display sleep on AC; Tailscale can't wake a sleeping Mac |
+| `windows-host-protocol.md` | The wire protocol written down for the Windows host | Byte-level spec of framing, messages, auth, and files; the Swift code wins where they differ, and golden vectors hold both sides to it |
 
 The `media-pipeline.md` and `input.md` reports were partially completed when a session limit
 interrupted their agents; the sections present are fully verified. Gaps (a couple of encode/latency
