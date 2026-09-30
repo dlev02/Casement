@@ -94,6 +94,7 @@ struct TransferCapsule: View {
     @State private var dismissTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .subheadline) private var ringSide: CGFloat = 30
 
     var body: some View {
@@ -138,13 +139,13 @@ struct TransferCapsule: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(done ? Self.doneTitle(summary, macName: macName) : TransferSummaryFormat.title(summary))
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .truncationMode(.middle)
                     Text(done ? Self.doneDetail(summary, macName: macName) : TransferSummaryFormat.detail(summary))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .contentTransition(reduceMotion ? .identity : .numericText())
                 }
                 .frame(minWidth: 120, alignment: .leading)
@@ -226,6 +227,9 @@ struct DeviceTransferBadge: View {
                     .contentTransition(.numericText())
             }
             .padding(.vertical, 2)
+            #if os(iOS)
+            .frame(minHeight: 44) // a finger-sized target, though the line is small
+            #endif
             .contentShape(.rect)
         }
         .buttonStyle(.borderless)

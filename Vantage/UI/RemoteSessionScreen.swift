@@ -94,6 +94,8 @@ struct RemoteSessionScreen: View {
     private var hostPlatform: HostPlatform { session.hostPlatform ?? savedDevice.platform }
     /// "Mac" or "PC", for everything the session says about the host.
     private var host: HostNoun { HostNoun(hostPlatform) }
+    /// What VoiceOver calls the picture of the host's screen.
+    private var screenLabel: String { "Screen of \(device.name)" }
     /// "⌘ acts as Ctrl" for a PC; nothing for a Mac.
     private var keyRemap: KeyRemap { KeyRemap.forHost(hostPlatform, commandSendsControl: savedDevice.commandSendsControl) }
 
@@ -104,7 +106,7 @@ struct RemoteSessionScreen: View {
             #if canImport(UIKit)
             if session.state == .connected {
                 RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers,
-                                           pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
+                                           screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
                     .ignoresSafeArea()
             }
@@ -127,24 +129,24 @@ struct RemoteSessionScreen: View {
                 if viewsThisMac && session.state == .connected {
                     ThisMacBanner(isViewOnly: isViewOnly)
                         .padding(.top, 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(bannerTransition)
                 }
                 #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
                 if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
                     HostStatusBanner(status: status, host: host)
                         .padding(.top, 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(bannerTransition)
                 }
                 if let screenSharingTyping {
                     ScreenSharingTypingBadge(state: screenSharingTyping)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(bannerTransition)
                 }
                 if let macAudioNotice {
                     MacAudioNotice(message: macAudioNotice)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(bannerTransition)
                 }
                 if isDropTargeted && canSendFiles {
                     DropToSendHint(macName: device.name)
@@ -287,6 +289,7 @@ struct RemoteSessionScreen: View {
                 }
                 #endif
             } else {
+                announce(state)
                 hasVideo = false
                 video.resetFirstFrame()
                 dictation.connectionLost()
@@ -340,13 +343,16 @@ struct RemoteSessionScreen: View {
             NavigationStack {
                 TransfersView(files: session.files, macName: device.name, host: host, canSend: canSendFiles)
             }
+            #if os(macOS)
+            .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
+            #endif
             .appLockCurtain()
         }
         .alert("Files are still transferring. Disconnect anyway?", isPresented: $showDisconnectGuard) {
             Button("Disconnect", role: .destructive) { endSession() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This Mac's Vantage Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
+            Text("\(device.name)'s Vantage Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
         }
         // Files opened in Vantage from other apps join this session's queue.
         .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
@@ -384,6 +390,9 @@ struct RemoteSessionScreen: View {
                         }
                     }
             }
+            #if os(macOS)
+            .frame(minWidth: 460, idealWidth: 520, minHeight: 520, idealHeight: 640)
+            #endif
             .environment(store)
             .appLockCurtain()
         }
@@ -431,7 +440,7 @@ struct RemoteSessionScreen: View {
             : Double(active.reduce(0) { $0 + $1.bytesDone }) / Double(max(1, active.reduce(0) { $0 + $1.byteCount }))
         return SendFileAction(
             unavailableReason: session.state == .connected && !session.hostOffersFiles
-                ? "This \(host.name)'s Vantage Host can't receive files. Update Vantage Host on \(host.the)." : nil,
+                ? "\(device.name)'s Vantage Host can't receive files. Update Vantage Host on \(host.the)." : nil,
             progress: progress,
             hasTransfers: session.files.hasTransfers,
             onSend: { showFileImporter = true },
@@ -451,6 +460,11 @@ struct RemoteSessionScreen: View {
         #else
         !toolbarDock.isTop || controlsHidden
         #endif
+    }
+
+    /// Banners slide down from the top, or just fade with Reduce Motion.
+    private var bannerTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
     }
 
     private var noticeTransition: AnyTransition {
@@ -510,7 +524,7 @@ struct RemoteSessionScreen: View {
         MacAudioToggle(
             isOn: wantsMacAudio && !macAudioFailed,
             unavailableReason: session.state == .connected && !session.hostOffersAudio
-                ? "This Mac's Vantage Host can't send sound. Update Vantage Host on the Mac." : nil,
+                ? "\(device.name)'s Vantage Host can't send sound. Update Vantage Host on \(host.the)." : nil,
             onToggle: toggleMacAudio)
     }
 
@@ -563,35 +577,62 @@ struct RemoteSessionScreen: View {
         VStack(spacing: 16) {
             switch session.state {
             case .connecting, .authenticating, .connected:
-                ProgressView().controlSize(.large).tint(.white)
+                overlayProgress
                 Text(session.state == .connected ? "Starting screen capture…" : "Connecting to \(device.name)…")
-                    .foregroundStyle(.white)
                     .contentTransition(.opacity)
             case .reconnecting, .suspended:
-                ProgressView().controlSize(.large).tint(.white)
-                Text("Reconnecting…").foregroundStyle(.white)
+                overlayProgress
+                Text("Reconnecting…")
             case .pairingRequired:
                 PairingPrompt(host: host, errorMessage: session.pairingError) { code in
                     session.connect(to: device, viewport: currentViewport(), pairingCode: code)
                 }
             case .failed(let message):
                 VStack(spacing: 12) {
-                    Image(systemName: "wifi.exclamationmark").font(.largeTitle).foregroundStyle(.white)
-                    Text(message).foregroundStyle(.white).multilineTextAlignment(.center)
-                    Button("Retry") { Task { await startSession() } }.buttonStyle(.glassProminent)
-                    Button("Close") { disconnect() }.buttonStyle(.glass)
+                    Image(systemName: "wifi.exclamationmark").font(.largeTitle)
+                        .accessibilityHidden(true)
+                    Text(message).multilineTextAlignment(.center)
+                    Button("Retry") { Task { await startSession() } }.buttonStyle(.onCardProminent)
+                    Button("Close") { disconnect() }.buttonStyle(.onCard)
                 }
             default:
                 EmptyView()
             }
             if case .failed = session.state {} else {
-                Button("Close", action: disconnect).buttonStyle(.glass)
+                Button("Close", action: disconnect).buttonStyle(.onCard)
             }
         }
         .padding(32)
         .frame(maxWidth: 420)
+        #if os(macOS)
+        // Dark glass over the black picture area, like `MacScreenNote`. Set for this card only:
+        // `preferredColorScheme` from in here would also darken the window's toolbar.
+        .platformGlass(in: .rect(cornerRadius: 24))
+        .environment(\.colorScheme, .dark)
+        #else
+        .foregroundStyle(.white)
         .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
         .preferredColorScheme(.dark)
+        #endif
+    }
+
+    private var overlayProgress: some View {
+        ProgressView()
+            .controlSize(.large)
+            #if !os(macOS)
+            .tint(.white)
+            #endif
+    }
+
+    /// Says what the overlay now shows, since it appears without VoiceOver's focus moving to it.
+    private func announce(_ state: ClientSession.State) {
+        let text: String? = switch state {
+        case .reconnecting: "Reconnecting to \(device.name)"
+        case .pairingRequired: "Enter the pairing code shown on \(host.the)"
+        case .failed(let message): message
+        default: nil
+        }
+        if let text { AccessibilityNotification.Announcement(text).post() }
     }
 
     // MARK: Dictation
@@ -860,13 +901,14 @@ extension RemoteSessionScreen {
         RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
                                      capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
                                      pasteModifier: host.isWindows ? .control : .command,
-                                     stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard,
-                                     keyProbe: MacSessionOptions.keyProbe ? keyProbe : nil)
+                                     stickyModifiers: stickyModifiers, screenLabel: screenLabel,
+                                     onPaste: pasteThroughClipboard, keyProbe: MacSessionOptions.keyProbe ? keyProbe : nil)
         #else
         RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
                                      capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
                                      pasteModifier: host.isWindows ? .control : .command,
-                                     stickyModifiers: stickyModifiers, onPaste: pasteThroughClipboard)
+                                     stickyModifiers: stickyModifiers, screenLabel: screenLabel,
+                                     onPaste: pasteThroughClipboard)
         #endif
     }
 
@@ -883,12 +925,13 @@ extension RemoteSessionScreen {
 
     /// The first time the session connects: is its Mac this one? Then it starts in View Only,
     /// since every move and key would come straight back through the host
-    /// (`-VantageAllowSelfControl 1` keeps input on for tests).
+    /// (`-VantageAllowSelfControl 1` treats it as another Mac: input on, no banner, for tests and
+    /// screenshots).
     func checkForThisMac() {
-        viewsThisMac = ThisMac.isHost(address: device.host, hostName: session.hostName)
+        viewsThisMac = !MacSessionOptions.allowSelfControl && ThisMac.isHost(address: device.host, hostName: session.hostName)
         guard !checkedThisMac else { return }
         checkedThisMac = true
-        if viewsThisMac && !MacSessionOptions.allowSelfControl { isViewOnly = true }
+        if viewsThisMac { isViewOnly = true }
     }
 
     var windowSubtitle: String {
@@ -940,6 +983,10 @@ extension RemoteSessionScreen {
             }
             .help("Send files to \(device.name)'s Downloads folder")
             .disabled(!canSendFiles)
+        }
+        // The way out stands apart from the controls.
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .primaryAction) {
             Button(action: disconnect) {
                 Label("Disconnect", systemImage: "xmark.circle")
             }
@@ -981,6 +1028,7 @@ extension RemoteSessionScreen {
             toggleControls: { withAnimation(.smooth(duration: 0.3)) { controlsHidden.toggle() } },
             actualSize: windowShape.actualSize,
             toggleFullScreen: windowShape.toggleFullScreen,
+            isFullScreen: windowShape.isFullScreen,
             customizeControls: { showStripEditor = true },
             disconnect: disconnect)
     }
@@ -1009,6 +1057,7 @@ private struct ThisMacBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath")
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("You're viewing this Mac from itself").font(.callout.weight(.semibold))
                 Text(isViewOnly ? "View Only is on, so the pointer and keys stay here."
@@ -1049,6 +1098,7 @@ struct HostStatusBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: status.isScreenLocked ? "lock.fill" : "key.fill")
+                .accessibilityHidden(true)
             Text(text)
                 .font(.callout)
             Spacer(minLength: 0)
@@ -1058,6 +1108,8 @@ struct HostStatusBanner: View {
         .padding(.vertical, 10)
         .platformGlass(in: .capsule)
         .frame(maxWidth: 520)
+        .accessibilityElement(children: .combine)
+        .announcing(text)
     }
 }
 
@@ -1119,6 +1171,7 @@ private struct MacAudioNotice: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "speaker.slash")
+                .accessibilityHidden(true)
             Text(message)
         }
         .font(.callout)
@@ -1128,6 +1181,7 @@ private struct MacAudioNotice: View {
         .frame(maxWidth: 520)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("session.macAudioNotice")
+        .announcing(message)
     }
 }
 
@@ -1146,6 +1200,7 @@ private struct ScreenSharingTypingBadge: View {
                 Text("Typing password with Screen Sharing…")
             } else {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Password sent")
             }
         }
@@ -1154,6 +1209,17 @@ private struct ScreenSharingTypingBadge: View {
         .padding(.vertical, 9)
         .platformGlass(in: .capsule)
         .accessibilityElement(children: .combine)
+        .announcing(state == .typing ? "Typing password with Screen Sharing" : "Password sent")
+    }
+}
+
+private extension View {
+    /// Reads `text` aloud when the view appears and whenever it changes: these notices show up
+    /// without VoiceOver's focus moving to them.
+    func announcing(_ text: String) -> some View {
+        onChange(of: text, initial: true) { _, text in
+            AccessibilityNotification.Announcement(text).post()
+        }
     }
 }
 
@@ -1209,10 +1275,11 @@ private struct PasswordPromptSheet: View {
                     }
                 } footer: {
                     Text(prompt == .missing
-                         ? "Vantage keeps these in the Keychain and types the password when you tap the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
+                         ? "Vantage keeps these in the Keychain and types the password when you \(LocalDevice.tap) the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
                          : "Your short account name or full name, as shown in System Settings → Users & Groups. Screen Sharing must be on for this account (System Settings → General → Sharing).")
                 }
             }
+            .macGroupedForm()
             .navigationTitle(prompt == .missing ? "Save Password" : "Mac Account")
             #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -1227,6 +1294,9 @@ private struct PasswordPromptSheet: View {
                 }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 420, idealWidth: 460, minHeight: 260, idealHeight: 320)
+        #endif
         .presentationDetents([.medium])
     }
 }

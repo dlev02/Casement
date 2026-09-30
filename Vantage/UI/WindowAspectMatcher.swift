@@ -58,9 +58,11 @@ import AppKit
 import SwiftUI
 
 /// Lets the session's menus and toolbar resize its window (Actual Size, Full Screen).
-@MainActor
+@MainActor @Observable
 final class SessionWindowShape {
-    fileprivate weak var matcher: WindowAspectMatcher.AspectMatchingView?
+    @ObservationIgnored fileprivate weak var matcher: WindowAspectMatcher.AspectMatchingView?
+    /// The window is in full screen (View › Enter/Exit Full Screen says which).
+    fileprivate(set) var isFullScreen = false
 
     /// Sizes the window so the Mac's screen shows point for point, or as large as this screen
     /// allows.
@@ -85,11 +87,13 @@ struct WindowAspectMatcher: NSViewRepresentable {
     func makeNSView(context: Context) -> AspectMatchingView {
         let view = AspectMatchingView()
         shape.matcher = view
+        view.shape = shape
         return view
     }
 
     func updateNSView(_ view: AspectMatchingView, context: Context) {
         shape.matcher = view
+        view.shape = shape
         view.displaySize = displaySize
     }
 
@@ -100,6 +104,7 @@ struct WindowAspectMatcher: NSViewRepresentable {
     final class AspectMatchingView: NSView {
         private var hasFitted = false
         private var observers: [NSObjectProtocol] = []
+        weak var shape: SessionWindowShape?
 
         var displaySize: CGSize? {
             didSet {
@@ -119,6 +124,12 @@ struct WindowAspectMatcher: NSViewRepresentable {
                     MainActor.assumeIsolated { self?.matchWindow(refit: false) }
                 })
             }
+            for (name, entering) in [(NSWindow.willEnterFullScreenNotification, true), (NSWindow.didExitFullScreenNotification, false)] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.shape?.isFullScreen = entering }
+                })
+            }
+            shape?.isFullScreen = isFullScreen
             matchWindow(refit: true)
         }
 

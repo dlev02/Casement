@@ -77,7 +77,7 @@ final class FileLink {
         screen = .connected
         macKeepsFiles = capabilities?.filesOnlySessions == true
         guard capabilities?.fileTransfer == true else {
-            files.failWaiting("This Mac's Vantage Host can't receive files. Update Vantage Host on the Mac.")
+            files.failWaiting("The Mac's Vantage Host can't receive files. Update Vantage Host on the Mac.")
             return
         }
         // One channel at a time: one that outlived an earlier screen session carries on.

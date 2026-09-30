@@ -92,6 +92,10 @@ struct MacRootView: View {
             // Double-click or Return.
             if let device = device(ids.first) { MacWindowRouter.shared.connect(to: device) }
         }
+        // Delete (⌘⌫ or Edit › Delete) asks before removing the selected Mac, like its context menu.
+        .onDeleteCommand {
+            if let selectedDevice { actions.deviceToDelete = selectedDevice }
+        }
         .overlay {
             if !store.devices.isEmpty && store.sortedDevices.isEmpty {
                 ContentUnavailableView.search(text: store.searchText)
@@ -101,17 +105,18 @@ struct MacRootView: View {
             TailscaleBanner().padding(.bottom, 10)
         }
         .toolbar {
-            ToolbarItem {
+            // Sorting and adding share one group: both are about the list.
+            ToolbarItemGroup {
                 Menu {
                     DeviceSortPicker()
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
+                .menuIndicator(.hidden)
                 .help("Sort the list")
-            }
-            ToolbarItem {
                 AddDeviceMenu(actions: actions)
-                    .help("Add a Mac")
+                    .menuIndicator(.hidden)
+                    .help("Add a Mac or PC")
             }
         }
         .accessibilityIdentifier("devices.sidebar")
@@ -192,6 +197,12 @@ private struct MacSidebarRow: View {
         .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: true, isTargeted: $isDropTargeted,
                                                         files: { FileTransferCenter.shared.link(for: device).files }))
         .accessibilityElement(children: .combine)
+        // Combining the row swallows the transfers line's own button; keep it as an action.
+        .accessibilityActions {
+            if let files, files.hasActiveTransfers {
+                Button("Show Transfers", action: onShowTransfers)
+            }
+        }
         .accessibilityIdentifier("devices.row.\(device.host)")
     }
 }
@@ -257,7 +268,7 @@ private struct MacDeviceDetail: View {
                 DeviceIconTile(os: device.os, size: 64)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(device.name)
-                        .font(.largeTitle.weight(.semibold))
+                        .font(.title.weight(.bold))
                         .lineLimit(1)
                     Text(device.host)
                         .foregroundStyle(.secondary)
@@ -265,43 +276,72 @@ private struct MacDeviceDetail: View {
                     if let availability { AvailabilityLabel(status: availability) }
                 }
             }
-            HStack(spacing: 10) {
-                Button {
-                    MacWindowRouter.shared.connect(to: device)
-                } label: {
-                    Label("Connect", systemImage: "play.fill")
-                        .padding(.horizontal, 6)
+            // One row where the pane is wide enough; otherwise Connect on its own line with the
+            // rest under it, and in a narrow pane the rest as icons (each keeps its tooltip).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    connectButton
+                    secondaryButtons
+                        .labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("devices.connect")
-
-                Button { actions.sendFiles(to: device) } label: {
-                    Label("Send Files…", systemImage: StripItem.sendFile.symbol)
+                VStack(alignment: .leading, spacing: 10) {
+                    connectButton
+                    HStack(spacing: 8) { secondaryButtons }
+                        .labelStyle(.titleAndIcon)
                 }
-                if files?.hasTransfers == true {
-                    Button { actions.transfersDevice = device } label: {
-                        Label("Transfers", systemImage: "arrow.up.arrow.down")
-                    }
-                }
-                Button { actions.editingDevice = device } label: {
-                    Label("Edit…", systemImage: "pencil")
-                }
-                if ScreenSharingPassword.canLogIn(device) {
-                    Button { actions.deviceToLogIn = device } label: {
-                        Label("Log In with Screen Sharing", systemImage: "key")
-                    }
+                VStack(alignment: .leading, spacing: 10) {
+                    connectButton
+                    HStack(spacing: 8) { secondaryButtons }
+                        .labelStyle(.iconOnly)
                 }
             }
-            .buttonStyle(.glass)
-            .controlSize(.large)
-            .labelStyle(.titleAndIcon)
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name) { actions.transfersDevice = device }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var connectButton: some View {
+        Button {
+            MacWindowRouter.shared.connect(to: device)
+        } label: {
+            Label("Connect", systemImage: "play.display")
+                .padding(.horizontal, 6)
+        }
+        .buttonStyle(.glassProminent)
+        .controlSize(.large)
+        .labelStyle(.titleAndIcon)
+        .keyboardShortcut(.defaultAction)
+        .help("Open \(device.name)'s screen in a window")
+        .accessibilityIdentifier("devices.connect")
+    }
+
+    @ViewBuilder private var secondaryButtons: some View {
+        Group {
+            Button { actions.sendFiles(to: device) } label: {
+                Label("Send Files…", systemImage: StripItem.sendFile.symbol)
+            }
+            .help("Send files to \(device.name) without opening its screen")
+            if files?.hasTransfers == true {
+                Button { actions.transfersDevice = device } label: {
+                    Label("Transfers…", systemImage: "arrow.up.arrow.down")
+                }
+                .help("Files moving with \(device.name)")
+            }
+            Button { actions.editingDevice = device } label: {
+                Label("Edit…", systemImage: "pencil")
+            }
+            .help("Change \(device.name)'s settings")
+            if ScreenSharingPassword.canLogIn(device) {
+                Button { actions.deviceToLogIn = device } label: {
+                    Label("Log In with Screen Sharing", systemImage: "key")
+                }
+                .help("Type \(device.name)'s saved password at its login or lock screen")
+            }
+        }
+        .buttonStyle(.glass)
+        .controlSize(.regular)
     }
 
     private var address: String {
@@ -426,6 +466,18 @@ struct MacHelpWindow: View {
     var body: some View {
         NavigationStack { HelpScreen() }
             .frame(minWidth: 460, idealWidth: 560, minHeight: 420, idealHeight: 640)
+            .macWindowRoot()
+    }
+}
+
+/// Vantage › About Vantage: the About page (version, links, help) in a small window of its own,
+/// in place of the standard About panel, so it lives in one place rather than also in Settings.
+struct MacAboutWindow: View {
+    static let sceneID = "about"
+
+    var body: some View {
+        NavigationStack { AboutScreen() }
+            .frame(width: 400, height: 600)
             .macWindowRoot()
     }
 }

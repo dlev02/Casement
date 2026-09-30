@@ -56,12 +56,12 @@ struct DeviceListScreen: View {
     private var listView: some View {
         List {
             ForEach(store.sortedDevices) { device in
-                DeviceListItem(device: device, availability: availability.statuses[device.id] ?? .checking,
+                DeviceListItem(device: device, availability: status(of: device),
                                files: transfers.files(for: device.id),
                                onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
                                onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
                 .swipeActions {
-                    Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
                     Button { actions.editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
                     if ScreenSharingPassword.canLogIn(device) {
                         Button { actions.deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
@@ -76,7 +76,7 @@ struct DeviceListScreen: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], spacing: 16) {
                 ForEach(store.sortedDevices) { device in
-                    DeviceCard(device: device, availability: availability.statuses[device.id] ?? .checking,
+                    DeviceCard(device: device, availability: status(of: device),
                                files: transfers.files(for: device.id),
                                onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
                                onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
@@ -111,6 +111,11 @@ struct DeviceListScreen: View {
             }
             AddDeviceMenu(actions: actions)
         }
+    }
+
+    /// Nothing at all while checks are off, rather than a "Checking…" that never ends.
+    private func status(of device: SavedDevice) -> HostAvailability? {
+        availabilityChecks ? availability.statuses[device.id] ?? .checking : nil
     }
 
     private var availabilityKey: String {
@@ -175,6 +180,7 @@ private struct DeviceActionPresentations: ViewModifier {
     @Bindable var actions: DeviceActions
     @Environment(DeviceStore.self) private var store
     private let transfers = FileTransferCenter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
@@ -206,10 +212,10 @@ private struct DeviceActionPresentations: ViewModifier {
                 titleVisibility: .visible,
                 presenting: actions.deviceToDelete
             ) { device in
-                Button("Remove Device", role: .destructive) { store.remove(device) }
+                Button("Remove", role: .destructive) { store.remove(device) }
                 Button("Cancel", role: .cancel) {}
             } message: { device in
-                Text("\(device.host) will be removed from this device list. \(device.hostNoun.theCapitalized) itself is not affected, and you can add it again later.")
+                Text("“\(device.name)” will be removed from Vantage. \(device.hostNoun.theCapitalized) itself is not affected, and you can add it again later.")
             }
             .confirmationDialog(
                 actions.deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
@@ -226,7 +232,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 if let logInStatus = actions.logInStatus {
                     LogInStatusBadge(status: logInStatus)
                         .padding(.bottom, 24)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(.smooth(duration: 0.3), value: actions.logInStatus)
@@ -250,7 +256,7 @@ struct DeviceMenu: View {
         if ScreenSharingPassword.canLogIn(device) {
             Button { actions.deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
         }
-        Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
     }
 
     #if os(macOS)
@@ -297,8 +303,8 @@ struct DeviceListEmptyState: View {
         } description: {
             Text("Add your Mac or PC to start a remote session over Tailscale.")
         } actions: {
-            Button("Add from Tailscale") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
-            Button("Add Manually") { actions.showAddDevice = true }.buttonStyle(.glass)
+            Button("Add from Tailscale…") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
+            Button("Add Manually…") { actions.showAddDevice = true }.buttonStyle(.glass)
         }
     }
 }
@@ -311,14 +317,21 @@ struct TailscaleBanner: View {
         if !reachability.isActive {
             HStack(spacing: 8) {
                 Image(systemName: "network.slash")
+                    .accessibilityHidden(true)
                 Text("Tailscale isn’t connected")
                 Spacer()
                 Button("Open") { TailscaleReachability.openTailscaleApp() }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Open Tailscale")
             }
             .font(.callout)
             .padding(12)
+            #if os(macOS)
+            // Flat in the Mac's sidebar, which is glass already.
+            .background(.fill.tertiary, in: .rect(cornerRadius: 10))
+            #else
             .platformGlass(in: .rect(cornerRadius: 16))
+            #endif
             .padding(.horizontal)
         }
     }
@@ -326,19 +339,21 @@ struct TailscaleBanner: View {
 
 struct DeviceRow: View {
     let device: SavedDevice
-    var availability: HostAvailability = .checking
+    var availability: HostAvailability? = .checking
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
         HStack(spacing: 14) {
             DeviceIconTile(os: device.os, size: 44)
             VStack(alignment: .leading, spacing: 3) {
+                // One line each, except at accessibility sizes, where they wrap rather than truncate.
                 Text(device.name)
                     .font(.body.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 Text(device.host)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                AvailabilityLabel(status: availability)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                if let availability { AvailabilityLabel(status: availability) }
             }
             Spacer(minLength: 12)
             if let last = device.lastConnected {
@@ -360,7 +375,7 @@ struct DeviceRow: View {
 /// name shows them (its own button, so it isn't swallowed by the row's).
 private struct DeviceListItem: View {
     let device: SavedDevice
-    let availability: HostAvailability
+    let availability: HostAvailability?
     let files: FileTransferController?
     let onOpen: () -> Void
     let onShowTransfers: () -> Void
@@ -411,13 +426,14 @@ struct DropTargetHint: View {
 /// bottom shows them.
 struct DeviceCard: View {
     let device: SavedDevice
-    var availability: HostAvailability = .checking
+    var availability: HostAvailability? = .checking
     var files: FileTransferController?
     var onOpen: () -> Void = {}
     var onShowTransfers: () -> Void = {}
     var onSendFiles: () -> Void = {}
     var dropFiles: (() -> FileTransferController)?
     @State private var isDropTargeted = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button(action: onOpen) {
@@ -432,9 +448,9 @@ struct DeviceCard: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(device.name).font(.body.weight(.semibold)).lineLimit(1)
-                        Text(device.host).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                        AvailabilityLabel(status: availability)
+                        Text(device.name).font(.body.weight(.semibold)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        Text(device.host).font(.subheadline).foregroundStyle(.secondary).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        if let availability { AvailabilityLabel(status: availability) }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -550,9 +566,11 @@ struct LogInStatusBadge: View {
                 Text("Logging in to \(name)…")
             case .sent(let name):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Password sent to \(name). Connect once it finishes logging in.")
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text(message)
             }
         }

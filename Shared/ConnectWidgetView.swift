@@ -50,12 +50,15 @@ struct ConnectWidgetView: View {
                 .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.leading)
                 .privacySensitive()
+                .accessibilityLabel("Connect to \(mac.name)")
             lastUsed(mac)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The whole widget is one button: "Connect to Studio, 5 minutes ago".
+        .accessibilityElement(children: .combine)
         .widgetURL(DeviceCatalog.connectURL(for: mac.id))
     }
 
@@ -154,6 +157,7 @@ struct ConnectWidgetView: View {
             .frame(width: size, height: size)
             .background(Color.accentColor.opacity(renderingMode == .accented ? 0 : 0.9), in: .rect(cornerRadius: size * 0.28))
             .widgetAccentable()
+            .accessibilityHidden(true) // decoration beside the Mac's name
     }
 
     /// A live reference to the last connection ("5 min ago"), redrawn by the system as time

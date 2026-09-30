@@ -204,6 +204,9 @@ final class DeviceStore {
     /// Saves locally, hands the list to iCloud when sync is on, and refreshes what Siri and the
     /// widgets know about.
     private func save() {
+        #if DEBUG
+        if ClientOptions.readOnlyDevices { return }
+        #endif
         persist()
         cloud.push(devices: devices, tombstones: tombstones)
         publishCatalog()

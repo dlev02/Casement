@@ -194,6 +194,13 @@ private struct TransferRow: View {
         .accessibilityIdentifier("transfers.row")
     }
 
+    /// Finger-sized targets on iPad; the Mac's pointer needs far less.
+    #if os(macOS)
+    private let buttonSide: CGFloat = 28
+    #else
+    private let buttonSide: CGFloat = 44
+    #endif
+
     @ViewBuilder private var trailing: some View {
         if transfer.isActive, let onCancel {
             Button(action: onCancel) {
@@ -201,26 +208,29 @@ private struct TransferRow: View {
                     .font(.title2)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: buttonSide, minHeight: buttonSide)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .help("Cancel")
             .accessibilityLabel("Cancel \(transfer.name)")
         } else if transfer.state == .done, let url = transfer.savedURL {
             HStack(spacing: 4) {
                 ShareLink(item: url) {
                     Image(systemName: "square.and.arrow.up")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: buttonSide, minHeight: buttonSide)
                         .contentShape(.rect)
                 }
+                .help("Share")
                 .accessibilityLabel("Share \(transfer.name)")
                 Button {
                     ReceivedFiles.show(url, openURL: openURL)
                 } label: {
                     Image(systemName: "folder")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: buttonSide, minHeight: buttonSide)
                         .contentShape(.rect)
                 }
+                .help("Show in \(ReceivedFiles.browser)")
                 .accessibilityLabel("Show \(transfer.name) in \(ReceivedFiles.browser)")
             }
             .buttonStyle(.borderless)
@@ -371,6 +381,7 @@ enum ReceivedFiles {
 struct ReceivedFileNotice: View {
     let transfer: FileTransferController.Transfer
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 10) {
@@ -378,7 +389,7 @@ struct ReceivedFileNotice: View {
                 .foregroundStyle(.green)
                 .accessibilityHidden(true)
             Text("Received \(transfer.name)")
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                 .truncationMode(.middle)
             if let url = transfer.savedURL {
                 Divider().frame(height: 18)

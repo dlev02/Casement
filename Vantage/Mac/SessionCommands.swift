@@ -52,6 +52,7 @@ struct SessionCommands {
     /// Sizes the window so the Mac's screen shows point for point (as far as the screen allows).
     let actualSize: () -> Void
     let toggleFullScreen: () -> Void
+    var isFullScreen = false
 
     let customizeControls: () -> Void
     let disconnect: () -> Void

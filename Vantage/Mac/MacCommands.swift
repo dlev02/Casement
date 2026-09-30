@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 import VantageCore
 
@@ -28,6 +29,10 @@ struct MacCommands: Commands {
         SidebarCommands()
         ToolbarCommands()
 
+        CommandGroup(replacing: .appInfo) {
+            Button("About Vantage") { openWindow(id: MacAboutWindow.sceneID) }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("Add Mac…") { showDeviceList { actions.showAddDevice = true } }
                 .keyboardShortcut("n")
@@ -53,9 +58,12 @@ struct MacCommands: Commands {
             Button("Actual Size") { session?.actualSize() }
                 .keyboardShortcut("0", modifiers: Self.vantageChord)
                 .disabled(session == nil)
-            Button("Full Screen") { session?.toggleFullScreen() }
-                .keyboardShortcut("f", modifiers: Self.vantageChord)
-                .disabled(session == nil)
+            // In place of AppKit's own item (see `VantageApp.init`), so there's one, and its
+            // ⌃⌥⌘F still works while a session sends ⌃⌘F to the Mac.
+            Button(session?.isFullScreen == true ? "Exit Full Screen" : "Enter Full Screen") {
+                if let session { session.toggleFullScreen() } else { NSApp.keyWindow?.toggleFullScreen(nil) }
+            }
+            .keyboardShortcut("f", modifiers: Self.vantageChord)
             Divider()
             Picker("Sort Macs By", selection: Binding(get: { store.sort }, set: { store.sort = $0 })) {
                 ForEach(DeviceSort.allCases) { sort in Text(sort.label).tag(sort) }

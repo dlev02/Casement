@@ -92,7 +92,7 @@ struct ControlStrip: View {
         } else {
             expanded
                 .transition(.blurReplace)
-                .glassBackgroundEffect(in: .rect(cornerRadius: stripButtonSide / 2 + 4))
+                .glassBackgroundEffect(in: .rect(cornerRadius: stripCornerRadius))
         }
     }
     #else
@@ -109,8 +109,18 @@ struct ControlStrip: View {
                 expanded.transition(contentTransition)
             }
         }
-        .clipShape(.rect(cornerRadius: 26))
-        .glassEffect(isPreview ? .regular : .regular.interactive(), in: .rect(cornerRadius: 26))
+        .clipShape(.rect(cornerRadius: stripCornerRadius))
+        .glassEffect(glass, in: .rect(cornerRadius: stripCornerRadius))
+    }
+
+    /// Glass that answers a finger on iPad; a plain pane on the Mac, where the buttons on it
+    /// highlight under the pointer instead.
+    private var glass: Glass {
+        #if os(macOS)
+        .regular
+        #else
+        isPreview ? .regular : .regular.interactive()
+        #endif
     }
 
     private var contentTransition: AnyTransition {
@@ -191,7 +201,7 @@ struct ControlStrip: View {
     private var separator: some View {
         Capsule()
             .fill(.primary.opacity(0.14))
-            .frame(width: 1, height: 22)
+            .frame(width: 1, height: stripButtonSide / 2)
             .padding(.horizontal, 4)
     }
 
@@ -235,6 +245,7 @@ struct ControlStrip: View {
             Image(systemName: StripItem.disconnect.symbol)
         }
         .buttonStyle(StripButtonStyle(tint: .red))
+        .help("Disconnect")
         .accessibilityLabel("Disconnect")
         .accessibilityIdentifier("session.toolbar.disconnect")
     }
@@ -249,6 +260,7 @@ struct ControlStrip: View {
         }
         .buttonStyle(StripButtonStyle(isActive: isOn, isDimmed: macAudio.unavailableReason != nil))
         .disabled(macAudio.unavailableReason != nil)
+        .help(StripItem.macAudio.label)
         .accessibilityLabel(StripItem.macAudio.label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
@@ -271,6 +283,7 @@ struct ControlStrip: View {
         }
         .buttonStyle(StripButtonStyle(isDimmed: files.unavailableReason != nil))
         .disabled(files.unavailableReason != nil)
+        .help(StripItem.sendFile.label)
         .accessibilityLabel(StripItem.sendFile.label)
         .accessibilityValue(files.progress.map { "Sending, \(Int(($0 * 100).rounded())) percent" } ?? "")
         .accessibilityHint(files.unavailableReason ?? "Choose files on \(LocalDevice.this) to send to \(noun.thePossessive) Downloads folder.")
@@ -295,6 +308,7 @@ struct ControlStrip: View {
             Image(systemName: StripItem.sendClipboard.symbol)
         }
         .buttonStyle(StripButtonStyle())
+        .help("Send Clipboard to \(noun.name)")
         .accessibilityLabel("Send Clipboard to \(noun.name)")
     }
 
@@ -303,8 +317,9 @@ struct ControlStrip: View {
             Image(systemName: "key.radiowaves.forward")
         }
         .buttonStyle(StripButtonStyle())
+        .help("Type Password")
         .accessibilityLabel("Type Password")
-        .accessibilityHint("Types this Mac's saved password and presses Return.")
+        .accessibilityHint("Types \(noun.thePossessive) saved password and presses Return.")
     }
 
     /// The host's shortcut for this slot. Start and Task Manager have none on a Mac, where the
@@ -315,6 +330,7 @@ struct ControlStrip: View {
                 Image(systemName: shortcut.symbol)
             }
             .buttonStyle(StripButtonStyle())
+            .help(shortcut.label)
             .accessibilityLabel(shortcut.label)
         }
     }
@@ -341,6 +357,7 @@ struct ControlStrip: View {
             Image(systemName: "keyboard")
         }
         .buttonStyle(StripButtonStyle())
+        .help("Toggle Keyboard")
         .accessibilityLabel("Toggle Keyboard")
     }
 
@@ -349,9 +366,10 @@ struct ControlStrip: View {
             Image(systemName: isCollapsed
                 ? (dock.isLeading ? "chevron.right" : "chevron.left")
                 : (dock.isLeading ? "chevron.left" : "chevron.right"))
-                .font(.system(size: 17, weight: .semibold)) // fixed like the other glyphs; it outgrew its 44 pt at large text sizes
+                .font(.system(size: stripGlyphSize, weight: .semibold)) // fixed like the other glyphs; it outgrew its 44 pt at large text sizes
         }
         .buttonStyle(StripButtonStyle())
+        .help(isCollapsed ? "Expand Controls" : "Collapse Controls")
         .accessibilityLabel(isCollapsed ? "Expand controls" : "Collapse controls")
         .accessibilityIdentifier("session.toolbar.collapse")
         .accessibilityHint("Drag the controls to move them to another corner.")
@@ -443,6 +461,7 @@ struct ControlStrip: View {
         .menuOrder(.fixed)
         .buttonStyle(StripButtonStyle())
         .disabled(tapGuard?.isDragging == true) // a drag that starts here mustn't open the menu
+        .help("Session Options")
         .accessibilityLabel("Session Options")
     }
 
@@ -463,6 +482,7 @@ struct ControlStrip: View {
             }
         }
         .buttonStyle(StripButtonStyle(isActive: isOn))
+        .help(item.label(for: host))
         .accessibilityLabel(item.label(for: host))
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
@@ -478,6 +498,7 @@ struct ControlStrip: View {
             Image(systemName: item.symbol)
         }
         .buttonStyle(StripButtonStyle())
+        .help(item.label)
         .accessibilityLabel(item.label)
     }
 
@@ -509,12 +530,21 @@ struct ControlStrip: View {
 /// Look and pinch needs roomier targets than a finger on glass (the HIG asks for about 60 points
 /// per control, spacing included).
 private let stripButtonSide: CGFloat = 56
+private let stripGlyphSize: CGFloat = 17
+#elseif os(macOS)
+/// A pointer needs less room than a finger; Mac toolbar-sized buttons.
+private let stripButtonSide: CGFloat = 36
+private let stripGlyphSize: CGFloat = 15
 #else
 private let stripButtonSide: CGFloat = 44
+private let stripGlyphSize: CGFloat = 17
 #endif
+/// Concentric with the buttons: half a button plus the strip's 4 pt inset.
+private let stripCornerRadius: CGFloat = stripButtonSide / 2 + 4
 
-/// A 44-point glyph button that lives on glass: no chrome of its own, a soft press highlight,
-/// and a tinted ring when the key is held (sticky modifiers).
+/// A 44-point glyph button (36 on the Mac) that lives on glass: no chrome of its own, a soft
+/// press highlight (and hover highlight on the Mac), and a tinted ring when the key is held
+/// (sticky modifiers).
 private struct StripButtonStyle: ButtonStyle {
     var isActive = false
     /// The glyph colour when it isn't active (Disconnect is red).
@@ -540,25 +570,43 @@ private struct StripGlyph: ViewModifier {
     var isActive: Bool
     var isPressed: Bool
     var tint: Color?
+    #if os(macOS)
+    @State private var isHovered = false
+    #endif
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 17, weight: .medium))
+            .font(.system(size: stripGlyphSize, weight: .medium))
             .foregroundStyle(isActive ? Color.accentColor : (tint ?? Color.primary))
             .frame(width: stripButtonSide, height: stripButtonSide)
             .background {
                 Circle()
-                    .fill(isActive ? Color.accentColor.opacity(0.2) : Color.primary.opacity(isPressed ? 0.12 : 0))
+                    .fill(isActive ? Color.accentColor.opacity(0.2) : Color.primary.opacity(highlight))
                     .padding(4)
             }
             .contentShape(Rectangle())
             #if os(visionOS)
             .contentShape(.hoverEffect, Circle().inset(by: 4))
             .hoverEffect()
+            #elseif os(macOS)
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+            }
             #endif
+            // At the largest text sizes, a long press shows the glyph big (the strip itself
+            // stays a fixed size so it fits the Mac's screen).
+            .accessibilityShowsLargeContentViewer()
             .scaleEffect(isPressed ? 0.88 : 1)
             .animation(.snappy(duration: 0.18), value: isPressed)
             .animation(.snappy(duration: 0.2), value: isActive)
+    }
+
+    private var highlight: Double {
+        if isPressed { return 0.12 }
+        #if os(macOS)
+        if isHovered { return 0.07 }
+        #endif
+        return 0
     }
 }
 
@@ -638,11 +686,12 @@ private struct DictationStripButton: View {
     let onPress: (DictationPress) -> Void
     @State private var pressedAt: Date?
     @State private var cancelled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Image(systemName: isActive ? "mic.fill" : "mic")
             .contentTransition(.symbolEffect(.replace))
-            .symbolEffect(.pulse, isActive: isActive)
+            .symbolEffect(.pulse, isActive: isActive && !reduceMotion) // the fill and tint still say it's on
             .modifier(StripGlyph(isActive: isActive, isPressed: pressedAt != nil))
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
@@ -661,10 +710,11 @@ private struct DictationStripButton: View {
                     pressedAt = nil
                     if !cancelled { onPress(.ended(held: held)) }
                 })
+            .help(isActive ? "Stop Dictation" : "Dictate")
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(isActive ? "Stop Dictation" : "Dictate")
-            .accessibilityHint("Hold to talk, or tap to start and tap again to stop.")
+            .accessibilityHint("Hold to talk, or \(LocalDevice.tap) to start and \(LocalDevice.tap) again to stop.")
             .accessibilityAction { onPress(.toggle) }
             .accessibilityIdentifier("session.toolbar.dictate")
     }
@@ -706,7 +756,7 @@ private struct SendFileProgressRing: View {
                 // one continuous fill instead of steps.
                 .animation(.linear(duration: 0.12), value: fraction)
         }
-        .frame(width: 34, height: 34)
+        .frame(width: stripButtonSide - 10, height: stripButtonSide - 10)
         .accessibilityHidden(true)
     }
 }

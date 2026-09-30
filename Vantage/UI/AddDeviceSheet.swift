@@ -64,7 +64,7 @@ struct AddDeviceSheet: View {
                 } footer: {
                     if !isPC {
                         Text(codec == .hevc
-                             ? "HEVC looks better at the same bandwidth. Switch to H.264 if this Mac's video ever fails to decode."
+                             ? "HEVC looks better at the same bandwidth. Switch to H.264 if video from \(name.isEmpty ? hostNoun.the : name) ever fails to decode."
                              : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
                     }
                 }

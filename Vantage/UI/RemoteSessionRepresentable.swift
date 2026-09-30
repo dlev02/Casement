@@ -9,6 +9,8 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
     let input: InputController
     let video: VideoStreamController
     let stickyModifiers: KeyModifiers
+    /// What VoiceOver calls the picture: "Screen of Studio".
+    var screenLabel = ""
     var pencilSqueeze: PencilAction = .collapseControls
     var pencilDoubleTap: PencilAction = .rightClick
     var onPencilAction: (PencilAction) -> Void = { _ in }
@@ -20,6 +22,7 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: RemoteSessionViewController, context: Context) {
         let view = controller.interactionView
         view.setStickyModifiers(stickyModifiers)
+        view.accessibilityLabel = screenLabel
         view.pencilSqueezeAction = pencilSqueeze
         view.pencilDoubleTapAction = pencilDoubleTap
         view.onPencilAction = onPencilAction

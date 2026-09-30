@@ -107,6 +107,7 @@ struct LockOverlay: View {
         .onTapGesture {}
         #endif
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal) // nothing behind the lock is reachable
         .accessibilityIdentifier("appLock")
     }
 }
@@ -131,6 +132,8 @@ private struct MacLockCurtain: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // The lock covers the window; VoiceOver mustn't read what's under it either.
+            .accessibilityHidden(lock.isLocked)
             .overlay {
                 if lock.isLocked {
                     LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }

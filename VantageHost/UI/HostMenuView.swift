@@ -119,6 +119,7 @@ struct HostMenuView: View {
     private func statusRow(icon: String, tint: Color, title: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(tint)
+                .accessibilityHidden(true) // the title says it
             Text(title).font(.callout)
             Spacer()
         }

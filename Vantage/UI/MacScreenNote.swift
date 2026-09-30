@@ -43,9 +43,9 @@ struct MacScreenNote: View {
     }
     private var subtitle: String {
         switch (kind, isWaking) {
-        case (.asleep, false): "Tap anywhere to wake it"
+        case (.asleep, false): "\(LocalDevice.tap.capitalized) anywhere to wake it"
         case (.asleep, true): "Waking it…"
-        case (.unavailable, false): "Vantage keeps trying. Tap to try now."
+        case (.unavailable, false): "Vantage keeps trying. \(LocalDevice.tap.capitalized) to try now."
         case (.unavailable, true): "Trying again…"
         }
     }
@@ -98,7 +98,7 @@ struct MacScreenNote: View {
                 if isWaking { ProgressView().controlSize(.small) }
             }
         }
-        .buttonStyle(.glassProminent)
+        .buttonStyle(.onCardProminent)
         .disabled(isWaking)
         .accessibilityLabel(buttonLabel)
         .accessibilityIdentifier(kind == .asleep ? "session.wakeDisplay" : "session.retryScreen")

@@ -8,7 +8,7 @@ struct MacSettingsView: View {
     @AppStorage("vantage.mac.settingsTab") private var tab = Tab.general
 
     enum Tab: String {
-        case general, controls, connection, security, about
+        case general, controls, connection, security
     }
 
     var body: some View {
@@ -22,11 +22,8 @@ struct MacSettingsView: View {
             SwiftUI.Tab("Connection", systemImage: "network", value: Tab.connection) {
                 page { ConnectionSettings() }
             }
-            SwiftUI.Tab("Privacy & Security", systemImage: "lock", value: Tab.security) {
+            SwiftUI.Tab("Privacy & Security", systemImage: "hand.raised", value: Tab.security) {
                 page { SecuritySettings() }
-            }
-            SwiftUI.Tab("About", systemImage: "info.circle", value: Tab.about) {
-                page { AboutScreen() }
             }
         }
         .frame(width: 560)

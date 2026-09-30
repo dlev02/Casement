@@ -57,11 +57,11 @@ enum ScreenSharingPassword {
         }
         switch error {
         case .unreachable, .notScreenSharing:
-            return "Couldn't reach Screen Sharing on this Mac. On the Mac, turn on Screen Sharing in System Settings → General → Sharing and allow your account. At the login window the Mac is only reachable at its home network address, through a Tailscale subnet router."
+            return "Couldn't reach Screen Sharing on the Mac. There, turn on Screen Sharing in System Settings → General → Sharing and allow your account. At the login window the Mac is only reachable at its home network address, through a Tailscale subnet router."
         case .unsupportedAuthentication:
-            return "Screen Sharing on this Mac isn't set up to accept an account name and password. In System Settings → General → Sharing → Screen Sharing, allow access for your account."
+            return "Screen Sharing on the Mac isn't set up to accept an account name and password. In System Settings → General → Sharing → Screen Sharing, allow access for your account."
         case .authenticationFailed:
-            return "The Mac didn't accept the saved account name or password. Check both in this Mac's settings in Vantage."
+            return "The Mac didn't accept the saved account name or password. Check both in its settings in Vantage (Edit)."
         case .timedOut:
             return "Screen Sharing on the Mac didn't answer in time. Try again in a moment."
         case .protocolError(let detail):

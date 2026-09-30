@@ -11,7 +11,9 @@ struct DictationPanel: View {
 
     @FocusState private var editorFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .footnote) private var stopSide: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,38 +35,65 @@ struct DictationPanel: View {
 
     // MARK: Header
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            statusIndicator
-            Text(statusTitle)
-                .font(.subheadline.weight(.semibold))
-                .contentTransition(.opacity)
-            if let startedAt = dictation.startedAt, dictation.phase == .listening {
-                TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                    Text(Duration.seconds(max(0, context.date.timeIntervalSince(startedAt))),
-                         format: .time(pattern: .minuteSecond))
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+    /// One line normally; at accessibility text sizes the status, the engine, and Stop each get
+    /// a line of their own rather than squeezing into one.
+    @ViewBuilder private var header: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) { status }
+                engine
+                stopButton
             }
-            Spacer(minLength: 8)
-            Label(engineLabel, systemImage: dictation.route.symbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
-            if dictation.phase == .listening {
-                Button {
-                    dictation.stop(then: .review)
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.footnote)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Stop and Review")
+        } else {
+            HStack(spacing: 8) {
+                status
+                Spacer(minLength: 8)
+                engine
+                    .lineLimit(1)
+                stopButton
             }
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        statusIndicator
+        Text(statusTitle)
+            .font(.subheadline.weight(.semibold))
+            .contentTransition(.opacity)
+        if let startedAt = dictation.startedAt, dictation.phase == .listening {
+            TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                Text(Duration.seconds(max(0, context.date.timeIntervalSince(startedAt))),
+                     format: .time(pattern: .minuteSecond))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var engine: some View {
+        Label(engineLabel, systemImage: dictation.route.symbol)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
+    }
+
+    @ViewBuilder private var stopButton: some View {
+        if dictation.phase == .listening {
+            Button {
+                dictation.stop(then: .review)
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.footnote)
+                    .frame(width: stopSide, height: stopSide)
+            }
+            .buttonStyle(.onCard)
+            .buttonBorderShape(.circle)
+            #if os(iOS)
+            .frame(minWidth: 44, minHeight: 44) // the glass circle grows with its padding; this keeps the target
+            .contentShape(.rect)
+            #endif
+            .accessibilityLabel("Stop and Review")
+            .help("Stop and Review")
         }
     }
 
@@ -81,8 +110,10 @@ struct DictationPanel: View {
             ProgressView().controlSize(.small)
         case .review:
             Image(systemName: "text.bubble").foregroundStyle(.tint)
+                .accessibilityHidden(true) // the title beside it says Review
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                .accessibilityHidden(true)
         case .idle:
             EmptyView()
         }
@@ -188,7 +219,8 @@ struct DictationPanel: View {
     private var buttons: some View {
         HStack(spacing: 10) {
             Button("Cancel", role: .cancel) { dictation.cancel() }
-                .buttonStyle(.glass)
+                .buttonStyle(.onCard)
+                .keyboardShortcut(.cancelAction)
             Spacer(minLength: 0)
             if case .failed(let failure) = dictation.phase {
                 if failure.opensSettings {
@@ -196,7 +228,7 @@ struct DictationPanel: View {
                         if let url = failure.settings?.url { openURL(url) }
                         dictation.cancel()
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.onCardProminent)
                 } else if !dictation.text.isEmpty {
                     copyButton
                 }
@@ -208,7 +240,7 @@ struct DictationPanel: View {
                 } label: {
                     Label("Send + Return", systemImage: "return")
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.onCard)
                 .disabled(!canSend || isTypingBlocked)
                 .accessibilityHint("Types the text on the Mac, then presses Return.")
                 Button {
@@ -216,7 +248,8 @@ struct DictationPanel: View {
                 } label: {
                     Label("Send", systemImage: "arrow.up")
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.onCardProminent)
+                .keyboardShortcut(.defaultAction)
                 .disabled(!canSend || isTypingBlocked)
                 .accessibilityHint("Types the text on the Mac.")
             }
@@ -232,7 +265,7 @@ struct DictationPanel: View {
         } label: {
             Label("Copy", systemImage: "doc.on.doc")
         }
-        .buttonStyle(.glassProminent)
+        .buttonStyle(.onCardProminent)
     }
 
     private var isPreparing: Bool {

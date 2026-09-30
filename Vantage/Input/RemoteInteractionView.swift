@@ -47,9 +47,12 @@ final class RemoteInteractionView: UIView {
         #if !os(visionOS)
         addInteraction(UIPencilInteraction(delegate: self))
         #endif
+        // One element for VoiceOver, touched directly: gestures on the picture go to the Mac
+        // rather than being read out.
+        isAccessibilityElement = true
+        accessibilityTraits = .allowsDirectInteraction
         #if DEBUG
         if ClientOptions.pointerProbe {
-            isAccessibilityElement = true
             accessibilityIdentifier = "session.pointerProbe"
         }
         #endif

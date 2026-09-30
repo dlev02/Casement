@@ -16,6 +16,8 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
     /// The modifier of the host's paste chord: ⌘ on a Mac, Ctrl on a PC.
     var pasteModifier: KeyModifiers = .command
     var stickyModifiers: KeyModifiers
+    /// What VoiceOver calls the picture: "Screen of Studio".
+    var screenLabel = ""
     /// Just before ⌘V goes to the Mac.
     var onPaste: () -> Void
     #if DEBUG
@@ -35,6 +37,7 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
         view.keyboard.probe = keyProbe
         #endif
         view.stickyModifiers = stickyModifiers
+        view.screenLabel = screenLabel
         view.sendsInput = sendsInput
     }
 

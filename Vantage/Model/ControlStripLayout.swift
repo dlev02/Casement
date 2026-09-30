@@ -129,9 +129,9 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case (.applicationWindows, nil): return "⌃ ↓. Switch Apps (Alt Tab) on a PC"
         case (.showDesktop, nil): return "F11. Win D on a PC"
         case (.typePassword, nil): return "Types the Mac's saved password. Macs only"
-        case (.macAudio, nil): return "Hear the Mac's sound on this iPad. Macs only"
+        case (.macAudio, nil): return "Hear the Mac's sound on \(LocalDevice.this). Macs only"
         case (.sendClipboard, _): return "Sends your clipboard to \(host)"
-        case (.sendFile, _): return "Sends a file from this iPad to \(host)"
+        case (.sendFile, _): return "Sends a file from \(LocalDevice.this) to \(host)"
         default: return macDetail
         }
     }
@@ -156,9 +156,9 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .showDesktop: "F11"
         case .typePassword: "Types the saved password"
         case .sendClipboard: "Sends your clipboard to the Mac"
-        case .sendFile: "Sends a file from this iPad to the Mac"
-        case .macAudio: "Hear the Mac's sound on this iPad"
-        case .dictate: "Hold to talk, or tap to start and stop"
+        case .sendFile: "Sends a file from \(LocalDevice.this) to the Mac"
+        case .macAudio: "Hear the Mac's sound on \(LocalDevice.this)"
+        case .dictate: "Hold to talk, or \(LocalDevice.tap) to start and stop"
         case .keyboard: "Shows the on-screen keyboard"
         case .disconnect: "Ends the session right away"
         }

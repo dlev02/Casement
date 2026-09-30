@@ -7,6 +7,7 @@ struct TailscaleDevicesSheet: View {
     @Environment(DeviceStore.self) private var store
     @Environment(TailscaleAccount.self) private var account
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var devices: [TailscaleDevice] = []
     @State private var isLoading = false
@@ -94,10 +95,11 @@ struct TailscaleDevicesSheet: View {
         return HStack(spacing: 14) {
             DeviceIconTile(os: device.os, size: 44)
             VStack(alignment: .leading, spacing: 3) {
-                Text(device.displayName).font(.body.weight(.semibold)).lineLimit(1)
-                Text(device.magicDNSName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(device.displayName).font(.body.weight(.semibold)).lineLimit(lineLimit)
+                Text(device.magicDNSName).font(.subheadline).foregroundStyle(.secondary).lineLimit(lineLimit)
                 probeLabel(for: device)
             }
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 12)
             if existing || justAdded.contains(device.id) {
                 Label("Added", systemImage: "checkmark")
@@ -106,8 +108,13 @@ struct TailscaleDevicesSheet: View {
                     .labelStyle(.titleAndIcon)
             } else {
                 Button("Add") { add(device) }
+                    #if os(macOS)
+                    .buttonStyle(.bordered) // a glass button in every row of a sheet is a lot of glass
+                    #else
                     .buttonStyle(.glassProminent)
+                    #endif
                     .controlSize(.small)
+                    .accessibilityLabel("Add \(device.displayName)")
             }
         }
         .padding(.vertical, 4)
@@ -120,15 +127,19 @@ struct TailscaleDevicesSheet: View {
                 .frame(width: 44, height: 44)
                 .overlay { Image(systemName: device.platform.symbol).font(.system(size: 20, weight: .medium)).foregroundStyle(.secondary) }
             VStack(alignment: .leading, spacing: 3) {
-                Text(device.displayName).font(.body.weight(.semibold)).lineLimit(1)
-                Text(device.magicDNSName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(device.displayName).font(.body.weight(.semibold)).lineLimit(lineLimit)
+                Text(device.magicDNSName).font(.subheadline).foregroundStyle(.secondary).lineLimit(lineLimit)
                 Text(unsupportedReason(device.platform)).font(.footnote).foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
         .foregroundStyle(.secondary)
     }
+
+    /// Names and addresses stay on one line, except at accessibility sizes, where they wrap.
+    private var lineLimit: Int? { dynamicTypeSize.isAccessibilitySize ? nil : 1 }
 
     @ViewBuilder private func probeLabel(for device: TailscaleDevice) -> some View {
         let status = probes[device.id] ?? .checking

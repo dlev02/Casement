@@ -32,6 +32,8 @@ final class RemoteInteractionNSView: NSView {
     }
     /// Modifiers held from the control strip, added to every click and scroll.
     var stickyModifiers: KeyModifiers = []
+    /// What VoiceOver calls the picture ("Screen of Studio").
+    var screenLabel = ""
 
     private var heldButtons: Set<PointerButton> = []
     private var scroll = ScrollTranslator()
@@ -224,14 +226,17 @@ final class RemoteInteractionNSView: NSView {
         keyboard.modifiers(fromFlags: UInt64(event.modifierFlags.rawValue)).union(stickyModifiers)
     }
 
-    // MARK: Probes
+    // MARK: Accessibility
+
+    /// The picture is one group for VoiceOver, named after the Mac it shows.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+    override func accessibilityLabel() -> String? { screenLabel }
 
     #if DEBUG
     /// `-VantagePointerProbe 1`: the Mac pointer position last sent, as `session.pointerProbe`'s
     /// value, for UI tests.
-    override func isAccessibilityElement() -> Bool { ClientOptions.pointerProbe || super.isAccessibilityElement() }
     override func accessibilityIdentifier() -> String { ClientOptions.pointerProbe ? "session.pointerProbe" : super.accessibilityIdentifier() }
-    override func accessibilityRole() -> NSAccessibility.Role? { ClientOptions.pointerProbe ? .group : super.accessibilityRole() }
     override func accessibilityValue() -> Any? {
         guard ClientOptions.pointerProbe else { return super.accessibilityValue() }
         let point = input.cursorPoint, size = input.displayPointSize

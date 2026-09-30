@@ -7,6 +7,12 @@ struct VantageApp: App {
     #endif
     #if os(macOS)
     @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+
+    init() {
+        // View › Enter Full Screen is Vantage's own (with ⌃⌥⌘F, which a session leaves to
+        // Vantage); AppKit would add a second one. Registered before the menu bar is built.
+        UserDefaults.standard.register(defaults: ["NSFullScreenMenuItemEverywhere": false])
+    }
     #endif
 
     var body: some Scene {
@@ -58,6 +64,13 @@ struct VantageApp: App {
         }
         .defaultSize(width: 560, height: 640)
         .commandsRemoved() // opened from Help › Vantage Help
+
+        Window("About Vantage", id: MacAboutWindow.sceneID) {
+            MacAboutWindow()
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .commandsRemoved() // opened from Vantage › About Vantage
         #endif
     }
 }

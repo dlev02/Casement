@@ -113,6 +113,8 @@ struct HostSettingsView: View {
                                 Image(systemName: "trash")
                             }
                             .buttonStyle(.borderless)
+                            .help("Revoke \(client.name)'s access; it will need a new pairing code")
+                            .accessibilityLabel("Revoke \(client.name)")
                         }
                     }
                 }

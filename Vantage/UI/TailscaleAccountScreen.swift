@@ -271,6 +271,8 @@ private struct TailscaleSignInSection: View {
 private struct SetupStep<Content: View>: View {
     let number: Int
     @ViewBuilder var content: Content
+    /// The number's circle grows with the text.
+    @ScaledMetric(relativeTo: .footnote) private var badgeSide: CGFloat = 22
 
     init(_ number: Int, @ViewBuilder content: () -> Content) {
         self.number = number
@@ -283,7 +285,7 @@ private struct SetupStep<Content: View>: View {
                 .font(.footnote.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
-                .frame(width: 22, height: 22)
+                .frame(width: badgeSide, height: badgeSide)
                 .background(Color.accentColor, in: .circle)
             content
                 .font(.subheadline)

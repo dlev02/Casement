@@ -8,10 +8,13 @@ nonisolated enum LocalDevice {
     static let noun = "Mac"
     static let symbol = "desktopcomputer"
     static let settingsApp = "System Settings"
+    /// How a control is pressed here, for sentences like "Click anywhere to wake it".
+    static let tap = "click"
     #else
     static let noun = "iPad"
     static let symbol = "ipad.landscape"
     static let settingsApp = "Settings"
+    static let tap = "tap"
     #endif
 
     /// "this iPad" / "this Mac".

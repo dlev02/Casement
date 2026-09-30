@@ -16,6 +16,10 @@ enum ClientOptions {
     }
     private static var autoConnectTaken = false
     static var pairingCode: String? { value(for: "-VantagePairingCode") }
+    /// `-VantageReadOnlyDevices 1`: the device list (from defaults, or an argument-domain
+    /// `-vantage.savedDevices`) changes in memory only and is never written back, so screenshots
+    /// and manual checks leave alone the real list every Debug build shares.
+    static var readOnlyDevices: Bool { value(for: "-VantageReadOnlyDevices") == "1" }
     /// `-VantageTailscaleFixture 1` serves a fictional tailnet instead of calling the API.
     static var tailscaleFixture: [TailscaleDevice]? {
         #if DEBUG
