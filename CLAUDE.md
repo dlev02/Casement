@@ -740,8 +740,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Nothing personal in tracked files**: never commit a real tailnet name, Tailscale IP, node or
   user ID, SSH user, or email, even in research notes or test fixtures. Use `tail1234.ts.net`,
   `100.64.0.x` / `fd7a:115c:a1e0::x`, and `you@your-pc`; scripts take such targets from the
-  environment (`PC=… WindowsHost/scripts/push.sh`). Older commits still carry some; the repo's
-  history needs a rewrite before it goes public.
+  environment (`PC=… WindowsHost/scripts/push.sh`). The published history was rewritten on
+  2026-09-30 to remove them; old local branches and agent worktrees still hold the originals, so
+  never push those.
 - **In the app**: About links Source Code, Privacy Policy, and Report a Problem (`AppInfo`
   `githubURL`/`privacyURL`/`supportURL`, GitHub URLs; they work once the repo is public). The
   Ko-fi donation link lives only on GitHub: App Review guideline 3.1.1 rejects in-app links that
