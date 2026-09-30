@@ -74,13 +74,14 @@ New-NetFirewallRule -DisplayName "Vantage Host (tailnet)" -Direction Inbound -Ac
   -LocalPort 47820-47829 -RemoteAddress 100.64.0.0/10,fd7a:115c:a1e0::/48 -Profile Any
 ```
 
-The remote loop from the Mac:
+The remote loop from the Mac, with `PC` set to your SSH target (for example `export PC=you@your-pc`, the
+PC's Tailscale name) and `<pc-address>` its Tailscale address:
 
 ```sh
 # push
-tar -czf - WindowsHost | ssh you@100.64.0.20 "tar -xzf - -C C:/src/vantage"
+tar -czf - WindowsHost | ssh $PC "tar -xzf - -C C:/src/vantage"
 # build
-ssh you@100.64.0.20 "$env:DOTNET_CLI_TELEMETRY_OPTOUT=1; cd C:/src/vantage/WindowsHost; dotnet build -c Debug"
+ssh $PC "$env:DOTNET_CLI_TELEMETRY_OPTOUT=1; cd C:/src/vantage/WindowsHost; dotnet build -c Debug"
 ```
 
 Run the host in Drew's **interactive** session, not the SSH one (an SSH process can't see the
@@ -94,10 +95,10 @@ Get-Content $env:LOCALAPPDATA/'Vantage Host'/logs/host.log -Wait -Tail 50
 
 Never test while Remote Desktop is connected: it takes the console session (`tscon` gives it back).
 
-From the Mac, `xcrun swift test` reaches `100.64.0.20:47821` directly over Tailscale, so the
+From the Mac, `xcrun swift test` reaches `<pc-address>:47821` directly over Tailscale, so the
 interop suite runs against the real Windows host. The simulator may not route to the tailnet; tunnel
 so the peer is loopback (a DEBUG host accepts it):
-`ssh -N -L 47831:127.0.0.1:47821 you@100.64.0.20`.
+`ssh -N -L 47831:127.0.0.1:47821 $PC`.
 
 ## Windows host: projects and the PC-side workflow
 
@@ -130,17 +131,17 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\fire
 ```
 
 ```sh
-# 1. From the Mac: copy the tree over (once first: ssh you@100.64.0.20 "mkdir C:\src\vantage")
+# 1. From the Mac: copy the tree over (once first: ssh $PC "mkdir C:\src\vantage")
 sh WindowsHost/scripts/push.sh
 # 2. Build everything and run the Windows tests on the PC
-ssh you@100.64.0.20 "cd C:\src\vantage\WindowsHost & set DOTNET_CLI_TELEMETRY_OPTOUT=1& set TESTINGPLATFORM_TELEMETRY_OPTOUT=1& dotnet build Vantage.Windows.PC.slnx -c Debug & dotnet test --project tests\Vantage.Host.Windows.Tests"
+ssh $PC "cd C:\src\vantage\WindowsHost & set DOTNET_CLI_TELEMETRY_OPTOUT=1& set TESTINGPLATFORM_TELEMETRY_OPTOUT=1& dotnet build Vantage.Windows.PC.slnx -c Debug & dotnet test --project tests\Vantage.Host.Windows.Tests"
 # 3. Run the console host in Drew's interactive session for a minute, saving the encoded stream
-ssh you@100.64.0.20 "powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\run-dev.ps1 -DumpH264 C:\temp\vantage.h264 -ExitAfter 60"
+ssh $PC "powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\run-dev.ps1 -DumpH264 C:\temp\vantage.h264 -ExitAfter 60"
 # 4. Connect something so it streams: the interop suite, or the simulator through the tunnel above
-VANTAGE_INTEROP_HOST=100.64.0.20:47821 xcrun swift test --filter WindowsHostInteropTests
+VANTAGE_INTEROP_HOST=<pc-address>:47821 xcrun swift test --filter WindowsHostInteropTests
 # 5. Read the log, then check the stream on the Mac
-ssh you@100.64.0.20 "powershell -Command Get-Content (Join-Path $env:LOCALAPPDATA 'Vantage Host\logs\dev.log') -Tail 80"
-scp you@100.64.0.20:C:/temp/vantage.h264 /tmp/ && ffprobe -v error -show_streams /tmp/vantage.h264 | grep -E "profile|has_b_frames|color_|width|height"
+ssh $PC "powershell -Command Get-Content (Join-Path $env:LOCALAPPDATA 'Vantage Host\logs\dev.log') -Tail 80"
+scp $PC:C:/temp/vantage.h264 /tmp/ && ffprobe -v error -show_streams /tmp/vantage.h264 | grep -E "profile|has_b_frames|color_|width|height"
 ffprobe -v error -show_frames -select_streams v /tmp/vantage.h264 | grep -c pict_type=I   # IDRs only when asked for
 ffplay /tmp/vantage.h264
 ```
@@ -169,4 +170,4 @@ Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed 
 the tray icon for the window (General shows the tailnet address and Show Pairing Code), right-click
 for the menu; turn on "Start Vantage Host when I sign in" there. Closing the window keeps it in the
 tray; Quit is in the tray menu and on the About page. Drew's iPad then pairs with
-`100.64.0.20:47820`.
+`<pc-address>:47820`.
