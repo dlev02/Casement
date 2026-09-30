@@ -166,15 +166,30 @@ public actor MessageChannel {
         }
     }
 
+    /// Reads `length` bytes by taking whatever has arrived and appending. Never ask
+    /// `NWConnection` for a large `minimumIncompleteLength`: on a Mac with a content filter
+    /// (Little Snitch here, macOS 27), non-loopback connections run through Network.framework's
+    /// `ne_filter` protocol, which silently dropped chunks of the stream whenever a receive
+    /// waited for 16 KB or more — a 4K keyframe arrived with holes and the next header read as
+    /// `badMagic`. A 1-byte minimum is clean there.
     private func receiveExactly(_ length: Int) async throws -> Data {
+        let first = try await receiveAvailable(upTo: length)
+        if first.count == length { return first }
+        var buffer = Data(capacity: length)
+        buffer.append(first)
+        while buffer.count < length {
+            buffer.append(try await receiveAvailable(upTo: length - buffer.count))
+        }
+        return buffer
+    }
+
+    private func receiveAvailable(upTo maximum: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, any Error>) in
-            connection.receive(minimumIncompleteLength: length, maximumLength: length) { content, _, isComplete, error in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: maximum) { content, _, _, error in
                 if let error {
                     cont.resume(throwing: ChannelError.connectionFailed(error.localizedDescription))
-                } else if let content, content.count == length {
+                } else if let content, !content.isEmpty {
                     cont.resume(returning: content)
-                } else if isComplete {
-                    cont.resume(throwing: ChannelError.closed)
                 } else {
                     cont.resume(throwing: ChannelError.closed)
                 }

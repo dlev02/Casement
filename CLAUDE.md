@@ -30,7 +30,12 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
 - **Transport**: one framed TCP stream per session over the tailnet (`MessageChannel`, an actor
   wrapping `NWConnection`). 8-byte header (magic, kind, flags, length) + payload. Control messages
   are JSON (kind < 100); hot-path video/cursor/input are hand-packed little-endian binary (kind ≥
-  100). See `Packages/VantageCore/Sources/VantageCore/Wire` and `Messages`.
+  100). See `Packages/VantageCore/Sources/VantageCore/Wire` and `Messages`. `MessageChannel` reads
+  with `minimumIncompleteLength: 1` and appends until a frame is whole; never ask `NWConnection`
+  for a large minimum: on a Mac with a content filter (Little Snitch), non-loopback connections run
+  through Network.framework's `ne_filter`, which silently dropped stream chunks whenever a receive
+  waited for ≥ 16 KB (4K keyframes from a PC arrived with holes, then `badMagic`). Loopback and
+  BSD sockets never showed it, so loopback tests can't catch it.
 - **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
   domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
   that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
