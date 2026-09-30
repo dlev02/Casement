@@ -15,10 +15,14 @@ nonisolated final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
     private var pool: CVPixelBufferPool?
     private var tick = 0
 
-    init(pixelWidth: Int, pixelHeight: Int, fps: Int) {
+    /// Streamed instead of the test pattern when set (`--synthetic-image`).
+    private let picture: CGImage?
+
+    init(pixelWidth: Int, pixelHeight: Int, fps: Int, picture: CGImage? = nil) {
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.fps = fps
+        self.picture = picture
     }
 
     func start(onFrame: @escaping @Sendable (CapturedFrame) -> Void, onStop: @escaping @Sendable ((any Error)?) -> Void) async throws {
@@ -74,6 +78,10 @@ nonisolated final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
         tick += 1
         let w = CGFloat(pixelWidth), h = CGFloat(pixelHeight)
+        if let picture {
+            context.draw(picture, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return buffer
+        }
 
         // Wallpaper gradient.
         let colors = [CGColor(red: 0.10, green: 0.16, blue: 0.32, alpha: 1), CGColor(red: 0.45, green: 0.20, blue: 0.55, alpha: 1)] as CFArray

@@ -363,7 +363,8 @@ actor HostSession {
         #endif
 
         let capture: any FrameSource = HostOptions.shared.syntheticCapture
-            ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS)
+            ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
+                                   picture: DisplayEnumerator.syntheticPicture)
             : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
                             excludingBundleIDs: excludedFromPicture)
         let captureID = ObjectIdentifier(capture)

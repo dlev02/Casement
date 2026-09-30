@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 import ScreenCaptureKit
 import VantageCore
 
@@ -13,10 +14,22 @@ nonisolated enum DisplayEnumerator {
                     originX: 0, originY: 0, isMain: true, isBuiltIn: false, isVirtual: true, refreshRate: 60)
     }
 
+    /// `--synthetic-image`, loaded once: what a synthetic host streams instead of its test pattern.
+    static let syntheticPicture: CGImage? = {
+        guard let path = HostOptions.shared.syntheticImage,
+              let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }()
+
     /// Displays available to stream, as `DisplayInfo`. Uses synthetic data in synthetic mode so
     /// that listing never touches ScreenCaptureKit (which would require screen-recording TCC).
     static func availableDisplays() async throws -> [DisplayInfo] {
-        if HostOptions.shared.syntheticCapture { return [syntheticDisplay()] }
+        if HostOptions.shared.syntheticCapture {
+            if let image = syntheticPicture {
+                return [syntheticDisplay(pointWidth: image.width / 2, pointHeight: image.height / 2)]
+            }
+            return [syntheticDisplay()]
+        }
         return try await shareableDisplays().map(\.info)
     }
 

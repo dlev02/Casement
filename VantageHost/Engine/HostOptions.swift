@@ -22,6 +22,8 @@ import VantageCore
 ///   then behave like a Mac whose screen is off until something wakes it.
 /// - `--capture-fails-for 6`: each session's capture can't start for that many seconds after its
 ///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
+/// - `--synthetic-image /path.png`: a synthetic host streams that picture instead of the test
+///   pattern, and its pretend display takes the picture's size at 2x (README screenshots).
 /// - `--platform windows|macos`: the platform the host tells clients it runs (`HostPlatform`), so
 ///   the client can be tried against a pretend Windows PC. Any other value is sent as given.
 nonisolated final class HostOptions: @unchecked Sendable {
@@ -54,6 +56,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let captureFailsForSeconds: Double?
     /// What the host tells clients it runs (`--platform`, DEBUG only; always macOS in release).
     let platform: HostPlatform
+    /// A still picture a synthetic host streams instead of its test pattern (DEBUG only).
+    let syntheticImage: String?
 
     private init() {
         #if DEBUG
@@ -113,6 +117,11 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             platform = .macOS
         }
+        if let index = args.firstIndex(of: "--synthetic-image"), index + 1 < args.count {
+            syntheticImage = args[index + 1]
+        } else {
+            syntheticImage = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -129,6 +138,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         fakeDisplaySleep = false
         captureFailsForSeconds = nil
         platform = .macOS
+        syntheticImage = nil
         #endif
     }
 }
