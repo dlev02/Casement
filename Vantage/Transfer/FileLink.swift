@@ -77,7 +77,7 @@ final class FileLink {
         screen = .connected
         macKeepsFiles = capabilities?.filesOnlySessions == true
         guard capabilities?.fileTransfer == true else {
-            files.failWaiting("The Mac's Vantage Host can't receive files. Update Vantage Host on the Mac.")
+            files.failWaiting("The Mac's Porthole Host can't receive files. Update Porthole Host on the Mac.")
             return
         }
         // One channel at a time: one that outlived an earlier screen session carries on.
@@ -109,7 +109,7 @@ final class FileLink {
         guard linkTask == nil, files.hasPendingWork else { return }
         if macKeepsFiles == false {
             // An older Mac only takes files over a screen session; that session connects them.
-            if screen == .none { files.failWaiting("Update Vantage Host on \(macName) to send files without opening its screen.") }
+            if screen == .none { files.failWaiting("Update Porthole Host on \(macName) to send files without opening its screen.") }
             return
         }
         guard device != nil else { return }
@@ -186,7 +186,7 @@ final class FileLink {
                 guard session.capabilities?.filesOnlySessions == true, session.capabilities?.fileTransfer == true, let token = session.token else {
                     await session.primary.close()
                     macKeepsFiles = false
-                    let reason = "Update Vantage Host on \(device.name) to send files without opening its screen."
+                    let reason = "Update Porthole Host on \(device.name) to send files without opening its screen."
                     files.failWaiting(reason)
                     phase = .unavailable(reason)
                     return
@@ -207,7 +207,7 @@ final class FileLink {
             guard !Task.isCancelled, screenConnected || files.hasPendingWork else { break }
             attempt += 1
             guard attempt <= maxAttempts || screenConnected else {
-                let reason = "Couldn't reach \(device.name). Check that Vantage Host and Tailscale are running on both devices."
+                let reason = "Couldn't reach \(device.name). Check that Porthole Host and Tailscale are running on both devices."
                 files.failWaiting(reason)
                 phase = .unavailable(reason)
                 return
@@ -285,8 +285,8 @@ enum FilesOnlySession {
 
         func message(macName: String) -> String {
             switch self {
-            case .pairingRequired: "Open \(macName) once in Vantage to pair it, then send again."
-            case .incompatible: "Update Vantage Host on \(macName)."
+            case .pairingRequired: "Open \(macName) once in Porthole to pair it, then send again."
+            case .incompatible: "Update Porthole Host on \(macName)."
             case .refused(let message): message
             }
         }

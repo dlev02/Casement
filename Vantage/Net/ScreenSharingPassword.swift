@@ -61,11 +61,11 @@ enum ScreenSharingPassword {
         case .unsupportedAuthentication:
             return "Screen Sharing on the Mac isn't set up to accept an account name and password. In System Settings → General → Sharing → Screen Sharing, allow access for your account."
         case .authenticationFailed:
-            return "The Mac didn't accept the saved account name or password. Check both in its settings in Vantage (Edit)."
+            return "The Mac didn't accept the saved account name or password. Check both in its settings in Porthole (Edit)."
         case .timedOut:
             return "Screen Sharing on the Mac didn't answer in time. Try again in a moment."
         case .protocolError(let detail):
-            return "Screen Sharing answered in a way Vantage didn't expect (\(detail))."
+            return "Screen Sharing answered in a way Porthole didn't expect (\(detail))."
         }
     }
 }

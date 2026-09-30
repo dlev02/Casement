@@ -156,7 +156,7 @@ final class TransferBackgroundActivity {
         guard center.overallSummary.isActive, task == nil, grace == .invalid else { return }
         // No continued processing task (yet): the ordinary background grace, then a clean pause.
         // UIKit calls this on the main thread and wants the task ended before it returns.
-        grace = UIApplication.shared.beginBackgroundTask(withName: "Vantage file transfers") { @Sendable in
+        grace = UIApplication.shared.beginBackgroundTask(withName: "Porthole file transfers") { @Sendable in
             MainActor.assumeIsolated {
                 let activity = TransferBackgroundActivity.shared
                 if activity.task == nil {

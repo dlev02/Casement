@@ -282,12 +282,12 @@ nonisolated struct ArrivalSummary: Equatable, Sendable {
 
     /// Why "Open the File" showed something in Finder instead.
     var notOpenedNote: String? {
-        if tooManyToOpen { return "That's more than Vantage opens at once, so they're shown in Finder." }
+        if tooManyToOpen { return "That's more than Porthole opens at once, so they're shown in Finder." }
         guard notOpenedCount > 0 else { return nil }
-        if names.count == 1 { return "Vantage only opens documents and media by itself, so it's shown in Finder." }
+        if names.count == 1 { return "Porthole only opens documents and media by itself, so it's shown in Finder." }
         return notOpenedCount == 1
-            ? "Vantage only opens documents and media by itself, so one is shown in Finder."
-            : "Vantage only opens documents and media by itself, so \(notOpenedCount) are shown in Finder."
+            ? "Porthole only opens documents and media by itself, so one is shown in Finder."
+            : "Porthole only opens documents and media by itself, so \(notOpenedCount) are shown in Finder."
     }
 
     /// The same, short enough for the on-screen notice.

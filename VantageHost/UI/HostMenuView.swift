@@ -39,7 +39,7 @@ struct HostMenuView: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Vantage Host").font(.headline)
+                Text("Porthole Host").font(.headline)
                 Text(controller.tailscaleSelfName.isEmpty ? "This Mac" : controller.tailscaleSelfName)
                     .font(.caption)
                     .foregroundStyle(.secondary)

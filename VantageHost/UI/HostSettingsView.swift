@@ -31,7 +31,7 @@ struct HostSettingsView: View {
         Form {
             Section("While connected") {
                 Toggle("Ask before restarting, shutting down, or logging out", isOn: $confirmRestart)
-                Text("If a device is connected when macOS starts a restart (including one from Software Update), Vantage Host asks first and can cancel it.")
+                Text("If a device is connected when macOS starts a restart (including one from Software Update), Porthole Host asks first and can cancel it.")
                     .font(.caption).foregroundStyle(.secondary)
                 if controller.canRestartSafely {
                     Button("Restart Safely…") { controller.restartSafely() }
@@ -40,13 +40,13 @@ struct HostSettingsView: View {
                 }
             }
             Section("After a reboot") {
-                Toggle("Start Vantage Host at login", isOn: Binding(
+                Toggle("Start Porthole Host at login", isOn: Binding(
                     get: { controller.loginItem.isEnabled },
                     set: { controller.loginItem.setEnabled($0) }))
                 if controller.loginItem.requiresApproval {
                     Button("Approve in Login Items…") { controller.loginItem.openLoginItemsSettings() }
                 }
-                Text("Once you log in, Vantage Host relaunches and your iPad reconnects automatically.")
+                Text("Once you log in, Porthole Host relaunches and your iPad reconnects automatically.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Before login") {

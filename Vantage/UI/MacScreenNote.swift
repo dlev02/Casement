@@ -45,7 +45,7 @@ struct MacScreenNote: View {
         switch (kind, isWaking) {
         case (.asleep, false): "\(LocalDevice.tap.capitalized) anywhere to wake it"
         case (.asleep, true): "Waking it…"
-        case (.unavailable, false): "Vantage keeps trying. \(LocalDevice.tap.capitalized) to try now."
+        case (.unavailable, false): "Porthole keeps trying. \(LocalDevice.tap.capitalized) to try now."
         case (.unavailable, true): "Trying again…"
         }
     }

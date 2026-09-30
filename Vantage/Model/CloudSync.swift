@@ -36,7 +36,7 @@ final class CloudSync {
             switch self {
             case .available: nil
             case .noiCloudAccount: "Sign in to iCloud in Settings to sync your device list."
-            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain now. The device list itself waits on an App Store build — this copy of Vantage isn't signed for iCloud storage."
+            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain now. The device list itself waits on an App Store build — this copy of Porthole isn't signed for iCloud storage."
             }
         }
     }

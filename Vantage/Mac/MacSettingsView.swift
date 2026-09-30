@@ -51,7 +51,7 @@ private struct MacGeneralSettings: View {
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Automatic follows the system setting. This changes Vantage's own windows and controls, not the Mac you're viewing.")
+                Text("Automatic follows the system setting. This changes Porthole's own windows and controls, not the Mac you're viewing.")
             }
         }
         .navigationTitle("General")

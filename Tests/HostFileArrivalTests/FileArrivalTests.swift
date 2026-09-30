@@ -264,15 +264,15 @@ private func url(_ name: String) -> URL { URL(fileURLWithPath: "/tmp/received/\(
     @Test func saysWhyAFileWasShownInsteadOfOpened() {
         let one = ArrivalSummary(files: [url("Tool.app")], devices: ["Drew's iPad"], folderName: "Downloads",
                                  isDownloads: true, notOpenedCount: 1)
-        #expect(one.notificationBody == "From Drew's iPad. It's in Downloads. Vantage only opens documents and media by itself, so it's shown in Finder.")
+        #expect(one.notificationBody == "From Drew's iPad. It's in Downloads. Porthole only opens documents and media by itself, so it's shown in Finder.")
 
         let mixed = ArrivalSummary(files: [url("a.pdf"), url("b.app"), url("c.sh")], devices: ["Drew's iPad"],
                                    folderName: "Downloads", isDownloads: true, notOpenedCount: 2)
-        #expect(mixed.notOpenedNote == "Vantage only opens documents and media by itself, so 2 are shown in Finder.")
+        #expect(mixed.notOpenedNote == "Porthole only opens documents and media by itself, so 2 are shown in Finder.")
 
         let many = ArrivalSummary(files: (1...6).map { url("\($0).jpg") }, devices: ["Drew's iPad"], folderName: "Downloads",
                                   isDownloads: true, tooManyToOpen: true)
-        #expect(many.notOpenedNote == "That's more than Vantage opens at once, so they're shown in Finder.")
+        #expect(many.notOpenedNote == "That's more than Porthole opens at once, so they're shown in Finder.")
 
         let opened = ArrivalSummary(files: [url("a.pdf")], devices: ["Drew's iPad"], folderName: "Downloads", isDownloads: true)
         #expect(opened.notOpenedNote == nil)

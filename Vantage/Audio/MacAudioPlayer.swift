@@ -124,7 +124,7 @@ final class MacAudioPlayer {
             }
             guard pipeline.configure(config) else {
                 stopOutput()
-                status = .unavailable("This version of Vantage can't play the Mac's audio (\(config.codec)). Update Vantage.")
+                status = .unavailable("This version of Porthole can't play the Mac's audio (\(config.codec)). Update Porthole.")
                 return
             }
             log.info("Mac audio: \(config.codec, privacy: .public) \(config.sampleRate, privacy: .public) Hz, \(config.channels, privacy: .public) ch, \(config.framesPerPacket, privacy: .public) frames/packet, \(config.bitrate / 1000, privacy: .public) kbps")

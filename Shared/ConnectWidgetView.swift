@@ -123,7 +123,7 @@ struct ConnectWidgetView: View {
             Text("No Macs yet")
                 .font(.headline)
                 .foregroundStyle(.white)
-            Text("Add one in Vantage")
+            Text("Add one in Porthole")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
         }

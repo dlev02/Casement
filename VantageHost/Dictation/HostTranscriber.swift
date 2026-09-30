@@ -106,7 +106,7 @@ nonisolated struct HostTranscriber: Sendable {
         let samples = Self.paddedForTranscription(recorded)
         let usable = Self.order(requested: requested).filter(isUsable)
         guard !usable.isEmpty else {
-            throw Failure(message: "This Mac has no speech engine. Install MacWhisper or turn on built-in transcription in Vantage Host, or transcribe on the iPad.")
+            throw Failure(message: "This Mac has no speech engine. Install MacWhisper or turn on built-in transcription in Porthole Host, or transcribe on the iPad.")
         }
 
         // Written only when a file-based engine runs, and always deleted afterwards.

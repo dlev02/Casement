@@ -66,16 +66,16 @@ enum RestartGuard {
     }
 
     private static func consequence(of reason: Reason, fileVaultOn: Bool?) -> String {
-        let connected = "A device is controlling this Mac through Vantage."
+        let connected = "A device is controlling this Mac through Porthole."
         switch reason {
         case .shutDown:
             return connected + " Once it shuts down, nobody can turn it back on remotely."
         case .logOut:
-            return connected + " After logging out, Vantage Host stops until someone logs in again, so you won't be able to reconnect."
+            return connected + " After logging out, Porthole Host stops until someone logs in again, so you won't be able to reconnect."
         case .restart where fileVaultOn == true:
-            return connected + " FileVault is on, so after the restart this Mac waits at the FileVault unlock screen. Vantage and Tailscale can't reach it until someone unlocks it in person."
+            return connected + " FileVault is on, so after the restart this Mac waits at the FileVault unlock screen. Porthole and Tailscale can't reach it until someone unlocks it in person."
         case .restart:
-            return connected + " After the restart, Vantage Host only starts again once someone logs in, so you may not be able to reconnect."
+            return connected + " After the restart, Porthole Host only starts again once someone logs in, so you may not be able to reconnect."
         }
     }
 

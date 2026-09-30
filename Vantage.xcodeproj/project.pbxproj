@@ -448,12 +448,12 @@
 				"ENABLE_USER_SELECTED_FILES[sdk=macosx*]" = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Vantage/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
+				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Vantage connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Vantage uses Face ID to unlock the app and protect your connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -499,12 +499,12 @@
 				"ENABLE_USER_SELECTED_FILES[sdk=macosx*]" = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Vantage/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
+				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Vantage connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Vantage uses Face ID to unlock the app and protect your connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -547,11 +547,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Vantage Host";
+				INFOPLIST_KEY_CFBundleDisplayName = "Porthole Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Vantage Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Vantage Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Porthole Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Porthole Host saves files you send from your iPad in your Downloads folder.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -578,11 +578,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Vantage Host";
+				INFOPLIST_KEY_CFBundleDisplayName = "Porthole Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Vantage Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Vantage Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Porthole Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Porthole Host saves files you send from your iPad in your Downloads folder.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -606,7 +606,7 @@
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
+				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -634,7 +634,7 @@
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Vantage;
+				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (

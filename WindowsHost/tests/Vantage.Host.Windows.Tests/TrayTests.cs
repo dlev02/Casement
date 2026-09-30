@@ -11,7 +11,7 @@ public class TrayMenuModelTests
     public void IdleMenu()
     {
         var items = TrayMenuModel.Build(new TrayState("drew-pc", true, null, [], []));
-        Assert.Equal(["Vantage Host: Listening on drew-pc", "", "Show Pairing Code…", "", "Settings…", "Quit Vantage Host"],
+        Assert.Equal(["Porthole Host: Listening on drew-pc", "", "Show Pairing Code…", "", "Settings…", "Quit Porthole Host"],
                      items.Select(i => i.Text));
         Assert.False(items[0].IsEnabled);
         Assert.True(items[1].IsSeparator);
@@ -25,8 +25,8 @@ public class TrayMenuModelTests
     {
         var state = new TrayState("drew-pc", true, null, [new TrayClient(Session, "Drew's iPad")], [new TrayFileTarget(Channel, "Drew's iPad")]);
         var items = TrayMenuModel.Build(state);
-        Assert.Equal(["Vantage Host: Listening on drew-pc", "Connected: Drew's iPad", "", "Show Pairing Code…",
-                      "Send File to Drew's iPad…", "Disconnect Drew's iPad", "", "Settings…", "Quit Vantage Host"],
+        Assert.Equal(["Porthole Host: Listening on drew-pc", "Connected: Drew's iPad", "", "Show Pairing Code…",
+                      "Send File to Drew's iPad…", "Disconnect Drew's iPad", "", "Settings…", "Quit Porthole Host"],
                      items.Select(i => i.Text));
         Assert.False(items[1].IsEnabled);
         Assert.Equal(new TrayCommand(TrayCommandKind.SendFile, Channel), items[4].Command);
@@ -37,18 +37,18 @@ public class TrayMenuModelTests
     public void NotListeningExplainsWhyAndDisablesPairing()
     {
         var items = TrayMenuModel.Build(new TrayState("drew-pc", false, "Port 47820 is in use", [], []));
-        Assert.Equal("Vantage Host: Port 47820 is in use", items[0].Text);
+        Assert.Equal("Porthole Host: Port 47820 is in use", items[0].Text);
         Assert.False(items.Single(i => i.Command.Kind == TrayCommandKind.ShowPairingCode).IsEnabled);
-        Assert.Equal("Vantage Host: Starting…", TrayMenuModel.Headline(TrayState.Starting("drew-pc")));
+        Assert.Equal("Porthole Host: Starting…", TrayMenuModel.Headline(TrayState.Starting("drew-pc")));
     }
 
     [Fact]
     public void Tooltips()
     {
-        Assert.Equal("Vantage Host — ready", TrayMenuModel.Tooltip(new TrayState("pc", true, null, [], [])));
-        Assert.Equal("Vantage Host — Drew's iPad connected",
+        Assert.Equal("Porthole Host — ready", TrayMenuModel.Tooltip(new TrayState("pc", true, null, [], [])));
+        Assert.Equal("Porthole Host — Drew's iPad connected",
                      TrayMenuModel.Tooltip(new TrayState("pc", true, null, [new TrayClient(Session, "Drew's iPad")], [])));
-        Assert.Equal("Vantage Host — 2 devices connected",
+        Assert.Equal("Porthole Host — 2 devices connected",
                      TrayMenuModel.Tooltip(new TrayState("pc", true, null, [new TrayClient(Session, "A"), new TrayClient(Guid.NewGuid(), "B")], [])));
         var longName = new string('x', 300);
         var tip = TrayMenuModel.Tooltip(new TrayState("pc", true, null, [new TrayClient(Session, longName)], []));

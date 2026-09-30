@@ -174,7 +174,7 @@ public sealed class FileTransferEngine
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
                 _log.LogError("can't read file to send: {Error}", error.Message);
-                return Finish(transferId, new FileTransferOutcome.Failed("Vantage couldn't read that file."));
+                return Finish(transferId, new FileTransferOutcome.Failed("Porthole couldn't read that file."));
             }
             await using (stream.ConfigureAwait(false))
             {
@@ -317,7 +317,7 @@ public sealed class FileTransferEngine
             if (state.TakeTerminalReply() is { } early) return Finish(id, early);
             if (state.Cancelled) return Finish(id, new FileTransferOutcome.Cancelled(false));
             _log.LogError("send failed: {Error}", error.Message);
-            return Finish(id, new FileTransferOutcome.Failed(error is UnauthorizedAccessException ? "Vantage couldn't read that file." : "The connection was lost."));
+            return Finish(id, new FileTransferOutcome.Failed(error is UnauthorizedAccessException ? "Porthole couldn't read that file." : "The connection was lost."));
         }
         var reply = await state.NextReplyAsync().ConfigureAwait(false);
         switch (reply)

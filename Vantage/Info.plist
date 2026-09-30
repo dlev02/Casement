@@ -48,8 +48,8 @@
 		<string>com.benjaminlevinson.vantage.transfers.*</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Vantage uses the microphone when you dictate text to your computer.</string>
+	<string>Porthole uses the microphone when you dictate text to your computer.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Vantage turns your speech into text on this device, or on your own computer when you choose to dictate there, and types it for you.</string>
+	<string>Porthole turns your speech into text on this device, or on your own computer when you choose to dictate there, and types it for you.</string>
 </dict>
 </plist>

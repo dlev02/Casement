@@ -20,7 +20,7 @@ struct HostFilesSection: View {
                     Label("Send File to iPad…", systemImage: "arrow.up.doc")
                 }
                 .disabled(true)
-                Text("Connect from Vantage on your iPad to send files either way.")
+                Text("Connect from Porthole on your iPad to send files either way.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

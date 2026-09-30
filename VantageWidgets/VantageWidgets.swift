@@ -88,7 +88,7 @@ struct ConnectControl: ControlWidget {
             }
         }
         .displayName("Connect to Mac")
-        .description("Opens Vantage and connects to your most recent Mac.")
+        .description("Opens Porthole and connects to your most recent Mac.")
     }
 }
 

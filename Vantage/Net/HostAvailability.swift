@@ -41,7 +41,7 @@ enum HostAvailability: Equatable, Sendable {
         let status: HostAvailability = await withTaskCancellationHandler {
             do {
                 try await channel.start()
-                try await channel.send(.hello(Hello(clientName: "Vantage availability", deviceModel: "client", appVersion: "1.0",
+                try await channel.send(.hello(Hello(clientName: "Porthole availability", deviceModel: "client", appVersion: "1.0",
                     clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264], maxDecodeWidth: 0,
                     maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true)))
                 guard let response = try await channel.receive() else { return .unavailable }

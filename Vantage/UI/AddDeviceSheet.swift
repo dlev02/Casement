@@ -111,7 +111,7 @@ struct AddDeviceSheet: View {
         Section {
             Toggle("Virtual Display", isOn: $useVirtualDisplay)
         } footer: {
-            Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Vantage connects only over your Tailscale network.")
+            Text("Asks the Mac for a BetterDisplay virtual screen that matches this device. Off streams the Mac's main display, which connects fastest. Porthole connects only over your Tailscale network.")
         }
 
         Section {
@@ -136,7 +136,7 @@ struct AddDeviceSheet: View {
         } header: {
             Text("Mac Sign-In")
         } footer: {
-            Text("Optional, kept in this device's Keychain. The key button types the password and Return. Where macOS blocks typing (password fields, the lock screen), Vantage types it through the Mac's Screen Sharing instead, so turn that on for this account. The home network address, like 192.168.1.20, lets Log In reach the Mac at its login window after a restart, through a Tailscale subnet router.")
+            Text("Optional, kept in this device's Keychain. The key button types the password and Return. Where macOS blocks typing (password fields, the lock screen), Porthole types it through the Mac's Screen Sharing instead, so turn that on for this account. The home network address, like 192.168.1.20, lets Log In reach the Mac at its login window after a restart, through a Tailscale subnet router.")
         }
     }
 

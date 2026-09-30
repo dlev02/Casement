@@ -537,7 +537,7 @@ struct FileTransferSessionTests {
         files.send([try randomFile(bytes: 1_000, in: sourceDir, name: "Note.txt")], securityScoped: false)
         try await waitUntil("failed") { if case .failed = files.transfers.first?.state { true } else { false } }
         guard case .failed(let reason) = files.transfers.first?.state else { return }
-        #expect(reason.contains("Update Vantage Host on Old Mac"))
+        #expect(reason.contains("Update Porthole Host on Old Mac"))
         #expect(host.engineCount == 0)
         try await waitUntil("hung up") { host.closedPrimaryCount == 1 }
         #expect(link.macKeepsFiles == false)
@@ -663,8 +663,8 @@ struct FileTransferSessionTests {
         let files = FileTransferController(receiveDirectory: try scratchDirectory("client"))
         files.sendOutboxCopy(copy)
         #expect(files.transfers.first?.state == .waiting)
-        files.failWaiting("Update Vantage Host.")
-        #expect(files.transfers.first?.state == .failed("Update Vantage Host."))
+        files.failWaiting("Update Porthole Host.")
+        #expect(files.transfers.first?.state == .failed("Update Porthole Host."))
         #expect(!FileManager.default.fileExists(atPath: copy.path), "the outbox copy is cleaned up")
     }
 }

@@ -38,7 +38,7 @@ struct TailscaleAccountScreen: View {
                 } header: {
                     Text("Tailscale")
                 } footer: {
-                    Text("Vantage only reads the device list. It never changes your tailnet.")
+                    Text("Porthole only reads the device list. It never changes your tailnet.")
                 }
                 Section {
                     Button("Sign Out", role: .destructive) {
@@ -48,7 +48,7 @@ struct TailscaleAccountScreen: View {
                 }
             } else {
                 Section {
-                    Text("Tailscale has no sign-in for third-party apps. Instead you create a read-only key in the Tailscale admin console and paste it here — then Vantage can list your tailnet and add Macs with \(Pointing.oneTap).")
+                    Text("Tailscale has no sign-in for third-party apps. Instead you create a read-only key in the Tailscale admin console and paste it here — then Porthole can list your tailnet and add Macs with \(Pointing.oneTap).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -131,11 +131,11 @@ struct TailscaleOAuthSetup: View {
                     Label("Open Tailscale OAuth Clients", systemImage: "arrow.up.right.square")
                 }
                 SetupStep(2) { Text("\(Pointing.tap) **Generate OAuth client…**") }
-                SetupStep(3) { Text("Give it a description — \(Text("Vantage").bold()) works.") }
+                SetupStep(3) { Text("Give it a description — \(Text("Porthole").bold()) works.") }
                 SetupStep(4) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Under **Scopes**, find the **Devices** row and turn on **Read** under **Core**.")
-                        Text("That is the only permission Vantage needs. Leave every other scope off — it can't change anything on your tailnet.")
+                        Text("That is the only permission Porthole needs. Leave every other scope off — it can't change anything on your tailnet.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

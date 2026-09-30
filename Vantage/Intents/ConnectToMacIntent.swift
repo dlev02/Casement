@@ -8,7 +8,7 @@ import Foundation
 /// An `OpenIntent`, so it is also what runs when a Mac is opened from Spotlight.
 struct ConnectToMacIntent: OpenIntent {
     static let title: LocalizedStringResource = "Connect to Mac"
-    static let description = IntentDescription("Opens Vantage and connects to one of your Macs.")
+    static let description = IntentDescription("Opens Porthole and connects to one of your Macs.")
     /// The session is the whole point, so the app always comes forward.
     static let supportedModes: IntentModes = .foreground(.immediate)
 

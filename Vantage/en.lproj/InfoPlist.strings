@@ -1,0 +1,3 @@
+/* The name menus and the system show ("Quit Porthole"). The target, bundle and module stay Vantage. */
+"CFBundleName" = "Porthole";
+"CFBundleDisplayName" = "Porthole";

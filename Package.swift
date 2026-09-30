@@ -8,7 +8,7 @@ let package = Package(
     dependencies: [.package(path: "Packages/VantageCore")],
     targets: [
         .target(name: "VantageClientLogic", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
-                path: "Vantage", exclude: ["Assets.xcassets", "ContentView.swift", "VantageApp.swift", "UI", "Video",
+                path: "Vantage", exclude: ["Assets.xcassets", "en.lproj", "ContentView.swift", "VantageApp.swift", "UI", "Video",
                     "Input/RemoteInteractionView.swift",
                     "Model/DeviceStore.swift", "Net/TailscaleReachability.swift"],
                 sources: ["Net/ClientSession.swift", "Model/SavedDevice.swift", "Model/ControlStripLayout.swift", "Model/SessionPreferences.swift", "Net/HostAvailability.swift", "Input/InputController.swift", "Input/PointerMapping.swift", "Model/Haptic.swift", "Input/CharacterKeyMap.swift", "Net/TailscaleAPI.swift", "Model/ClientOptions.swift", "Model/CloudSync.swift", "Model/DeviceSecrets.swift", "Model/Dictation.swift", "Model/HostShortcut.swift", "Model/HostNoun.swift", "Input/KeyRemap.swift", "Dictation/AudioResampler.swift",

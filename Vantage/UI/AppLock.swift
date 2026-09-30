@@ -40,7 +40,7 @@ final class AppLock {
             return
         }
         isAuthenticating = true
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vantage") { success, _ in
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Porthole") { success, _ in
             Task { @MainActor in
                 self.isAuthenticating = false
                 self.isLocked = !success
@@ -92,7 +92,7 @@ struct LockOverlay: View {
             Rectangle().fill(.background).ignoresSafeArea()
             VStack(spacing: 16) {
                 Image(systemName: "lock.fill").font(.largeTitle)
-                Text("Vantage is locked").font(.headline)
+                Text("Porthole is locked").font(.headline)
                 if let errorMessage {
                     Text(errorMessage).font(.callout).multilineTextAlignment(.center).padding(.horizontal)
                 }

@@ -39,7 +39,7 @@ struct FilesSettingsTab: View {
             }
             if notify, delivery == .off {
                 HStack {
-                    Label("Notifications for Vantage Host are off in System Settings.", systemImage: "bell.slash")
+                    Label("Notifications for Porthole Host are off in System Settings.", systemImage: "bell.slash")
                         .foregroundStyle(.orange)
                     Spacer()
                     Button("Turn On…") { HostNotifications.shared.openSystemSettings(forThisApp: true) }
@@ -159,7 +159,7 @@ struct FilesSettingsTab: View {
         } header: {
             Text("While an iPad is watching")
         } footer: {
-            Text("macOS hides notification banners while the screen is shared, and an iPad watching through Vantage counts as sharing, so Vantage shows its own notice instead. To get banners too, turn on “Allow notifications when mirroring or sharing the display” in Notification Settings.")
+            Text("macOS hides notification banners while the screen is shared, and an iPad watching through Porthole counts as sharing, so Porthole shows its own notice instead. To get banners too, turn on “Allow notifications when mirroring or sharing the display” in Notification Settings.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -178,7 +178,7 @@ struct FilesSettingsTab: View {
         case .off:
             Label("Off", systemImage: "bell.slash")
                 .foregroundStyle(.orange)
-                .help("Notifications for Vantage Host are off in System Settings.")
+                .help("Notifications for Porthole Host are off in System Settings.")
         case .notAsked:
             Text("Not set up yet")
                 .foregroundStyle(.secondary)

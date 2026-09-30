@@ -77,7 +77,7 @@ $process = Get-Process VantageHostCli -ErrorAction SilentlyContinue
 if (-not $process) {
     Write-Warning "The host didn't start. Is Drew signed in at the PC (and not over Remote Desktop)?"
 } else {
-    Write-Host "Vantage Host (console) running in session $($process.SessionId) on port $Port, pairing code $PairingCode."
+    Write-Host "Porthole Host (console) running in session $($process.SessionId) on port $Port, pairing code $PairingCode."
 }
 Write-Host "Log: $log"
 Write-Host "Follow it with: Get-Content `"$log`" -Wait -Tail 50"

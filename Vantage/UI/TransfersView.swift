@@ -358,7 +358,7 @@ enum ReceivedFiles {
     static let location = "in your Downloads folder"
     #else
     static let browser = "Files"
-    static let location = "in Files, under On My iPad › Vantage › Received"
+    static let location = "in Files, under On My iPad › Porthole › Received"
     #endif
 
     /// Opens Files at the folder holding `url` (On My iPad › Vantage › Received).

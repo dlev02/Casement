@@ -111,7 +111,7 @@ public sealed class AppController
         catch (Exception ex)
         {
             _log.LogCritical(ex, "the host couldn't start");
-            Problem = "Vantage Host couldn't start: " + ex.Message;
+            Problem = "Porthole Host couldn't start: " + ex.Message;
             ShowWindow();
             return;
         }
@@ -155,7 +155,7 @@ public sealed class AppController
         }
         catch (Exception ex)
         {
-            Problem = "Vantage Host couldn't start listening: " + ex.Message;
+            Problem = "Porthole Host couldn't start listening: " + ex.Message;
             _log.LogError(ex, "can't listen");
             ShowWindow();
         }

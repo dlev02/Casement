@@ -16,7 +16,7 @@ struct SettingsScreen: View {
                 NavigationLink { HelpScreen() } label: { Label("Help & FAQ", systemImage: "questionmark.circle") }
                 NavigationLink { AboutScreen() } label: {
                     HStack {
-                        Label("About Vantage", systemImage: "info.circle")
+                        Label("About Porthole", systemImage: "info.circle")
                         Spacer()
                         Text(AppInfo.versionString).foregroundStyle(.secondary)
                     }
@@ -32,9 +32,9 @@ enum AppInfo {
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—" }
     static var versionString: String { "\(version) (\(build))" }
     static let websiteURL = URL(string: "https://drewlevinson.me")!
-    static let githubURL = URL(string: "https://github.com/dlev02/Vantage")!
-    static let privacyURL = URL(string: "https://github.com/dlev02/Vantage/blob/main/PRIVACY.md")!
-    static let supportURL = URL(string: "https://github.com/dlev02/Vantage/issues")!
+    static let githubURL = URL(string: "https://github.com/dlev02/Porthole")!
+    static let privacyURL = URL(string: "https://github.com/dlev02/Porthole/blob/main/PRIVACY.md")!
+    static let supportURL = URL(string: "https://github.com/dlev02/Porthole/issues")!
 }
 
 extension View {
@@ -68,7 +68,7 @@ struct AppearanceSettings: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             } footer: {
-                Text("Automatic follows the system setting. This changes Vantage's own screens and controls, not the Mac you're viewing.")
+                Text("Automatic follows the system setting. This changes Porthole's own screens and controls, not the Mac you're viewing.")
             }
         }
         .navigationTitle("Appearance")
@@ -224,12 +224,12 @@ struct ControlSettings: View {
         } footer: {
             #if os(macOS)
             Text(macOffersParakeet
-                 ? "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the other Mac doesn't have the one you pick, Vantage uses the other, then this Mac, which works offline and shows words as you speak."
-                 : "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this Mac instead when that one doesn't have MacWhisper. This Mac works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
+                 ? "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Porthole Host's built-in model, turned on in Porthole Host Settings → Dictation. If the other Mac doesn't have the one you pick, Porthole uses the other, then this Mac, which works offline and shows words as you speak."
+                 : "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, MacWhisper transcribes with the model you chose in MacWhisper; Porthole uses this Mac instead when that one doesn't have MacWhisper. This Mac works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Porthole Host Settings → Dictation.")
             #else
             Text(macOffersParakeet
-                 ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Vantage Host's built-in model, turned on in Vantage Host Settings → Dictation. If the Mac doesn't have the one you pick, Vantage uses the other, then this iPad. On this iPad works offline and shows words as you speak."
-                 : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Vantage uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Vantage Host Settings → Dictation.")
+                 ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Porthole Host's built-in model, turned on in Porthole Host Settings → Dictation. If the Mac doesn't have the one you pick, Porthole uses the other, then this iPad. On this iPad works offline and shows words as you speak."
+                 : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Porthole uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Porthole Host Settings → Dictation.")
             #endif
         }
     }
@@ -244,7 +244,7 @@ struct ControlSettings: View {
         } header: {
             Text("Keyboard")
         } footer: {
-            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Vantage instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, for a Mac; a PC has its own ⌘ Acts as Ctrl in its settings, on unless you turn it off.")
+            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Porthole instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, for a Mac; a PC has its own ⌘ Acts as Ctrl in its settings, on unless you turn it off.")
         }
     }
     #endif
@@ -300,7 +300,7 @@ struct ConnectionSettings: View {
             } header: {
                 Text("Network")
             } footer: {
-                Text("Vantage only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
+                Text("Porthole only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
             }
 
             Section {
@@ -327,7 +327,7 @@ struct SecuritySettings: View {
                 Toggle("Require Touch ID", isOn: $requireBiometrics)
                     .accessibilityIdentifier("settings.requireBiometrics")
             } footer: {
-                Text("Vantage locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
+                Text("Porthole locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
             }
             // iCloud sync stays off on the Mac until the app is signed for iCloud there: without
             // that, its Keychain can't hold synced secrets.
@@ -335,7 +335,7 @@ struct SecuritySettings: View {
             Section {
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
             } footer: {
-                Text("Unlock Vantage with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
+                Text("Unlock Porthole with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
             }
 
             Section {
@@ -351,7 +351,7 @@ struct SecuritySettings: View {
             } header: {
                 Text("iCloud")
             } footer: {
-                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Vantage up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
+                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Porthole up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
             }
             #endif
         }
@@ -367,7 +367,7 @@ struct AboutScreen: View {
                 VStack(spacing: 10) {
                     AppIconTile()
                         .padding(.bottom, 6)
-                    Text("Vantage")
+                    Text("Porthole")
                         .font(.title.weight(.bold))
                     Text("Your Mac or PC, wherever you are.")
                         .foregroundStyle(.secondary)
@@ -397,7 +397,7 @@ struct AboutScreen: View {
                     Label("Help & FAQ", systemImage: "questionmark.circle")
                 }
             } footer: {
-                Text("Vantage streams your Mac or PC with hardware video encoding, across your own Tailscale network only. There is no account, no relay server, and no tracking.")
+                Text("Porthole streams your Mac or PC with hardware video encoding, across your own Tailscale network only. There is no account, no relay server, and no tracking.")
             }
         }
         .navigationTitle("About")
@@ -464,15 +464,15 @@ struct HelpScreen: View {
     static let sections: [FAQSection] = [
         FAQSection("Getting Connected", [
             FAQEntry("What do I need on the Mac?",
-                     "Install Vantage Host (from the Vantage page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
+                     "Install Porthole Host (from the Porthole page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Can I control a Windows PC?",
-                     "Yes, with Vantage Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
+                     "Yes, with Porthole Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
             siriEntry,
-            FAQEntry("Does Vantage work away from home?",
-                     "Yes. Vantage connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
-            FAQEntry("Why does Vantage want a Tailscale key?",
+            FAQEntry("Does Porthole work away from home?",
+                     "Yes. Porthole connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
+            FAQEntry("Why does Porthole want a Tailscale key?",
                      "Only to read your device list, so it can offer your Macs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding Macs by name or IP by hand works without one."),
         ]),
         FAQSection("Controlling the Mac", controllingTheMac),
@@ -480,29 +480,29 @@ struct HelpScreen: View {
             FAQEntry("HEVC or H.264?",
                      "HEVC looks better at the same bandwidth and is the default. Choose H.264 only if something in the path can't decode HEVC."),
             FAQEntry("What does Virtual Display do?",
-                     "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Vantage streams the Mac's main display, which connects fastest."),
+                     "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Porthole streams the Mac's main display, which connects fastest."),
             FAQEntry("Do I need BetterDisplay or MacWhisper?",
-                     "No. Without BetterDisplay, Vantage streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Vantage Host's optional built-in Parakeet model. Both are optional extras that Vantage uses when they're there."),
+                     "No. Without BetterDisplay, Porthole streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Porthole Host's optional built-in Parakeet model. Both are optional extras that Porthole uses when they're there."),
             FAQEntry("The picture went soft for a moment.",
-                     "Vantage drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."),
+                     "Porthole drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."),
         ]),
         FAQSection("Restarts & Locked Macs", [
             FAQEntry("What happens if my Mac restarts while I'm away?",
-                     "Vantage Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."),
-            FAQEntry("Can Vantage stop an accidental restart?",
-                     "Yes. While a device is connected, Vantage Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Vantage Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
+                     "Porthole Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."),
+            FAQEntry("Can Porthole stop an accidental restart?",
+                     "Yes. While a device is connected, Porthole Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Porthole Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
             FAQEntry("Can I unlock a locked Mac?",
-                     "If the Mac is asleep at its lock screen, \(typePasswordGesture): Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
+                     "If the Mac is asleep at its lock screen, \(typePasswordGesture): Porthole types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
             FAQEntry("How do I log in after a restart?",
-                     "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."),
+                     "At the login window the Mac's own Tailscale isn't running yet, so Porthole can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Porthole types your password there, the Mac logs in, and a minute later you can connect as usual."),
             FAQEntry("What does Restart Safely do?",
-                     "It's in Vantage Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
+                     "It's in Porthole Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
         ]),
         FAQSection("Files, Sound & Clipboard", [
             FAQEntry("How do I send files?",
                      sendFilesAnswer),
             FAQEntry("Where do files end up?",
-                     "On a Mac, in Downloads, or the folder chosen in Vantage Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Vantage Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
+                     "On a Mac, in Downloads, or the folder chosen in Porthole Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Porthole Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
             FAQEntry("Can I hear the Mac's sound?",
                      "Yes. Turn on Mac Audio in the session controls or the session menu, and the Mac's sound plays on \(LocalDevice.this) while you're connected (the Mac keeps playing it too). You can make it the default for a Mac in its settings. PCs don't send sound yet."),
             FAQEntry("How does the clipboard work?",
@@ -510,19 +510,19 @@ struct HelpScreen: View {
         ]),
         FAQSection("Privacy", [
             FAQEntry("Does my screen go through a server?",
-                     "No. There is no Vantage account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Vantage has no ads, analytics, or tracking; the privacy policy is linked in About."),
+                     "No. There is no Porthole account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Porthole has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Can someone else connect to my Mac?",
-                     "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Vantage Host refuses connections from any address outside Tailscale's range."),
-            FAQEntry("What does Vantage store on this device?",
+                     "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Porthole Host refuses connections from any address outside Tailscale's range."),
+            FAQEntry("What does Porthole store on this device?",
                      "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
-        FAQSection("About Vantage", [
-            FAQEntry("Is Vantage free?",
-                     "Yes. Vantage and Vantage Host are free and open source, with no ads, subscriptions, or in-app purchases. The source code is on GitHub."),
+        FAQSection("About Porthole", [
+            FAQEntry("Is Porthole free?",
+                     "Yes. Porthole and Porthole Host are free and open source, with no ads, subscriptions, or in-app purchases. The source code is on GitHub."),
             FAQEntry("Where can I get help or report a bug?",
-                     "Open an issue on the Vantage GitHub page (About → Report a Problem). Say which devices and versions you're using and what happened; for connection problems, mention whether Tailscale shows both devices as connected."),
+                     "Open an issue on the Porthole GitHub page (About → Report a Problem). Say which devices and versions you're using and what happened; for connection problems, mention whether Tailscale shows both devices as connected."),
         ]),
     ]
 }
@@ -530,7 +530,7 @@ struct HelpScreen: View {
 extension HelpScreen {
     #if os(macOS)
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
-                                           "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Vantage is locked with Touch ID, the connection waits until you unlock.")
+                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Porthole is locked with Touch ID, the connection waits until you unlock.")
     private static let logInGesture = "select the Mac in the sidebar"
     private static let typePasswordGesture = "choose Type Password in the Session menu (⌃⌥⌘P)"
     private static let receivedFilesPlace = "in this Mac's Downloads folder"
@@ -538,28 +538,28 @@ extension HelpScreen {
     private static let clipboardAnswer = "What you copy on the other computer arrives on this Mac by itself. Going the other way, ⌘V in a session sends this Mac's clipboard just before it pastes, or choose Send Clipboard in the Session menu (⌃⌥⌘V). Text, rich text, and images are supported; files go through Send File instead."
     private static let controllingTheMac: [FAQEntry] = [
         FAQEntry("Which shortcuts go to the Mac?",
-                 "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Vantage. Hold ⌃⌥⌘ with a key to reach Vantage instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Vantage."),
+                 "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Porthole. Hold ⌃⌥⌘ with a key to reach Porthole instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Porthole."),
         FAQEntry("How do I send ⌘Tab or ⌘Space?",
-                 "macOS keeps those for itself, so Vantage can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
+                 "macOS keeps those for itself, so Porthole can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
         FAQEntry("How do I right-click or scroll?",
                  "The same way as on this Mac: your mouse and trackpad buttons, gestures, and scrolling go straight through, and the other Mac's pointer follows yours inside the window."),
         FAQEntry("Why can't I type into a password box?",
-                 "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+                 "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Porthole shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Porthole types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
         FAQEntry("How does Type Password get into password fields?",
-                 "Save the Mac's account name and password in its settings in Vantage. When macOS is blocking ordinary typing, Vantage signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+                 "Save the Mac's account name and password in its settings in Porthole. When macOS is blocking ordinary typing, Porthole signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
         FAQEntry("Can I change the buttons in the session controls?",
                  "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Controls… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, which you turn on in Porthole Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #else
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
-                                           "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock.")
+                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Porthole is locked with Face ID, the connection waits until you unlock.")
     private static let logInGesture = "long-press the Mac in the list"
     private static let typePasswordGesture = "tap the key button"
-    private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Vantage › Received"
-    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you long-press a computer in the list, without opening its screen at all. You can also pick Vantage from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Vantage partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
-    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Vantage never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
+    private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Porthole › Received"
+    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you long-press a computer in the list, without opening its screen at all. You can also pick Porthole from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Porthole partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
+    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Porthole never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
     private static let controllingTheMac: [FAQEntry] = [
                 FAQEntry("Trackpad or Direct Touch?",
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
@@ -570,13 +570,13 @@ extension HelpScreen {
                 FAQEntry("Unicode Text or Keystrokes for the keyboard?",
                          "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
                 FAQEntry("Why can't I type into a password box?",
-                         "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Vantage shows a banner. Your saved password still gets through: tap the key button and Vantage types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+                         "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Porthole shows a banner. Your saved password still gets through: tap the key button and Porthole types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
                 FAQEntry("How does the key button type into password fields?",
-                         "Save your Mac's account name and password in the Mac's settings in Vantage. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+                         "Save your Mac's account name and password in the Mac's settings in Porthole. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
                 FAQEntry("Can I change the buttons in the session controls?",
                          "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Vantage can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Vantage Host's built-in Parakeet model, which you turn on in Vantage Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, which you turn on in Porthole Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #endif
 }

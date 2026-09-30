@@ -76,9 +76,9 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
         if nsError.domain == SCStreamErrorDomain, let code = SCStreamError.Code(rawValue: nsError.code) {
             switch code {
             case .failedToStartAudioCapture:
-                return "The Mac couldn't start capturing its sound. Try again, or restart Vantage Host."
+                return "The Mac couldn't start capturing its sound. Try again, or restart Porthole Host."
             case .userDeclined, .noCaptureSource:
-                return "Vantage Host needs Screen Recording permission to send the Mac's sound."
+                return "Porthole Host needs Screen Recording permission to send the Mac's sound."
             default:
                 break
             }

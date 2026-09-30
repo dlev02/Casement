@@ -173,7 +173,7 @@ final class ParakeetModel {
             log.info("Parakeet model removed")
         } catch {
             log.error("couldn't remove Parakeet model: \(error.localizedDescription, privacy: .public)")
-            state = .failed("Vantage Host couldn't delete the model: \(error.localizedDescription)")
+            state = .failed("Porthole Host couldn't delete the model: \(error.localizedDescription)")
         }
     }
 

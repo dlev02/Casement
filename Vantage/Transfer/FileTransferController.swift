@@ -478,7 +478,7 @@ final class FileTransferController {
 
     #if DEBUG
     /// `-VantageSendTestFile <bytes>`: queues a file of random bytes, as if picked in Files.
-    func queueTestFile(bytes: Int, name: String = "Vantage Test.bin") {
+    func queueTestFile(bytes: Int, name: String = "Porthole Test.bin") {
         var generator = SystemRandomNumberGenerator()
         var data = Data(count: bytes)
         data.withUnsafeMutableBytes { raw in

@@ -3,7 +3,7 @@
     x:Class="Vantage.Host.Windows.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Vantage Host">
+    Title="Porthole Host">
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
@@ -16,7 +16,7 @@
 
         <TitleBar
             x:Name="AppTitleBar"
-            Title="Vantage Host"
+            Title="Porthole Host"
             IsBackButtonVisible="False"
             IsPaneToggleButtonVisible="True"
             PaneToggleRequested="OnPaneToggleRequested">

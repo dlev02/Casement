@@ -19,7 +19,7 @@ struct VantageApp: App {
         #if os(macOS)
         // One device list (⌘N adds a Mac rather than a second list); every link and opened file
         // lands here rather than in a session window.
-        Window("Vantage", id: MacRootView.sceneID) {
+        Window("Porthole", id: MacRootView.sceneID) {
             MacRootView().macWindowRoot()
         }
         .defaultSize(width: 880, height: 580)
@@ -59,13 +59,13 @@ struct VantageApp: App {
             MacSettingsView()
         }
 
-        Window("Vantage Help", id: MacHelpWindow.sceneID) {
+        Window("Porthole Help", id: MacHelpWindow.sceneID) {
             MacHelpWindow()
         }
         .defaultSize(width: 560, height: 640)
         .commandsRemoved() // opened from Help › Vantage Help
 
-        Window("About Vantage", id: MacAboutWindow.sceneID) {
+        Window("About Porthole", id: MacAboutWindow.sceneID) {
             MacAboutWindow()
         }
         .windowResizability(.contentSize)

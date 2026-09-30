@@ -58,7 +58,7 @@ final class HostNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func sent(_ name: String, to device: String, destination: String? = nil) {
-        let body = destination == "Downloads" ? "It's in Downloads on \(device)." : "It's in Files on \(device), in the Vantage folder."
+        let body = destination == "Downloads" ? "It's in Downloads on \(device)." : "It's in Files on \(device), in the Porthole folder."
         post(title: "Sent \(name)", body: body, category: nil, userInfo: [:])
     }
 

@@ -36,7 +36,7 @@
                         <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Pair an iPad" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Add this PC in Vantage on your iPad, then type the code shown here. A code works once, for 10 minutes."
+                            Text="Add this PC in Porthole on your iPad, then type the code shown here. A code works once, for 10 minutes."
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <Button
@@ -64,7 +64,7 @@
             <Border Style="{StaticResource CardStyle}">
                 <ToggleSwitch
                     x:Name="StartAtLoginSwitch"
-                    Header="Start Vantage Host when I sign in"
+                    Header="Start Porthole Host when I sign in"
                     Toggled="OnStartAtLoginToggled" />
             </Border>
         </StackPanel>
