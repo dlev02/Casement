@@ -154,6 +154,8 @@ final class HostController {
 
     func revoke(_ fingerprint: String) {
         trust.revoke(fingerprint: fingerprint)
+        // A revoked device loses what it has open too, not just its next connection.
+        for session in sessions + fileSessions { Task { await session.endIfClient(fingerprint) } }
         // A file channel can outlive its session, so it doesn't end with one: close it here.
         for channel in fileChannels where channel.clientKey == fingerprint { Task { await channel.engine.close() } }
     }

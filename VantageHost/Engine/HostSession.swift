@@ -852,6 +852,13 @@ actor HostSession {
         return "\(error.domain) \(error.code): \(error.localizedDescription)"
     }
 
+    /// The device was just revoked: tell it why and end the session, screen or files-only.
+    func endIfClient(_ key: String) async {
+        guard clientKey == key, state != .closed else { return }
+        try? await channel.send(.disconnect(DisconnectMessage(reason: "This device was removed from the Mac.")))
+        await teardown()
+    }
+
     private func teardown() async {
         guard state != .closed else { return }
         let wasFilesOnly = state == .filesOnly
