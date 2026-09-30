@@ -32,7 +32,9 @@ enum AppInfo {
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—" }
     static var versionString: String { "\(version) (\(build))" }
     static let websiteURL = URL(string: "https://drewlevinson.me")!
-    static let githubURL = URL(string: "https://github.com/dlev02")!
+    static let githubURL = URL(string: "https://github.com/dlev02/Vantage")!
+    static let privacyURL = URL(string: "https://github.com/dlev02/Vantage/blob/main/PRIVACY.md")!
+    static let supportURL = URL(string: "https://github.com/dlev02/Vantage/issues")!
 }
 
 extension View {
@@ -130,9 +132,11 @@ struct ControlSettings: View {
                         Text(sensitivity.formatted(.number.precision(.fractionLength(1))) + "×")
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
+                            .accessibilityHidden(true)
                     }
                     Slider(value: $sensitivity, in: 0.5...3, step: 0.1)
                         .accessibilityLabel("Trackpad sensitivity")
+                        .accessibilityValue("\(sensitivity.formatted(.number.precision(.fractionLength(1)))) times")
                 }
             } header: {
                 Text("Pointer")
@@ -365,7 +369,7 @@ struct AboutScreen: View {
                         .padding(.bottom, 6)
                     Text("Vantage")
                         .font(.title.weight(.bold))
-                    Text("Your Mac, wherever you are.")
+                    Text("Your Mac or PC, wherever you are.")
                         .foregroundStyle(.secondary)
                     Text("Version \(AppInfo.versionString)")
                         .font(.footnote)
@@ -383,7 +387,9 @@ struct AboutScreen: View {
 
             Section {
                 LinkRow(title: "Website", symbol: "globe", destination: AppInfo.websiteURL)
-                LinkRow(title: "GitHub", symbol: "chevron.left.forwardslash.chevron.right", destination: AppInfo.githubURL)
+                LinkRow(title: "Source Code", symbol: "chevron.left.forwardslash.chevron.right", destination: AppInfo.githubURL)
+                LinkRow(title: "Privacy Policy", symbol: "hand.raised", destination: AppInfo.privacyURL)
+                LinkRow(title: "Report a Problem", symbol: "exclamationmark.bubble", destination: AppInfo.supportURL)
             }
 
             Section {
@@ -391,7 +397,7 @@ struct AboutScreen: View {
                     Label("Help & FAQ", systemImage: "questionmark.circle")
                 }
             } footer: {
-                Text("Vantage streams your Mac with ScreenCaptureKit and hardware video encoding, across your own Tailscale network only. There is no account and no relay server.")
+                Text("Vantage streams your Mac or PC with hardware video encoding, across your own Tailscale network only. There is no account, no relay server, and no tracking.")
             }
         }
         .navigationTitle("About")
@@ -458,7 +464,7 @@ struct HelpScreen: View {
     static let sections: [FAQSection] = [
         FAQSection("Getting Connected", [
             FAQEntry("What do I need on the Mac?",
-                     "Install Vantage Host, then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
+                     "Install Vantage Host (from the Vantage page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Can I control a Windows PC?",
                      "Yes, with Vantage Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
             FAQEntry("Why did it ask me to pair?",
@@ -486,21 +492,37 @@ struct HelpScreen: View {
             FAQEntry("Can Vantage stop an accidental restart?",
                      "Yes. While a device is connected, Vantage Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Vantage Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
             FAQEntry("Can I unlock a locked Mac?",
-                     "If the Mac is asleep at its lock screen, tap the key button: Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
+                     "If the Mac is asleep at its lock screen, \(typePasswordGesture): Vantage types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
             FAQEntry("How do I log in after a restart?",
                      "At the login window the Mac's own Tailscale isn't running yet, so Vantage can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Vantage types your password there, the Mac logs in, and a minute later you can connect as usual."),
             FAQEntry("What does Restart Safely do?",
                      "It's in Vantage Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
         ]),
+        FAQSection("Files, Sound & Clipboard", [
+            FAQEntry("How do I send files?",
+                     sendFilesAnswer),
+            FAQEntry("Where do files end up?",
+                     "On a Mac, in Downloads, or the folder chosen in Vantage Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Vantage Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
+            FAQEntry("Can I hear the Mac's sound?",
+                     "Yes. Turn on Mac Audio in the session controls or the session menu, and the Mac's sound plays on \(LocalDevice.this) while you're connected (the Mac keeps playing it too). You can make it the default for a Mac in its settings. PCs don't send sound yet."),
+            FAQEntry("How does the clipboard work?",
+                     clipboardAnswer),
+        ]),
         FAQSection("Privacy", [
             FAQEntry("Does my screen go through a server?",
-                     "No. There is no Vantage account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel."),
+                     "No. There is no Vantage account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Vantage has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Can someone else connect to my Mac?",
                      "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Vantage Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Vantage store on this device?",
                      "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
+        ]),
+        FAQSection("About Vantage", [
+            FAQEntry("Is Vantage free?",
+                     "Yes. Vantage and Vantage Host are free and open source, with no ads, subscriptions, or in-app purchases. The source code is on GitHub."),
+            FAQEntry("Where can I get help or report a bug?",
+                     "Open an issue on the Vantage GitHub page (About → Report a Problem). Say which devices and versions you're using and what happened; for connection problems, mention whether Tailscale shows both devices as connected."),
         ]),
     ]
 }
@@ -510,6 +532,10 @@ extension HelpScreen {
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
                                            "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Vantage is locked with Touch ID, the connection waits until you unlock.")
     private static let logInGesture = "select the Mac in the sidebar"
+    private static let typePasswordGesture = "choose Type Password in the Session menu (⌃⌥⌘P)"
+    private static let receivedFilesPlace = "in this Mac's Downloads folder"
+    private static let sendFilesAnswer = "Drag files onto a session window or onto a Mac in the sidebar, or choose Send File… in the Session menu (⌃⌥⌘U) or Send Files… on the Mac's page. Transfers keep going after you disconnect or close the window; Transfers… shows their progress."
+    private static let clipboardAnswer = "What you copy on the other computer arrives on this Mac by itself. Going the other way, ⌘V in a session sends this Mac's clipboard just before it pastes, or choose Send Clipboard in the Session menu (⌃⌥⌘V). Text, rich text, and images are supported; files go through Send File instead."
     private static let controllingTheMac: [FAQEntry] = [
         FAQEntry("Which shortcuts go to the Mac?",
                  "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Vantage. Hold ⌃⌥⌘ with a key to reach Vantage instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Vantage."),
@@ -530,6 +556,10 @@ extension HelpScreen {
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
                                            "Yes. Say \"Connect to Studio Mac in Vantage\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Vantage is locked with Face ID, the connection waits until you unlock.")
     private static let logInGesture = "long-press the Mac in the list"
+    private static let typePasswordGesture = "tap the key button"
+    private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Vantage › Received"
+    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you long-press a computer in the list, without opening its screen at all. You can also pick Vantage from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Vantage partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
+    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Vantage never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
     private static let controllingTheMac: [FAQEntry] = [
                 FAQEntry("Trackpad or Direct Touch?",
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
