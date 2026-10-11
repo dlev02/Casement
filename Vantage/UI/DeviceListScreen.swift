@@ -55,8 +55,10 @@ struct DeviceListScreen: View {
 
     private var listView: some View {
         List {
-            ForEach(store.sortedDevices) { device in
-                DeviceListItem(device: device, availability: status(of: device),
+            let devices = store.sortedDevices
+            ForEach(devices) { device in
+                DeviceListItem(device: device, isFirst: device.id == devices.first?.id, isLast: device.id == devices.last?.id,
+                               availability: status(of: device),
                                files: transfers.files(for: device.id),
                                onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
                                onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
@@ -68,6 +70,9 @@ struct DeviceListScreen: View {
                     }
                 }
                 .contextMenu { DeviceMenu(device: device, actions: actions) }
+                #if os(visionOS)
+                .listRowInsets(EdgeInsets()) // the row pads itself (`DeviceListItem.rowInsets`)
+                #endif
             }
         }
     }
@@ -80,10 +85,6 @@ struct DeviceListScreen: View {
                                files: transfers.files(for: device.id),
                                onOpen: { selectedDevice = device }, onShowTransfers: { actions.transfersDevice = device },
                                onSendFiles: { actions.sendFiles(to: device) }, dropFiles: { transfers.link(for: device).files })
-                    #if os(visionOS)
-                    .contentShape(.hoverEffect, .rect(cornerRadius: 20))
-                    .hoverEffect()
-                    #endif
                     .contextMenu { DeviceMenu(device: device, actions: actions) }
                 }
             }
@@ -375,6 +376,9 @@ struct DeviceRow: View {
 /// name shows them (its own button, so it isn't swallowed by the row's).
 private struct DeviceListItem: View {
     let device: SavedDevice
+    /// Where the row sits in its section, which rounds only its outer corners.
+    let isFirst: Bool
+    let isLast: Bool
     let availability: HostAvailability?
     let files: FileTransferController?
     let onOpen: () -> Void
@@ -384,17 +388,41 @@ private struct DeviceListItem: View {
     let dropFiles: () -> FileTransferController
     @State private var isDropTargeted = false
 
+    #if os(visionOS)
+    static let rowInsets = EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)
+    /// The list section's corner radius (checked against it in the simulator).
+    private static let sectionCornerRadius: CGFloat = 32
+    #else
+    static let rowInsets = EdgeInsets()
+    private static let sectionCornerRadius: CGFloat = 0
+    #endif
+
+    /// The row's cell: square, except for the section's rounded corners at either end, so the gaze
+    /// highlight fills it exactly.
+    private var cellShape: UnevenRoundedRectangle {
+        let top = isFirst ? Self.sectionCornerRadius : 0
+        let bottom = isLast ? Self.sectionCornerRadius : 0
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
+                                      bottomTrailingRadius: bottom, topTrailingRadius: top)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: onOpen) {
                 DeviceRow(device: device, availability: availability)
+                    #if os(visionOS)
+                    // The row's own insets, inside the button, so the gaze highlight fills the
+                    // whole row rather than hugging its text (the list adds none; see below).
+                    .padding(.horizontal, Self.rowInsets.leading)
+                    .padding(.vertical, Self.rowInsets.top)
+                    #endif
             }
-            .buttonStyle(.plain)
+            .rowButtonStyle(in: cellShape)
             .accessibilityAction(named: "Send Files") { onSendFiles() }
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
-                    .padding(.leading, 58) // under the name, past the 44 pt icon and its spacing
-                    .padding(.bottom, 6)
+                    .padding(.leading, 58 + Self.rowInsets.leading) // under the name, past the 44 pt icon and its spacing
+                    .padding(.bottom, 6 + Self.rowInsets.bottom)
                     .transition(.opacity)
             }
         }
@@ -435,7 +463,7 @@ struct DeviceCard: View {
     @State private var isDropTargeted = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top) {
@@ -454,18 +482,22 @@ struct DeviceCard: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // The button reaches the card's edges, so all of it opens the Mac and, on
+                // visionOS, the gaze highlight fills the card.
+                .padding(16)
                 .contentShape(.rect)
                 .accessibilityElement(children: .combine)
             }
-            .buttonStyle(.plain)
+            .rowButtonStyle(in: .rect(cornerRadius: 20, style: .continuous))
             .accessibilityAction(named: "Send Files") { onSendFiles() }
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name, onOpen: onShowTransfers)
+                    .padding([.horizontal, .bottom], 16)
+                    .padding(.top, -6) // 10 pt under the card's text
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
         .platformGlass(in: .rect(cornerRadius: 20))
         .overlay {
             if isDropTargeted {

@@ -534,7 +534,18 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   and hold = right-click). Liquid Glass is unavailable: use `platformGlass(in:)`, and `.glass` /
   `.glassProminent` button styles map to bordered styles in `PlatformGlass.swift`. No Pencil
   interaction, haptics, keyboard accessory, Control Center controls, or widgets on visionOS. The
-  visionOS app icon (a layered `.solidimagestack`) doesn't exist yet. The simulator can't take
+  visionOS app icon (a layered `.solidimagestack`) doesn't exist yet. The session window is
+  `.windowStyle(.plain)`: a glass window's big corner radius cut off the Mac's Apple menu and
+  clock, and insetting the picture left a glass border. The picture is the Mac's exact aspect with
+  16 pt corners (`VisionSessionPicture`), like Mac Virtual Display; glass backs the window only while
+  there's no picture (connecting, locked). Plain-style buttons get a capsule gaze highlight hugging
+  their label, so rows and cards use `rowButtonStyle(in:)` (a custom style with its own
+  `.hoverEffect` shape); device-list rows take zero `listRowInsets`, pad inside the button, and
+  shape the highlight like their cell (square, with the section's 32 pt corners on the first and
+  last rows), and a card's button spans the card. Both window roots opt into Look to Scroll
+  (`scrollInputBehavior(.enabled, for: .look)`). The session menu stays a system `Menu`, which
+  doesn't look-scroll: Drew prefers the system menu to a scrolling popover. No Appearance setting
+  there (windows are always glass), and the lock says Optic ID. The simulator can't take
   AXe/xcui input, so pinch mapping still needs a headset check.
 
 ## macOS client

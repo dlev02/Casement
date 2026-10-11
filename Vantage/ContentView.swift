@@ -46,9 +46,12 @@ struct ContentView: View {
         }
         #if os(iOS)
         .background(LockCurtain(lock: lock, appearance: appearance))
-        #endif
         .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+        #endif
         #if os(visionOS)
+        // Look to Scroll: a glance at the top or bottom edge of the list, a settings page, or
+        // Help scrolls it, as in Apple's apps. Apps have to opt in.
+        .scrollInputBehavior(.enabled, for: .look)
         .onChange(of: selectedDevice) { _, device in
             guard let device else { return }
             openWindow(id: SessionWindow.sceneID, value: device.id)
@@ -207,9 +210,8 @@ struct DebugScreenView: View {
 struct SessionWindow: View {
     static let sceneID = "session"
     let deviceID: UUID?
-    #if os(visionOS) // the Mac's window root handles both
+    #if os(visionOS) // the Mac's window root handles it
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
     #endif
     private let store = DeviceStore.shared
     private let lock = AppLock.shared
@@ -227,12 +229,14 @@ struct SessionWindow: View {
         Group {
             if lock.isLocked {
                 LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
             } else {
                 content
             }
         }
         .frame(minWidth: 480, minHeight: 300)
-        .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+        .scrollInputBehavior(.enabled, for: .look) // the session menu, Transfers, and other sheets
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { lock.authenticate() }
         }
@@ -245,6 +249,9 @@ struct SessionWindow: View {
         } else {
             ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
                                    description: Text("This Mac is no longer in your device list."))
+                #if os(visionOS) // the session window is plain
+                .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
+                #endif
         }
     }
 }

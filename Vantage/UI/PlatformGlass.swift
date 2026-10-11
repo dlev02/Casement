@@ -45,3 +45,32 @@ extension PrimitiveButtonStyle where Self == GlassProminentButtonStyle {
     static var onCardProminent: GlassProminentButtonStyle { .glassProminent }
 }
 #endif
+
+extension View {
+    /// `.buttonStyle(.plain)`, except that on visionOS the gaze highlight fills the whole label in
+    /// `shape`. The plain style's own highlight is a capsule hugging the label, which lit only part
+    /// of a list row or card.
+    @ViewBuilder
+    func rowButtonStyle(in shape: some Shape) -> some View {
+        #if os(visionOS)
+        buttonStyle(HighlightedPlainButtonStyle(shape: shape))
+        #else
+        buttonStyle(.plain)
+        #endif
+    }
+}
+
+#if os(visionOS)
+/// A custom style gets no automatic gaze highlight, so the one added here, with its shape, is
+/// the only one.
+private struct HighlightedPlainButtonStyle<S: Shape>: ButtonStyle {
+    var shape: S
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(.hoverEffect, shape)
+            .hoverEffect(.highlight)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+    }
+}
+#endif
