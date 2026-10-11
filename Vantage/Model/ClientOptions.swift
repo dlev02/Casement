@@ -25,11 +25,11 @@ enum ClientOptions {
         #if DEBUG
         guard ProcessInfo.processInfo.arguments.contains("-VantageTailscaleFixture") else { return nil }
         return [
-            TailscaleDevice(id: "1", name: "studio-mac.example.ts.net.", hostname: "Studio Mac", os: "macOS", addresses: ["100.101.1.10", "fd7a:115c:a1e0::1"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
-            TailscaleDevice(id: "2", name: "office-mac.example.ts.net.", hostname: "Office Mac", os: "macOS", addresses: ["100.101.1.11"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86_400)), authorized: true, user: "drew@example.com", tags: nil),
-            TailscaleDevice(id: "3", name: "drew-pc.example.ts.net.", hostname: "Drew-PC", os: "windows", addresses: ["100.101.1.20"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
-            TailscaleDevice(id: "4", name: "homelab.example.ts.net.", hostname: "homelab", os: "linux", addresses: ["100.101.1.30"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: ["tag:server"]),
-            TailscaleDevice(id: "5", name: "drews-ipad.example.ts.net.", hostname: "Drew's iPad Pro", os: "iOS", addresses: ["100.101.1.40"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
+            TailscaleDevice(id: "1", name: "studio-mac.example.ts.net.", hostname: "Studio Mac", os: "macOS", addresses: ["100.64.0.10", "fd7a:115c:a1e0::1"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
+            TailscaleDevice(id: "2", name: "office-mac.example.ts.net.", hostname: "Office Mac", os: "macOS", addresses: ["100.64.0.11"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86_400)), authorized: true, user: "drew@example.com", tags: nil),
+            TailscaleDevice(id: "3", name: "drew-pc.example.ts.net.", hostname: "Drew-PC", os: "windows", addresses: ["100.64.0.20"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
+            TailscaleDevice(id: "4", name: "homelab.example.ts.net.", hostname: "homelab", os: "linux", addresses: ["100.64.0.30"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: ["tag:server"]),
+            TailscaleDevice(id: "5", name: "drews-ipad.example.ts.net.", hostname: "Drew's iPad Pro", os: "iOS", addresses: ["100.64.0.40"], clientVersion: "1.90.0", lastSeen: ISO8601DateFormatter().string(from: Date()), authorized: true, user: "drew@example.com", tags: nil),
         ]
         #else
         return nil
