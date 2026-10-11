@@ -294,10 +294,6 @@ struct RemoteSessionScreen: View {
                 store.markConnected(device)
                 // Hosts before the platform field are all Macs.
                 store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
-                if session.dictationEngines?.contains(.parakeet) == true {
-                    // Lets Settings → Controls offer Parakeet once any Mac has advertised it.
-                    UserDefaults.standard.set(true, forKey: DictationEnginePreference.macOffersParakeetKey)
-                }
                 #if os(macOS)
                 checkForThisMac()
                 #endif

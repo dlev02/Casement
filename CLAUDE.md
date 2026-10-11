@@ -309,9 +309,15 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `AsrModels.loadLocal`. The host advertises `parakeet` only while it's on and downloaded
   (`BuiltInSpeechEngines.shared`), warms it at launch/after download (first-ever load compiles
   for the ANE, ~18 s; later ~0.4 s), and a clip that arrives mid-warm-up waits ≤20 s, then falls
-  back. Engine order: the client's `DictationControl.engine`, then MacWhisper → Parakeet → Apple;
-  the result names the engine and the panel labels it. Client: "On the Mac (Parakeet)" appears in
-  Settings → Controls once a Mac has advertised it. `ParakeetRuntime` sits behind
+  back. **Which engine is the Mac's choice**: host Settings → Dictation → Engine
+  (`dictation.engine`, `HostTranscriber.preferredEngineKey`; empty = Automatic = MacWhisper →
+  Parakeet → Apple). `availableEngines()` lists that one first, and the client's only choice is
+  "On the Mac" or "On this device" (`DictationEnginePreference`; an old saved `parakeet` decodes
+  to the default `.mac`): `DictationRoute` takes the host's first engine whenever it has
+  MacWhisper or Parakeet. The host tries the client's `DictationControl.engine`, then Settings'
+  choice, then Automatic's order (`HostTranscriber.order(requested:preferred:)`); the result names
+  the engine and the panel labels it. Settings rows put values and buttons on the trailing edge
+  (the Parakeet model's state, size and Download/Cancel/Remove share one row). `ParakeetRuntime` sits behind
   `BuiltInSpeechEngine`, which the SPM host tests stub (the root package never builds FluidAudio).
   `--open-settings dictation` (DEBUG) opens the host's Settings in a window for screenshots. Debug: `-VantageDictationFixture listening|review|macTranscribing|macReview|failed|download`
   shows the panel without the mic; `-VantageDictationSpeak "text"` sends TTS audio through the whole
