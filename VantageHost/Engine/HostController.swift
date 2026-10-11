@@ -563,7 +563,7 @@ final class HostController {
         }
     }
 
-    /// The address alone ("100.101.1.40", "fd7a:…", "127.0.0.1"): what the file channel's peer
+    /// The address alone ("100.64.0.40", "fd7a:…", "127.0.0.1"): what the file channel's peer
     /// must match.
     private static func hostPart(_ endpoint: NWEndpoint) -> String {
         guard case let .hostPort(host, _) = endpoint else { return String(describing: endpoint) }
