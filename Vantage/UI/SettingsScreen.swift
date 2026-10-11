@@ -86,7 +86,6 @@ struct ControlSettings: View {
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
-    @AppStorage(DictationEnginePreference.macOffersParakeetKey) private var macOffersParakeet = false
     @AppStorage(Haptic.settingKey) private var haptics = true
     @AppStorage(MacKeyboardSettings.captureShortcutsKey) private var captureShortcuts = true
     @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapCommandControl = false
@@ -217,7 +216,7 @@ struct ControlSettings: View {
     private var dictationSection: some View {
         Section {
             Picker("Transcribe", selection: $dictationEngine) {
-                ForEach(DictationEnginePreference.choices(macOffersParakeet: macOffersParakeet, selection: dictationEngine)) { engine in
+                ForEach(DictationEnginePreference.allCases) { engine in
                     Text(engine.label).tag(engine)
                 }
             }
@@ -225,13 +224,9 @@ struct ControlSettings: View {
             Text("Dictation")
         } footer: {
             #if os(macOS)
-            Text(macOffersParakeet
-                 ? "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Porthole Host's built-in model, turned on in Porthole Host Settings → Dictation. If the other Mac doesn't have the one you pick, Porthole uses the other, then this Mac, which works offline and shows words as you speak."
-                 : "Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, MacWhisper transcribes with the model you chose in MacWhisper; Porthole uses this Mac instead when that one doesn't have MacWhisper. This Mac works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Porthole Host Settings → Dictation.")
+            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, Porthole Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
             #else
-            Text(macOffersParakeet
-                 ? "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. MacWhisper transcribes with the model you chose in MacWhisper. Parakeet is Porthole Host's built-in model, turned on in Porthole Host Settings → Dictation. If the Mac doesn't have the one you pick, Porthole uses the other, then this iPad. On this iPad works offline and shows words as you speak."
-                 : "Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, MacWhisper transcribes with the model you chose in MacWhisper; Porthole uses this iPad instead when the Mac doesn't have MacWhisper. On this iPad works offline and shows words as you speak. Macs without MacWhisper can turn on built-in transcription in Porthole Host Settings → Dictation.")
+            Text("Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, Porthole Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
             #endif
         }
     }
@@ -552,7 +547,7 @@ extension HelpScreen {
         FAQEntry("Can I change the buttons in the session controls?",
                  "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Controls… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, which you turn on in Porthole Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, and the other Mac picks which in Porthole Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #else
     #if os(visionOS)
@@ -594,7 +589,7 @@ extension HelpScreen {
                 FAQEntry("Can I change the buttons in the session controls?",
                          "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, which you turn on in Porthole Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, and the Mac picks which in Porthole Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #endif
 }

@@ -1,13 +1,13 @@
 import Foundation
 import VantageCore
 
-/// Where dictated speech is turned into text (Settings → Controls).
+/// Where dictated speech is turned into text (Settings → Controls). Which engine the Mac uses is
+/// the Mac's choice (Porthole Host → Settings → Dictation), so the client only picks a side.
+/// A saved "parakeet" from before that falls back to `.mac`, which still reaches Parakeet when the
+/// Mac puts it first.
 nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
-    /// MacWhisper on the Mac when the host offers it, then the host's built-in Parakeet;
-    /// otherwise this device.
+    /// The engine the Mac lists first, when it has MacWhisper or Parakeet; otherwise this device.
     case mac
-    /// Vantage Host's optional built-in Parakeet model, then MacWhisper; otherwise this device.
-    case parakeet
     /// Apple's on-device speech model on this device (the case keeps its name on the Mac client).
     /// Works offline and when the Mac is busy.
     case iPad
@@ -15,18 +15,9 @@ nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .mac: "On the Mac (MacWhisper)"
-        case .parakeet: "On the Mac (Parakeet)"
+        case .mac: "On the Mac"
         case .iPad: "On \(LocalDevice.this)"
         }
-    }
-
-    /// Remembers that a Mac offered Parakeet, so Settings (which has no session) can list it.
-    static let macOffersParakeetKey = "vantage.dictation.macOffersParakeet"
-
-    /// The picker's choices: Parakeet only once a Mac has advertised it (or it's already chosen).
-    static func choices(macOffersParakeet: Bool, selection: DictationEnginePreference) -> [DictationEnginePreference] {
-        allCases.filter { $0 != .parakeet || macOffersParakeet || selection == .parakeet }
     }
 }
 
@@ -39,16 +30,13 @@ nonisolated enum DictationRoute: Equatable {
 
     /// Picks the engine for a session. The Mac is used only when the host advertised MacWhisper
     /// or Parakeet: an older host (nil engines) would drop the session on the new message kinds,
-    /// and a Mac with only Apple's engine offers nothing the iPad doesn't already have. The
-    /// preferred Mac engine goes first and the other Mac engine is the fallback.
+    /// and a Mac with only Apple's engine offers nothing the iPad doesn't already have. Then it's
+    /// the engine the host lists first, which is the one chosen in its Settings (older hosts list
+    /// MacWhisper first).
     static func resolve(preference: DictationEnginePreference, hostEngines: [DictationEngineID]?) -> DictationRoute {
-        guard let hostEngines else { return .iPad }
-        let order: [DictationEngineID] = switch preference {
-        case .iPad: []
-        case .mac: [.macWhisper, .parakeet]
-        case .parakeet: [.parakeet, .macWhisper]
-        }
-        return order.first(where: hostEngines.contains).map { .mac($0) } ?? .iPad
+        guard preference == .mac, let hostEngines, let first = hostEngines.first,
+              hostEngines.contains(where: { $0 == .macWhisper || $0 == .parakeet }) else { return .iPad }
+        return .mac(first)
     }
 
     var label: String {

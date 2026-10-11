@@ -174,6 +174,9 @@ struct HostDictationTests {
         #expect(HostTranscriber.order(requested: .apple) == [.apple, .macWhisper, .parakeet])
         // An engine this build doesn't know (a newer client) means "the host's best".
         #expect(HostTranscriber.order(requested: DictationEngineID(rawValue: "future")) == [.macWhisper, .parakeet, .apple])
+        // Settings' choice comes right after the client's.
+        #expect(HostTranscriber.order(requested: nil, preferred: .apple) == [.apple, .macWhisper, .parakeet])
+        #expect(HostTranscriber.order(requested: .parakeet, preferred: .apple) == [.parakeet, .apple, .macWhisper])
     }
 
     @Test func parakeetGetsTheSamplesDirectlyAndNoWAVIsWritten() async throws {

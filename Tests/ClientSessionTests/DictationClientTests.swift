@@ -56,24 +56,18 @@ struct DictationClientTests {
         #expect(DictationRoute.resolve(preference: .iPad, hostEngines: [.macWhisper]) == .iPad)
     }
 
-    @Test func parakeetIsPreferredOrUsedAsTheMacFallback() {
-        // Asked for Parakeet: used when advertised, else MacWhisper, else the iPad.
-        #expect(DictationRoute.resolve(preference: .parakeet, hostEngines: [.macWhisper, .parakeet, .apple]) == .mac(.parakeet))
-        #expect(DictationRoute.resolve(preference: .parakeet, hostEngines: [.macWhisper, .apple]) == .mac(.macWhisper))
-        #expect(DictationRoute.resolve(preference: .parakeet, hostEngines: [.apple]) == .iPad)
-        #expect(DictationRoute.resolve(preference: .parakeet, hostEngines: nil) == .iPad)      // older host
-        // "On the Mac (MacWhisper)": MacWhisper first, Parakeet on a Mac without it.
-        #expect(DictationRoute.resolve(preference: .mac, hostEngines: [.macWhisper, .parakeet]) == .mac(.macWhisper))
+    @Test func theMacsFirstEngineIsTheOneUsed() {
+        // The host lists the engine chosen in its Settings first.
+        #expect(DictationRoute.resolve(preference: .mac, hostEngines: [.parakeet, .macWhisper, .apple]) == .mac(.parakeet))
+        #expect(DictationRoute.resolve(preference: .mac, hostEngines: [.apple, .macWhisper]) == .mac(.apple))
         #expect(DictationRoute.resolve(preference: .mac, hostEngines: [.parakeet, .apple]) == .mac(.parakeet))
         #expect(DictationRoute.resolve(preference: .iPad, hostEngines: [.parakeet]) == .iPad)
+        // A saved choice from before the Mac picked the engine reads as "On the Mac".
+        #expect(DictationEnginePreference(rawValue: "parakeet") == nil)
 
         #expect(DictationRoute.mac(.parakeet).label == "Parakeet")
         #expect(DictationRoute.label(for: .apple) == "Apple on Mac")
         #expect(DictationRoute.label(for: DictationEngineID(rawValue: "future")) == "On Mac")
-        // Settings lists Parakeet only once a Mac has offered it (or it's already the choice).
-        #expect(DictationEnginePreference.choices(macOffersParakeet: false, selection: .mac) == [.mac, .iPad])
-        #expect(DictationEnginePreference.choices(macOffersParakeet: true, selection: .mac) == [.mac, .parakeet, .iPad])
-        #expect(DictationEnginePreference.choices(macOffersParakeet: false, selection: .parakeet) == [.mac, .parakeet, .iPad])
     }
 
     @Test func transcriptKeepsFinalTextAndReplacesVolatileGuesses() {

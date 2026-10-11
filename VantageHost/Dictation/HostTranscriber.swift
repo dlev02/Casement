@@ -6,9 +6,10 @@ import os
 
 /// Turns a finished dictation clip into text on the Mac.
 ///
-/// The engine the client asked for goes first; after that MacWhisper (its `mw` CLI transcribes a
-/// file through the running app with whatever model Drew selected there), then the optional
-/// built-in Parakeet model, then macOS SpeechAnalyzer. MacWhisper and Apple read a private temp
+/// The engine the client asked for goes first; after that the one chosen in Settings → Dictation
+/// (Engine), then MacWhisper (its `mw` CLI transcribes a file through the running app
+/// with whatever model Drew selected there), the optional built-in Parakeet model, and macOS
+/// SpeechAnalyzer. MacWhisper and Apple read a private temp
 /// WAV that exists only for the length of the run; Parakeet takes the samples directly. Nothing is
 /// logged but sizes and timings, and `--persist` is never passed, so dictations stay out of
 /// MacWhisper's history.
@@ -24,20 +25,31 @@ nonisolated struct HostTranscriber: Sendable {
 
     private static let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "dictation")
 
-    /// Fallback order when the client didn't ask for a specific engine (or asked for one this Mac
-    /// doesn't have).
+    /// Automatic: the order when neither the client nor Settings picked an engine (or picked one
+    /// this Mac doesn't have).
     static let preferenceOrder: [DictationEngineID] = [.macWhisper, .parakeet, .apple]
+
+    /// Settings → Dictation → Engine: an engine's raw value, or empty for Automatic.
+    static let preferredEngineKey = "dictation.engine"
+
+    /// The engine chosen in Settings, nil for Automatic.
+    static var preferredEngine: DictationEngineID? {
+        UserDefaults.standard.string(forKey: preferredEngineKey).flatMap { $0.isEmpty ? nil : DictationEngineID(rawValue: $0) }
+    }
 
     var macWhisper: MacWhisperCLI?
     var parakeet: (any BuiltInSpeechEngine)?
     var appleEnabled: Bool
+    /// Settings' choice, tried right after the client's.
+    var preferred: DictationEngineID?
     var directory: URL
 
     init(macWhisper: MacWhisperCLI?, parakeet: (any BuiltInSpeechEngine)? = nil, appleEnabled: Bool,
-         directory: URL = HostTranscriber.defaultDirectory) {
+         preferred: DictationEngineID? = nil, directory: URL = HostTranscriber.defaultDirectory) {
         self.macWhisper = macWhisper
         self.parakeet = parakeet
         self.appleEnabled = appleEnabled
+        self.preferred = preferred
         self.directory = directory
     }
 
@@ -45,7 +57,8 @@ nonisolated struct HostTranscriber: Sendable {
         FileManager.default.temporaryDirectory.appendingPathComponent("VantageDictation", isDirectory: true)
     }
 
-    /// Engines this Mac can run right now, best first. `mw` is probed with `mw version`, which
+    /// Engines this Mac can run right now, the one chosen in Settings first, then best first. The
+    /// client takes the first one as "the Mac's engine". `mw` is probed with `mw version`, which
     /// answers in ~20 ms without launching MacWhisper; the answer is cached for a minute so every
     /// connect doesn't pay for a subprocess. Parakeet is read live: it's listed only while the
     /// user has it turned on and the model is on disk.
@@ -61,7 +74,7 @@ nonisolated struct HostTranscriber: Sendable {
             probed = engines
         }
         let builtIn: [DictationEngineID] = BuiltInSpeechEngines.shared.parakeet != nil ? [.parakeet] : []
-        return preferenceOrder.filter { (probed + builtIn).contains($0) }
+        return order(requested: preferredEngine).filter { (probed + builtIn).contains($0) }
     }
 
     /// The transcriber matching what `availableEngines()` found.
@@ -69,13 +82,17 @@ nonisolated struct HostTranscriber: Sendable {
         let engines = await availableEngines()
         return HostTranscriber(macWhisper: engines.contains(.macWhisper) ? MacWhisperCLI.locate() : nil,
                                parakeet: engines.contains(.parakeet) ? BuiltInSpeechEngines.shared.parakeet : nil,
-                               appleEnabled: engines.contains(.apple))
+                               appleEnabled: engines.contains(.apple), preferred: preferredEngine)
     }
 
-    /// The requested engine first (when it's one this build knows), then `preferenceOrder`.
-    static func order(requested: DictationEngineID?) -> [DictationEngineID] {
-        guard let requested, preferenceOrder.contains(requested) else { return preferenceOrder }
-        return [requested] + preferenceOrder.filter { $0 != requested }
+    /// The requested engine first (when it's one this build knows), then Settings' choice, then
+    /// `preferenceOrder`.
+    static func order(requested: DictationEngineID?, preferred: DictationEngineID? = nil) -> [DictationEngineID] {
+        var order: [DictationEngineID] = []
+        for engine in [requested, preferred] + preferenceOrder.map(Optional.some) {
+            if let engine, preferenceOrder.contains(engine), !order.contains(engine) { order.append(engine) }
+        }
+        return order
     }
 
     private func isUsable(_ engine: DictationEngineID) -> Bool {
@@ -104,7 +121,7 @@ nonisolated struct HostTranscriber: Sendable {
         guard !recorded.isEmpty else { return Output(text: "", engine: requested ?? .macWhisper) }
         let seconds = Double(recorded.count) / (MicAudioFormat.pcm16LE16k.sampleRate * 2)
         let samples = Self.paddedForTranscription(recorded)
-        let usable = Self.order(requested: requested).filter(isUsable)
+        let usable = Self.order(requested: requested, preferred: preferred).filter(isUsable)
         guard !usable.isEmpty else {
             throw Failure(message: "This Mac has no speech engine. Install MacWhisper or turn on built-in transcription in Porthole Host, or transcribe on the iPad.")
         }
