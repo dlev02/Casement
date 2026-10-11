@@ -9,3 +9,4 @@ Packages/*/.build/
 scratch/
 
 .build/
+.claude/
