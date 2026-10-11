@@ -554,6 +554,12 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (`TrustStore.cancelPairingCode`) and the controller clears it when its 10 minutes end, so the
   menu never shows a dead code. Screenshots: `--open-menu` (on glass, since the real item often
   hides behind the notch), `--appearance light|dark`.
+- **Host Settings** (`HostSettingsView` and its tabs): one convention, System Settings'. A row
+  says what it is, with at most one short line under it saying what it does; anything longer is
+  the section's footer (`Footer`), never a text row inside the section; values and buttons sit on
+  the trailing edge, and a button names what it does in the current state (Allow…, Turn On…,
+  Show Them…, Settings…; Screen Recording/Accessibility say Allowed or offer Allow…; Remote
+  Login/Screen Sharing say On or offer Turn On…). Removing a paired device asks first.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display

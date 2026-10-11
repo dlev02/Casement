@@ -83,6 +83,16 @@ final class HostNotifications: NSObject, UNUserNotificationCenterDelegate {
         return SharingNotificationPreference.allowsBannersWhileSharing ? .banners : .hiddenWhileSharing
     }
 
+    /// Asks macOS to allow notifications now, rather than with the first file.
+    func requestPermission() async {
+        didSetUp = true
+        do {
+            _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+        } catch {
+            log.error("notification permission: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// System Settings → Notifications: the top of the pane has "Allow notifications when mirroring
     /// or sharing the display"; with `forThisApp`, Vantage Host's own page instead.
     func openSystemSettings(forThisApp: Bool) {

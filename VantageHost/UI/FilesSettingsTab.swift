@@ -54,9 +54,7 @@ struct FilesSettingsTab: View {
         } header: {
             Text("When files arrive")
         } footer: {
-            Text(actionFooter)
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Footer(actionFooter)
         }
     }
 
@@ -93,9 +91,7 @@ struct FilesSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } footer: {
-            Text("Applies from the next connection. Received files are marked as downloaded, so macOS checks apps and scripts before they first open.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Footer("Applies from the next connection. Received files are marked as downloaded, so macOS checks apps and scripts before they first open.")
         }
     }
 
@@ -148,20 +144,38 @@ struct FilesSettingsTab: View {
                 Text("Show new files on the Mac's screen")
                 Text("A small notice at the top right, with Show in Finder")
             }
-            LabeledContent("Banners while sharing") {
+            LabeledContent("Notification banners") {
                 HStack(spacing: 10) {
                     deliveryLabel
-                    Button("Notification Settings…") {
-                        HostNotifications.shared.openSystemSettings(forThisApp: delivery == .off)
-                    }
+                    deliveryButton
                 }
             }
         } header: {
             Text("While an iPad is watching")
         } footer: {
-            Text("macOS hides notification banners while the screen is shared, and an iPad watching through Porthole counts as sharing, so Porthole shows its own notice instead. To get banners too, turn on “Allow notifications when mirroring or sharing the display” in Notification Settings.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Footer("macOS hides banners while the screen is shared, and an iPad watching counts as sharing. To see them anyway, turn on “Allow notifications when mirroring or sharing the display”.")
+        }
+    }
+
+    /// What to do next, named for the state: allow them, turn them on, or just change them.
+    @ViewBuilder private var deliveryButton: some View {
+        switch delivery {
+        case .notAsked:
+            Button("Allow…") {
+                Task {
+                    await HostNotifications.shared.requestPermission()
+                    delivery = await HostNotifications.shared.delivery()
+                }
+            }
+        case .off:
+            Button("Turn On…") { HostNotifications.shared.openSystemSettings(forThisApp: true) }
+        case .hiddenWhileSharing:
+            Button("Show Them…") { HostNotifications.shared.openSystemSettings(forThisApp: false) }
+                .help("Opens Notifications, where “Allow notifications when mirroring or sharing the display” is at the top")
+        case .banners:
+            Button("Settings…") { HostNotifications.shared.openSystemSettings(forThisApp: true) }
+        case nil:
+            EmptyView()
         }
     }
 
@@ -180,7 +194,7 @@ struct FilesSettingsTab: View {
                 .foregroundStyle(.orange)
                 .help("Notifications for Porthole Host are off in System Settings.")
         case .notAsked:
-            Text("Not set up yet")
+            Text("Not allowed yet")
                 .foregroundStyle(.secondary)
                 .help("macOS asks whether to allow notifications when the first file arrives.")
         case nil:

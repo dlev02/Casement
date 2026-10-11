@@ -35,105 +35,203 @@ struct HostSettingsView: View {
         .frame(width: 500, height: 500)
     }
 
+    // Every tab follows System Settings: a row says what it is (and at most one short line under
+    // it says what it does); anything longer goes in the section's footer; values and buttons sit
+    // on the trailing edge, and a button names what it will do in the current state.
+
     private var readinessTab: some View {
         Form {
-            Section("While connected") {
-                Toggle("Ask before restarting, shutting down, or logging out", isOn: $confirmRestart)
-                Text("If a device is connected when macOS starts a restart (including one from Software Update), Porthole Host asks first and can cancel it.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if controller.canRestartSafely {
-                    Button("Restart Safely…") { controller.restartSafely() }
-                    Text("Restart Safely unlocks FileVault by itself for one restart, so the Mac comes back at the login window instead of stopping at the FileVault screen. It's also offered when you restart while connected.")
-                        .font(.caption).foregroundStyle(.secondary)
+            Section {
+                Toggle(isOn: $confirmRestart) {
+                    Text("Ask before restarting, shutting down, or logging out")
+                    Text("Including restarts from Software Update")
                 }
+                if controller.canRestartSafely {
+                    LabeledContent("Restart without stopping at FileVault") {
+                        Button("Restart Safely…") { controller.restartSafely() }
+                    }
+                }
+            } header: {
+                Text("While a device is connected")
+            } footer: {
+                Footer(controller.canRestartSafely
+                       ? "Porthole Host asks first and can cancel the restart. Restart Safely unlocks FileVault by itself for one restart, so the Mac comes back at the login window; it's also offered when you restart while connected."
+                       : "Porthole Host asks first and can cancel the restart.")
             }
-            Section("After a reboot") {
+            Section {
                 Toggle("Start Porthole Host at login", isOn: Binding(
                     get: { controller.loginItem.isEnabled },
                     set: { controller.loginItem.setEnabled($0) }))
                 if controller.loginItem.requiresApproval {
-                    Button("Approve in Login Items…") { controller.loginItem.openLoginItemsSettings() }
+                    LabeledContent("Waiting for your approval") {
+                        Button("Open Login Items…") { controller.loginItem.openLoginItemsSettings() }
+                    }
                 }
-                Text("Once you log in, Porthole Host relaunches and your iPad reconnects automatically.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("After a restart")
+            } footer: {
+                Footer("Once you log in, Porthole Host opens and your devices reconnect by themselves.")
             }
-            Section("Before login") {
+            Section {
                 if let report = controller.readiness {
-                    LabeledContent("FileVault") { statusText(report.fileVaultOn.map { $0 ? "On" : "Off" } ?? "Unknown") }
-                    LabeledContent("Remote Login (SSH)") { statusBadge(report.remoteLoginEnabled) }
-                    LabeledContent("Screen Sharing") { statusBadge(report.screenSharingEnabled) }
-                    if report.fileVaultOn == true {
-                        Text("With FileVault on, an unexpected restart waits at the FileVault screen, where Tailscale isn't running. To recover from afar, keep Remote Login on and a Tailscale subnet router at home, then SSH to this Mac's home address to unlock it. For restarts you start yourself, use Restart Safely.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("FileVault") {
+                        Text(report.fileVaultOn.map { $0 ? "On" : "Off" } ?? "Unknown").foregroundStyle(.secondary)
+                    }
+                    LabeledContent("Remote Login (SSH)") { serviceState(report.remoteLoginEnabled) }
+                    LabeledContent {
+                        serviceState(report.screenSharingEnabled)
+                    } label: {
+                        Text("Screen Sharing")
+                        Text("Types your password at the lock screen")
                     }
                 } else {
                     ProgressView().controlSize(.small)
                 }
-                Button("Re-check") { controller.refreshReadiness() }
-            }
-            Section("Locked screen") {
-                Text("macOS blocks typing from apps into the lock screen and password fields (Secure Input). When that happens, the iPad's key button types your saved password through this Mac's own Screen Sharing instead, so keep Screen Sharing on (System Settings → General → Sharing) and allow your account.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                HStack {
+                    Text("Before login")
+                    Spacer()
+                    Button("Check Again") { controller.refreshReadiness() }
+                        .controlSize(.small)
+                }
+            } footer: {
+                Footer(beforeLoginFooter)
             }
         }
         .formStyle(.grouped)
     }
 
-    private func statusText(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary)
+    private var beforeLoginFooter: String {
+        let lockScreen = "macOS blocks apps from typing into the lock screen and password fields, so the key button on your iPad types your saved password through this Mac's own Screen Sharing instead."
+        guard controller.readiness?.fileVaultOn == true else { return lockScreen }
+        return "With FileVault on, an unexpected restart waits at the FileVault screen, where Tailscale isn't running. To recover from afar, keep Remote Login on and a Tailscale subnet router at home, then SSH to this Mac's home address to unlock it. " + lockScreen
+    }
+
+    /// On, or Off with a button to Sharing settings.
+    @ViewBuilder private func serviceState(_ on: Bool) -> some View {
+        if on {
+            Label("On", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else {
+            HStack(spacing: 10) {
+                Text("Off").foregroundStyle(.secondary)
+                Button("Turn On…") { Self.openSharingSettings() }
+            }
+        }
+    }
+
+    private static func openSharingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private var generalTab: some View {
         Form {
             Section("This Mac") {
-                LabeledContent("Identity", value: controller.fingerprint)
-                LabeledContent("Tailscale", value: controller.tailscaleSelfName.isEmpty ? "—" : controller.tailscaleSelfName)
-                Button("Open Tailscale Admin Console") { controller.openTailscaleAdmin() }
+                LabeledContent("Name on your tailnet") {
+                    Text(controller.tailscaleSelfName.isEmpty ? "—" : controller.tailscaleSelfName)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Tailscale admin console") {
+                    Button("Open") { controller.openTailscaleAdmin() }
+                }
+                LabeledContent {
+                    Text(controller.fingerprint)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                } label: {
+                    Text("Identity")
+                    Text("Paired devices check this key")
+                }
             }
-            Section("Permissions") {
-                LabeledContent("Screen Recording") {
-                    statusBadge(controller.hasScreenPermission)
+            Section {
+                LabeledContent {
+                    permissionState(controller.hasScreenPermission) { controller.requestScreenPermission() }
+                } label: {
+                    Text("Screen Recording")
+                    Text("To show this Mac's screen")
                 }
-                LabeledContent("Accessibility (input)") {
-                    statusBadge(controller.hasInputPermission)
+                LabeledContent {
+                    permissionState(controller.hasInputPermission) { controller.requestInputPermission() }
+                } label: {
+                    Text("Accessibility")
+                    Text("To click and type on this Mac")
                 }
+            } header: {
+                Text("Permissions")
             }
         }
         .formStyle(.grouped)
     }
+
+    @State private var removing: TrustStore.TrustedClient?
 
     private var devicesTab: some View {
         Form {
-            Section("Paired devices") {
+            Section {
                 if controller.trustedClients.isEmpty {
-                    ContentUnavailableView("No paired devices", systemImage: "ipad", description: Text("Show a pairing code and enter it on your iPad."))
+                    ContentUnavailableView("No Paired Devices", systemImage: "ipad.and.iphone",
+                                           description: Text("Choose Pair a Device in the menu bar and enter the code in Porthole."))
                 } else {
-                    ForEach(controller.trustedClients) { client in
-                        HStack {
-                            VStack(alignment: .leading) {
+                    let connected = Set(controller.connectedDevices.map(\.fingerprint))
+                    ForEach(controller.trustedClients.sorted { $0.addedAt > $1.addedAt }) { client in
+                        LabeledContent {
+                            HStack(spacing: 12) {
+                                if connected.contains(client.id) { ConnectedBadge() }
+                                Button("Remove…") { removing = client }
+                            }
+                        } label: {
+                            Label {
                                 Text(client.name)
-                                Text(client.fingerprint).font(.caption).foregroundStyle(.secondary)
+                                Text("Paired \(client.addedAt, format: .relative(presentation: .named))")
+                            } icon: {
+                                // One width for every glyph, so the names line up.
+                                Image(systemName: client.symbol)
+                                    .frame(width: 22)
                             }
-                            Spacer()
-                            Button(role: .destructive) {
-                                controller.revoke(client.fingerprint)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Revoke \(client.name)'s access; it will need a new pairing code")
-                            .accessibilityLabel("Revoke \(client.name)")
                         }
+                        .help("Key \(client.fingerprint)")
                     }
                 }
+            } header: {
+                Text("Paired devices")
+            } footer: {
+                Footer("A removed device is disconnected and needs a new pairing code to connect again.")
             }
         }
         .formStyle(.grouped)
+        .confirmationDialog("Remove \(removing?.name ?? "this device")?", isPresented: Binding(
+            get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { client in
+            Button("Remove", role: .destructive) { controller.revoke(client.fingerprint) }
+        } message: { _ in
+            Text("It's disconnected now and needs a new pairing code to connect again.")
+        }
     }
 
-    private func statusBadge(_ granted: Bool) -> some View {
-        Label(granted ? "Granted" : "Needed", systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-            .foregroundStyle(granted ? .green : .orange)
-            .labelStyle(.titleAndIcon)
+    /// Allowed, or a button that asks for it.
+    @ViewBuilder private func permissionState(_ granted: Bool, request: @escaping () -> Void) -> some View {
+        if granted {
+            Label("Allowed", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else {
+            Button("Allow…", action: request)
+        }
+    }
+}
+
+/// A section footer in Settings: caption, secondary, wrapping.
+struct Footer: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
