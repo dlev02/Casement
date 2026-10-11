@@ -57,6 +57,8 @@ actor HostSession {
     private var clientKey = ""
     /// Tells the controller a file channel is up (for the menu, notifications, and sending).
     private let onFileChannel: @Sendable (HostFileChannel) -> Void
+    /// Tells the controller who is watching once a screen session is authenticated (for the menu).
+    private let onStreaming: @Sendable (HostSession, _ name: String, _ model: String, _ key: String) -> Void
     // Display sleep: the session outlives it. Capture stops while the display is off (SCK lists
     // no displays then) and comes back on wake; input while asleep wakes it.
     /// What the client last asked to stream, which capture returns to after a sleep or a failure.
@@ -90,6 +92,7 @@ actor HostSession {
 
     init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, peerHost: String,
          attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
+         onStreaming: @escaping @Sendable (HostSession, String, String, String) -> Void = { _, _, _, _ in },
          onEnded: @escaping @Sendable (HostSession) -> Void) {
         self.channel = channel
         self.identity = identity
@@ -98,6 +101,7 @@ actor HostSession {
         self.peerHost = peerHost
         self.attachTokens = attachTokens
         self.onFileChannel = onFileChannel
+        self.onStreaming = onStreaming
         self.onEnded = onEnded
     }
 
@@ -151,10 +155,10 @@ actor HostSession {
                 return false
             case .unavailable:
                 try? await Task.sleep(for: .seconds(1))
-                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "That pairing code has expired. On the Mac, choose Show pairing code and enter the new one.")))
+                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "That pairing code has expired. On the Mac, choose Show Pairing Code and enter the new one.")))
                 return false
             }
-            trust.trust(hello.clientPublicKey, name: hello.clientName)
+            trust.trust(hello.clientPublicKey, name: hello.clientName, model: hello.deviceModel)
         }
 
         if hello.isReadinessProbe == true {
@@ -209,6 +213,7 @@ actor HostSession {
                                             filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
+        onStreaming(self, hello.clientName, hello.deviceModel, clientKey)
         log.info("client authenticated: \(hello.clientName)")
         return true
     }

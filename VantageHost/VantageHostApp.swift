@@ -60,12 +60,22 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
 
     /// `--open-menu`: the popover's content in a plain window, for when the item is hidden.
     private func openMenuWindowForTesting() {
-        let root = VStack(spacing: 0) {
+        // On glass, like the real menu bar window, over whatever is behind it.
+        let root = VStack(spacing: 12) {
             HostMenuView(controller: controller)
+                .glassEffect(.regular, in: .rect(cornerRadius: 24))
             StatusIconPreview(controller: controller)
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
         }
+        .padding(16)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.title = "Porthole Host Menu"
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
         window.makeKeyAndOrderFront(nil)
         menuWindow = window
     }

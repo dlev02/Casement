@@ -8,7 +8,11 @@ nonisolated final class TrustStore: @unchecked Sendable {
         var fingerprint: String
         var name: String
         var addedAt: Date
+        /// The device's hardware model when it paired ("iPad16,6"); nil for older pairings.
+        var model: String?
         var id: String { fingerprint }
+        /// What it is, for an icon: from the model, else guessed from the name.
+        var symbol: String { DeviceSymbol.for(model: model, name: name) }
     }
 
     private let defaults = HostOptions.shared.syntheticCapture
@@ -35,12 +39,12 @@ nonisolated final class TrustStore: @unchecked Sendable {
         return trustedClients().contains { $0.fingerprint == fingerprint }
     }
 
-    func trust(_ publicKey: Data, name: String) {
+    func trust(_ publicKey: Data, name: String, model: String? = nil) {
         lock.lock(); defer { lock.unlock() }
         var clients = trustedClientsLocked()
         let fingerprint = DeviceIdentity.fingerprint(of: publicKey)
         guard !clients.contains(where: { $0.fingerprint == fingerprint }) else { return }
-        clients.append(TrustedClient(fingerprint: fingerprint, name: name, addedAt: Date()))
+        clients.append(TrustedClient(fingerprint: fingerprint, name: name, addedAt: Date(), model: model))
         save(clients)
         onChange?()
     }
@@ -86,6 +90,13 @@ nonisolated final class TrustStore: @unchecked Sendable {
         }
         clearPairingCodeLocked()
         return .accepted
+    }
+
+    /// Withdraws the code shown on the Mac (Done, or its ten minutes ran out).
+    func cancelPairingCode() {
+        lock.lock(); defer { lock.unlock() }
+        guard activePairingCode != nil else { return }
+        clearPairingCodeLocked()
     }
 
     private func clearPairingCodeLocked() {

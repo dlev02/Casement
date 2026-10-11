@@ -1,74 +1,50 @@
 import SwiftUI
 import VantageCore
 
-/// The menu's Files section: "Send File to ⟨iPad⟩…" while an iPad that can take files is
-/// connected, the folder received files go to, and a line per file moving either way (progress,
-/// speed, time left and cancel while active, then how it ended for a minute).
+/// The menu's Files section: "Send File to ⟨iPad⟩…" for each iPad that can take files, the
+/// folder received files go to, and a row per file moving either way (progress, speed, time left
+/// and cancel while active, then how it ended for a minute).
 struct HostFilesSection: View {
     let controller: HostController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Files").font(.subheadline.weight(.semibold))
-                Spacer()
-                receiveFolderButton
-            }
-            if sendTargets.isEmpty {
-                Button {} label: {
-                    Label("Send File to iPad…", systemImage: "arrow.up.doc")
+        let store = HostFileStore.current
+        GroupedSection(title: "Files") {
+            ForEach(Self.sendTargets(controller)) { channel in
+                Button {
+                    controller.chooseFilesToSend(to: channel)
+                } label: {
+                    SettingsRow("Send File to \(channel.clientName)…", symbol: "arrow.up.doc.fill", color: .blue)
                 }
-                .disabled(true)
-                Text("Connect from Porthole on your iPad to send files either way.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(sendTargets) { channel in
-                    Button {
-                        controller.chooseFilesToSend(to: channel)
-                    } label: {
-                        Label("Send File to \(channel.clientName)…", systemImage: "arrow.up.doc")
-                    }
-                    .help("Choose files on this Mac to send to \(channel.clientName)")
+                .help("Choose files on this Mac to send to \(channel.clientName)")
+            }
+            Button {
+                NSWorkspace.shared.open(store.directory)
+            } label: {
+                SettingsRow("Received Files", symbol: "folder.fill", color: .cyan, chevron: true) {
+                    Text(store.displayName)
                 }
             }
+            .help("Files sent from Porthole are saved in \(store.displayName). Click to open it.")
+            .accessibilityLabel("Open \(store.displayName), where received files are saved")
             ForEach(controller.transfers) { transfer in
                 HostTransferRow(transfer: transfer) { controller.cancelTransfer(transfer.id) }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
+        .buttonStyle(.settingsRow)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controller.transfers.map(\.id))
     }
 
-    /// One "Send File to ⟨iPad⟩…" per iPad that can take files, most recent first. The one place
-    /// that decides which file channels are offered. File channels outlive their sessions, so an
-    /// iPad can briefly have two (the old one winding down, a new one up): offer its newest.
-    private var sendTargets: [HostFileChannel] {
+    /// One send target per iPad that can take files, most recent first. The one place that
+    /// decides which file channels are offered. File channels outlive their sessions, so an iPad
+    /// can briefly have two (the old one winding down, a new one up): offer its newest.
+    static func sendTargets(_ controller: HostController) -> [HostFileChannel] {
         var seen = Set<String>()
         return controller.fileChannels.reversed().filter { seen.insert($0.clientKey).inserted }
-    }
-
-    /// Where received files go, with its Finder icon; opens the folder.
-    private var receiveFolderButton: some View {
-        let store = HostFileStore.current
-        return Button {
-            NSWorkspace.shared.open(store.directory)
-        } label: {
-            HStack(spacing: 4) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: store.directory.path(percentEncoded: false)))
-                    .resizable()
-                    .frame(width: 14, height: 14)
-                    .accessibilityHidden(true)
-                Text(store.displayName)
-            }
-            .font(.caption)
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
-        .help("Files from the iPad are saved in \(store.displayName). Click to open it.")
-        .accessibilityLabel("Open \(store.displayName), where received files are saved")
     }
 }
 
@@ -77,10 +53,11 @@ private struct HostTransferRow: View {
     let onCancel: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            // As wide as a row's icon, so the name lines up with the row titles.
             Image(systemName: symbol)
                 .foregroundStyle(tint)
-                .frame(width: 16)
+                .frame(width: MenuMetrics.iconSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 // Once saved, the name it got ("Report 2.pdf" when Report.pdf was taken).

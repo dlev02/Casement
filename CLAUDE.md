@@ -526,6 +526,34 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (the popover and the live menu bar icon in a window: on a crowded menu bar the item hides
   behind the overflow), `--appearance light|dark`; override settings without writing Drew's
   defaults with argument-domain flags such as `-files.afterArrival open -files.notify NO`.
+- **Host menu** (`HostMenuView`, building blocks in `HostMenuComponents.swift`): one design
+  language, System Settings' (the "linked devices" pattern: hero, one prominent button, inset
+  grouped rows with coloured rounded-square icons). Hero: a laptop glyph on a glow of the status
+  colour (the connected device beside it with `ConnectionDots` running between), the computer
+  name, one status line with the state word coloured (Ready / Connected to ⟨name⟩ / Offline /
+  Can't accept connections; Connected only once a screen session has signed in, via
+  `HostSession`'s `onStreaming` → `HostController.connectedDevices`, so availability checks never
+  flash it). Pair a Device (help/VoiceOver say Show Pairing Code, the name the iPad's prompt and
+  the Windows host use) is a full-width `.glass` button under the hero until something has paired,
+  then the last row of Devices; the pairing panel opens in its place and carries the tailnet name
+  with Copy (an iPad without a Tailscale key can't list the tailnet, so it adds the Mac by name)
+  above the code. Then a Needs Attention section only when something does (permissions, Tailscale, a failed
+  listener; the row's action is a small glass capsule, `RowAction`), Devices (a "Paired with
+  ⟨name⟩" row for 8 s, connected devices, and Paired Devices, which opens in place
+  (`menu.showsPairedDevices`): `PairedDeviceRow`s, connected first then newest, at most 5, then
+  "Show All N in Settings…"; Remove appears under the pointer and asks again in place with a red
+  Remove), Files (`HostFilesSection`: Send File to ⟨iPad⟩…, Received Files, transfers), and a
+  footer with the version and two round glass buttons: Settings (⌘,) and More (Restart Safely…,
+  Quit; ⌘Q also works through a hidden button). More is a glass `Button` that pops an `NSMenu`:
+  a SwiftUI `Menu` draws its own label on macOS and drops the glass. Controls are glass; the
+  grouped sections are not. Don't mix in other languages (Control Center tiles, glass cards on the
+  glass window, iOS avatars): that was tried and read as no style at all. Paired devices keep their
+  hardware model (`TrustedClient.model`, nil for older pairings) for `DeviceSymbol`; older ones
+  are guessed from the name. **Pairing**: the button turns into a panel with the digits, a live countdown
+  (`pairingCodeExpiresAt`), New Code and Done; Done withdraws the code
+  (`TrustStore.cancelPairingCode`) and the controller clears it when its 10 minutes end, so the
+  menu never shows a dead code. Screenshots: `--open-menu` (on glass, since the real item often
+  hides behind the notch), `--appearance light|dark`.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display

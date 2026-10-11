@@ -92,7 +92,7 @@ Both devices need [Tailscale](https://tailscale.com), signed in to the same tail
 3. **Add the computer** in Porthole with **+**.
    - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Porthole Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
    - **Add Manually…** takes the computer's Tailscale IP address or MagicDNS name.
-4. **Pair.** Choose **Show pairing code** in Porthole Host and type the six digits into Porthole. A code lasts 10 minutes and works once. After that, the device connects straight away.
+4. **Pair.** Choose **Show Pairing Code** in Porthole Host’s menu and type the six digits into Porthole. A code lasts 10 minutes and works once. After that, the device connects straight away.
 
 The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation, locked Macs, and restarts in more detail.
 

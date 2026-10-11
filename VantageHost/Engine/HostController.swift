@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Network
 import Observation
+import SystemConfiguration
 import VantageCore
 import os
 
@@ -42,9 +43,23 @@ final class HostController {
     private(set) var hasInputPermission = false
     private(set) var trustedClients: [TrustStore.TrustedClient] = []
     private(set) var readiness: Readiness.Report?
-    var pairingCode: String?
+    /// The code on show, until it's used, burned, withdrawn (Done), or its ten minutes run out.
+    private(set) var pairingCode: String?
+    /// When `pairingCode` stops working; nil for a fixed DEBUG code, which never expires.
+    private(set) var pairingCodeExpiresAt: Date?
+    private var pairingExpiryTask: Task<Void, Never>?
+    /// A device that paired a moment ago, for a short "Paired with ⟨name⟩" in the menu.
+    private(set) var recentlyPaired: String?
+    private var recentlyPairedTask: Task<Void, Never>?
+    private var trustLoaded = false
+    /// Who is watching right now: screen sessions that got past authentication, oldest first.
+    private(set) var connectedDevices: [ConnectedDevice] = []
     /// A FileVault unlock key is waiting for the next restart, so don't ask again.
     private(set) var safeRestartStaged = false
+
+    /// This Mac's name as Sharing settings has it ("Drew's MacBook Pro"); never `Host.current()`,
+    /// which can block on DNS.
+    let computerName = (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "This Mac"
 
     var fingerprint: String { identity.fingerprint }
     /// A screen session is up (files-only sessions live in `fileSessions` and never count): the
@@ -58,7 +73,7 @@ final class HostController {
             Task { @MainActor in self?.refreshTrusted() }
         }
         trust.onPairingCodeCleared = { [weak self] in
-            Task { @MainActor in self?.pairingCode = nil }
+            Task { @MainActor in self?.pairingCodeCleared() }
         }
         arrivals.isViewedRemotely = { [weak self] in self?.hasConnectedClients ?? false }
         arrivals.onCancel = { [weak self] id in self?.cancelTransfer(id) }
@@ -138,8 +153,45 @@ final class HostController {
         done.runModal()
     }
 
+    /// Shows a fresh code, replacing any old one, and hides it when its ten minutes are up.
     func generatePairingCode() {
         pairingCode = trust.newPairingCode()
+        pairingExpiryTask?.cancel()
+        guard HostOptions.shared.fixedPairingCode == nil else {
+            pairingCodeExpiresAt = nil
+            return
+        }
+        let expiry = Date().addingTimeInterval(TrustStore.pairingLifetime)
+        pairingCodeExpiresAt = expiry
+        pairingExpiryTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow)) } catch { return }
+            self?.cancelPairingCode()
+        }
+    }
+
+    /// Done, or the code ran out: it stops working on the spot, not just off the screen.
+    func cancelPairingCode() {
+        trust.cancelPairingCode()
+        pairingCodeCleared()
+    }
+
+    private func pairingCodeCleared() {
+        // A new code may have replaced the one that cleared.
+        guard trust.currentPairingCode == nil else { return }
+        pairingCode = nil
+        pairingCodeExpiresAt = nil
+        pairingExpiryTask?.cancel()
+        pairingExpiryTask = nil
+    }
+
+    /// Opens the Tailscale app (whichever flavour is installed), for when it isn't running.
+    func openTailscale() {
+        let ids = ["io.tailscale.ipn.macsys", "io.tailscale.ipn.macos"]
+        if let url = ids.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(URL(string: "https://tailscale.com/download/mac")!)
+        }
     }
 
     func requestScreenPermission() {
@@ -210,6 +262,11 @@ final class HostController {
         let session = HostSession(channel: channel, identity: identity, trust: trust, peerDescription: peer, peerHost: peerHost,
                                   attachTokens: attachTokens,
                                   onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
+                                  onStreaming: { [weak self] session, name, model, key in
+                                      Task { @MainActor in
+                                          self?.connectedDevices.append(ConnectedDevice(session: session, name: name, model: model, fingerprint: key))
+                                      }
+                                  },
                                   onEnded: { [weak self] ended in Task { @MainActor in self?.remove(ended) } })
         // A files-only session isn't a connected screen: it stays out of the status and the
         // restart guard, and shows up only as its transfers.
@@ -227,6 +284,7 @@ final class HostController {
     private func remove(_ session: HostSession) {
         sessions.removeAll { $0 === session }
         fileSessions.removeAll { $0 === session }
+        connectedDevices.removeAll { $0.session === session }
         // Its file channel carries on until the iPad closes it.
         for index in fileChannels.indices where fileChannels[index].session === session {
             fileChannels[index].sessionEnded = true
@@ -470,7 +528,23 @@ final class HostController {
     }
 
     private func refreshTrusted() {
-        trustedClients = trust.trustedClients()
+        let known = Set(trustedClients.map(\.fingerprint))
+        let clients = trust.trustedClients()
+        // A device that wasn't trusted a moment ago just used the code (not the first load).
+        if trustLoaded, let added = clients.last(where: { !known.contains($0.fingerprint) }) {
+            showRecentlyPaired(added.name)
+        }
+        trustedClients = clients
+        trustLoaded = true
+    }
+
+    private func showRecentlyPaired(_ name: String) {
+        recentlyPaired = name
+        recentlyPairedTask?.cancel()
+        recentlyPairedTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            self?.recentlyPaired = nil
+        }
     }
 
     func refreshPermissions() {
@@ -478,7 +552,7 @@ final class HostController {
         hasInputPermission = InputInjector.hasPermission()
     }
 
-    private func refreshTailscale() {
+    func refreshTailscale() {
         Task.detached {
             let running = TailscaleCLI.isRunning()
             let name = (try? TailscaleCLI.status())?.selfNode?.dnsName ?? ""
@@ -506,5 +580,36 @@ final class HostController {
             return "\(host):\(port)"
         }
         return String(describing: endpoint)
+    }
+}
+
+/// A device watching this Mac's screen, as the menu lists it.
+struct ConnectedDevice: Identifiable {
+    let session: HostSession
+    let name: String
+    /// The client's hardware model ("iPad16,6", "Mac16,1", "RealityDevice14,1").
+    let model: String
+    /// Its key's fingerprint, matching `TrustStore.TrustedClient.fingerprint`.
+    let fingerprint: String
+    var id: ObjectIdentifier { ObjectIdentifier(session) }
+
+    var symbol: String { DeviceSymbol.for(model: model, name: name) }
+}
+
+/// The SF Symbol for a client device, from its hardware model ("iPhone17,1", "Mac16,1",
+/// "RealityDevice14,1") or, for pairings saved before the model was, its name.
+nonisolated enum DeviceSymbol {
+    static func `for`(model: String?, name: String) -> String {
+        if let model, !model.isEmpty {
+            if model.hasPrefix("iPhone") { return "iphone" }
+            if model.hasPrefix("Mac") { return "laptopcomputer" }
+            if model.hasPrefix("RealityDevice") { return "vision.pro" }
+            return "ipad.landscape"
+        }
+        // A name says "Drew's iPad Pro" or "Files Mac iPad": the most specific word wins.
+        for (word, symbol) in [("iPad", "ipad.landscape"), ("iPhone", "iphone"), ("Vision", "vision.pro"),
+                               ("MacBook", "laptopcomputer"), ("iMac", "desktopcomputer"), ("Mac", "desktopcomputer")]
+        where name.localizedStandardContains(word) { return symbol }
+        return "ipad.landscape"
     }
 }
