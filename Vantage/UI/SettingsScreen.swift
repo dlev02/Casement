@@ -380,10 +380,6 @@ struct AboutScreen: View {
                     Text("Version \(AppInfo.versionString)")
                         .font(.footnote)
                         .foregroundStyle(.tertiary)
-                    Text("Designed and built by Drew Levinson")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
