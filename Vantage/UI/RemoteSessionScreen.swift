@@ -87,6 +87,12 @@ struct RemoteSessionScreen: View {
     #endif
 
     private var isLive: Bool { session.state == .connected && hasVideo }
+    #if os(visionOS)
+    /// The Mac display's width over its height (16:10 until the host says which display).
+    private var visionPictureAspect: CGFloat {
+        session.activeConfig.map { CGFloat($0.display.pointWidth) / CGFloat(max($0.display.pointHeight, 1)) } ?? 16 / 10
+    }
+    #endif
 
     /// The saved device as it is now (edits and what the host said arrive through the store).
     private var savedDevice: SavedDevice { store.devices.first { $0.id == device.id } ?? device }
@@ -101,14 +107,24 @@ struct RemoteSessionScreen: View {
 
     var body: some View {
         ZStack {
+            #if !os(visionOS) // the window's glass frames the picture there
             Color.black.ignoresSafeArea()
+            #endif
 
             #if canImport(UIKit)
             if session.state == .connected {
                 RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
+                    #if os(visionOS)
+                    // Exactly the Mac's shape, so a window that's a little off never shows black
+                    // bars (see `VisionSessionPicture`).
+                    .background(.black)
+                    .aspectRatio(visionPictureAspect, contentMode: .fit)
+                    .clipShape(.rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
+                    #else
                     .ignoresSafeArea()
+                    #endif
             }
             #elseif os(macOS)
             if session.state == .connected {
@@ -244,6 +260,9 @@ struct RemoteSessionScreen: View {
                 CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
             })
         }
+        // The window is plain; glass backs it only while there's no picture to show.
+        .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous),
+                               displayMode: isLive ? .never : .always)
         #elseif os(macOS)
         .background {
             WindowAspectMatcher(displaySize: session.activeConfig.map {

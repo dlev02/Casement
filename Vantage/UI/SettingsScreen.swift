@@ -5,7 +5,9 @@ struct SettingsScreen: View {
     var body: some View {
         List {
             Section {
+                #if !os(visionOS) // visionOS has no light or dark appearance; windows are always glass
                 NavigationLink { AppearanceSettings() } label: { Label("Appearance", systemImage: "circle.lefthalf.filled") }
+                #endif
                 NavigationLink { ControlSettings() } label: { Label("Controls", systemImage: "keyboard") }
             }
             Section {
@@ -333,7 +335,11 @@ struct SecuritySettings: View {
             // that, its Keychain can't hold synced secrets.
             #else
             Section {
+                #if os(visionOS)
+                Toggle("Require Optic ID", isOn: $requireBiometrics)
+                #else
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
+                #endif
             } footer: {
                 Text("Unlock Porthole with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
             }
@@ -553,20 +559,36 @@ extension HelpScreen {
                  "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, which you turn on in Porthole Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #else
+    #if os(visionOS)
+    private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
+                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Porthole is locked with Optic ID, the connection waits until you unlock.")
+    private static let logInGesture = "pinch and hold the Mac in the list"
+    private static let typePasswordGesture = "pinch the key button"
+    private static let receivedFilesPlace = "in the Files app, under On My Apple Vision Pro › Porthole › Received"
+    private static let listMenuGesture = "pinch and hold"
+    #else
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
                                            "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Porthole is locked with Face ID, the connection waits until you unlock.")
     private static let logInGesture = "long-press the Mac in the list"
     private static let typePasswordGesture = "tap the key button"
     private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Porthole › Received"
-    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you long-press a computer in the list, without opening its screen at all. You can also pick Porthole from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Porthole partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
+    private static let listMenuGesture = "long-press"
+    #endif
+    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you \(listMenuGesture) a computer in the list, without opening its screen at all. You can also pick Porthole from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Porthole partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
     private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Porthole never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
-    private static let controllingTheMac: [FAQEntry] = [
+    #if os(visionOS) // look and pinch always points absolutely
+    private static let touchEntries: [FAQEntry] = []
+    #else
+    private static let touchEntries: [FAQEntry] = [
                 FAQEntry("Trackpad or Direct Touch?",
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
-                FAQEntry("How does it work on Apple Vision Pro?",
-                         "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."),
                 FAQEntry("How do I right-click or middle-click?",
                          "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+    ]
+    #endif
+    private static let controllingTheMac: [FAQEntry] = touchEntries + [
+                FAQEntry("How does it work on Apple Vision Pro?",
+                         "Each Mac opens in its own window that keeps the Mac's shape as you resize it, with the controls in a bar underneath. Look at something and pinch to click, pinch and drag to drag, and pinch and hold to right-click. A paired keyboard or trackpad works as it does on iPad."),
                 FAQEntry("Unicode Text or Keystrokes for the keyboard?",
                          "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
                 FAQEntry("Why can't I type into a password box?",

@@ -454,6 +454,7 @@
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
+				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Porthole uses Optic ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -505,6 +506,7 @@
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
+				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Porthole uses Optic ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

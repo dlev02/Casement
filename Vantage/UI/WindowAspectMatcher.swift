@@ -3,6 +3,15 @@ import OSLog
 import SwiftUI
 import UIKit
 
+/// The Mac's picture in a visionOS session window. The session window is a plain window (no
+/// system glass): a glass window's large corner radius cut off the Mac's own corners (the Apple
+/// menu, the clock), and insetting the picture left a glass border. The picture fills the window
+/// with small corners instead, as Mac Virtual Display does; glass shows only while there's no
+/// picture.
+enum VisionSessionPicture {
+    static let cornerRadius: CGFloat = 16
+}
+
 /// Shapes the session window like the Mac's display so the stream fills it edge to edge, then
 /// keeps that shape while the user resizes it. Place it in the session view's background.
 struct WindowAspectMatcher: UIViewRepresentable {

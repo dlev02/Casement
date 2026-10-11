@@ -46,6 +46,9 @@ struct VantageApp: App {
             SessionWindow(deviceID: deviceID)
         }
         .defaultSize(width: 1280, height: 800)
+        #if os(visionOS)
+        .windowStyle(.plain) // the session draws its own glass, so the Mac's corners aren't clipped
+        #endif
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled) // reconnecting should be the user's call, not a relaunch's
         #if os(macOS)
