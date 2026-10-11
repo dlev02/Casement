@@ -1,13 +1,21 @@
 import SwiftUI
 import VantageCore
 
+/// Which Settings tab is up, so the menu can open Settings on one (Paired Devices → Devices).
+@MainActor
+@Observable
+final class HostSettingsNavigation {
+    static let shared = HostSettingsNavigation()
+    var tab = HostOptions.shared.openSettingsTab ?? "general"
+}
+
 struct HostSettingsView: View {
     @Bindable var controller: HostController
     @AppStorage(RestartGuard.defaultsKey) private var confirmRestart = true
-    @State private var tab = HostOptions.shared.openSettingsTab ?? "general"
+    @Bindable private var navigation = HostSettingsNavigation.shared
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: $navigation.tab) {
             generalTab
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag("general")
