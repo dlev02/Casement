@@ -31,9 +31,9 @@ groups). Read this before working here.
 | Target | Path | Product |
 | --- | --- | --- |
 | `VantageHost` | `VantageHost/` | `Casement Host.app`: macOS 26+ menu-bar app (LSUIElement), unsandboxed, Developer ID intended |
-| `Vantage` | `Vantage/` | `Casement.app`: iPadOS/iOS 26+ client (universal), also native visionOS 26+ and macOS 26+ (`SDKROOT = auto`; sandbox entitlements from `ENABLE_*[sdk=macosx*]` build settings) |
+| `Vantage` | `Vantage/` | `Casement.app`: iPadOS/iOS 26+ client (universal), also native visionOS 26+ and macOS 26+ (`SDKROOT = auto`; sandbox entitlements from `ENABLE_*[sdk=macosx*]` build settings, merged with `Vantage/VantageMac.entitlements`; iOS and visionOS sign with `Vantage/Vantage.entitlements`) |
 | `VantageCore` | `Packages/VantageCore/` | Local SPM package shared by both: wire protocol, transport, identity |
-| `VantageWidgets` | `VantageWidgets/` | iOS widget extension (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
+| `VantageWidgets` | `VantageWidgets/` | iOS widget extension (`VantageWidgets.entitlements`: the App Group) (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
 | — | `Shared/` | Synced folder compiled into both `Vantage` and `VantageWidgets`: `DeviceCatalog`, `MacEntity`, widget views |
 
 The pbxproj is edited by hand: new targets need a `PBXNativeTarget`, build phases, config list,
@@ -279,16 +279,17 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `vantage://connect/<uuid>` (URL scheme declared in `Vantage/Info.plist`, merged into the
   generated plist). Both read `DeviceCatalog`, a small JSON the store rewrites on every save
   (`Application Support/Vantage/catalog.json`, plus the App Group container
-  `group.me.drewlevinson.casement` when the entitlement exists). Until the targets carry the App
-  Group entitlement the widget shows "No Macs yet"; the simulator ignores the entitlement, so verify
-  widgets there with `-VantageOpenScreen widgets` (renders every family from the live catalog).
+  `group.me.drewlevinson.casement`, which both the app and the widget extension are entitled to).
+  A copy signed on a team without that group gets no container, and its widget shows "No
+  computers yet"; the simulator ignores the entitlement, so verify widgets there with
+  `-VantageOpenScreen widgets` (renders every family from the live catalog).
 - **iCloud sync** (`CloudSync`): secrets flip between local and `kSecAttrSynchronizable` Keychain
   stores (`KeychainStore(synchronizable:)`), no entitlement needed. The device list goes through
   `NSUbiquitousKeyValueStore` with `updatedAt` last-writer-wins and tombstones, but only when the
-  embedded provisioning profile carries `com.apple.developer.ubiquity-kvstore-identifier` — a
-  personal team can't sign for it, so the capability is deliberately not in the project yet. Add
-  the iCloud Key-Value Storage capability once a paid team is active and the list half turns on
-  by itself.
+  embedded provisioning profile carries `com.apple.developer.ubiquity-kvstore-identifier`
+  (`$(TeamIdentifierPrefix)$(CFBundleIdentifier)`, in both client entitlements files; iCloud is
+  enabled on the client's App ID). A build without a profile (the simulator, or another team's
+  copy) reports `notEntitled` and keeps the list local.
 - **Dictation** (`Vantage/Dictation`, `VantageHost/Dictation`, design in
   `docs/research/audio-dictation-files.md` §B/§D): the strip's mic button (hold to talk, tap to
   toggle) opens `DictationPanel`. "On this iPad" runs `SpeechAnalyzer` (`LiveTranscriber`,
@@ -698,7 +699,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
   off; `MacKeyboardSettings` has the keys), Dictation, Session Controls; no touch, trackpad,
   on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
-  iCloud sync until the Mac is signed for it. Add Device hides Natural Scrolling (the Mac's own
+  iCloud sync toggle yet: the Mac build now carries the key-value entitlement, but synced Keychain
+  secrets in the sandboxed Mac app haven't been tried, so the section stays iOS/visionOS-only. Add Device hides Natural Scrolling (the Mac's own
   mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
   About isn't a tab: Casement › About Casement (`CommandGroup(replacing: .appInfo)`) opens
   `Window("About Casement")` (`MacAboutWindow`) showing `AboutScreen`.
