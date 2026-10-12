@@ -44,7 +44,7 @@ nonisolated enum DictationRoute: Equatable {
         #if os(macOS)
         case .iPad: "This Mac" // "On Mac" names the remote Mac's engine
         #else
-        case .iPad: "On iPad"
+        case .iPad: "On \(LocalDevice.this)"
         #endif
         case .mac(let engine): Self.label(for: engine)
         }
