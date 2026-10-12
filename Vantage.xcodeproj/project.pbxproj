@@ -453,7 +453,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
@@ -508,7 +508,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
