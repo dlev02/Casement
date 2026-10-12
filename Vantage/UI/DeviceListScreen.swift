@@ -302,10 +302,11 @@ struct DeviceListEmptyState: View {
         ContentUnavailableView {
             Label("No Devices", systemImage: "display")
         } description: {
-            Text("Add your Mac or PC to start a remote session over Tailscale.")
+            Text("Install Casement Host on your Mac or PC, then add it here to start a remote session over Tailscale.")
         } actions: {
             Button("Add from Tailscale…") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
             Button("Add Manually…") { actions.showAddDevice = true }.buttonStyle(.glass)
+            Link("Get Casement Host", destination: AppInfo.hostDownloadURL)
         }
     }
 }
