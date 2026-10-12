@@ -120,7 +120,7 @@ struct ConnectWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             macGlyph(size: 26)
             Spacer(minLength: 6)
-            Text("No Macs yet")
+            Text("No computers yet")
                 .font(.headline)
                 .foregroundStyle(.white)
             Text("Add one in Casement")
@@ -135,7 +135,7 @@ struct ConnectWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             macGlyph(size: 26)
             Spacer(minLength: 6)
-            Text("Mac removed")
+            Text("Computer removed")
                 .font(.headline)
                 .foregroundStyle(.white)
             Text("Edit the widget to choose another")

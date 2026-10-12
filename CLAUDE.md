@@ -218,7 +218,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   ("Mac"/"PC", `the`, `thePossessive`, …): pairing prompt, `MacScreenNote`, lock banner (a locked PC
   says "Unlock it at the PC, or sign in with Remote Desktop"; no password button), session menu,
   Transfers, `FileLink` failures, device list and Mac detail, the Mac app's Session ▸ PC submenu
-  and toolbar. App Intents and widgets still say Mac. **Shortcuts**: the strip's shortcut items are
+  and toolbar. App Intents still say Mac; widgets and the control say "Mac or PC". **Shortcuts**: the strip's shortcut items are
   slots (`HostShortcut.forItem`): spotlight = ⌘Space / Search (Win S, kVK 0x01 + ⌘), missionControl
   = ⌃↑ / Task View (Win Tab), applicationWindows = ⌃↓ / Switch Apps (Alt Tab, 0x30 + ⌥),
   showDesktop = F11 / Win D; `startMenu` (the Windows key alone: 0x37 down and up) and

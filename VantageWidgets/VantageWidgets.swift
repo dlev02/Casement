@@ -19,18 +19,18 @@ struct ConnectWidget: Widget {
         AppIntentConfiguration(kind: kind, intent: SelectMacIntent.self, provider: ConnectProvider()) { entry in
             ConnectWidgetView(primary: entry.primary, others: entry.others, pinnedMacRemoved: entry.pinnedMacRemoved)
         }
-        .configurationDisplayName("Connect to Mac")
-        .description("One tap to your Mac. Choose which, or leave it on your most recent.")
+        .configurationDisplayName("Connect to Mac or PC")
+        .description("One tap to your Mac or PC. Choose which, or leave it on your most recent.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
 /// Lets the widget be pinned to a particular Mac. Left empty, it follows whatever was used last.
 struct SelectMacIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Choose Mac"
-    static let description = IntentDescription("Which Mac this widget connects to.")
+    static let title: LocalizedStringResource = "Choose Computer"
+    static let description = IntentDescription("Which Mac or PC this widget connects to.")
 
-    @Parameter(title: "Mac")
+    @Parameter(title: "Computer")
     var mac: MacEntity?
 
     static var parameterSummary: some ParameterSummary {
@@ -79,16 +79,16 @@ struct ConnectProvider: AppIntentTimelineProvider {
 
 /// Control Center, Lock Screen, and Action button: one tap to the most recently used Mac. The
 /// label names that Mac when the catalog is readable here (App Group builds); otherwise it reads
-/// "Connect to Mac" and the app still picks the recent Mac when the intent runs.
+/// "Connect to Recent" and the app still picks the recent Mac when the intent runs.
 struct ConnectControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: DeviceCatalog.controlKind, provider: RecentMacProvider()) { macName in
             ControlWidgetButton(action: ConnectToRecentMacIntent()) {
-                Label(macName ?? "Connect to Mac", systemImage: "laptopcomputer")
+                Label(macName ?? "Connect to Recent", systemImage: "laptopcomputer")
             }
         }
-        .displayName("Connect to Mac")
-        .description("Opens Casement and connects to your most recent Mac.")
+        .displayName("Connect to Mac or PC")
+        .description("Opens Casement and connects to the Mac or PC you used most recently.")
     }
 }
 
