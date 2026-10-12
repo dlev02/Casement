@@ -25,11 +25,16 @@ struct PairingPrompt: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("pairingError")
             }
+            // A fill of its own rather than .roundedBorder: over the dark session the digits
+            // inherited white text on the bordered style's white field and vanished.
             TextField("000000", text: $code)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
                 .font(.system(.title2, design: .monospaced))
+                .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
+                .padding(.vertical, 8)
                 .frame(width: fieldWidth)
+                .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
                 #if canImport(UIKit)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
