@@ -38,12 +38,11 @@
 
 ## Getting Casement
 
-Casement is in **beta**. For now you build it yourself from this repository (see [Building from source](#building-from-source)).
+Casement is free and open source, and it's **coming soon to the App Store** for iPhone, iPad, Mac, and Apple Vision Pro.
 
-On the way:
+**Casement Host**, the small app that runs on the computer you want to control, is a free download for **Mac** (notarized by Apple) and **Windows** from this repository's [Releases](https://github.com/dlev02/Casement/releases/latest).
 
-- **The App Store.** Casement for iPhone, iPad, Mac, and Apple Vision Pro, free.
-- **Signed downloads of Casement Host** for Mac (notarized by Apple) and Windows, from this page's Releases, so it installs without warnings or a build step.
+You can also [build everything from source](#building-from-source).
 
 Casement will stay free, with no ads, subscriptions, or in-app purchases. Publishing does cost money: Apple's developer program is $99 a year, and signing the Windows host costs extra. If Casement is useful to you, [a coffee on Ko-fi](https://ko-fi.com/dlev384895) helps keep it on the store.
 
@@ -112,9 +111,9 @@ The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation
 
 You need a Mac with **Xcode 27** (the regular release, not a beta) and, to run on a device, your own Apple development team.
 
-1. Open `Vantage.xcodeproj`. For each target, choose your team under Signing & Capabilities. If you're installing on your own devices, also change the bundle identifiers (`com.benjaminlevinson.vantage…`) to your own.
-2. Run the **VantageHost** scheme on the Mac you want to control.
-3. Run the **Vantage** scheme on your iPad, iPhone, Mac, or Vision Pro.
+1. Open `Vantage.xcodeproj` (the project keeps the app's original code name). For each target, choose your team under Signing & Capabilities, and change the bundle identifiers (`me.drewlevinson.casement…`) and the App Group (`group.me.drewlevinson.casement`, in `Vantage/Vantage.entitlements` and `VantageWidgets/VantageWidgets.entitlements`) to your own. If your team doesn't have iCloud or App Groups, remove those entitlements: widgets and iCloud sync of the device list are the only things that need them.
+2. Run the **VantageHost** scheme (it builds Casement Host) on the Mac you want to control.
+3. Run the **Vantage** scheme (it builds Casement) on your iPad, iPhone, Mac, or Vision Pro.
 
 From the command line:
 
