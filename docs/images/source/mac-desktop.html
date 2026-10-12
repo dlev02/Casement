@@ -1,29 +1,32 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0}
-body{width:1376px;height:1032px;overflow:hidden;font-family:-apple-system,"SF Pro Text",system-ui;-webkit-font-smoothing:antialiased;
+body{width:100vw;height:100vh;position:relative;overflow:hidden;font-family:-apple-system,"SF Pro Text",system-ui;-webkit-font-smoothing:antialiased;
 background:radial-gradient(1200px 800px at 85% 110%,#ff8a5c 0%,rgba(255,138,92,0) 60%),radial-gradient(900px 700px at 10% 100%,#7b3fe4 0%,rgba(123,63,228,0) 65%),radial-gradient(1000px 900px at 70% -10%,#1fb6c9 0%,rgba(31,182,201,0) 60%),linear-gradient(160deg,#0d1b3d,#2a1459 55%,#4a1d5e)}
 .menubar{height:28px;display:flex;align-items:center;padding:0 14px;gap:20px;color:#fff;font-size:13.5px;background:rgba(20,20,40,.18);backdrop-filter:blur(30px)}
 .menubar b{font-weight:700}.menubar .r{margin-left:auto;display:flex;gap:18px;align-items:center}
 .win{position:absolute;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45),0 0 0 .5px rgba(255,255,255,.18)}
 .tb{height:40px;display:flex;align-items:center;padding:0 14px;gap:8px;font-size:13px;font-weight:600}
 .dot{width:12px;height:12px;border-radius:50%}.r1{background:#ff5f57}.r2{background:#febc2e}.r3{background:#28c840}
-.code{position:absolute;left:70px;top:88px;width:860px;height:760px;background:#1f1f24;color:#d8d8e0}
+.code{position:absolute;left:5.1%;top:8.5%;width:860px;height:760px;background:#1f1f24;color:#d8d8e0}
 .code .tb{background:#28282e;color:#c8c8d0}.code .tb span{margin-left:auto;margin-right:auto;transform:translateX(-30px)}
 pre{font:14px/1.62 "SF Mono",Menlo,monospace;padding:18px 22px;white-space:pre}
 .ln{color:#5d5d68;display:inline-block;width:34px}
 .k{color:#fc5fa3}.t{color:#5dd8ff}.c{color:#7f8c98}.n{color:#d0bf69}.f{color:#67b7a4}.s{color:#fc6a5d}
-.term{position:absolute;left:800px;top:520px;width:520px;height:330px;background:rgba(245,245,250,.93);color:#222}
+.term{position:absolute;left:58%;top:50.4%;width:520px;height:330px;background:rgba(245,245,250,.93);color:#222}
 .term .tb{color:#444;justify-content:flex-start}.term .tb span{margin-left:150px}
 .term pre{font-size:13px;color:#222;line-height:1.55}
 .g{color:#1a9b3c;font-weight:600}.m{color:#888}
-.note{position:absolute;left:990px;top:110px;width:320px;height:360px;background:#fdf8e4;color:#2b2a26}
+.note{position:absolute;left:72%;top:10.7%;width:320px;height:360px;background:#fdf8e4;color:#2b2a26}
 .note .tb{background:#f3ecd0;color:#6e6650}
 .note .body{padding:14px 20px;font-size:15px;line-height:1.55}.note h3{font-size:20px;margin-bottom:8px}
 .note li{margin-left:18px}.done{color:#9a9480;text-decoration:line-through}
+@media (max-height:720px){.code{top:46px;height:580px;width:820px}.term{top:auto;bottom:24px;height:292px}.note{top:46px;height:300px}}
+@media (min-aspect-ratio:3/2) and (min-height:721px){.code{height:auto;bottom:6%}.term{top:auto;bottom:5%}}
+@media (max-width:1200px){.code{width:600px;left:3%}.note{left:auto;right:3%;width:270px}.term{left:auto;right:3%;width:440px}}
 </style></head><body>
 <div class="menubar"><b>&#xF8FF;</b><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span>
 <div class="r"><span>􀙇</span><span>􀊫</span><span>Wed Sep 30&nbsp;&nbsp;9:41 AM</span></div></div>
-<div class="win code"><div class="tb"><div class="dot r1"></div><div class="dot r2"></div><div class="dot r3"></div><span>PointerMapping.swift — Vantage</span></div>
+<div class="win code"><div class="tb"><div class="dot r1"></div><div class="dot r2"></div><div class="dot r3"></div><span>PointerMapping.swift — Casement</span></div>
 <pre><span class="ln">12</span><span class="k">struct</span> <span class="t">PointerMapping</span>: <span class="t">Equatable</span>, <span class="t">Sendable</span> {
 <span class="ln">13</span>    <span class="c">/// The Mac display, in points.</span>
 <span class="ln">14</span>    <span class="k">var</span> displaySize: <span class="t">CGSize</span>
@@ -56,8 +59,8 @@ pre{font:14px/1.62 "SF Mono",Menlo,monospace;padding:18px 22px;white-space:pre}
 <span class="ln">41</span>}</pre></div>
 <div class="win note"><div class="tb"><div class="dot r1"></div><div class="dot r2"></div><div class="dot r3"></div></div>
 <div class="body"><h3>Weekend</h3><ul><li class="done">Pair the iPad</li><li class="done">Send photos to the Mac</li><li>Finish the edge-snap fix</li><li>Try dictation from the couch</li><li>Back up the studio drive</li></ul></div></div>
-<div class="win term"><div class="tb"><div class="dot r1"></div><div class="dot r2"></div><div class="dot r3"></div><span>vantage — zsh</span></div>
-<pre><span class="m">~/Developer/Vantage</span> % xcrun swift test
+<div class="win term"><div class="tb"><div class="dot r1"></div><div class="dot r2"></div><div class="dot r3"></div><span>casement — zsh</span></div>
+<pre><span class="m">~/Developer/Casement</span> % xcrun swift test
 Building for debugging...
 [412/412] Compiling ClientSessionTests
 Build complete! (38.21s)
@@ -65,5 +68,5 @@ Build complete! (38.21s)
 <span class="g">✔</span> Suite FileTransferSessionTests passed
 <span class="g">✔</span> Suite KeyRemapTests passed
 <span class="g">✔</span> Test run passed after 41.7 seconds.
-<span class="m">~/Developer/Vantage</span> % <span style="background:#222;color:#222">_</span></pre></div>
+<span class="m">~/Developer/Casement</span> % <span style="background:#222;color:#222">_</span></pre></div>
 </body></html>
