@@ -10,7 +10,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.benjaminlevinson.vantage</string>
+			<string>me.drewlevinson.casement</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>vantage</string>
@@ -45,11 +45,11 @@
 	     BGContinuedProcessingTask (iOS 26) per run of files, as .transfers.<UUID>. -->
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.benjaminlevinson.vantage.transfers.*</string>
+		<string>me.drewlevinson.casement.transfers.*</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Porthole uses the microphone when you dictate text to your computer.</string>
+	<string>Casement uses the microphone when you dictate text to your computer.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Porthole turns your speech into text on this device, or on your own computer when you choose to dictate there, and types it for you.</string>
+	<string>Casement turns your speech into text on this device, or on your own computer when you choose to dictate there, and types it for you.</string>
 </dict>
 </plist>

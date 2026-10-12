@@ -25,7 +25,7 @@
 
             <TextBlock
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Porthole shares the main display. Other displays, and matching the display to the iPad's screen, come later."
+                Text="Casement shares the main display. Other displays, and matching the display to the iPad's screen, come later."
                 TextWrapping="Wrap" />
         </StackPanel>
     </ScrollViewer>

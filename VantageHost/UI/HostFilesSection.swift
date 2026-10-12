@@ -26,7 +26,7 @@ struct HostFilesSection: View {
                     Text(store.displayName)
                 }
             }
-            .help("Files sent from Porthole are saved in \(store.displayName). Click to open it.")
+            .help("Files sent from Casement are saved in \(store.displayName). Click to open it.")
             .accessibilityLabel("Open \(store.displayName), where received files are saved")
             ForEach(controller.transfers) { transfer in
                 HostTransferRow(transfer: transfer) { controller.cancelTransfer(transfer.id) }

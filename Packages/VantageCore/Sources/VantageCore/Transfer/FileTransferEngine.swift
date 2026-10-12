@@ -188,7 +188,7 @@ public actor FileTransferEngine {
                               modified: values.contentModificationDate, uti: values.contentType?.identifier)
         } catch {
             log.error("can't read file to send: \(error.localizedDescription, privacy: .public)")
-            return finish(outgoing: id, .failed("Porthole couldn't read that file."))
+            return finish(outgoing: id, .failed("Casement couldn't read that file."))
         }
         defer { try? handle.close() }
 
@@ -286,7 +286,7 @@ public actor FileTransferEngine {
             if let early = state.takeTerminalReply() { return finish(outgoing: id, early) }
             if state.cancelled { return finish(outgoing: id, .cancelled(byPeer: false)) }
             log.error("send failed: \(error.localizedDescription, privacy: .public)")
-            return finish(outgoing: id, .failed(error is CocoaError ? "Porthole couldn't read that file." : "The connection was lost."))
+            return finish(outgoing: id, .failed(error is CocoaError ? "Casement couldn't read that file." : "The connection was lost."))
         }
         switch await state.nextReply() {
         case .result(let result):

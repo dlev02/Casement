@@ -54,7 +54,7 @@ public sealed record HostCommandLine
 
     /// <summary>The usage text.</summary>
     public const string Usage = """
-        Vantage Host for Windows
+        Casement Host for Windows
 
           --port N                    listen on N (default 47820; tests use 47821+)
           --pairing-code NNNNNN       fixed pairing code that never expires (debug builds)

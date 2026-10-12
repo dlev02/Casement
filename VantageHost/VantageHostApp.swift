@@ -13,7 +13,7 @@ struct VantageHostApp: App {
             // A progress ring joins the icon while files move (and VoiceOver hears how far along).
             let controller = delegate.controller
             Image(nsImage: StatusItemIcon.image(for: controller.status, activity: StatusItemIcon.Activity(controller.transfers)))
-                .accessibilityLabel("Porthole Host")
+                .accessibilityLabel("Casement Host")
                 .accessibilityValue(StatusItemIcon.accessibilityValue(status: controller.status, transfers: controller.transfers))
         }
         .menuBarExtraStyle(.window)
@@ -69,7 +69,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         }
         .padding(16)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
-        window.title = "Porthole Host Menu"
+        window.title = "Casement Host Menu"
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -84,7 +84,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
     /// command line, so host the same view in a plain window for screenshots.
     private func openSettingsWindowForTesting() {
         let window = NSWindow(contentViewController: NSHostingController(rootView: HostSettingsView(controller: controller)))
-        window.title = "Porthole Host Settings"
+        window.title = "Casement Host Settings"
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()

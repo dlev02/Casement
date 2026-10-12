@@ -57,7 +57,7 @@ nonisolated struct HostFileStore: Sendable {
     static func quarantine(_ url: URL, typeIdentifier: String?) {
         var values = URLResourceValues()
         values.quarantineProperties = [
-            kLSQuarantineAgentNameKey as String: "Porthole Host",
+            kLSQuarantineAgentNameKey as String: "Casement Host",
             kLSQuarantineTypeKey as String: kLSQuarantineTypeOtherDownload as String,
             kLSQuarantineTimeStampKey as String: Date.now,
         ]

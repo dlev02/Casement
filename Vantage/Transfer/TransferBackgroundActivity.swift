@@ -13,7 +13,7 @@ import os
 /// stops it), the file channels close cleanly: both sides keep their partial files, and everything
 /// resumes where it stopped when Vantage is back in the foreground (`FileTransferCenter.retryAll`).
 ///
-/// Identifiers are `com.benjaminlevinson.vantage.transfers.<UUID>`, under the wildcard in
+/// Identifiers are `me.drewlevinson.casement.transfers.<UUID>`, under the wildcard in
 /// `BGTaskSchedulerPermittedIdentifiers`; each is registered just before it's submitted (continued
 /// processing tasks are exempt from registering at launch). Where the task can't run (the
 /// simulator, background work turned off, a refused submission) the usual ~30 s of background time
@@ -21,7 +21,7 @@ import os
 @MainActor
 final class TransferBackgroundActivity {
     static let shared = TransferBackgroundActivity()
-    static let identifierPrefix = "com.benjaminlevinson.vantage.transfers."
+    static let identifierPrefix = "me.drewlevinson.casement.transfers."
     /// Runs smaller than this finish in the foreground before a Live Activity would help.
     static let minimumBytes: UInt64 = 32 << 20
 
@@ -156,7 +156,7 @@ final class TransferBackgroundActivity {
         guard center.overallSummary.isActive, task == nil, grace == .invalid else { return }
         // No continued processing task (yet): the ordinary background grace, then a clean pause.
         // UIKit calls this on the main thread and wants the task ended before it returns.
-        grace = UIApplication.shared.beginBackgroundTask(withName: "Porthole file transfers") { @Sendable in
+        grace = UIApplication.shared.beginBackgroundTask(withName: "Casement file transfers") { @Sendable in
             MainActor.assumeIsolated {
                 let activity = TransferBackgroundActivity.shared
                 if activity.task == nil {

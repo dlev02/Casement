@@ -12,7 +12,7 @@ import os
 /// swap in `CGVirtualDisplay` behind the same interface.
 nonisolated final class VirtualDisplayManager: @unchecked Sendable {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "virtualdisplay")
-    private let screenName = "Porthole Virtual"
+    private let screenName = "Casement Virtual"
     private let cliPath = "/opt/homebrew/bin/betterdisplaycli"
 
     struct Lease {

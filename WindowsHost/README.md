@@ -1,6 +1,6 @@
-# Porthole Host for Windows
+# Casement Host for Windows
 
-A Windows host for the Porthole iPad/iPhone/Vision Pro client: the same wire protocol as the Mac
+A Windows host for the Casement iPad/iPhone/Vision Pro client: the same wire protocol as the Mac
 host (`VantageHost/`), written in C# on .NET 10 LTS. The byte-level contract is
 `docs/research/windows-host-protocol.md`; when it and the Swift code disagree, the Swift code in
 `Packages/VantageCore` and `VantageHost` wins.
@@ -55,7 +55,7 @@ dotnet src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --p
   [--pairing-code-rearm 3] [--display-asleep] [--capture-fails-for 6] [--send-file-on-connect PATH] \
   [--receive-folder PATH] [--input-log PATH.jsonl] [--clipboard-text TEXT] [--platform windows|macos] \
   [--state-dir PATH] [--exit-after S] [--log-input-events]
-xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47862 -VantagePairingCode 246810
+xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47862 -VantagePairingCode 246810
 ```
 
 A fixed `--pairing-code` is used up by one pairing (as on the Mac); `--pairing-code-rearm S` shows
@@ -168,6 +168,6 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\publ
 publishes `VantageHost.exe` self-contained into `%LOCALAPPDATA%\Programs\Vantage Host\` with a
 Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed code). Left-click
 the tray icon for the window (General shows the tailnet address and Show Pairing Code), right-click
-for the menu; turn on "Start Porthole Host when I sign in" there. Closing the window keeps it in the
+for the menu; turn on "Start Casement Host when I sign in" there. Closing the window keeps it in the
 tray; Quit is in the tray menu and on the About page. Drew's iPad then pairs with
 `<pc-address>:47820`.

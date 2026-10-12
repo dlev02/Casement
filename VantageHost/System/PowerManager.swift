@@ -17,7 +17,7 @@ nonisolated final class PowerManager: @unchecked Sendable {
     private var activityID: IOPMAssertionID = 0
     private var lastWake: ContinuousClock.Instant?
 
-    func begin(reason: String = "Porthole remote session active") {
+    func begin(reason: String = "Casement remote session active") {
         lock.lock(); defer { lock.unlock() }
         guard !active else { return }
         var id: IOPMAssertionID = 0
@@ -50,7 +50,7 @@ nonisolated final class PowerManager: @unchecked Sendable {
         } else {
             // Local and Remote both light a sleeping display on macOS 27 (checked with
             // `pmset displaysleepnow`); Local is what a key press on the Mac itself declares.
-            let status = IOPMAssertionDeclareUserActivity("Porthole remote input" as CFString, kIOPMUserActiveLocal, &activityID)
+            let status = IOPMAssertionDeclareUserActivity("Casement remote input" as CFString, kIOPMUserActiveLocal, &activityID)
             if status != kIOReturnSuccess { log.error("declaring user activity failed: \(status)") }
         }
         log.info("waking the display (\(reason, privacy: .public))")

@@ -42,7 +42,7 @@ struct ConnectionAddress: Equatable {
         var errorDescription: String? {
             switch self {
             case .invalidHost: "Enter a Tailscale IP or MagicDNS name, optionally followed by :port."
-            case .invalidPort: "Enter a port between 1 and 65535. Porthole normally uses 47820."
+            case .invalidPort: "Enter a port between 1 and 65535. Casement normally uses 47820."
             }
         }
     }

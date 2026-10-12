@@ -297,7 +297,7 @@ final class ClientSession {
             reconnectAttempts += 1
             guard reconnectAttempts <= 40 else {
                 fileLink.screenDidEnd()
-                state = .failed("Couldn’t reach the Mac. Check that Porthole Host and Tailscale are running on both devices.")
+                state = .failed("Couldn’t reach the Mac. Check that Casement Host and Tailscale are running on both devices.")
                 return
             }
             state = .reconnecting
@@ -335,7 +335,7 @@ final class ClientSession {
             return (true, result.sessionToken)
         case .pairingRequired, .badPairingCode:
             pairingError = result.status == .badPairingCode
-                ? "Incorrect pairing code. Check the code in Porthole Host on your Mac and try again."
+                ? "Incorrect pairing code. Check the code in Casement Host on your Mac and try again."
                 : nil
             state = .pairingRequired
             return (false, nil)

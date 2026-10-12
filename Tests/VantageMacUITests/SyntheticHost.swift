@@ -2,10 +2,10 @@ import Foundation
 import Network
 import XCTest
 
-/// The synthetic Vantage Host a Mac UI test suite talks to.
+/// The synthetic Casement Host a Mac UI test suite talks to.
 ///
 /// The `VantageMacUITests` scheme's test pre-action starts them (`scripts/mac-ui-test-hosts.sh`):
-/// the `VantageHost.app` built beside the tests, run from its executable with `--synthetic-capture`,
+/// the `Casement Host.app` built beside the tests, run from its executable with `--synthetic-capture`,
 /// port 47856 or 47857, pairing code 246810 and `--exit-after`; the post-action stops them. The
 /// tests can't start them: macOS runs the UI test runner in a sandbox, so a host it spawns
 /// inherits the sandbox and can't listen, and one it opens through LaunchServices loses its

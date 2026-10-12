@@ -31,7 +31,7 @@ struct MacEntity: AppEntity, IndexedEntity {
     /// Tailscale name find the Mac too.
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = defaultAttributeSet
-        attributes.keywords = ["Mac", "remote desktop", "Porthole", host]
+        attributes.keywords = ["Mac", "remote desktop", "Casement", host]
         return attributes
     }
 }

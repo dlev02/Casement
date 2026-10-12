@@ -27,7 +27,7 @@ struct DeviceListScreen: View {
                     listView
                 }
             }
-            .navigationTitle("Porthole")
+            .navigationTitle("Casement")
             .searchable(text: $store.searchText, prompt: "Search devices")
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .top) { TailscaleBanner() }
@@ -216,7 +216,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 Button("Remove", role: .destructive) { store.remove(device) }
                 Button("Cancel", role: .cancel) {}
             } message: { device in
-                Text("“\(device.name)” will be removed from Porthole. \(device.hostNoun.theCapitalized) itself is not affected, and you can add it again later.")
+                Text("“\(device.name)” will be removed from Casement. \(device.hostNoun.theCapitalized) itself is not affected, and you can add it again later.")
             }
             .confirmationDialog(
                 actions.deviceToLogIn.map { "Log in to “\($0.name)”?" } ?? "",
@@ -227,7 +227,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 Button("Type Password") { actions.logIn(to: device) }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
-                Text("Porthole signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
+                Text("Casement signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
             }
             .overlay(alignment: .bottom) {
                 if let logInStatus = actions.logInStatus {

@@ -16,7 +16,7 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
         var errorDescription: String? {
             switch self {
             case .noInput: "This \(LocalDevice.noun) has no microphone input available."
-            case .converterUnavailable: "Porthole couldn't read the microphone's audio format."
+            case .converterUnavailable: "Casement couldn't read the microphone's audio format."
             }
         }
     }

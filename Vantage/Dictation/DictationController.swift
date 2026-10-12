@@ -522,7 +522,7 @@ final class DictationController {
             break
         }
         fail(Failure(title: "Microphone Access Is Off",
-                     message: "Allow Porthole to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
+                     message: "Allow Casement to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
         return false
     }
 
@@ -531,7 +531,7 @@ final class DictationController {
         if status == .notDetermined { status = await Self.requestSpeechAuthorization() }
         guard status == .authorized else {
             fail(Failure(title: "Speech Recognition Is Off",
-                         message: "Allow Speech Recognition for Porthole in \(LocalDevice.settingsApp), or choose On the Mac (MacWhisper) in Settings → Controls.",
+                         message: "Allow Speech Recognition for Casement in \(LocalDevice.settingsApp), or choose On the Mac (MacWhisper) in Settings → Controls.",
                          settings: .speechRecognition))
             return false
         }
@@ -622,7 +622,7 @@ final class DictationController {
             phase = .review
         case "failed":
             phase = .failed(Failure(title: "Microphone Access Is Off",
-                                    message: "Allow Porthole to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
+                                    message: "Allow Casement to use the microphone in \(LocalDevice.settingsApp) to dictate to your Mac.", settings: .microphone))
         case "download":
             transcript = DictationTranscript()
             phase = .preparing(progress: 0.42)

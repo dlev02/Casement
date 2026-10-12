@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Porthole or Porthole Host isn't working right.
+description: Something in Casement or Casement Host isn't working right.
 labels: [bug]
 body:
   - type: textarea
@@ -29,8 +29,8 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Porthole (Settings › About), Porthole Host, and the operating systems on both devices.
-      placeholder: "Porthole 1.0 (12), Porthole Host 1.0, iPadOS 26.1, macOS 26.1"
+      description: Casement (Settings › About), Casement Host, and the operating systems on both devices.
+      placeholder: "Casement 1.0 (12), Casement Host 1.0, iPadOS 26.1, macOS 26.1"
   - type: dropdown
     id: tailscale
     attributes:

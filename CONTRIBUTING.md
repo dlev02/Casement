@@ -1,10 +1,10 @@
 # Contributing
 
-Thanks for your interest in Porthole. Bug reports, ideas, and pull requests are all welcome.
+Thanks for your interest in Casement. Bug reports, ideas, and pull requests are all welcome.
 
 ## Reporting bugs and ideas
 
-[Open an issue](https://github.com/dlev02/Porthole/issues/new/choose) using the bug report or feature request form. For connection problems, include whether Tailscale shows both devices as connected. For security problems, see [SECURITY.md](SECURITY.md) instead.
+[Open an issue](https://github.com/dlev02/Casement/issues/new/choose) using the bug report or feature request form. For connection problems, include whether Tailscale shows both devices as connected. For security problems, see [SECURITY.md](SECURITY.md) instead.
 
 ## Pull requests
 
@@ -15,10 +15,10 @@ Thanks for your interest in Porthole. Bug reports, ideas, and pull requests are 
 
 ## Licensing of contributions
 
-Porthole is licensed under the [GPL-3.0](LICENSE). By submitting a contribution, you agree that:
+Casement is licensed under the [GPL-3.0](LICENSE). By submitting a contribution, you agree that:
 
 - It's your own work, or you have the right to submit it.
 - It's licensed under the GPL-3.0, like the rest of the project.
-- Drew Levinson may also distribute it as part of Porthole through app stores, such as Apple's App Store, whose terms add restrictions that the GPL alone wouldn't allow.
+- Drew Levinson may also distribute it as part of Casement through app stores, such as Apple's App Store, whose terms add restrictions that the GPL alone wouldn't allow.
 
 The last point keeps the free App Store version possible. It doesn't change your rights, or anyone else's, under the GPL.

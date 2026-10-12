@@ -106,7 +106,7 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Strip with Disconnect", app)
         disconnect.tap()
         XCTAssertTrue(disconnect.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["Casement"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     /// Mac Audio from the strip against the synthetic host's chime: the toggle turns on, packets
@@ -194,7 +194,7 @@ nonisolated final class SessionUITests: XCTestCase {
         func row(_ name: String) -> XCUIElement {
             app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
         }
-        let sent = row("Vantage Test.bin")
+        let sent = row("Casement Test.bin")
         XCTAssertTrue(sent.waitForExistence(timeout: 10), app.debugDescription)
         wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent"), evaluatedWith: sent)], timeout: 30)
         let received = row("Quarterly Report")
@@ -231,7 +231,7 @@ nonisolated final class SessionUITests: XCTestCase {
         let disconnect = app.buttons["session.toolbar.disconnect"]
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
         disconnect.tap()
-        XCTAssertTrue(app.navigationBars["Vantage"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["Casement"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.alerts.firstMatch.exists, "Disconnect doesn't ask any more")
 
         let badge = app.buttons["devices.transfers"]
@@ -240,11 +240,11 @@ nonisolated final class SessionUITests: XCTestCase {
         screenshot("Device list with the transfer carrying on", app)
         badge.tap()
 
-        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Casement Test.bin")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue((row.value as? String)?.hasPrefix("Sending to") == true, "\(String(describing: row.value))")
         screenshot("Transfers from the device list", app)
-        app.buttons["Cancel Vantage Test.bin"].tap()
+        app.buttons["Cancel Casement Test.bin"].tap()
         wait(for: [expectation(for: NSPredicate(format: "value == %@", "Cancelled"), evaluatedWith: row)], timeout: 5)
         app.buttons["Done"].tap()
         XCTAssertTrue(badge.waitForNonExistence(timeout: 5), "nothing moving, so the row is plain again")
@@ -279,7 +279,7 @@ nonisolated final class SessionUITests: XCTestCase {
 
         XCTAssertTrue(badge.waitForExistence(timeout: 10))
         badge.tap()
-        let transfer = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Vantage Test.bin")).firstMatch
+        let transfer = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Casement Test.bin")).firstMatch
         XCTAssertTrue(transfer.waitForExistence(timeout: 5), app.debugDescription)
         wait(for: [expectation(for: NSPredicate(format: "value BEGINSWITH %@", "Sent"), evaluatedWith: transfer)], timeout: 60)
         screenshot("Sent without opening the screen", app)

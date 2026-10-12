@@ -73,7 +73,7 @@ struct TailscaleDevicesSheet: View {
                     } header: {
                         Text("Macs and PCs")
                     } footer: {
-                        Text("To control a Mac or PC, install Porthole Host on it and pair once with the code it shows. On a Mac, also grant Screen Recording and Accessibility.")
+                        Text("To control a Mac or PC, install Casement Host on it and pair once with the code it shows. On a Mac, also grant Screen Recording and Accessibility.")
                     }
                 }
                 if !unsupported.isEmpty {
@@ -82,7 +82,7 @@ struct TailscaleDevicesSheet: View {
                     } header: {
                         Text("Not Supported")
                     } footer: {
-                        Text("Porthole Host runs on Macs and Windows PCs. Linux computers, iPhones, iPads, and Android devices can't be controlled.")
+                        Text("Casement Host runs on Macs and Windows PCs. Linux computers, iPhones, iPads, and Android devices can't be controlled.")
                     }
                 }
             }
@@ -146,7 +146,7 @@ struct TailscaleDevicesSheet: View {
         HStack(spacing: 6) {
             if status == .checking {
                 ProgressView().controlSize(.mini)
-                Text(device.isRecentlySeen ? "Checking for Porthole Host…" : "Last seen \(lastSeenText(device))")
+                Text(device.isRecentlySeen ? "Checking for Casement Host…" : "Last seen \(lastSeenText(device))")
             } else {
                 Circle().fill(status == .ready || status == .online || status == .pairingRequired ? Color.green : Color.orange)
                     .frame(width: 7, height: 7)
@@ -159,12 +159,12 @@ struct TailscaleDevicesSheet: View {
 
     private func probeText(_ status: HostAvailability, device: TailscaleDevice) -> String {
         switch status {
-        case .ready: "Porthole Host is ready"
-        case .online: "Porthole Host is running"
-        case .pairingRequired: "Porthole Host is running · pair to connect"
-        case .needsPermission: device.platform == .windows ? "Porthole Host needs permissions" : "Porthole Host needs Mac permissions"
-        case .incompatible: "Porthole Host needs an update"
-        case .unavailable: device.isRecentlySeen ? "Porthole Host isn't reachable" : "Last seen \(lastSeenText(device))"
+        case .ready: "Casement Host is ready"
+        case .online: "Casement Host is running"
+        case .pairingRequired: "Casement Host is running · pair to connect"
+        case .needsPermission: device.platform == .windows ? "Casement Host needs permissions" : "Casement Host needs Mac permissions"
+        case .incompatible: "Casement Host needs an update"
+        case .unavailable: device.isRecentlySeen ? "Casement Host isn't reachable" : "Last seen \(lastSeenText(device))"
         case .checking: "Checking…"
         }
     }

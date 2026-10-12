@@ -25,8 +25,9 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
     private var loggedFormat = false
     private var stream: SCStream?
 
-    /// The Vantage client app, left out of the capture if it runs here.
-    static let clientBundleID = "com.benjaminlevinson.vantage"
+    /// The client app, left out of the capture if it runs here: Casement's bundle ID, and the one
+    /// it had before the move to the new team (harmless if nothing has it).
+    static let clientBundleIDs = ["me.drewlevinson.casement", "com.benjaminlevinson.vantage"]
 
     override init() {}
 
@@ -39,7 +40,7 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
         guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
             throw CaptureError.displayNotFound
         }
-        let client = content.applications.filter { $0.bundleIdentifier == Self.clientBundleID }
+        let client = content.applications.filter { Self.clientBundleIDs.contains($0.bundleIdentifier) }
         let filter = SCContentFilter(display: display, excludingApplications: client, exceptingWindows: [])
         let config = SCStreamConfiguration()
         config.capturesAudio = true
@@ -76,9 +77,9 @@ nonisolated final class AudioCapture: NSObject, AudioSource, SCStreamOutput, SCS
         if nsError.domain == SCStreamErrorDomain, let code = SCStreamError.Code(rawValue: nsError.code) {
             switch code {
             case .failedToStartAudioCapture:
-                return "The Mac couldn't start capturing its sound. Try again, or restart Porthole Host."
+                return "The Mac couldn't start capturing its sound. Try again, or restart Casement Host."
             case .userDeclined, .noCaptureSource:
-                return "Porthole Host needs Screen Recording permission to send the Mac's sound."
+                return "Casement Host needs Screen Recording permission to send the Mac's sound."
             default:
                 break
             }
