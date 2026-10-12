@@ -297,7 +297,13 @@ actor HostSession {
         if HostOptions.shared.syntheticCapture {
             switch select.selection {
             case .fitViewport(let viewport):
-                chosen = DisplayEnumerator.syntheticDisplay(pointWidth: max(640, Int(viewport.widthPoints)), pointHeight: max(480, Int(viewport.heightPoints)))
+                if let picture = DisplayEnumerator.syntheticPicture {
+                    // A `--synthetic-image` display keeps the picture's shape, as a real Mac's
+                    // display does, so the client letterboxes or reshapes its window to it.
+                    chosen = DisplayEnumerator.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2)
+                } else {
+                    chosen = DisplayEnumerator.syntheticDisplay(pointWidth: max(640, Int(viewport.widthPoints)), pointHeight: max(480, Int(viewport.heightPoints)))
+                }
             case .display:
                 chosen = DisplayEnumerator.syntheticDisplay()
             }
