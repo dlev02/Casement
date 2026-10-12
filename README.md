@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="brand/vantage-mac-master.png" width="128" alt="Casement app icon">
+  <img src="brand/casement-mac.png" width="128" alt="Casement app icon">
 </p>
 
 <h1 align="center">Casement</h1>
