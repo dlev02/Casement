@@ -31,10 +31,18 @@ final class TailscaleReachability {
     /// Tailscale for Mac: the standalone download (System Extension) or the App Store build.
     static let macTailscaleBundleIDs = ["io.tailscale.ipn.macsys", "io.tailscale.ipn.macos"]
 
+    /// Tailscale on the App Store, for when the app isn't installed.
+    static let appStoreURL = URL(string: "https://apps.apple.com/app/id1470499037")!
+
     static func openTailscaleApp() {
         #if canImport(UIKit)
         if let url = URL(string: "tailscale://") {
-            Task { @MainActor in UIApplication.shared.open(url) }
+            Task { @MainActor in
+                // `open` reports false when nothing handles tailscale://, i.e. Tailscale isn't installed.
+                if await !UIApplication.shared.open(url) {
+                    await UIApplication.shared.open(appStoreURL)
+                }
+            }
         }
         #elseif os(macOS)
         let workspace = NSWorkspace.shared
