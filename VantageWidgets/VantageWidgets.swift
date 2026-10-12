@@ -28,7 +28,7 @@ struct ConnectWidget: Widget {
 /// Lets the widget be pinned to a particular Mac. Left empty, it follows whatever was used last.
 struct SelectMacIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "Choose Computer"
-    static let description = IntentDescription("Which Mac or PC this widget connects to.")
+    static let description = IntentDescription("Which computer this widget connects to.")
 
     @Parameter(title: "Computer")
     var mac: MacEntity?
