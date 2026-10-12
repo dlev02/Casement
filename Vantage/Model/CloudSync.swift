@@ -8,9 +8,10 @@ import os
 ///
 /// Secrets travel through iCloud Keychain (`kSecAttrSynchronizable`), which needs no entitlement.
 /// The device list travels through iCloud key-value storage, which needs the
-/// `com.apple.developer.ubiquity-kvstore-identifier` entitlement — a personal team can't sign for
-/// it, so `deviceListAvailability` reports when that half is switched off and the settings screen
-/// explains. Turning sync on migrates what's already saved; turning it off copies everything back
+/// `com.apple.developer.ubiquity-kvstore-identifier` entitlement (`Vantage.entitlements`). A copy
+/// signed without it (built on a team that hasn't enabled iCloud for its bundle ID) can't use the
+/// store, so `deviceListAvailability` reports when that half is switched off and the settings
+/// screen explains. Turning sync on migrates what's already saved; turning it off copies everything back
 /// to the local Keychain and leaves the cloud copy alone.
 @MainActor
 @Observable
@@ -36,7 +37,7 @@ final class CloudSync {
             switch self {
             case .available: nil
             case .noiCloudAccount: "Sign in to iCloud in Settings to sync your device list."
-            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain now. The device list itself waits on an App Store build — this copy of Casement isn't signed for iCloud storage."
+            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain. This copy of Casement isn't signed for iCloud storage, so the device list stays on this device."
             }
         }
     }

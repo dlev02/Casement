@@ -4,12 +4,12 @@ import os
 /// The slice of the saved-device list that Siri, Shortcuts, and widgets need: names, addresses,
 /// and when each Mac was last used. The app writes it; the widget extension only reads it.
 ///
-/// It lives in the App Group container so the widget process can see it. A personal team can't
-/// sign for App Groups, so on such builds `containerURL` is nil and the catalog falls back to the
-/// app's own Application Support — Siri and Shortcuts keep working (they run inside the app) while
-/// widgets show their empty state until the entitlement exists. The simulator doesn't enforce the
-/// entitlement, which is how widgets get verified before then. The Mac client has no widgets and
-/// no App Group, and its sandbox refuses an unentitled group container, so it keeps only the
+/// It lives in the App Group container (`Vantage.entitlements`, `VantageWidgets.entitlements`) so
+/// the widget process can see it, and the app always writes its own Application Support copy too.
+/// A build signed without the entitlement (another developer's team, say) gets a nil
+/// `containerURL` and falls back to that copy: Siri and Shortcuts keep working (they run inside
+/// the app) while widgets show their empty state. The Mac client has no widgets and no App
+/// Group, and its sandbox refuses an unentitled group container, so it keeps only the
 /// Application Support copy.
 nonisolated enum DeviceCatalog {
     static let appGroup = "group.me.drewlevinson.casement"
