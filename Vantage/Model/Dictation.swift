@@ -2,7 +2,7 @@ import Foundation
 import VantageCore
 
 /// Where dictated speech is turned into text (Settings → Controls). Which engine the Mac uses is
-/// the Mac's choice (Porthole Host → Settings → Dictation), so the client only picks a side.
+/// the Mac's choice (Casement Host → Settings → Dictation), so the client only picks a side.
 /// A saved "parakeet" from before that falls back to `.mac`, which still reaches Parakeet when the
 /// Mac puts it first.
 nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {

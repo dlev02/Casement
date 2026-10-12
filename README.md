@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="brand/vantage-mac-master.png" width="128" alt="Porthole app icon">
+  <img src="brand/vantage-mac-master.png" width="128" alt="Casement app icon">
 </p>
 
-<h1 align="center">Porthole</h1>
+<h1 align="center">Casement</h1>
 
 <p align="center">
   <b>A free, private remote desktop for your Mac and PC.</b><br>
@@ -14,18 +14,18 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/iOS%20%7C%20iPadOS%20%7C%20macOS%20%7C%20visionOS-26%2B-black" alt="iOS, iPadOS, macOS, visionOS 26 or later">
   <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-black" alt="Hosts: macOS and Windows">
-  <a href="https://ko-fi.com/dlev384895"><img src="https://img.shields.io/badge/Ko--fi-support%20Porthole-FF5E5B?logo=ko-fi&logoColor=white" alt="Support Porthole on Ko-fi"></a>
+  <a href="https://ko-fi.com/dlev384895"><img src="https://img.shields.io/badge/Ko--fi-support%20Casement-FF5E5B?logo=ko-fi&logoColor=white" alt="Support Casement on Ko-fi"></a>
 </p>
 
 <p align="center">
-  <img src="docs/images/ipad-session.png" width="820" alt="Porthole on iPad controlling a Mac, with the control strip in the corner">
+  <img src="docs/images/ipad-session.png" width="820" alt="Casement on iPad controlling a Mac, with the control strip in the corner">
 </p>
 
 <table>
   <tr>
-    <td width="22%" valign="top"><img src="docs/images/iphone-devices.png" alt="Porthole on iPhone listing Macs and a PC"></td>
-    <td width="39%" valign="top"><img src="docs/images/mac-client.png" alt="Porthole for Mac with its sidebar of computers"></td>
-    <td width="39%" valign="top"><img src="docs/images/mac-pc-session.png" alt="Porthole for Mac controlling a Windows PC, with Start and Task Manager in the control strip"></td>
+    <td width="22%" valign="top"><img src="docs/images/iphone-devices.png" alt="Casement on iPhone listing Macs and a PC"></td>
+    <td width="39%" valign="top"><img src="docs/images/mac-client.png" alt="Casement for Mac with its sidebar of computers"></td>
+    <td width="39%" valign="top"><img src="docs/images/mac-pc-session.png" alt="Casement for Mac controlling a Windows PC, with Start and Task Manager in the control strip"></td>
   </tr>
   <tr>
     <td align="center">iPhone</td>
@@ -36,16 +36,16 @@
 
 <sub>Screenshots show made-up desktops streamed from a test host.</sub>
 
-## Getting Porthole
+## Getting Casement
 
-Porthole is in **beta**. For now you build it yourself from this repository (see [Building from source](#building-from-source)).
+Casement is in **beta**. For now you build it yourself from this repository (see [Building from source](#building-from-source)).
 
 On the way:
 
-- **The App Store.** Porthole for iPhone, iPad, Mac, and Apple Vision Pro, free.
-- **Signed downloads of Porthole Host** for Mac (notarized by Apple) and Windows, from this page's Releases, so it installs without warnings or a build step.
+- **The App Store.** Casement for iPhone, iPad, Mac, and Apple Vision Pro, free.
+- **Signed downloads of Casement Host** for Mac (notarized by Apple) and Windows, from this page's Releases, so it installs without warnings or a build step.
 
-Porthole will stay free, with no ads, subscriptions, or in-app purchases. Publishing does cost money: Apple's developer program is $99 a year, and signing the Windows host costs extra. If Porthole is useful to you, [a coffee on Ko-fi](https://ko-fi.com/dlev384895) helps keep it on the store.
+Casement will stay free, with no ads, subscriptions, or in-app purchases. Publishing does cost money: Apple's developer program is $99 a year, and signing the Windows host costs extra. If Casement is useful to you, [a coffee on Ko-fi](https://ko-fi.com/dlev384895) helps keep it on the store.
 
 ## What it does
 
@@ -61,13 +61,13 @@ Porthole will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Hear your Mac.** Stream the Mac's sound to your device with low latency (Opus).
 
-**Dictate.** Speak and Porthole types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
+**Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
 
 **Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device; your device's clipboard is sent only when you ask.
 
-**Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Porthole Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
+**Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Casement Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
 
-**Fit right in.** Siri and Shortcuts ("Connect to Studio in Porthole"), Spotlight, Home Screen widgets, a Control Center control, Face ID or Touch ID app lock, and iCloud Keychain sync for saved passwords.
+**Fit right in.** Siri and Shortcuts ("Connect to Studio in Casement"), Spotlight, Home Screen widgets, a Control Center control, Face ID or Touch ID app lock, and iCloud Keychain sync for saved passwords.
 
 **Keep it private.** Everything travels directly between your devices inside Tailscale's encrypted tunnel. Each device has its own key and pairs once with a six-digit code. See the [privacy policy](PRIVACY.md).
 
@@ -75,24 +75,24 @@ Porthole will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 | | Requirement | Notes |
 | --- | --- | --- |
-| **Porthole** for iPad and iPhone | iPadOS or iOS 26 | Universal app with widgets and Siri |
-| **Porthole** for Mac | macOS 26 | Native, sandboxed, one window per computer |
-| **Porthole** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
-| **Porthole Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
-| **Porthole Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Mac audio, Type Password, and the virtual display are Mac-only |
+| **Casement** for iPad and iPhone | iPadOS or iOS 26 | Universal app with widgets and Siri |
+| **Casement** for Mac | macOS 26 | Native, sandboxed, one window per computer |
+| **Casement** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
+| **Casement Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
+| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Mac audio, Type Password, and the virtual display are Mac-only |
 
-Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Porthole Host listens on TCP port 47820, and only to Tailscale addresses. Porthole has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
+Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Casement Host listens on TCP port 47820, and only to Tailscale addresses. Casement has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
 
 ## First connection
 
 1. **Install Tailscale** on the computer and on your iPad, iPhone, Mac, or Vision Pro, and sign in to the same tailnet on both.
-2. **Start Porthole Host** on the computer.
-   - *Mac:* it lives in the menu bar. Use its **Grant Screen Recording** and **Grant Accessibility** buttons, approve Porthole Host in System Settings › Privacy & Security, and reopen it if macOS asks.
+2. **Start Casement Host** on the computer.
+   - *Mac:* it lives in the menu bar. Use its **Grant Screen Recording** and **Grant Accessibility** buttons, approve Casement Host in System Settings › Privacy & Security, and reopen it if macOS asks.
    - *Windows:* it lives in the notification area. See [`WindowsHost/README.md`](WindowsHost/README.md).
-3. **Add the computer** in Porthole with **+**.
-   - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Porthole Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
+3. **Add the computer** in Casement with **+**.
+   - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Casement Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
    - **Add Manually…** takes the computer's Tailscale IP address or MagicDNS name.
-4. **Pair.** Choose **Show Pairing Code** in Porthole Host’s menu and type the six digits into Porthole. A code lasts 10 minutes and works once. After that, the device connects straight away.
+4. **Pair.** Choose **Show Pairing Code** in Casement Host’s menu and type the six digits into Casement. A code lasts 10 minutes and works once. After that, the device connects straight away.
 
 The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation, locked Macs, and restarts in more detail.
 
@@ -100,13 +100,13 @@ The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation
 
 | Symptom | Check |
 | --- | --- |
-| Can't connect, or keeps reconnecting | Tailscale is connected on both devices, Porthole Host is running, and your tailnet's access rules allow TCP port 47820. |
+| Can't connect, or keeps reconnecting | Tailscale is connected on both devices, Casement Host is running, and your tailnet's access rules allow TCP port 47820. |
 | The pairing code is rejected | Show a fresh code on the computer. Codes expire after 10 minutes and after 5 wrong tries. |
-| "Grant Screen Recording" | Approve Porthole Host in System Settings › Privacy & Security › Screen & System Audio Recording, reopen it, then choose Retry. |
-| Video works but clicks and typing don't | Approve Accessibility for Porthole Host. If only typing fails, the Mac is locked or a password field has focus: use Type Password. |
-| "Waiting for the Mac's screen…" | The display is asleep or reconfiguring. Choose Wake, or wait: Porthole keeps trying. |
+| "Grant Screen Recording" | Approve Casement Host in System Settings › Privacy & Security › Screen & System Audio Recording, reopen it, then choose Retry. |
+| Video works but clicks and typing don't | Approve Accessibility for Casement Host. If only typing fails, the Mac is locked or a password field has focus: use Type Password. |
+| "Waiting for the Mac's screen…" | The display is asleep or reconfiguring. Choose Wake, or wait: Casement keeps trying. |
 | The computer restarted and is unreachable | Tailscale starts only after someone logs in. See "Restarts & Locked Macs" in the in-app FAQ for Restart Safely, subnet routers, and Log In with Screen Sharing. |
-| Virtual display isn't created | It needs BetterDisplay and its command-line tool. Without them, Porthole streams the main display. |
+| Virtual display isn't created | It needs BetterDisplay and its command-line tool. Without them, Casement streams the main display. |
 
 ## Building from source
 
@@ -138,8 +138,8 @@ Or run the pieces: `xcrun swift test --package-path Packages/VantageCore` (proto
 To try the whole video path without granting any permissions, start a synthetic host (debug builds only). It streams a test pattern and never touches your real screen, input, or clipboard:
 
 ```sh
-open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture --port 47821 --pairing-code 246810
-xcrun simctl launch booted com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
+open -n ".deriveddata/Build/Products/Debug/Casement Host.app" --args --synthetic-capture --port 47821 --pairing-code 246810
+xcrun simctl launch booted me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
 Quit the synthetic host afterwards, and leave port 47820 to the real host.
@@ -168,7 +168,7 @@ Client:        AVSampleBufferDisplayLayer ←── VantageCore ←───┘
 
 ## Privacy and security
 
-Porthole collects nothing. There are no Porthole servers, and the developer never sees your screen, files, or keys. Porthole relies on Tailscale for encryption and adds per-device Ed25519 keys and pairing on top. Porthole Host refuses anything outside Tailscale's address ranges. It hasn't had an independent security audit.
+Casement collects nothing. There are no Casement servers, and the developer never sees your screen, files, or keys. Casement relies on Tailscale for encryption and adds per-device Ed25519 keys and pairing on top. Casement Host refuses anything outside Tailscale's address ranges. It hasn't had an independent security audit.
 
 - [Privacy Policy](PRIVACY.md)
 - [Terms of Use](TERMS.md)
@@ -179,22 +179,21 @@ Porthole collects nothing. There are no Porthole servers, and the developer neve
 - The computer has to be on, awake enough to reach, and logged in. Tailscale can't wake a sleeping Mac, and nothing can get past FileVault's pre-boot screen remotely (Restart Safely avoids it for planned restarts).
 - There's no curtain mode: someone at the computer sees what you're doing.
 - Windows hosts don't stream sound, type saved passwords, or make virtual displays yet.
-- Porthole streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
+- Casement streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
 
-## Support Porthole
+## Support Casement
 
-Porthole is a personal project, built to be the remote desktop I wanted. If it's useful to you, you can [buy me a coffee on Ko-fi](https://ko-fi.com/dlev384895). It helps cover the App Store and code-signing fees. Stars, bug reports, and ideas help too.
+Casement is a personal project, built to be the remote desktop I wanted. If it's useful to you, you can [buy me a coffee on Ko-fi](https://ko-fi.com/dlev384895). It helps cover the App Store and code-signing fees. Stars, bug reports, and ideas help too.
 
-## Why "Porthole"?
+## Why "Casement"?
 
-A porthole is the little round window in the side of a ship: you look through it at somewhere you
-aren't, and it's sturdy enough to keep the sea out. That's the whole app, really. It's a small
-window onto a computer that's somewhere else, it only opens onto your own private network, and
-nothing leaks in from outside.
+A casement is a window on hinges that swings open, the kind you push out to lean through. That's
+the app: a window onto a computer that's somewhere else, which opens when you want it to and
+only onto your own private network.
 
-The project started life as **Vantage** (a good spot to see from). That name still lives on in the
-code (the Xcode project, targets, bundle identifiers, and the `VantageCore` package), which keeps
-existing installs, pairings, and saved settings working. Everything you see in the apps says Porthole.
+The project started life as **Vantage**, and was briefly called Porthole. Vantage still lives on
+in the code (the Xcode project, targets, and the `VantageCore` package). Everything you see in the
+apps says Casement.
 
 ## Contributing
 
@@ -202,6 +201,6 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Porthole is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
+Casement is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
 
-It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT). Porthole isn't affiliated with Apple, Microsoft, or Tailscale.
+It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT). Casement isn't affiliated with Apple, Microsoft, or Tailscale.

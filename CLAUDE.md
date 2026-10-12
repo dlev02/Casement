@@ -1,15 +1,25 @@
-# Vantage (Porthole) — agent guide
+# Vantage (Casement) — agent guide
 
-**Naming**: the product is **Porthole** (renamed from Vantage on 2026-09-30). Everything a person
-sees says Porthole / Porthole Host: display names (`INFOPLIST_KEY_CFBundleDisplayName`, the client's
-`CFBundleName` in `Vantage/Info.plist` for the Mac menu bar), permission prompts, UI text, the FAQ,
-the Windows tray app and Start-menu shortcut, and the docs. The code keeps **Vantage**: project,
-targets, schemes, module and type names, bundle IDs (`com.benjaminlevinson.vantage…`), the
-`vantage://` scheme, defaults keys (`vantage.*`), Keychain items, debug flags (`-Vantage…`), log
-subsystems, and on-disk locations (`Application Support/Vantage Host/Models`, `…/Vantage/catalog.json`,
-`%LOCALAPPDATA%\Vantage Host`, the Windows Run value, DPAPI entropy, firewall rule), because
-renaming those would orphan existing installs. New user-facing text says Porthole; this guide
-still says Vantage when it means the code. The GitHub repo is `dlev02/Porthole`.
+**Naming**: the product is **Casement** (a hinged window that swings open). It was Vantage, then
+Porthole (2026-09-30), and became Casement on 2026-10-11 because a paid "Porthole: Remote Desktop"
+reached the App Store first. The App Store name is "Casement: Remote Desktop" (app id 6821765234);
+everywhere else a person sees **Casement** / **Casement Host**: display names
+(`INFOPLIST_KEY_CFBundleDisplayName`, the client's `CFBundleName` in `Vantage/en.lproj/InfoPlist.strings`
+for the Mac menu bar), the Mac products (`Casement.app`, `Casement Host.app`: `PRODUCT_NAME` with
+`PRODUCT_MODULE_NAME` kept at `Vantage`/`VantageHost`), permission prompts, UI text, the FAQ, the
+Windows tray app and Start-menu shortcut, and the docs. **Bundle IDs** are `me.drewlevinson.casement…`
+(client; `.host`, `.widgets`, `.uitests`, `.macuitests`; App Group `group.me.drewlevinson.casement`;
+background tasks `me.drewlevinson.casement.transfers.*`) on team `7BVMD7TA97`: the old
+`com.benjaminlevinson.vantage…` IDs belong to a revoked team and can't be registered on the new
+one, so the move started every install fresh (saved devices, pairings, host settings). The code
+keeps **Vantage**: project, targets, schemes, module and type names, the `vantage://` scheme,
+defaults keys (`vantage.*`), Keychain service names and log subsystems (which still read
+`com.benjaminlevinson.vantage…` as plain namespaces, as do the widget and control kinds), debug
+flags (`-Vantage…`), and on-disk locations (`Application Support/Vantage Host/Models`,
+`…/Vantage/catalog.json`, `%LOCALAPPDATA%\Vantage Host`, the Windows Run value, DPAPI entropy,
+firewall rule), because renaming those would orphan existing installs. Anything that means the
+app's bundle identifier uses the new one. New user-facing text says Casement; this guide still
+says Vantage when it means the code. The GitHub repo is `dlev02/Casement`.
 
 Vantage is a native Apple remote-desktop app: an iPadOS client controls a macOS host over
 Tailscale only. It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
@@ -20,8 +30,8 @@ groups). Read this before working here.
 
 | Target | Path | Product |
 | --- | --- | --- |
-| `VantageHost` | `VantageHost/` | macOS 26+ menu-bar app (LSUIElement), unsandboxed, Developer ID intended |
-| `Vantage` | `Vantage/` | iPadOS/iOS 26+ client (universal), also native visionOS 26+ and macOS 26+ (`SDKROOT = auto`; sandbox entitlements from `ENABLE_*[sdk=macosx*]` build settings) |
+| `VantageHost` | `VantageHost/` | `Casement Host.app`: macOS 26+ menu-bar app (LSUIElement), unsandboxed, Developer ID intended |
+| `Vantage` | `Vantage/` | `Casement.app`: iPadOS/iOS 26+ client (universal), also native visionOS 26+ and macOS 26+ (`SDKROOT = auto`; sandbox entitlements from `ENABLE_*[sdk=macosx*]` build settings) |
 | `VantageCore` | `Packages/VantageCore/` | Local SPM package shared by both: wire protocol, transport, identity |
 | `VantageWidgets` | `VantageWidgets/` | iOS widget extension (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
 | — | `Shared/` | Synced folder compiled into both `Vantage` and `VantageWidgets`: `DeviceCatalog`, `MacEntity`, widget views |
@@ -32,8 +42,9 @@ inside a synced folder (otherwise it lands in Copy Bundle Resources and the buil
 "multiple commands produce Info.plist"). Extensions are embedded through the app's
 "Embed Foundation Extensions" copy-files phase plus a target dependency.
 
-Signing: `DEVELOPMENT_TEAM = PMX23WPLM5` (Drew's team; the only non-revoked cert on this Mac).
-Bundle ids: host `com.benjaminlevinson.vantage.host`, client `com.benjaminlevinson.vantage`.
+Signing: `DEVELOPMENT_TEAM = 7BVMD7TA97` (Drew's paid team), automatic. Bundle ids: client
+`me.drewlevinson.casement` (registered UNIVERSAL: App Groups, iCloud), host
+`me.drewlevinson.casement.host`, widgets `me.drewlevinson.casement.widgets` (App Groups).
 Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCURRENCY = YES`.
 
 ## Architecture
@@ -263,15 +274,14 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `testMissingPictureIsExplainedUntilFramesReturn` (synthetic host with `--capture-fails-for 6`,
   default 127.0.0.1:47822, `TEST_RUNNER_VANTAGE_UNAVAILABLE_HOST` overrides).
 - **Siri / Shortcuts / Spotlight / widgets**: `ConnectToMacIntent` (+ `VantageShortcuts` phrases
-  like "Connect to ⟨Mac⟩ in Vantage") runs in-app and drops the id into `PendingConnection`;
+  like "Connect to ⟨Mac⟩ in Casement", from the display name) runs in-app and drops the id into `PendingConnection`;
   `ContentView` opens the session once the app is unlocked. Widgets tap through
   `vantage://connect/<uuid>` (URL scheme declared in `Vantage/Info.plist`, merged into the
   generated plist). Both read `DeviceCatalog`, a small JSON the store rewrites on every save
   (`Application Support/Vantage/catalog.json`, plus the App Group container
-  `group.com.benjaminlevinson.vantage` when the entitlement exists). A personal team can't sign
-  App Groups, so on Drew's sideloads the widget shows "No Macs yet" until the paid team adds the
-  capability to both targets; the simulator ignores the entitlement, so verify widgets there with
-  `-VantageOpenScreen widgets` (renders every family from the live catalog).
+  `group.me.drewlevinson.casement` when the entitlement exists). Until the targets carry the App
+  Group entitlement the widget shows "No Macs yet"; the simulator ignores the entitlement, so verify
+  widgets there with `-VantageOpenScreen widgets` (renders every family from the live catalog).
 - **iCloud sync** (`CloudSync`): secrets flip between local and `kSecAttrSynchronizable` Keychain
   stores (`KeychainStore(synchronizable:)`), no entitlement needed. The device list goes through
   `NSUbiquitousKeyValueStore` with `updatedAt` last-writer-wins and tombstones, but only when the
@@ -450,7 +460,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Transfers…). Only an older Mac, which would stop them, gets "Files are still transferring.
   Disconnect anyway?". **In the background** (iOS; `TransferBackgroundActivity`): a run of files
   that starts in the foreground and is ≥ 32 MB or > 20 files submits one `BGContinuedProcessingTask`
-  (`com.benjaminlevinson.vantage.transfers.<UUID>`, registered just before submitting on the main
+  (`me.drewlevinson.casement.transfers.<UUID>`, registered just before submitting on the main
   queue, wildcard in `BGTaskSchedulerPermittedIdentifiers`, `.queue` strategy; no background mode
   needed) that reports every Mac's run (`FileTransferCenter.overallSummary`) as bytes plus a
   title/subtitle ("Sending files to ⟨Mac⟩", "3 of 12 · 2 GB left · 4 min") and completes when the
@@ -593,7 +603,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
 The `Vantage` target also builds a native, sandboxed Mac app (`Vantage/Mac/`, plus `#if os(macOS)`
 branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 
-- **Windows** (`VantageApp.swift`): `Window("Vantage", id: "main")` holds the device list, one
+- **Windows** (`VantageApp.swift`): `Window("Casement", id: "main")` holds the device list, one
   only, so ⌘N means Add Mac…; `.defaultLaunchBehavior(.presented)` so it's there at every launch
   (stale saved window state once opened the app with no window at all), and it takes every link
   and opened file (`handlesExternalEvents(matching: ["*"])`). Each Mac connects in its own
@@ -602,7 +612,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `MacAppDelegate`: closing the last window doesn't quit (sessions and files outlive the list),
   the Dock icon brings the list back, becoming active opens a pending connection and retries
   files, and launch starts `MacTransferActivity`. `Settings { MacSettingsView }` and
-  `Window("Vantage Help", id: "help")`.
+  `Window("Casement Help", id: "help")`.
 - **Device list** (`MacRootView`): `NavigationSplitView`, sidebar `List(selection:)` of
   `MacSidebarRow` (a `Label`, so the symbol turns white on a selected row; `AvailabilityLabel`
   drops its orange on the accent fill via `backgroundProminence`; `DeviceTransferBadge`; drops go
@@ -626,7 +636,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)
   Screen/Wake Display, Customize Controls…, Disconnect ⌃⌥⌘W); View adds Hide/Show Controls ⌃⌥⌘C,
-  Actual Size ⌃⌥⌘0, Full Screen ⌃⌥⌘F, Sort Macs By; Help › Vantage Help. Session shortcuts all
+  Actual Size ⌃⌥⌘0, Full Screen ⌃⌥⌘F, Sort Macs By; Help › Casement Help. Session shortcuts all
   hold ⌃⌥⌘, the one chord a capturing session leaves to Vantage. Items read
   `@FocusedValue(\.sessionCommands)` (the session publishes `SessionCommands` with
   `focusedSceneValue`, since its AppKit view holds focus) and `\.selectedMac` (the list); they're
@@ -679,7 +689,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   (`NSEvent.isFromVantageHost`). `ThisMac.isHost` (loopback, a local tailnet address, or the
   host's name equal to this Mac's computer name) shows the "You're viewing this Mac from itself"
   banner and starts in View Only; `-VantageAllowSelfControl 1` keeps input on. DEBUG hosts leave
-  `com.benjaminlevinson.vantage` out of video capture for a loopback peer. Test:
+  the client (`AudioCapture.clientBundleIDs`: `me.drewlevinson.casement`, and the old
+  `com.benjaminlevinson.vantage`) out of video capture for a loopback peer. Test:
   `InjectedEventMarkerTests`.
 - **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
   Security (`hand.raised`), each a grouped form in its own `NavigationStack`; the last tab is remembered
@@ -689,8 +700,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
   iCloud sync until the Mac is signed for it. Add Device hides Natural Scrolling (the Mac's own
   mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
-  About isn't a tab: Vantage › About Vantage (`CommandGroup(replacing: .appInfo)`) opens
-  `Window("About Vantage")` (`MacAboutWindow`) showing `AboutScreen`.
+  About isn't a tab: Casement › About Casement (`CommandGroup(replacing: .appInfo)`) opens
+  `Window("About Casement")` (`MacAboutWindow`) showing `AboutScreen`.
 - **Mac look** (HIG pass, 2026-09-30): words that name a gesture use `LocalDevice.tap` ("click" on
   the Mac) and `LocalDevice.this`; "this Mac" always means the local machine, so the remote one is
   named (`device.name`, `HostNoun`). Buttons sitting on a glass card (dictation panel, screen
@@ -732,8 +743,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   done and `HostSession` awaits it before reading the next message: ⌘V paste-through sends the
   clipboard and then the key on one stream, and a key posted before a large clipboard was written
   pasted the old one. Tests: `HostClipboardTests` (`applyReturnsOnlyOnceTheClipboardIsWritten`).
-- **Audio and dictation**: the host's `AudioCapture` always leaves the Vantage client app
-  (`com.benjaminlevinson.vantage`) out of the audio filter, so a Mac connected to itself doesn't
+- **Audio and dictation**: the host's `AudioCapture` always leaves the client app
+  (`AudioCapture.clientBundleIDs`, the new and the old bundle ID) out of the audio filter, so a Mac connected to itself doesn't
   echo. `MacAudioPlayer` on macOS has no audio session: the engine plays straight to the device,
   `AVAudioEngineConfigurationChange` restarts it on a device change, output latency comes from
   `outputNode.presentationLatency`, and output still pauses while dictation's mic is open. Live
@@ -853,8 +864,8 @@ The simulator cannot route to the Mac's Tailscale interface, so test over loopba
 loopback peers in addition to tailnet peers):
 
 ```
-open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture --port 47821 --pairing-code 246810
-xcrun simctl launch <sim> com.benjaminlevinson.vantage -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
+open -n ".deriveddata/Build/Products/Debug/Casement Host.app" --args --synthetic-capture --port 47821 --pairing-code 246810
+xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
 `--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the

@@ -12,7 +12,7 @@ import os
 /// no App Group, and its sandbox refuses an unentitled group container, so it keeps only the
 /// Application Support copy.
 nonisolated enum DeviceCatalog {
-    static let appGroup = "group.com.benjaminlevinson.vantage"
+    static let appGroup = "group.me.drewlevinson.casement"
     /// Widget and control kinds, shared so the app reloads exactly these when the catalog changes.
     static let widgetKind = "com.benjaminlevinson.vantage.connect"
     static let controlKind = "com.benjaminlevinson.vantage.connect-control"

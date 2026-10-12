@@ -165,8 +165,8 @@ struct HostMenuView: View {
             }
             .buttonStyle(.glass)
             .controlSize(.large)
-            .help("Show Pairing Code: a one-time code to enter in Porthole on a new iPad, iPhone, or Mac")
-            .accessibilityHint("Shows a one-time code to enter in Porthole")
+            .help("Show Pairing Code: a one-time code to enter in Casement on a new iPad, iPhone, or Mac")
+            .accessibilityHint("Shows a one-time code to enter in Casement")
         }
     }
 
@@ -264,8 +264,8 @@ struct HostMenuView: View {
                 Button { controller.generatePairingCode() } label: {
                     SettingsRow("Pair a Device", symbol: "plus", color: .blue)
                 }
-                .help("Show Pairing Code: a one-time code to enter in Porthole on a new iPad, iPhone, or Mac")
-                .accessibilityHint("Shows a one-time code to enter in Porthole")
+                .help("Show Pairing Code: a one-time code to enter in Casement on a new iPad, iPhone, or Mac")
+                .accessibilityHint("Shows a one-time code to enter in Casement")
             }
         }
         .buttonStyle(.settingsRow)
@@ -280,7 +280,7 @@ struct HostMenuView: View {
     /// system's own menu bar extras.
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("Porthole Host \(Self.version)")
+            Text("Casement Host \(Self.version)")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 10)
@@ -333,7 +333,7 @@ struct HostMenuView: View {
             menu.addItem(closureMenuItem("Restart Safely…", symbol: "restart") { controller.restartSafely() })
             menu.addItem(.separator())
         }
-        let quitItem = closureMenuItem("Quit Porthole Host", symbol: "power") { quit() }
+        let quitItem = closureMenuItem("Quit Casement Host", symbol: "power") { quit() }
         quitItem.keyEquivalent = "q"
         menu.addItem(quitItem)
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
@@ -428,7 +428,7 @@ private struct PairingCodePanel: View {
         VStack(spacing: 12) {
             if !address.isEmpty {
                 VStack(spacing: 6) {
-                    Text("In Porthole on your device, add this Mac")
+                    Text("In Casement on your device, add this Mac")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     AddressChip(name: address)
@@ -437,7 +437,7 @@ private struct PairingCodePanel: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            Text(address.isEmpty ? "Enter this code in Porthole on your device" : "Then enter this code")
+            Text(address.isEmpty ? "Enter this code in Casement on your device" : "Then enter this code")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack(spacing: 14) {

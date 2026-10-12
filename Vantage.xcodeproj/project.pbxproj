@@ -19,14 +19,14 @@
         D10000000000000000000006 = {isa = PBXTargetDependency; target = A10000000000000000000051; targetProxy = D10000000000000000000005; };
         D10000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = D10000000000000000000008; buildPhases = (D10000000000000000000003, D10000000000000000000004); buildRules = (); dependencies = (D10000000000000000000006); fileSystemSynchronizedGroups = (D10000000000000000000002); name = VantageMacUITests; productName = VantageMacUITests; productReference = D10000000000000000000001; productType = "com.apple.product-type.bundle.ui-testing"; };
         D10000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (D10000000000000000000009, D10000000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        D10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Debug; };
-        D10000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Release; };
+        D10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Debug; };
+        D10000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"); MACOSX_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.macuitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Vantage;}; name = Release; };
         C10000000000000000000013 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000020; proxyType = 1; remoteGlobalIDString = C10000000000000000000007; remoteInfo = VantageWidgets; };
         C10000000000000000000014 = {isa = PBXTargetDependency; platformFilters = (ios, ); target = C10000000000000000000007; targetProxy = C10000000000000000000013; };
         B10000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = B10000000000000000000008; buildPhases = (B10000000000000000000003, B10000000000000000000004); buildRules = (); dependencies = (B10000000000000000000006); fileSystemSynchronizedGroups = (B10000000000000000000002); name = VantageUITests; productName = VantageUITests; productReference = B10000000000000000000001; productType = "com.apple.product-type.bundle.ui-testing"; };
         B10000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000009, B10000000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        B10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Vantage;}; name = Debug; };
-        B10000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Vantage;}; name = Release; };
+        B10000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Vantage;}; name = Debug; };
+        B10000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Vantage;}; name = Release; };
 
 
 /* Begin PBXBuildFile section */
@@ -37,8 +37,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A100000000000000000000A1 /* Vantage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vantage.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A100000000000000000000A2 /* VantageHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VantageHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A100000000000000000000A1 /* Casement.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Casement.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A100000000000000000000A2 /* Casement Host.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Casement Host.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000000000000000000001 /* VantageWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VantageWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -111,8 +111,8 @@
 			isa = PBXGroup;
 			children = (
 				C10000000000000000000001 /* VantageWidgets.appex */,
-				A100000000000000000000A1 /* Vantage.app */,
-				A100000000000000000000A2 /* VantageHost.app */,
+				A100000000000000000000A1 /* Casement.app */,
+				A100000000000000000000A2 /* Casement Host.app */,
                 B10000000000000000000001,
                 D10000000000000000000001,
 			);
@@ -145,7 +145,7 @@
 				A100000000000000000000D1 /* VantageCore */,
 			);
 			productName = Vantage;
-			productReference = A100000000000000000000A1 /* Vantage.app */;
+			productReference = A100000000000000000000A1 /* Casement.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A10000000000000000000052 /* VantageHost */ = {
@@ -169,7 +169,7 @@
 				A100000000000000000000D3 /* FluidAudio */,
 			);
 			productName = VantageHost;
-			productReference = A100000000000000000000A2 /* VantageHost.app */;
+			productReference = A100000000000000000000A2 /* Casement Host.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C10000000000000000000007 /* VantageWidgets */ = {
@@ -339,7 +339,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = PMX23WPLM5;
+				DEVELOPMENT_TEAM = 7BVMD7TA97;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -407,7 +407,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = PMX23WPLM5;
+				DEVELOPMENT_TEAM = 7BVMD7TA97;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -448,13 +448,13 @@
 				"ENABLE_USER_SELECTED_FILES[sdk=macosx*]" = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Vantage/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
+				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
-				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Porthole uses Optic ID to unlock the app and protect your connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
+				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -472,8 +472,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement;
+				PRODUCT_MODULE_NAME = Vantage;
+				PRODUCT_NAME = Casement;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -500,13 +501,13 @@
 				"ENABLE_USER_SELECTED_FILES[sdk=macosx*]" = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Vantage/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
+				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Porthole connects to your Mac over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac over your private Tailscale network.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Porthole uses Face ID to unlock the app and protect your connections.";
-				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Porthole uses Optic ID to unlock the app and protect your connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
+				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -524,8 +525,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement;
+				PRODUCT_MODULE_NAME = Vantage;
+				PRODUCT_NAME = Casement;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -549,11 +551,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Porthole Host";
+				INFOPLIST_KEY_CFBundleDisplayName = "Casement Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Porthole Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Porthole Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -561,8 +563,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.host;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.host;
+				PRODUCT_MODULE_NAME = VantageHost;
+				PRODUCT_NAME = "Casement Host";
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -580,11 +583,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Porthole Host";
+				INFOPLIST_KEY_CFBundleDisplayName = "Casement Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Porthole Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Porthole Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -592,8 +595,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.host;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.host;
+				PRODUCT_MODULE_NAME = VantageHost;
+				PRODUCT_NAME = "Casement Host";
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -608,7 +612,7 @@
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
+				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -617,7 +621,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -636,7 +640,7 @@
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Porthole;
+				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -645,7 +649,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminlevinson.vantage.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

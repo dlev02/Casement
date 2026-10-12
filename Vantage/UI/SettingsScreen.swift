@@ -18,7 +18,7 @@ struct SettingsScreen: View {
                 NavigationLink { HelpScreen() } label: { Label("Help & FAQ", systemImage: "questionmark.circle") }
                 NavigationLink { AboutScreen() } label: {
                     HStack {
-                        Label("About Porthole", systemImage: "info.circle")
+                        Label("About Casement", systemImage: "info.circle")
                         Spacer()
                         Text(AppInfo.versionString).foregroundStyle(.secondary)
                     }
@@ -34,9 +34,9 @@ enum AppInfo {
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—" }
     static var versionString: String { "\(version) (\(build))" }
     static let websiteURL = URL(string: "https://drewlevinson.me")!
-    static let githubURL = URL(string: "https://github.com/dlev02/Porthole")!
-    static let privacyURL = URL(string: "https://github.com/dlev02/Porthole/blob/main/PRIVACY.md")!
-    static let supportURL = URL(string: "https://github.com/dlev02/Porthole/issues")!
+    static let githubURL = URL(string: "https://github.com/dlev02/Casement")!
+    static let privacyURL = URL(string: "https://github.com/dlev02/Casement/blob/main/PRIVACY.md")!
+    static let supportURL = URL(string: "https://github.com/dlev02/Casement/issues")!
 }
 
 extension View {
@@ -70,7 +70,7 @@ struct AppearanceSettings: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             } footer: {
-                Text("Automatic follows the system setting. This changes Porthole's own screens and controls, not the Mac you're viewing.")
+                Text("Automatic follows the system setting. This changes Casement's own screens and controls, not the Mac you're viewing.")
             }
         }
         .navigationTitle("Appearance")
@@ -224,9 +224,9 @@ struct ControlSettings: View {
             Text("Dictation")
         } footer: {
             #if os(macOS)
-            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, Porthole Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
+            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
             #else
-            Text("Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, Porthole Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
+            Text("Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
             #endif
         }
     }
@@ -241,7 +241,7 @@ struct ControlSettings: View {
         } header: {
             Text("Keyboard")
         } footer: {
-            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Porthole instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, for a Mac; a PC has its own ⌘ Acts as Ctrl in its settings, on unless you turn it off.")
+            Text("While a session window is in front, shortcuts like ⌘Q, ⌘W, and ⌘C go to the Mac you're controlling. To reach Casement instead, hold ⌃⌥⌘ with the key: ⌃⌥⌘W disconnects, and ⌃⌥⌘K turns this setting on or off. macOS keeps ⌘Tab and ⌘Space for itself; send them from the Session menu. Swap ⌘ and ⌃ presses Control when you press Command, and Command when you press Control, for a Mac; a PC has its own ⌘ Acts as Ctrl in its settings, on unless you turn it off.")
         }
     }
     #endif
@@ -297,7 +297,7 @@ struct ConnectionSettings: View {
             } header: {
                 Text("Network")
             } footer: {
-                Text("Porthole only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
+                Text("Casement only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
             }
 
             Section {
@@ -324,7 +324,7 @@ struct SecuritySettings: View {
                 Toggle("Require Touch ID", isOn: $requireBiometrics)
                     .accessibilityIdentifier("settings.requireBiometrics")
             } footer: {
-                Text("Porthole locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
+                Text("Casement locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
             }
             // iCloud sync stays off on the Mac until the app is signed for iCloud there: without
             // that, its Keychain can't hold synced secrets.
@@ -336,7 +336,7 @@ struct SecuritySettings: View {
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
                 #endif
             } footer: {
-                Text("Unlock Porthole with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
+                Text("Unlock Casement with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
             }
 
             Section {
@@ -352,7 +352,7 @@ struct SecuritySettings: View {
             } header: {
                 Text("iCloud")
             } footer: {
-                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Porthole up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
+                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Casement up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
             }
             #endif
         }
@@ -368,7 +368,7 @@ struct AboutScreen: View {
                 VStack(spacing: 10) {
                     AppIconTile()
                         .padding(.bottom, 6)
-                    Text("Porthole")
+                    Text("Casement")
                         .font(.title.weight(.bold))
                     Text("Your Mac or PC, wherever you are.")
                         .foregroundStyle(.secondary)
@@ -394,7 +394,7 @@ struct AboutScreen: View {
                     Label("Help & FAQ", systemImage: "questionmark.circle")
                 }
             } footer: {
-                Text("Porthole streams your Mac or PC with hardware video encoding, across your own Tailscale network only. There is no account, no relay server, and no tracking.")
+                Text("Casement streams your Mac or PC with hardware video encoding, across your own Tailscale network only. There is no account, no relay server, and no tracking.")
             }
         }
         .navigationTitle("About")
@@ -461,15 +461,15 @@ struct HelpScreen: View {
     static let sections: [FAQSection] = [
         FAQSection("Getting Connected", [
             FAQEntry("What do I need on the Mac?",
-                     "Install Porthole Host (from the Porthole page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
+                     "Install Casement Host (from the Casement page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Can I control a Windows PC?",
-                     "Yes, with Porthole Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
+                     "Yes, with Casement Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. Mac Audio, Type Password and the virtual display are Mac-only."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, the Mac shows a six-digit code to prove it's really you; after that the Mac remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the Mac."),
             siriEntry,
-            FAQEntry("Does Porthole work away from home?",
-                     "Yes. Porthole connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
-            FAQEntry("Why does Porthole want a Tailscale key?",
+            FAQEntry("Does Casement work away from home?",
+                     "Yes. Casement connects over Tailscale, so it works from any network — including cellular — as long as both the Mac and this device are on your tailnet."),
+            FAQEntry("Why does Casement want a Tailscale key?",
                      "Only to read your device list, so it can offer your Macs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding Macs by name or IP by hand works without one."),
         ]),
         FAQSection("Controlling the Mac", controllingTheMac),
@@ -477,29 +477,29 @@ struct HelpScreen: View {
             FAQEntry("HEVC or H.264?",
                      "HEVC looks better at the same bandwidth and is the default. Choose H.264 only if something in the path can't decode HEVC."),
             FAQEntry("What does Virtual Display do?",
-                     "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Porthole streams the Mac's main display, which connects fastest."),
+                     "It asks the Mac for a BetterDisplay virtual screen shaped like this device, so the Mac's windows fit your screen instead of being letterboxed. With it off, Casement streams the Mac's main display, which connects fastest."),
             FAQEntry("Do I need BetterDisplay or MacWhisper?",
-                     "No. Without BetterDisplay, Porthole streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Porthole Host's optional built-in Parakeet model. Both are optional extras that Porthole uses when they're there."),
+                     "No. Without BetterDisplay, Casement streams the Mac's main display. Without MacWhisper, dictation is transcribed on this device, or on the Mac by Casement Host's optional built-in Parakeet model. Both are optional extras that Casement uses when they're there."),
             FAQEntry("The picture went soft for a moment.",
-                     "Porthole drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."),
+                     "Casement drops detail before it drops smoothness when the network narrows, then sharpens again within a second or two. Still images sharpen fastest because nothing is moving."),
         ]),
         FAQSection("Restarts & Locked Macs", [
             FAQEntry("What happens if my Mac restarts while I'm away?",
-                     "Porthole Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."),
-            FAQEntry("Can Porthole stop an accidental restart?",
-                     "Yes. While a device is connected, Porthole Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Porthole Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
+                     "Casement Host starts again once someone logs in, and this device reconnects on its own. With FileVault on, a restart stops at the FileVault unlock screen before macOS or Tailscale start, so nothing remote can reach the Mac until it's unlocked. To recover from afar, turn on Remote Login and keep a Tailscale subnet router on your home network (macOS 26 and later can unlock FileVault over SSH), or turn on automatic login on a Mac that never leaves home."),
+            FAQEntry("Can Casement stop an accidental restart?",
+                     "Yes. While a device is connected, Casement Host asks before the Mac restarts, shuts down, or logs out, including restarts started by Software Update, and you can cancel. Turn this off in Casement Host's Settings → Reboot. It can't catch a crash, a power cut, or a restart forced from Terminal."),
             FAQEntry("Can I unlock a locked Mac?",
-                     "If the Mac is asleep at its lock screen, \(typePasswordGesture): Porthole types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
+                     "If the Mac is asleep at its lock screen, \(typePasswordGesture): Casement types your saved password through Screen Sharing. That needs the account name and password saved for this Mac and Screen Sharing turned on."),
             FAQEntry("How do I log in after a restart?",
-                     "At the login window the Mac's own Tailscale isn't running yet, so Porthole can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Porthole types your password there, the Mac logs in, and a minute later you can connect as usual."),
+                     "At the login window the Mac's own Tailscale isn't running yet, so Casement can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Casement types your password there, the Mac logs in, and a minute later you can connect as usual."),
             FAQEntry("What does Restart Safely do?",
-                     "It's in Porthole Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
+                     "It's in Casement Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
         ]),
         FAQSection("Files, Sound & Clipboard", [
             FAQEntry("How do I send files?",
                      sendFilesAnswer),
             FAQEntry("Where do files end up?",
-                     "On a Mac, in Downloads, or the folder chosen in Porthole Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Porthole Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
+                     "On a Mac, in Downloads, or the folder chosen in Casement Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Casement Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
             FAQEntry("Can I hear the Mac's sound?",
                      "Yes. Turn on Mac Audio in the session controls or the session menu, and the Mac's sound plays on \(LocalDevice.this) while you're connected (the Mac keeps playing it too). You can make it the default for a Mac in its settings. PCs don't send sound yet."),
             FAQEntry("How does the clipboard work?",
@@ -507,19 +507,19 @@ struct HelpScreen: View {
         ]),
         FAQSection("Privacy", [
             FAQEntry("Does my screen go through a server?",
-                     "No. There is no Porthole account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Porthole has no ads, analytics, or tracking; the privacy policy is linked in About."),
+                     "No. There is no Casement account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Casement has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Can someone else connect to my Mac?",
-                     "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Porthole Host refuses connections from any address outside Tailscale's range."),
-            FAQEntry("What does Porthole store on this device?",
+                     "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
+            FAQEntry("What does Casement store on this device?",
                      "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
-        FAQSection("About Porthole", [
-            FAQEntry("Is Porthole free?",
-                     "Yes. Porthole and Porthole Host are free and open source, with no ads, subscriptions, or in-app purchases. The source code is on GitHub."),
+        FAQSection("About Casement", [
+            FAQEntry("Is Casement free?",
+                     "Yes. Casement and Casement Host are free and open source, with no ads, subscriptions, or in-app purchases. The source code is on GitHub."),
             FAQEntry("Where can I get help or report a bug?",
-                     "Open an issue on the Porthole GitHub page (About → Report a Problem). Say which devices and versions you're using and what happened; for connection problems, mention whether Tailscale shows both devices as connected."),
+                     "Open an issue on the Casement GitHub page (About → Report a Problem). Say which devices and versions you're using and what happened; for connection problems, mention whether Tailscale shows both devices as connected."),
         ]),
     ]
 }
@@ -527,7 +527,7 @@ struct HelpScreen: View {
 extension HelpScreen {
     #if os(macOS)
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
-                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Porthole is locked with Touch ID, the connection waits until you unlock.")
+                                           "Yes. Say \"Connect to Studio Mac in Casement\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Casement is locked with Touch ID, the connection waits until you unlock.")
     private static let logInGesture = "select the Mac in the sidebar"
     private static let typePasswordGesture = "choose Type Password in the Session menu (⌃⌥⌘P)"
     private static let receivedFilesPlace = "in this Mac's Downloads folder"
@@ -535,38 +535,38 @@ extension HelpScreen {
     private static let clipboardAnswer = "What you copy on the other computer arrives on this Mac by itself. Going the other way, ⌘V in a session sends this Mac's clipboard just before it pastes, or choose Send Clipboard in the Session menu (⌃⌥⌘V). Text, rich text, and images are supported; files go through Send File instead."
     private static let controllingTheMac: [FAQEntry] = [
         FAQEntry("Which shortcuts go to the Mac?",
-                 "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Porthole. Hold ⌃⌥⌘ with a key to reach Porthole instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Porthole."),
+                 "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Casement. Hold ⌃⌥⌘ with a key to reach Casement instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Casement."),
         FAQEntry("How do I send ⌘Tab or ⌘Space?",
-                 "macOS keeps those for itself, so Porthole can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
+                 "macOS keeps those for itself, so Casement can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
         FAQEntry("How do I right-click or scroll?",
                  "The same way as on this Mac: your mouse and trackpad buttons, gestures, and scrolling go straight through, and the other Mac's pointer follows yours inside the window."),
         FAQEntry("Why can't I type into a password box?",
-                 "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Porthole shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Porthole types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+                 "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Casement shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Casement types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
         FAQEntry("How does Type Password get into password fields?",
-                 "Save the Mac's account name and password in its settings in Porthole. When macOS is blocking ordinary typing, Porthole signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+                 "Save the Mac's account name and password in its settings in Casement. When macOS is blocking ordinary typing, Casement signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
         FAQEntry("Can I change the buttons in the session controls?",
                  "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Controls… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, and the other Mac picks which in Porthole Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #else
     #if os(visionOS)
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
-                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Porthole is locked with Optic ID, the connection waits until you unlock.")
+                                           "Yes. Say \"Connect to Studio Mac in Casement\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Casement is locked with Optic ID, the connection waits until you unlock.")
     private static let logInGesture = "pinch and hold the Mac in the list"
     private static let typePasswordGesture = "pinch the key button"
-    private static let receivedFilesPlace = "in the Files app, under On My Apple Vision Pro › Porthole › Received"
+    private static let receivedFilesPlace = "in the Files app, under On My Apple Vision Pro › Casement › Received"
     private static let listMenuGesture = "pinch and hold"
     #else
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or a widget?",
-                                           "Yes. Say \"Connect to Studio Mac in Porthole\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Porthole is locked with Face ID, the connection waits until you unlock.")
+                                           "Yes. Say \"Connect to Studio Mac in Casement\" to Siri, search the Mac's name in Spotlight, add the Connect to Mac action to a Shortcut or the Action button, put the Connect widget on your Home Screen, or add the Connect to Mac control to Control Center (it opens the Mac you used last). If Casement is locked with Face ID, the connection waits until you unlock.")
     private static let logInGesture = "long-press the Mac in the list"
     private static let typePasswordGesture = "tap the key button"
-    private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Porthole › Received"
+    private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Casement › Received"
     private static let listMenuGesture = "long-press"
     #endif
-    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you \(listMenuGesture) a computer in the list, without opening its screen at all. You can also pick Porthole from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Porthole partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
-    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Porthole never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
+    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you \(listMenuGesture) a computer in the list, without opening its screen at all. You can also pick Casement from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Casement partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
+    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Casement never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
     #if os(visionOS) // look and pinch always points absolutely
     private static let touchEntries: [FAQEntry] = []
     #else
@@ -583,13 +583,13 @@ extension HelpScreen {
                 FAQEntry("Unicode Text or Keystrokes for the keyboard?",
                          "Unicode Text sends exactly the characters you type, including emoji, accents, and dictation. Keystrokes sends real key presses using the Mac's US layout, which terminals, games, and virtual machines need. Hardware keyboards always send keystrokes."),
                 FAQEntry("Why can't I type into a password box?",
-                         "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Porthole shows a banner. Your saved password still gets through: tap the key button and Porthole types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
+                         "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Casement shows a banner. Your saved password still gets through: tap the key button and Casement types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
                 FAQEntry("How does the key button type into password fields?",
-                         "Save your Mac's account name and password in the Mac's settings in Porthole. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
+                         "Save your Mac's account name and password in the Mac's settings in Casement. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
                 FAQEntry("Can I change the buttons in the session controls?",
                          "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Porthole can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Porthole Host's built-in Parakeet model, and the Mac picks which in Porthole Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #endif
 }

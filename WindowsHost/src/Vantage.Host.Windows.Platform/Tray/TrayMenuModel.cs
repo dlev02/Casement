@@ -81,25 +81,25 @@ public static class TrayMenuModel
             items.Add(new TrayMenuItem($"Disconnect {client.Name}", new TrayCommand(TrayCommandKind.Disconnect, client.SessionId), true));
         items.Add(TrayMenuItem.Separator);
         items.Add(new TrayMenuItem("Settings…", new TrayCommand(TrayCommandKind.Settings), true));
-        items.Add(new TrayMenuItem("Quit Porthole Host", new TrayCommand(TrayCommandKind.Quit), true));
+        items.Add(new TrayMenuItem("Quit Casement Host", new TrayCommand(TrayCommandKind.Quit), true));
         return items;
     }
 
     /// <summary>The first, disabled row.</summary>
     public static string Headline(TrayState state) =>
-        state.IsListening ? $"Porthole Host: Listening on {state.HostName}"
-        : state.Problem is { Length: > 0 } problem ? $"Porthole Host: {problem}"
-        : "Porthole Host: Starting…";
+        state.IsListening ? $"Casement Host: Listening on {state.HostName}"
+        : state.Problem is { Length: > 0 } problem ? $"Casement Host: {problem}"
+        : "Casement Host: Starting…";
 
     /// <summary>The hover tooltip, at most <see cref="MaxTooltip"/> characters.</summary>
     public static string Tooltip(TrayState state)
     {
         var text = state.Clients.Count switch
         {
-            0 when !state.IsListening => state.Problem is { Length: > 0 } problem ? $"Porthole Host — {problem}" : "Porthole Host",
-            0 => "Porthole Host — ready",
-            1 => $"Porthole Host — {state.Clients[0].Name} connected",
-            _ => $"Porthole Host — {state.Clients.Count} devices connected",
+            0 when !state.IsListening => state.Problem is { Length: > 0 } problem ? $"Casement Host — {problem}" : "Casement Host",
+            0 => "Casement Host — ready",
+            1 => $"Casement Host — {state.Clients[0].Name} connected",
+            _ => $"Casement Host — {state.Clients.Count} devices connected",
         };
         return text.Length <= MaxTooltip ? text : text[..(MaxTooltip - 1)] + "…";
     }

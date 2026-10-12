@@ -39,7 +39,7 @@ struct FilesSettingsTab: View {
             }
             if notify, delivery == .off {
                 HStack {
-                    Label("Notifications for Porthole Host are off in System Settings.", systemImage: "bell.slash")
+                    Label("Notifications for Casement Host are off in System Settings.", systemImage: "bell.slash")
                         .foregroundStyle(.orange)
                     Spacer()
                     Button("Turn On…") { HostNotifications.shared.openSystemSettings(forThisApp: true) }
@@ -192,7 +192,7 @@ struct FilesSettingsTab: View {
         case .off:
             Label("Off", systemImage: "bell.slash")
                 .foregroundStyle(.orange)
-                .help("Notifications for Porthole Host are off in System Settings.")
+                .help("Notifications for Casement Host are off in System Settings.")
         case .notAsked:
             Text("Not allowed yet")
                 .foregroundStyle(.secondary)

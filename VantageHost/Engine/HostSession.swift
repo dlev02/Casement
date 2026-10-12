@@ -81,7 +81,7 @@ actor HostSession {
     /// window would show itself showing itself.
     private var excludedFromPicture: [String] {
         #if DEBUG
-        peerHost == "::1" || peerHost.hasPrefix("127.") ? [AudioCapture.clientBundleID] : []
+        peerHost == "::1" || peerHost.hasPrefix("127.") ? AudioCapture.clientBundleIDs : []
         #else
         []
         #endif
@@ -190,7 +190,7 @@ actor HostSession {
 
         if !HostOptions.shared.syntheticCapture, !ScreenCapture.preflightPermission() {
             try await channel.send(.authResult(AuthResult(status: .denied,
-                message: "On the Mac, grant Screen Recording to Porthole Host in System Settings → Privacy & Security, then reopen Porthole Host and retry.")))
+                message: "On the Mac, grant Screen Recording to Casement Host in System Settings → Privacy & Security, then reopen Casement Host and retry.")))
             throw SessionError.authFailed
         }
         // A sleeping display lists no displays at all, so wake it before looking.
@@ -912,7 +912,7 @@ struct HostFileChannel: Sendable, Identifiable {
     /// A Mac client keeps what it receives in Downloads; an iPad in Files › Vantage.
     var clientIsMac = false
     /// Where the other end will find a file the Mac sends it, for the panel and the notification.
-    var clientDestination: String { clientIsMac ? "Downloads" : "Files, in the Porthole folder" }
+    var clientDestination: String { clientIsMac ? "Downloads" : "Files, in the Casement folder" }
     /// Opened by a files-only session (no screen), e.g. Send Files from the iPad's device list.
     var isFilesOnly = false
     /// The session that issued the token has ended; the channel carries on until the iPad closes

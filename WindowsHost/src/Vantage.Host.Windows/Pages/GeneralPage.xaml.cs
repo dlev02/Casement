@@ -63,12 +63,12 @@ public sealed partial class GeneralPage : Page
         if (tailnet is { IsRunning: true, PrimaryAddress: { } address })
         {
             AddressText.Text = tailnet.DnsName is { } dns ? $"{address}  ·  {dns}" : address;
-            AddressHint.Text = "Use this address when you add the PC in Porthole.";
+            AddressHint.Text = "Use this address when you add the PC in Casement.";
         }
         else if (tailnet is not null)
         {
             AddressText.Text = $"Tailscale is {tailnet.BackendState.ToLowerInvariant()}";
-            AddressHint.Text = "Porthole only accepts connections over Tailscale. Open Tailscale and sign in.";
+            AddressHint.Text = "Casement only accepts connections over Tailscale. Open Tailscale and sign in.";
         }
         else
         {

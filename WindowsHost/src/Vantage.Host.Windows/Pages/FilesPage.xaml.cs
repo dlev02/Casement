@@ -66,7 +66,7 @@ public sealed partial class FilesPage : Page
             {
                 XamlRoot = XamlRoot,
                 Title = "That folder can't be used",
-                Content = "Porthole Host can't save files there. Choose a folder you can write to.",
+                Content = "Casement Host can't save files there. Choose a folder you can write to.",
                 CloseButtonText = "OK",
             }.ShowAsync();
             return;

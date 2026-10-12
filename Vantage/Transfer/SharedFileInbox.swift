@@ -26,7 +26,7 @@ final class SharedFileInbox {
             let inbox = URL.documentsDirectory.appending(path: "Inbox", directoryHint: .isDirectory).standardizedFileURL.path
             if url.standardizedFileURL.path.hasPrefix(inbox) { try? FileManager.default.removeItem(at: url) }
         } catch {
-            log.error("couldn't take a file opened in Porthole: \(error.localizedDescription, privacy: .public)")
+            log.error("couldn't take a file opened in Casement: \(error.localizedDescription, privacy: .public)")
         }
     }
 

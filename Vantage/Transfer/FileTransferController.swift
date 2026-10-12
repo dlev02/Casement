@@ -136,7 +136,7 @@ final class FileTransferController {
         }
         #endif
         // Only the app saves to Downloads; a test runner (no Vantage bundle) gets a scratch folder.
-        guard Bundle.main.bundleIdentifier == "com.benjaminlevinson.vantage" else {
+        guard Bundle.main.bundleIdentifier == "me.drewlevinson.casement" else {
             return URL.temporaryDirectory.appending(path: "VantageReceived", directoryHint: .isDirectory)
         }
         return URL.downloadsDirectory.resolvingSymlinksInPath()
@@ -478,7 +478,7 @@ final class FileTransferController {
 
     #if DEBUG
     /// `-VantageSendTestFile <bytes>`: queues a file of random bytes, as if picked in Files.
-    func queueTestFile(bytes: Int, name: String = "Porthole Test.bin") {
+    func queueTestFile(bytes: Int, name: String = "Casement Test.bin") {
         var generator = SystemRandomNumberGenerator()
         var data = Data(count: bytes)
         data.withUnsafeMutableBytes { raw in

@@ -6,7 +6,7 @@
 .DESCRIPTION
   Quits a running Vantage Host first (its files are in use). Files copied over SSH carry no Mark of
   the Web, so SmartScreen doesn't prompt; if Smart App Control is on, unsigned apps are blocked.
-  Turn on "Start Porthole Host when I sign in" in its General page afterwards.
+  Turn on "Start Casement Host when I sign in" in its General page afterwards.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\publish.ps1
@@ -26,7 +26,7 @@ $project = Join-Path $root "src\Vantage.Host.Windows\Vantage.Host.Windows.csproj
 
 $running = Get-Process VantageHost -ErrorAction SilentlyContinue
 if ($running) {
-    Write-Host "Quitting the running Porthole Host..."
+    Write-Host "Quitting the running Casement Host..."
     $running | Stop-Process -Force
     Start-Sleep -Seconds 1
 }
@@ -41,13 +41,13 @@ robocopy $staging $Destination /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Copying to $Destination failed (robocopy $LASTEXITCODE)." }
 $exe = Join-Path $Destination "VantageHost.exe"
 
-$shortcutPath = Join-Path ([Environment]::GetFolderPath("Programs")) "Porthole Host.lnk"
+$shortcutPath = Join-Path ([Environment]::GetFolderPath("Programs")) "Casement Host.lnk"
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $exe
 $shortcut.WorkingDirectory = $Destination
 $shortcut.IconLocation = "$exe,0"
-$shortcut.Description = "Porthole Host: control this PC from your iPad"
+$shortcut.Description = "Casement Host: control this PC from your iPad"
 $shortcut.Save()
 
 $size = (Get-ChildItem $Destination -Recurse | Measure-Object Length -Sum).Sum / 1MB

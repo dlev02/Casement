@@ -15,7 +15,7 @@ struct PairingPrompt: View {
             Image(systemName: "key.horizontal.fill").font(.largeTitle).foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Text("Enter Pairing Code").font(.headline).foregroundStyle(.primary)
-            Text("Open Porthole Host on your \(host.name) and choose “Show Pairing Code.”")
+            Text("Open Casement Host on your \(host.name) and choose “Show Pairing Code.”")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.circle.fill")

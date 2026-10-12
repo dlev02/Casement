@@ -367,7 +367,7 @@ struct RemoteSessionScreen: View {
             Button("Disconnect", role: .destructive) { endSession() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(device.name)'s Porthole Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
+            Text("\(device.name)'s Casement Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
         }
         // Files opened in Vantage from other apps join this session's queue.
         .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
@@ -455,7 +455,7 @@ struct RemoteSessionScreen: View {
             : Double(active.reduce(0) { $0 + $1.bytesDone }) / Double(max(1, active.reduce(0) { $0 + $1.byteCount }))
         return SendFileAction(
             unavailableReason: session.state == .connected && !session.hostOffersFiles
-                ? "\(device.name)'s Porthole Host can't receive files. Update Porthole Host on \(host.the)." : nil,
+                ? "\(device.name)'s Casement Host can't receive files. Update Casement Host on \(host.the)." : nil,
             progress: progress,
             hasTransfers: session.files.hasTransfers,
             onSend: { showFileImporter = true },
@@ -539,7 +539,7 @@ struct RemoteSessionScreen: View {
         MacAudioToggle(
             isOn: wantsMacAudio && !macAudioFailed,
             unavailableReason: session.state == .connected && !session.hostOffersAudio
-                ? "\(device.name)'s Porthole Host can't send sound. Update Porthole Host on \(host.the)." : nil,
+                ? "\(device.name)'s Casement Host can't send sound. Update Casement Host on \(host.the)." : nil,
             onToggle: toggleMacAudio)
     }
 
@@ -976,8 +976,8 @@ extension RemoteSessionScreen {
             Toggle(isOn: $capturesShortcuts) {
                 Label("Send Keyboard Shortcuts", systemImage: "command")
             }
-            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to \(host.the). ⌃⌥⌘ shortcuts stay with Porthole."
-                                    : "⌘Q, ⌘W, ⌘H, ⌘M and ⌘, act on Porthole")
+            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to \(host.the). ⌃⌥⌘ shortcuts stay with Casement."
+                                    : "⌘Q, ⌘W, ⌘H, ⌘M and ⌘, act on Casement")
             .accessibilityIdentifier("session.mac.captureShortcuts")
             Menu {
                 ForEach(HostShortcut.sessionMenu(for: hostPlatform)) { shortcut in
@@ -1270,7 +1270,7 @@ private struct PasswordPromptSheet: View {
                         Label("macOS is blocking ordinary typing", systemImage: "lock.shield")
                             .font(.headline)
                     } footer: {
-                        Text("A password field, an authentication dialog, or the lock screen has focus, so macOS ignores keystrokes from apps. Porthole can type the password through the Mac's own Screen Sharing instead. It signs in with your Mac account, so it needs the account name that goes with this password.")
+                        Text("A password field, an authentication dialog, or the lock screen has focus, so macOS ignores keystrokes from apps. Casement can type the password through the Mac's own Screen Sharing instead. It signs in with your Mac account, so it needs the account name that goes with this password.")
                     }
                 }
                 Section {
@@ -1290,7 +1290,7 @@ private struct PasswordPromptSheet: View {
                     }
                 } footer: {
                     Text(prompt == .missing
-                         ? "Porthole keeps these in the Keychain and types the password when you \(LocalDevice.tap) the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
+                         ? "Casement keeps these in the Keychain and types the password when you \(LocalDevice.tap) the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
                          : "Your short account name or full name, as shown in System Settings → Users & Groups. Screen Sharing must be on for this account (System Settings → General → Sharing).")
                 }
             }

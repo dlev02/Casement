@@ -30,7 +30,7 @@ struct MacCommands: Commands {
         ToolbarCommands()
 
         CommandGroup(replacing: .appInfo) {
-            Button("About Porthole") { openWindow(id: MacAboutWindow.sceneID) }
+            Button("About Casement") { openWindow(id: MacAboutWindow.sceneID) }
         }
 
         CommandGroup(replacing: .newItem) {
@@ -71,7 +71,7 @@ struct MacCommands: Commands {
         }
 
         CommandGroup(replacing: .help) {
-            Button("Porthole Help") { openWindow(id: MacHelpWindow.sceneID) }
+            Button("Casement Help") { openWindow(id: MacHelpWindow.sceneID) }
                 .keyboardShortcut("?", modifiers: .command)
         }
     }

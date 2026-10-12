@@ -3,10 +3,10 @@
  <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
   <BuildActionEntries>
    <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="YES">
-    <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000051" BuildableName="Vantage.app" BlueprintName="Vantage" ReferencedContainer="container:Vantage.xcodeproj"/>
+    <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000051" BuildableName="Casement.app" BlueprintName="Vantage" ReferencedContainer="container:Vantage.xcodeproj"/>
    </BuildActionEntry>
    <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
-    <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="VantageHost.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
+    <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="Casement Host.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
    </BuildActionEntry>
   </BuildActionEntries>
  </BuildAction>
@@ -15,7 +15,7 @@
    <ExecutionAction ActionType="Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
     <ActionContent title="Start the synthetic hosts" scriptText="/bin/zsh &quot;$SRCROOT/scripts/mac-ui-test-hosts.sh&quot; start &quot;$BUILT_PRODUCTS_DIR&quot;&#10;" shellToInvoke="/bin/zsh">
      <EnvironmentBuildable>
-      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="VantageHost.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="Casement Host.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
      </EnvironmentBuildable>
     </ActionContent>
    </ExecutionAction>
@@ -24,7 +24,7 @@
    <ExecutionAction ActionType="Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
     <ActionContent title="Stop the synthetic hosts" scriptText="/bin/zsh &quot;$SRCROOT/scripts/mac-ui-test-hosts.sh&quot; stop&#10;" shellToInvoke="/bin/zsh">
      <EnvironmentBuildable>
-      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="VantageHost.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000052" BuildableName="Casement Host.app" BlueprintName="VantageHost" ReferencedContainer="container:Vantage.xcodeproj"/>
      </EnvironmentBuildable>
     </ActionContent>
    </ExecutionAction>

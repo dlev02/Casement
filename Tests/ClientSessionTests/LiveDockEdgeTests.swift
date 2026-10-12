@@ -6,7 +6,7 @@ import VantageCore
 
 /// Opt-in, against a real Debug host on this Mac, and it moves the real pointer:
 ///
-///     open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --pairing-code 246810 --port 47841
+///     open -n .deriveddata/Build/Products/Debug/Casement\ Host.app --args --pairing-code 246810 --port 47841
 ///     VANTAGE_LIVE_DOCK_HOST=127.0.0.1:47841 xcrun swift test --filter LiveDockEdgeTests
 ///
 /// Checks what the client has to deliver for macOS to reveal an auto-hidden Dock: one pointer move

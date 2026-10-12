@@ -55,11 +55,11 @@ struct HostSettingsView: View {
                 Text("While a device is connected")
             } footer: {
                 Footer(controller.canRestartSafely
-                       ? "Porthole Host asks first and can cancel the restart. Restart Safely unlocks FileVault by itself for one restart, so the Mac comes back at the login window; it's also offered when you restart while connected."
-                       : "Porthole Host asks first and can cancel the restart.")
+                       ? "Casement Host asks first and can cancel the restart. Restart Safely unlocks FileVault by itself for one restart, so the Mac comes back at the login window; it's also offered when you restart while connected."
+                       : "Casement Host asks first and can cancel the restart.")
             }
             Section {
-                Toggle("Start Porthole Host at login", isOn: Binding(
+                Toggle("Start Casement Host at login", isOn: Binding(
                     get: { controller.loginItem.isEnabled },
                     set: { controller.loginItem.setEnabled($0) }))
                 if controller.loginItem.requiresApproval {
@@ -70,7 +70,7 @@ struct HostSettingsView: View {
             } header: {
                 Text("After a restart")
             } footer: {
-                Footer("Once you log in, Porthole Host opens and your devices reconnect by themselves.")
+                Footer("Once you log in, Casement Host opens and your devices reconnect by themselves.")
             }
             Section {
                 if let report = controller.readiness {
@@ -173,7 +173,7 @@ struct HostSettingsView: View {
             Section {
                 if controller.trustedClients.isEmpty {
                     ContentUnavailableView("No Paired Devices", systemImage: "ipad.and.iphone",
-                                           description: Text("Choose Pair a Device in the menu bar and enter the code in Porthole."))
+                                           description: Text("Choose Pair a Device in the menu bar and enter the code in Casement."))
                 } else {
                     let connected = Set(controller.connectedDevices.map(\.fingerprint))
                     ForEach(controller.trustedClients.sorted { $0.addedAt > $1.addedAt }) { client in

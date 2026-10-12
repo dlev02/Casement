@@ -81,7 +81,7 @@ enum StatusItemIcon {
 
     private static func render(_ key: Key) -> NSImage {
         let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        guard let base = NSImage(systemSymbolName: key.symbol, accessibilityDescription: "Porthole Host")?
+        guard let base = NSImage(systemSymbolName: key.symbol, accessibilityDescription: "Casement Host")?
             .withSymbolConfiguration(configuration) else { return NSImage() }
         guard let activity = key.activity else {
             base.isTemplate = true
@@ -133,7 +133,7 @@ enum StatusItemIcon {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Porthole Host"
+        image.accessibilityDescription = "Casement Host"
         return image
     }
 }
