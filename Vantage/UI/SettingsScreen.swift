@@ -37,6 +37,8 @@ enum AppInfo {
     static let githubURL = URL(string: "https://github.com/dlev02/Casement")!
     static let privacyURL = URL(string: "https://github.com/dlev02/Casement/blob/main/PRIVACY.md")!
     static let supportURL = URL(string: "https://github.com/dlev02/Casement/issues")!
+    /// Casement Host for Mac and Windows: downloads on the GitHub releases page.
+    static let hostDownloadURL = URL(string: "https://github.com/dlev02/Casement/releases/latest")!
 }
 
 extension View {
