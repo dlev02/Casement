@@ -1,0 +1,106 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.08235,0.34118,0.94118,1.00000",
+          "extended-srgb:0.00000,0.08235,0.47843,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0.0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1.0
+          }
+        }
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.05882,0.11373,0.36863,1.00000",
+          "extended-srgb:0.00784,0.02353,0.09020,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0.0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1.0
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Pointer",
+      "layers": [
+        {
+          "name": "pointer",
+          "image-name": "pointer.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "pointer-edge",
+          "image-name": "pointer-edge.svg",
+          "glass": false,
+          "fill": "none"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.55
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "specular": true,
+      "lighting": "combined"
+    },
+    {
+      "name": "Slab",
+      "layers": [
+        {
+          "name": "glass-slab",
+          "image-name": "glass-slab.png",
+          "glass": false,
+          "fill": "none"
+        }
+      ],
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "specular": false,
+      "lighting": "combined"
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

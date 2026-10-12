@@ -1,13 +1,28 @@
 # Casement icon
 
-The mark shows two views meeting to form a subtle V. It dates from the app's first name, Vantage, which is also why the files are named `vantage-…`.
+The mark is a white pointer resting on a tilted pane of frosted glass: reaching through a window into
+your other computer. Casement Host uses the same mark in graphite on silver.
 
-`vantage-ios-master.png` is the full-bleed, opaque image-generation master. `vantage-mac-master.png` is the matching rounded tile with transparent outside corners. `vantage-concept.png` is the initial exploration. These are the editable source images for future visual work; the two final masters are the source of the app icons. `vantage.ico` is the Windows export, used by Casement Host for Windows.
+The shipping icons are Icon Composer documents, so iOS, iPadOS and macOS 26 render Liquid Glass and the
+dark, clear and tinted appearances themselves:
 
-From the repository root, regenerate platform exports with regular Xcode selected:
+- `Vantage/Casement.icon` (client; the pointer is vector, the glass slab is a rendered PNG layer over a
+  cobalt fill with a navy dark-mode fill).
+- `VantageHost/CasementHost.icon` (Host).
+- `Vantage/Assets.xcassets/AppIcon.solidimagestack` (visionOS, which can't use `.icon`: back, middle and
+  front layers for the headset's parallax).
+- `WindowsHost/src/Vantage.Host.Windows/Assets/Vantage.ico` (Casement Host for Windows; 16–32 px use a
+  simplified cut with no tilt and a larger pointer).
 
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer python3 scripts/generate-icons.py
-```
+This folder holds the sources and exports:
 
-The script uses macOS `sips` and Python Pillow to size the approved artwork for the asset catalogs and Windows ICO. It preserves the same brand across platforms. Xcode derives dark and tinted Home Screen treatments from the primary iOS image.
+| File | Use |
+| --- | --- |
+| `casement-1024.png`, `casement-host-1024.png` | Full-bleed squares, no mask (store art, website) |
+| `casement-mac.png`, `casement-host-mac.png` | macOS shape and shadow on transparency (README, docs) |
+| `casement-host.ico` | Windows export |
+| `social-preview.png` | GitHub social preview, 1280×640 |
+| `layers/` | Background, slab and pointer layers (SVG and PNG) for both icons, plus the 16 px small cut |
+
+Edit the icons in Icon Composer (`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`).
+The glass slab began as an image-generation render and was refitted to the vector geometry by hand.
