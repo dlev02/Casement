@@ -10,7 +10,7 @@ import Observation
 /// `PendingConnection`, the same slot Siri and widget taps use.
 struct ConnectToRecentMacIntent: AppIntent {
     static let title: LocalizedStringResource = "Connect to Recent Mac"
-    static let description = IntentDescription("Opens Casement and connects to the Mac or PC you used most recently.")
+    static let description = IntentDescription("Opens Casement and connects to the computer you used most recently.")
     static let supportedModes: IntentModes = .foreground(.immediate)
 
     init() {}
