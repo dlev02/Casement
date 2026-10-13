@@ -38,9 +38,17 @@
 
 ## Getting Casement
 
-Casement is free and open source, and it's **coming soon to the App Store** for iPhone, iPad, Mac, and Apple Vision Pro.
+Casement is free and open source. Version 1.0 is **in App Review** for iPhone, iPad, Mac, and Apple Vision Pro (one purchase-free app for all four, listed as "Casement: Remote Desktop"); the App Store link goes here as soon as it's live.
 
-**Casement Host**, the small app that runs on the computer you want to control, is a free download for **Mac** (notarized by Apple) and **Windows** from this repository's [Releases](https://github.com/dlev02/Casement/releases/latest).
+**Casement Host** is the small app that runs on the computer you want to control. Download it from [Releases](https://github.com/dlev02/Casement/releases/latest):
+
+| Computer | Download | Install |
+| --- | --- | --- |
+| Mac (macOS 26 or later) | `Casement-Host-1.0-mac.dmg` | Open the DMG and drag Casement Host to Applications. Signed and notarized by Apple. |
+| Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder. |
+| Windows PC (ARM) | `Casement-Host-…-windows-arm64.zip` | The same; not yet tested on ARM hardware. |
+
+The Windows app isn't code-signed yet, so Windows may say the publisher is unknown: choose **More info › Run anyway**. Allow it through Windows Firewall when asked. Each release lists SHA-256 checksums.
 
 You can also [build everything from source](#building-from-source).
 
@@ -87,11 +95,11 @@ Both devices need [Tailscale](https://tailscale.com), signed in to the same tail
 1. **Install Tailscale** on the computer and on your iPad, iPhone, Mac, or Vision Pro, and sign in to the same tailnet on both.
 2. **Start Casement Host** on the computer.
    - *Mac:* it lives in the menu bar. Use its **Grant Screen Recording** and **Grant Accessibility** buttons, approve Casement Host in System Settings › Privacy & Security, and reopen it if macOS asks.
-   - *Windows:* it lives in the notification area. See [`WindowsHost/README.md`](WindowsHost/README.md).
+   - *Windows:* it lives in the notification area. Click its icon for a panel with your devices and **Show Pairing Code**. See [`WindowsHost/README.md`](WindowsHost/README.md) for details.
 3. **Add the computer** in Casement with **+**.
    - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Casement Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
    - **Add Manually…** takes the computer's Tailscale IP address or MagicDNS name.
-4. **Pair.** Choose **Show Pairing Code** in Casement Host’s menu and type the six digits into Casement. A code lasts 10 minutes and works once. After that, the device connects straight away.
+4. **Pair.** Choose **Pair a Device** in Casement Host’s menu on a Mac (or **Show Pairing Code** in its panel on Windows) and type the six digits into Casement. A code lasts 10 minutes and works once. After that, the device connects straight away.
 
 The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation, locked Macs, and restarts in more detail.
 
