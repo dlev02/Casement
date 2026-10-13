@@ -63,6 +63,24 @@ internal static unsafe class NotifyIconNative
         private char _first;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NOTIFYICONIDENTIFIER
+    {
+        public uint cbSize;
+        public nint hWnd;
+        public uint uID;
+        public Guid guidItem;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IconRect
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+
     /// <summary>Copies <paramref name="text"/> into a fixed buffer, truncated and NUL-terminated.</summary>
     public static void Copy(string text, Span<char> buffer)
     {
@@ -73,4 +91,8 @@ internal static unsafe class NotifyIconNative
 
     [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconW", ExactSpelling = true)]
     public static extern int Shell_NotifyIcon(uint message, NOTIFYICONDATAW* data);
+
+    /// <summary>The icon's screen rectangle (physical pixels for a per-monitor-aware thread); an HRESULT.</summary>
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    public static extern int Shell_NotifyIconGetRect(NOTIFYICONIDENTIFIER* identifier, IconRect* iconLocation);
 }

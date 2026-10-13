@@ -15,7 +15,8 @@ namespace Vantage.Host.Windows.Tray;
 /// a display glyph (an arrow into it while an iPad is connected) in white on a dark taskbar and
 /// near-black on a light one, swapped on <c>WM_SETTINGCHANGE("ImmersiveColorSet")</c>; the standard
 /// tooltip (<c>NIF_SHOWTIP</c>); left click / Enter (<c>NIN_SELECT</c>/<c>NIN_KEYSELECT</c>) raises
-/// <see cref="OpenRequested"/>; right click / Shift+F10 (<c>WM_CONTEXTMENU</c>) shows a Win32 popup
+/// <see cref="OpenRequested"/> with where the icon is (<c>Shell_NotifyIconGetRect</c>, else the click
+/// point) for the tray panel; right click / Shift+F10 (<c>WM_CONTEXTMENU</c>) shows a Win32 popup
 /// menu (<c>SetForegroundWindow</c> first and <c>WM_NULL</c> after, so it closes when you click away),
 /// dark when apps are dark (uxtheme ordinals 135/136, guarded); re-added on <c>TaskbarCreated</c>
 /// after Explorer restarts. Everything runs on the <see cref="MessageWindow"/> thread; events are
@@ -54,8 +55,8 @@ public sealed unsafe class TrayIcon : IDisposable
         });
     }
 
-    /// <summary>Left click on the icon (or Enter on it): open or focus the settings window.</summary>
-    public event Action? OpenRequested;
+    /// <summary>Left click on the icon (or Enter on it): open the tray panel next to this rectangle (physical pixels).</summary>
+    public event Action<ScreenRect>? OpenRequested;
 
     /// <summary>A menu command was chosen.</summary>
     public event Action<TrayCommand>? CommandInvoked;
@@ -102,7 +103,8 @@ public sealed unsafe class TrayIcon : IDisposable
             {
                 case NIN_SELECT:
                 case NIN_KEYSELECT:
-                    OpenRequested?.Invoke();
+                    // NOTIFYICON_VERSION_4: the anchor point is in wParam, as for WM_CONTEXTMENU.
+                    OpenRequested?.Invoke(IconRect((short)(wParam & 0xFFFF), (short)((wParam >> 16) & 0xFFFF)));
                     break;
                 case WM_CONTEXTMENU:
                     // NOTIFYICON_VERSION_4: the anchor point is in wParam (x low word, y high word, signed).
@@ -214,6 +216,20 @@ public sealed unsafe class TrayIcon : IDisposable
         {
             return false;
         }
+    }
+
+    private ScreenRect IconRect(int x, int y)
+    {
+        var identifier = new NOTIFYICONIDENTIFIER
+        {
+            cbSize = (uint)sizeof(NOTIFYICONIDENTIFIER),
+            hWnd = _window.Handle,
+            uID = IconId,
+        };
+        IconRect rect;
+        if (Shell_NotifyIconGetRect(&identifier, &rect) >= 0 && rect.right > rect.left)
+            return new ScreenRect(rect.left, rect.top, rect.right, rect.bottom);
+        return new ScreenRect(x, y, x + 1, y + 1);
     }
 
     private void ShowMenu(int x, int y)

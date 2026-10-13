@@ -14,14 +14,16 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- 48 high, the same as the Tall caption buttons (MainWindow.xaml.cs), so they sit flush. -->
         <TitleBar
             x:Name="AppTitleBar"
+            Height="48"
             Title="Casement Host"
             IsBackButtonVisible="False"
             IsPaneToggleButtonVisible="True"
             PaneToggleRequested="OnPaneToggleRequested">
             <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/Vantage.ico" />
+                <ImageIconSource ImageSource="ms-appx:///Assets/CasementHost.png" />
             </TitleBar.IconSource>
         </TitleBar>
 
