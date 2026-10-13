@@ -26,6 +26,6 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 
 These are deliberate, documented trade-offs, not vulnerabilities:
 
-- Anyone who can use an already paired, unlocked device can control the computers it's paired with. Turn on the app lock (Face ID or Touch ID) in Settings › Privacy & Security.
+- Anyone who can use an already paired, unlocked device can control the computers it's paired with. Turn on the app lock (Face ID, Touch ID, or Optic ID) in Settings › Privacy & Security.
 - Type Password and Log In with Screen Sharing use the Mac's built-in Screen Sharing (Apple Remote Desktop authentication), which is only as strong as that protocol. It's used only over your tailnet or, at the login window, your home network.
 - Casement hasn't had an independent security audit.
