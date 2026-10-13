@@ -40,6 +40,7 @@ public sealed class AppController
     private TrayIcon? _tray;
     private ArrivalBatcher? _arrivals;
     private MainWindow? _window;
+    private TrayPanel? _panel;
     private bool _notificationsRegistered;
     private bool _quitting;
 
@@ -117,7 +118,7 @@ public sealed class AppController
         }
 
         _tray = new TrayIcon(Runtime.Window, TrayState.Starting(Runtime.Environment.HostName), _logging);
-        _tray.OpenRequested += () => RunOnUi(() => ShowWindow());
+        _tray.OpenRequested += icon => RunOnUi(() => ToggleTrayPanel(icon));
         _tray.CommandInvoked += command => RunOnUi(() => _ = HandleAsync(command));
         _arrivals = new ArrivalBatcher(batch => RunOnUi(() => OnArrived(batch)));
         RegisterNotifications();
@@ -179,14 +180,23 @@ public sealed class AppController
         _window.ShowAndActivate(page);
     }
 
-    /// <summary>Makes a new pairing code and shows it on the General page.</summary>
-    public string? ShowPairingCode()
+    /// <summary>Opens the tray panel beside the icon at <paramref name="icon"/>, or closes it.</summary>
+    public void ToggleTrayPanel(ScreenRect icon)
+    {
+        if (_quitting) return;
+        _panel ??= new TrayPanel(this);
+        _panel.Toggle(icon);
+    }
+
+    /// <summary>Makes a new pairing code and shows it on the General page (or only where it was asked for).</summary>
+    /// <param name="openWindow">Also open the settings window on General.</param>
+    public string? ShowPairingCode(bool openWindow = true)
     {
         if (Runtime is null || !IsListening) return null;
         var code = Runtime.Listener.Pairing.NewCode();
         PairingCodeExpires = DateTimeOffset.Now + PairingCodes.Lifetime;
         _log.LogInformation("showing a pairing code");
-        ShowWindow("general");
+        if (openWindow) ShowWindow("general");
         Refresh();
         return code;
     }
@@ -222,6 +232,7 @@ public sealed class AppController
         _quitting = true;
         _log.LogInformation("quitting");
         _window?.CloseForQuit();
+        _panel?.CloseForQuit();
         _tray?.Dispose();
         _arrivals?.Dispose();
         if (_notificationsRegistered)

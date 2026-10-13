@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Vantage.Host.Windows.App.TrayPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Casement Host status">
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root">
+        <Grid.Resources>
+            <!-- A borderless button that shows its fill only on hover, like a flyout's commands. -->
+            <Style x:Key="PanelButtonStyle" BasedOn="{StaticResource DefaultButtonStyle}" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorTransparentBrush}" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+            </Style>
+        </Grid.Resources>
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" Invoked="OnEscape" />
+        </Grid.KeyboardAccelerators>
+
+        <StackPanel x:Name="Body" VerticalAlignment="Top" Padding="16,16,16,12" Spacing="14">
+            <!-- Who and how: the icon, the name and the listener's state. -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Image Width="40" Height="40" Source="ms-appx:///Assets/CasementHost.png" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Casement Host" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse x:Name="StatusDot" Width="8" Height="8" VerticalAlignment="Center" />
+                        <TextBlock
+                            x:Name="StatusText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Pairing: one prominent button, or the code itself. -->
+            <Border Style="{StaticResource CardStyle}" Padding="14">
+                <StackPanel Spacing="10">
+                    <Button
+                        x:Name="ShowCodeButton"
+                        AutomationProperties.Name="Show Pairing Code"
+                        HorizontalAlignment="Stretch"
+                        Click="OnShowCode"
+                        Style="{StaticResource AccentButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="16" Glyph="&#xE8D7;" />
+                            <TextBlock Text="Show Pairing Code" />
+                        </StackPanel>
+                    </Button>
+                    <StackPanel x:Name="CodePanel" Spacing="6" Visibility="Collapsed">
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Type this code in Casement" />
+                        <TextBlock
+                            x:Name="CodeText"
+                            AutomationProperties.Name="Pairing code"
+                            CharacterSpacing="250"
+                            FontSize="40"
+                            FontWeight="SemiBold"
+                            IsTextSelectionEnabled="True" />
+                        <TextBlock
+                            x:Name="CodeExpiry"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}" />
+                        <StackPanel Margin="0,4,0,0" Orientation="Horizontal" Spacing="8">
+                            <Button Click="OnCopyCode" Content="Copy" />
+                            <Button Click="OnShowCode" Content="New Code" />
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock
+                        x:Name="PairHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="Add this PC in Casement on your iPhone, iPad, Mac or Vision Pro, then type the code."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Devices: who is connected now, and who is paired. -->
+            <StackPanel Spacing="6">
+                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Devices" />
+                <StackPanel x:Name="ConnectedList" Spacing="4" />
+                <TextBlock
+                    x:Name="NoneConnected"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="No device is connected." />
+                <TextBlock
+                    x:Name="PairedText"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+            <!-- Pulled out by the buttons' own padding so their icons line up with the content edges. -->
+            <Grid Margin="-11,-4,-11,0">
+                <Button AutomationProperties.Name="Settings" Click="OnSettings" Style="{StaticResource PanelButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="16" Glyph="&#xE713;" />
+                        <TextBlock Text="Settings…" />
+                    </StackPanel>
+                </Button>
+                <Button HorizontalAlignment="Right" AutomationProperties.Name="Quit Casement Host" Click="OnQuit" Style="{StaticResource PanelButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="16" Glyph="&#xE7E8;" />
+                        <TextBlock Text="Quit" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</Window>

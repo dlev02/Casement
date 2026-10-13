@@ -167,7 +167,10 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\publ
 
 publishes `VantageHost.exe` self-contained into `%LOCALAPPDATA%\Programs\Vantage Host\` with a
 Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed code). Left-click
-the tray icon for the window (General shows the tailnet address and Show Pairing Code), right-click
-for the menu; turn on "Start Casement Host when I sign in" there. Closing the window keeps it in the
-tray; Quit is in the tray menu and on the About page. Drew's iPad then pairs with
+the tray icon for the tray panel (`TrayPanel`, like the Mac host's menu-bar popover: status, Show
+Pairing Code with the code right there, connected and paired devices, Settings…, Quit; acrylic,
+placed by `TrayPanelPlacement` from `Shell_NotifyIconGetRect`, gone on Esc or a click elsewhere),
+right-click for the native menu. Settings… opens the window (General shows the tailnet address);
+turn on "Start Casement Host when I sign in" there. Closing the window keeps it in the
+tray; Quit is in the tray panel, the tray menu and on the About page. Drew's iPad then pairs with
 `<pc-address>:47820`.

@@ -14,7 +14,7 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <Image Width="48" Height="48" Source="Assets/Vantage.ico" />
+                    <Image Width="48" Height="48" Source="ms-appx:///Assets/CasementHost.png" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Casement Host" />
                         <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

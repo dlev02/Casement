@@ -29,6 +29,8 @@ public sealed partial class AboutPage : Page
     {
         var version = typeof(AboutPage).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                       ?? typeof(AboutPage).Assembly.GetName().Version?.ToString() ?? "";
+        // "1.0.1+<40-character commit>" reads better as "1.0.1 (04efdd0)".
+        if (version.Split('+') is [var number, { Length: >= 7 } commit]) version = $"{number} ({commit[..7]})";
         VersionText.Text = $"Version {version} · protocol {Protocol.VantageProtocol.Version}";
         if (_controller?.Runtime is not { } runtime) return;
         var tailnet = _controller.Tailnet?.PrimaryAddress is { } address ? $" · {address}" : "";
