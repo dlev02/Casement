@@ -30,7 +30,7 @@ body:
     attributes:
       label: Versions
       description: Casement (Settings › About), Casement Host, and the operating systems on both devices.
-      placeholder: "Casement 1.0 (12), Casement Host 1.0, iPadOS 26.1, macOS 26.1"
+      placeholder: "Casement 1.0 (2), Casement Host 1.0, iPadOS 26.1, macOS 26.1"
   - type: dropdown
     id: tailscale
     attributes:
