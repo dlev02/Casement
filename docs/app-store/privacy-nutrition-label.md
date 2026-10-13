@@ -76,7 +76,7 @@ asc web privacy pull --app 6821765234                                          #
 ## Keep it true
 
 If any of these are ever added, the label and PRIVACY.md must change: a crash reporter or
-analytics SDK, MetricKit payloads sent anywhere, a relay or server of ours, a feedback form that
+analytics SDK, MetricKit payloads sent anywhere, a relay or server of mine, a feedback form that
 posts somewhere, or a new network destination (CLAUDE.md: "a new destination or a new stored
 secret means updating PRIVACY.md and the FAQ's Privacy answers").
 

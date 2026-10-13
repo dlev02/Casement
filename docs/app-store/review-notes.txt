@@ -1,0 +1,30 @@
+Casement is a remote desktop client. It shows and controls the user's own Mac or Windows PC, which runs my free companion app, Casement Host. The two connect directly over the user's own Tailscale network. There is no account, sign-in, or server of mine, so no demo account applies.
+
+DEMO VIDEO
+The attached video (about one minute, recorded in the iPad simulator against a test copy of Casement Host streaming a sample desktop) shows adding a Mac, pairing with the six-digit code, the Mac's screen, moving and clicking the pointer, the control strip and keyboard button, a file arriving from the Mac, and disconnecting.
+
+WHY A LIVE TEST NEEDS SETUP
+The app connects only to a computer running Casement Host, and Casement Host accepts connections only from Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48). Without a host the app opens to an empty device list with Add from Tailscale and Add Manually.
+
+TO TEST IT LIVE (about 10 minutes, one Mac)
+1. On a Mac with macOS 26 or later, download Casement Host from https://github.com/dlev02/Casement/releases and open it. It appears in the menu bar. Allow Screen Recording and Accessibility when it asks (its menu has a button for each).
+2. Install Tailscale (free) on that Mac and on the test device (Tailscale is on the App Store) and sign in to the same Tailscale account on both.
+3. In Casement, tap +, then Add Manually, and enter the Mac's Tailscale address (100.x.y.z, shown in Tailscale's menu) or its Tailscale machine name.
+4. In Casement Host's menu, choose Pair a Device. Type the six-digit code into Casement.
+5. The Mac's screen appears. Try the control strip, Send File, Mac Audio, and Dictate (microphone button).
+The Mac version of Casement can connect to Casement Host on the same Mac at that Mac's own Tailscale address. It opens in View Only, so the session doesn't control itself.
+
+WHAT CASEMENT DOES AND DOESN'T DO
+- It mirrors the whole desktop of a computer the user owns and has set up. It isn't a mirror of specific software or a cloud service, has no store or catalog, and never browses, sells, or launches software.
+- No in-app purchases, subscriptions, ads, analytics, tracking, or accounts. It's free and open source (GPL-3.0).
+- Microphone and Speech Recognition are used only for dictation, after the user taps the microphone. Local Network is used to reach the user's computers. Face ID, Touch ID, or Optic ID is used only for the optional app lock.
+- Add from Tailscale is optional. It lists the user's own Tailscale devices using a read-only API key the user creates in Tailscale's admin console and pastes in; the key stays in the Keychain. Add Manually works without it.
+- Type Password and Log In with Screen Sharing type the user's saved Mac password through macOS's built-in Screen Sharing on the user's own Mac (port 5900), for the lock screen and password fields, where macOS blocks synthetic keystrokes.
+- Encryption: the app uses only Apple's CryptoKit and CommonCrypto, for device authentication and integrity checks. The connection itself is protected by Tailscale's WireGuard tunnel.
+
+LINKS
+Source code: https://github.com/dlev02/Casement
+Casement Host downloads: https://github.com/dlev02/Casement/releases
+Privacy policy: https://github.com/dlev02/Casement/blob/main/PRIVACY.md
+
+I'm happy to answer questions or walk through a live session on a call.

@@ -13,10 +13,10 @@ is no account.
 
 <!-- notes:start -->
 ```text
-Casement is a remote desktop client. It shows and controls the user's own Mac or Windows PC, which runs our free companion app, Casement Host. The two connect directly over the user's own Tailscale network. There is no account, sign-in, or server of ours, so no demo account applies.
+Casement is a remote desktop client. It shows and controls the user's own Mac or Windows PC, which runs my free companion app, Casement Host. The two connect directly over the user's own Tailscale network. There is no account, sign-in, or server of mine, so no demo account applies.
 
 DEMO VIDEO
-The attached video shows the full flow on a real iPad, iPhone, Mac, and Apple Vision Pro: adding a Mac, pairing with the six-digit code, controlling the Mac, the control strip, sending and receiving a file, Mac audio, and dictation.
+The attached video (about one minute, recorded in the iPad simulator against a test copy of Casement Host streaming a sample desktop) shows adding a Mac, pairing with the six-digit code, the Mac's screen, moving and clicking the pointer, the control strip and keyboard button, a file arriving from the Mac, and disconnecting.
 
 WHY A LIVE TEST NEEDS SETUP
 The app connects only to a computer running Casement Host, and Casement Host accepts connections only from Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48). Without a host the app opens to an empty device list with Add from Tailscale and Add Manually.
@@ -29,7 +29,7 @@ TO TEST IT LIVE (about 10 minutes, one Mac)
 5. The Mac's screen appears. Try the control strip, Send File, Mac Audio, and Dictate (microphone button).
 The Mac version of Casement can connect to Casement Host on the same Mac at that Mac's own Tailscale address. It opens in View Only, so the session doesn't control itself.
 
-WHAT PORTHOLE DOES AND DOESN'T DO
+WHAT CASEMENT DOES AND DOESN'T DO
 - It mirrors the whole desktop of a computer the user owns and has set up. It isn't a mirror of specific software or a cloud service, has no store or catalog, and never browses, sells, or launches software.
 - No in-app purchases, subscriptions, ads, analytics, tracking, or accounts. It's free and open source (GPL-3.0).
 - Microphone and Speech Recognition are used only for dictation, after the user taps the microphone. Local Network is used to reach the user's computers. Face ID, Touch ID, or Optic ID is used only for the optional app lock.
@@ -42,7 +42,7 @@ Source code: https://github.com/dlev02/Casement
 Casement Host downloads: https://github.com/dlev02/Casement/releases
 Privacy policy: https://github.com/dlev02/Casement/blob/main/PRIVACY.md
 
-We're happy to answer questions or walk through a live session on a call.
+I'm happy to answer questions or walk through a live session on a call.
 ```
 <!-- notes:end -->
 
@@ -66,7 +66,7 @@ front so the reviewer doesn't go looking for them.
 | **(b)** Software in the client runs and renders entirely on the host, and the client uses no APIs or platform features beyond what streaming needs. | Everything runs on the host. The client decodes H.264/HEVC frames into `AVSampleBufferDisplayLayer` and sends input events back. The extras (files, clipboard, audio, dictation) serve the remote session and run on public APIs. No code is downloaded or run on the client. | `Vantage/Video/` (decode and display), `Vantage/Input/`, `Packages/VantageCore/Sources/VantageCore/Wire` (data-only protocol); grep for `dlopen`, `NSClassFromString`, `JavaScriptCore`, `WKWebView`: no hits |
 | **(c)** All account creation and management starts on the host. | Casement has no accounts. Trust is managed on the host: Casement Host shows the pairing code, lists paired devices, and removes them, which also ends their sessions. The only credential in the client is the user's own optional Tailscale key, for the user's own Tailscale account, created in Tailscale's console. | `HostController.revoke` / `HostSession.endIfClient` (CLAUDE.md, Auth), `Vantage/Net/TailscaleAPI.swift:181-210` (read-only GET plus the OAuth token call) |
 | **(d)** The client UI doesn't resemble iOS or an App Store view, has no store-like interface, and can't browse, pick, or buy software the user doesn't already own. Transactions inside mirrored software don't need IAP if the host processes them. | The client's UI is a device list, a settings screen, and the remote picture with a control strip. There's no catalog, launcher, or purchase flow. StoreKit isn't imported anywhere in the client. | grep `import StoreKit` / `SKStoreReview` in `Vantage/`, `Shared/`: no hits |
-| **(e)** No thin clients for cloud-based apps. | Casement has no cloud and no server of ours. It connects only to computers the user adds, which run the user's own copy of Casement Host. | `PRIVACY.md` "What goes over the network"; client network calls are limited to `MessageChannel`/`NWConnection` to user-added hosts, `ScreenSharingTyper` to the user's Mac on port 5900, and `TailscaleAPI` to `api.tailscale.com` |
+| **(e)** No thin clients for cloud-based apps. | Casement has no cloud and no server of mine. It connects only to computers the user adds, which run the user's own copy of Casement Host. | `PRIVACY.md` "What goes over the network"; client network calls are limited to `MessageChannel`/`NWConnection` to user-added hosts, `ScreenSharingTyper` to the user's Mac on port 5900, and `TailscaleAPI` to `api.tailscale.com` |
 
 ## App Review risks, ranked
 
