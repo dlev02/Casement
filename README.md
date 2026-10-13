@@ -74,7 +74,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Casement Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
 
-**Fit right in.** Siri and Shortcuts ("Connect to Studio in Casement"), Spotlight, Home Screen widgets, a Control Center control, Face ID or Touch ID app lock, and iCloud Keychain sync for saved passwords.
+**Fit right in.** Siri and Shortcuts ("Connect to Studio in Casement"), Spotlight, Home Screen widgets, a Control Center control, a Face ID, Touch ID, or Optic ID app lock, and iCloud Keychain sync for saved passwords.
 
 **Keep it private.** Everything travels directly between your devices inside Tailscale's encrypted tunnel. Each device has its own key and pairs once with a six-digit code. See the [privacy policy](PRIVACY.md).
 
@@ -94,7 +94,7 @@ Both devices need [Tailscale](https://tailscale.com), signed in to the same tail
 
 1. **Install Tailscale** on the computer and on your iPad, iPhone, Mac, or Vision Pro, and sign in to the same tailnet on both.
 2. **Start Casement Host** on the computer.
-   - *Mac:* it lives in the menu bar. Use its **Grant Screen Recording** and **Grant Accessibility** buttons, approve Casement Host in System Settings › Privacy & Security, and reopen it if macOS asks.
+   - *Mac:* it lives in the menu bar. Choose **Allow Screen Recording** and **Allow Accessibility** in its menu, approve Casement Host in System Settings › Privacy & Security, and reopen it if macOS asks.
    - *Windows:* it lives in the notification area. Click its icon for a panel with your devices and **Show Pairing Code**. See [`WindowsHost/README.md`](WindowsHost/README.md) for details.
 3. **Add the computer** in Casement with **+**.
    - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Casement Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
@@ -109,7 +109,7 @@ The in-app **Help & FAQ** (Settings › About) covers controls, files, dictation
 | --- | --- |
 | Can't connect, or keeps reconnecting | Tailscale is connected on both devices, Casement Host is running, and your tailnet's access rules allow TCP port 47820. |
 | The pairing code is rejected | Show a fresh code on the computer. Codes expire after 10 minutes and after 5 wrong tries. |
-| "Grant Screen Recording" | Approve Casement Host in System Settings › Privacy & Security › Screen & System Audio Recording, reopen it, then choose Retry. |
+| Casement asks you to grant Screen Recording | Approve Casement Host in System Settings › Privacy & Security › Screen & System Audio Recording, reopen it, then choose Retry. |
 | Video works but clicks and typing don't | Approve Accessibility for Casement Host. If only typing fails, the Mac is locked or a password field has focus: use Type Password. |
 | "Waiting for the Mac's screen…" | The display is asleep or reconfiguring. Choose Wake, or wait: Casement keeps trying. |
 | The computer restarted and is unreachable | Tailscale starts only after someone logs in. See "Restarts & Locked Macs" in the in-app FAQ for Restart Safely, subnet routers, and Log In with Screen Sharing. |
