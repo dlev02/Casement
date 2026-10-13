@@ -1,9 +1,77 @@
 # Casement Host for Windows
 
-A Windows host for the Casement iPad/iPhone/Vision Pro client: the same wire protocol as the Mac
-host (`VantageHost/`), written in C# on .NET 10 LTS. The byte-level contract is
-`docs/research/windows-host-protocol.md`; when it and the Swift code disagree, the Swift code in
-`Packages/VantageCore` and `VantageHost` wins.
+Casement Host is the small app that lets Casement on your iPhone, iPad, Mac, or Apple Vision Pro
+see and control a Windows PC, privately, over your own [Tailscale](https://tailscale.com) network.
+
+## Install
+
+You need Windows 10 (version 2004) or Windows 11, and Tailscale signed in to the same tailnet on
+the PC and on the device you'll connect from.
+
+1. Download the zip for your PC from [Releases](https://github.com/dlev02/Casement/releases/latest):
+   `Casement-Host-…-windows-x64.zip` for Intel and AMD processors, or
+   `Casement-Host-…-windows-arm64.zip` for ARM (not yet tested on ARM hardware).
+2. Unzip it somewhere you'll keep it, open the **Casement Host** folder, and run `VantageHost.exe`
+   (Vantage is the project's code name).
+3. The app isn't code-signed yet, so Windows may say it protected your PC from an unknown publisher:
+   choose **More info › Run anyway**.
+4. When Windows Defender Firewall asks, choose **Allow access**. Casement Host listens on TCP port
+   47820 and only accepts connections from Tailscale addresses. If you dismissed the prompt, allow
+   `VantageHost.exe` in Windows Security › Firewall & network protection › Allow an app through
+   firewall.
+
+Each release lists SHA-256 checksums for its downloads.
+
+## Use it
+
+Casement Host lives in the notification area (open the **^** next to the clock if Windows hides
+its icon there).
+
+- **Click** the icon for a panel with the PC's status, **Show Pairing Code**, your connected and
+  paired devices, Settings…, and Quit.
+- **Right-click** it for a menu with Show Pairing Code…, Settings…, and Quit, plus Send File and
+  Disconnect for each connected device.
+
+To pair a device, add the PC in Casement (**Add from Tailscale…**, or **Add Manually…** with the
+PC's Tailscale name or address), choose **Show Pairing Code** in the panel, and type the six
+digits into Casement. A code lasts 10 minutes and works once; after that the device connects
+straight away.
+
+**Settings…** opens a window with:
+
+- **General**: the PC's tailnet address, Show Pairing Code, and **Start Casement Host when I sign
+  in** (off until you turn it on).
+- **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
+  it needs a new code to come back.
+- **Display**: which display is shared (the main one) and the video encoder in use.
+- **Files**: where files from your devices are saved (Downloads unless you choose another folder),
+  and whether to show a notification when they arrive. Received files are marked as downloaded
+  from the internet, so Windows checks them like any download.
+- **About**: the version, Open Logs Folder (handy for bug reports), and Quit.
+
+Closing the window keeps Casement Host running in the notification area; use **Quit** to stop it.
+
+On a PC, Casement can't play the computer's sound, type a saved password, or make a virtual
+display yet, and dictation runs on your device. Start, Task View, Task Manager, and the other
+Windows shortcuts are in Casement's control strip, and ⌘ acts as Ctrl unless you turn that off
+for the PC in Casement.
+
+### Update or remove
+
+To update, choose **Quit**, replace the Casement Host folder with the one from the new zip, and
+run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in**, quit,
+and delete the folder; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
+
+Something not working? [Open an issue](https://github.com/dlev02/Casement/issues/new/choose).
+
+---
+
+## For developers
+
+The rest of this page is about building and testing the Windows host. It speaks the same wire
+protocol as the Mac host (`VantageHost/`), written in C# on .NET 10 LTS. The byte-level contract is
+[`docs/research/windows-host-protocol.md`](../docs/research/windows-host-protocol.md); when it and
+the Swift code disagree, the Swift code in `Packages/VantageCore` and `VantageHost` wins.
 
 ## Layout
 
@@ -62,9 +130,9 @@ A fixed `--pairing-code` is used up by one pairing (as on the Mac); `--pairing-c
 it again S seconds later. The Swift side of the proof (golden vectors, `WindowsHostInteropTests`,
 `LiveHostFilesTests`, `SessionUITests`) is described in the repo's `CLAUDE.md`, "Windows host".
 
-## On the PC (drew-pc)
+## On the PC
 
-One-time setup (Drew, as admin): OpenSSH Server, an SSH key in `administrators_authorized_keys`
+One-time setup (as an administrator): OpenSSH Server, an SSH key in `administrators_authorized_keys`
 or `~\.ssh\authorized_keys`, the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`),
 `dotnet new install Microsoft.WindowsAppSDK.WinUI.CSharp.Templates`, Developer Mode, and the
 firewall rule, created **before** the first launch so Windows never makes a block rule:
@@ -84,7 +152,7 @@ tar -czf - WindowsHost | ssh $PC "tar -xzf - -C C:/src/vantage"
 ssh $PC "$env:DOTNET_CLI_TELEMETRY_OPTOUT=1; cd C:/src/vantage/WindowsHost; dotnet build -c Debug"
 ```
 
-Run the host in Drew's **interactive** session, not the SSH one (an SSH process can't see the
+Run the host in the signed-in user's **interactive** session, not the SSH one (an SSH process can't see the
 console desktop):
 
 ```powershell
@@ -123,7 +191,7 @@ auto|hardware|software`, `--rate-control cbr|lowdelayvbr`, `--send-file-on-conne
 `--capture-fails-for S` (Debug), `--background`, `--verbose`. Logs default to
 `%LOCALAPPDATA%\Vantage Host\logs\host.log`; `run-dev.ps1` uses `dev.log`.
 
-### First bring-up on drew-pc
+### First bring-up on a PC
 
 ```powershell
 # 0. Once, elevated, before anything listens (also removes block rules Windows may have made):
@@ -135,7 +203,7 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\fire
 sh WindowsHost/scripts/push.sh
 # 2. Build everything and run the Windows tests on the PC
 ssh $PC "cd C:\src\vantage\WindowsHost & set DOTNET_CLI_TELEMETRY_OPTOUT=1& set TESTINGPLATFORM_TELEMETRY_OPTOUT=1& dotnet build Vantage.Windows.PC.slnx -c Debug & dotnet test --project tests\Vantage.Host.Windows.Tests"
-# 3. Run the console host in Drew's interactive session for a minute, saving the encoded stream
+# 3. Run the console host in the interactive session for a minute, saving the encoded stream
 ssh $PC "powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\run-dev.ps1 -DumpH264 C:\temp\vantage.h264 -ExitAfter 60"
 # 4. Connect something so it streams: the interop suite, or the simulator through the tunnel above
 VANTAGE_INTEROP_HOST=<pc-address>:47821 xcrun swift test --filter WindowsHostInteropTests
@@ -146,8 +214,8 @@ ffprobe -v error -show_frames -select_streams v /tmp/vantage.h264 | grep -c pict
 ffplay /tmp/vantage.h264
 ```
 
-What the log should show: `GPU: NVIDIA GeForce RTX 5070 Ti …` (the monitor's adapter, not the
-AMD iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
+What the log should show, on a PC with an NVIDIA card and an AMD iGPU: `GPU: NVIDIA GeForce …` (the
+monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
 `encoder: NVIDIA H.264 Encoder MFT (hardware, async) …`, then `…: first frame N bytes, NAL types
 [7,8,5]` (SPS, PPS, IDR; a 9 or 6 in front is an AUD/SEI the core drops). If the NVIDIA MFT
 misbehaves, rerun with `-Encoder software` to separate encoder problems from pipeline ones.
@@ -172,5 +240,5 @@ Pairing Code with the code right there, connected and paired devices, Settings�
 placed by `TrayPanelPlacement` from `Shell_NotifyIconGetRect`, gone on Esc or a click elsewhere),
 right-click for the native menu. Settings… opens the window (General shows the tailnet address);
 turn on "Start Casement Host when I sign in" there. Closing the window keeps it in the
-tray; Quit is in the tray panel, the tray menu and on the About page. Drew's iPad then pairs with
+tray; Quit is in the tray panel, the tray menu and on the About page. A device then pairs with
 `<pc-address>:47820`.
