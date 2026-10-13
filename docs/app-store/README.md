@@ -1,5 +1,7 @@
 # App Store submission kit: Casement
 
+> **Snapshot:** this folder records how Casement 1.0 was prepared for the App Store in October 2026, before submission. Statuses and IDs below reflect that moment; 1.0 (build 2) was submitted for review on 2026-10-12 for iOS, macOS and visionOS.
+
 Everything App Store Connect asks for, for the Casement client (formerly Porthole; code name
 Vantage): one app record shared by iOS/iPadOS, macOS, and visionOS, with universal purchase.
 English (U.S.) only. Drafted 2026-10-11 for Porthole, rewritten for Casement the same day and
