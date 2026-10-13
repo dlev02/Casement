@@ -432,9 +432,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   or the channel drops under a screen; it closes 30 s after nothing is moving and no screen is up
   (`idleTimeout`), retries with backoff (16 tries, then the files fail with a reason). An older Mac
   (no `filesOnlySessions`) keeps the old rule: the channel goes with the screen, which reconnects
-  both, and files queued without a screen fail with "Update Vantage Host…". Files land in
+  both, and files queued without a screen fail with "Update Casement Host…". Files land in
   `Documents/Received` (`UIFileSharingEnabled` +
-  `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Vantage). Entry points: strip item
+  `LSSupportsOpeningDocumentsInPlace`: Files › On My iPad › Casement). Entry points: strip item
   `sendFile` (standard, before Mac Audio; a hairline ring shows progress; dimmed on older hosts;
   long-press for Send Files… / Transfers…), session menu "Send File to Mac…" / "Transfers…"
   (always there), **`TransferCapsule`** (`TransferProgressViews.swift`): a glass capsule that appears
@@ -585,7 +585,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   and hold = right-click). Liquid Glass is unavailable: use `platformGlass(in:)`, and `.glass` /
   `.glassProminent` button styles map to bordered styles in `PlatformGlass.swift`. No Pencil
   interaction, haptics, keyboard accessory, Control Center controls, or widgets on visionOS. The
-  visionOS app icon (a layered `.solidimagestack`) doesn't exist yet. The session window is
+  visionOS app icon is the layered `AppIcon.solidimagestack` (see `brand/README.md`). The session window is
   `.windowStyle(.plain)`: a glass window's big corner radius cut off the Mac's Apple menu and
   clock, and insetting the picture left a glass border. The picture is the Mac's exact aspect with
   16 pt corners (`VisionSessionPicture`), like Mac Virtual Display; glass backs the window only while
@@ -956,7 +956,7 @@ Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 478
 
 ## Reboot, lock screen, and login window (what is and isn't possible)
 
-- **Reboot**: enable "Start Vantage Host at login" (Settings → Reboot). After login the host relaunches
+- **Reboot**: enable "Start Casement Host at login" (Settings → Reboot). After login the host relaunches
   and the client reconnects on its own (it retries for ~10 minutes and again when foregrounded).
 - **Restart guard**: `RestartGuard` (host) inspects the quit Apple event's `kAEQuitReason`; while a
   device is connected, a restart/shutdown/logout (including Software Update's) gets a confirmation
