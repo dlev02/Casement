@@ -31,12 +31,12 @@ a real one (CLAUDE.md, "Headless end-to-end testing").
   --screenshot=/tmp/pc-ipad.png "file://$PWD/docs/images/source/pc-desktop.html"
 
 # 2. A synthetic host streaming that picture (Debug VantageHost; never port 47820).
-open -n .deriveddata/Build/Products/Debug/VantageHost.app --args --synthetic-capture \
+open -n ".deriveddata/Build/Products/Debug/Casement Host.app" --args --synthetic-capture \
   --synthetic-image /tmp/mac-ipad.png --port 47821 --pairing-code 246810 --exit-after 1800
 #    A PC: add --platform windows and use pc-ipad.png. Mac audio: the synthetic host streams a chime.
 
 # 3. Launch the client against it.
-xcrun simctl launch <sim> com.benjaminlevinson.vantage \
+xcrun simctl launch <sim> me.drewlevinson.casement \
   -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
 ```
 
