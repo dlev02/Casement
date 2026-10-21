@@ -1,0 +1,70 @@
+# Sends new bug reports to Drew's "Bug report to draft PR" Claude routine.
+# The routine reads the issue itself and, if it is a fixable bug, opens a
+# draft pull request from claude/issue-<n>. Nothing here merges anything.
+#
+# Only the repository name and issue number leave this workflow; the issue
+# text is never put in a shell command or sent in the request.
+# Re-run on any issue by adding the `claude-fix` label (needs triage access).
+
+name: Claude issue fix
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: read
+
+concurrency:
+  group: claude-issue-fix-${{ github.event.issue.number }}
+
+jobs:
+  fire:
+    if: >-
+      (github.event.action == 'opened'
+        && github.event.issue.user.type != 'Bot'
+        && !endsWith(github.event.issue.user.login, '[bot]')
+        && !contains(github.event.issue.labels.*.name, 'claude-fix'))
+      || (github.event.action == 'labeled' && github.event.label.name == 'claude-fix')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DAILY_LIMIT: 3
+      FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_01WvvVqrNCZmyxCN82rfpPsf/fire
+    steps:
+      - name: Check the daily limit
+        id: limit
+        if: github.event.action == 'opened'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          count=$(gh api -X GET "repos/$REPO/issues" -f state=all -f since="$since" -f per_page=100 \
+            --jq "[.[] | select(.pull_request == null and .created_at >= \"$since\" and .user.type != \"Bot\")] | length")
+          echo "Issues opened in the last 24 hours: $count (limit $DAILY_LIMIT)"
+          if [ "$count" -gt "$DAILY_LIMIT" ]; then
+            echo "::notice::Daily limit reached; not sending this issue. Add the claude-fix label to send it anyway."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send the issue to the routine
+        if: steps.limit.outputs.skip != 'true'
+        env:
+          TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::CLAUDE_ROUTINE_TOKEN is not set; skipping."
+            exit 0
+          fi
+          body=$(jq -nc --arg text "repo=$REPO issue=$ISSUE" '{text: $text}')
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$FIRE_URL" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            -d "$body")
+          echo "Routine responded with HTTP $status"
+          case "$status" in 2??) ;; *) exit 1 ;; esac
