@@ -404,12 +404,15 @@ public sealed class HostSessionCore
                 await SelectDisplayAsync(select).ConfigureAwait(false);
                 break;
             case PointerEvent pointer:
+                _adaptive.NoteInput();
                 if (AdmitsInput(pointer.Action == PointerAction.Up)) _input?.Pointer(pointer);
                 break;
             case ScrollEvent scroll:
+                _adaptive.NoteInput();
                 if (AdmitsInput(false)) _input?.Scroll(scroll);
                 break;
             case KeyEvent key:
+                _adaptive.NoteInput();
                 if (AdmitsInput(!key.IsDown)) _input?.Key(key);
                 break;
             case TextInput text:

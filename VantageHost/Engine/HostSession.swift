@@ -226,10 +226,13 @@ actor HostSession {
             case .selectDisplay(let select):
                 await selectDisplay(select)
             case .pointerEvent(let event):
+                adaptive.noteInput()
                 if admitsInput(isRelease: event.action == .up) { injector?.handle(event) }
             case .scrollEvent(let event):
+                adaptive.noteInput()
                 if admitsInput(isRelease: false) { injector?.handle(event) }
             case .keyEvent(let event):
+                adaptive.noteInput()
                 if admitsInput(isRelease: !event.isDown) { injector?.handle(event) }
             case .textInput(let input):
                 if admitsInput(isRelease: false) { injector?.typeText(input.text) }

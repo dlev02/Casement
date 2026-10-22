@@ -24,6 +24,9 @@ public sealed class AdaptiveController
     private double _smoothedDirty;
     private DateTimeOffset _lastAdjustment = DateTimeOffset.MinValue;
     private DateTimeOffset _probeHoldUntil = DateTimeOffset.MinValue;
+    // Input keeps the frame rate up for a moment: a moving pointer dirties too little of the
+    // screen to leave text mode, so it would otherwise update at 30 fps.
+    private DateTimeOffset _inputHoldUntil = DateTimeOffset.MinValue;
 
     public AdaptiveController(int startBitrateKbps, TimeProvider? time = null)
     {
@@ -37,8 +40,11 @@ public sealed class AdaptiveController
     /// <summary>Quantiser ceiling: 32 keeps text crisp, 44 lets motion through.</summary>
     public int MaxQP => Mode == EncodingMode.Text ? 32 : 44;
 
-    /// <summary>Frame rate for the current mode.</summary>
-    public int Fps => Mode == EncodingMode.Text ? TextFps : MotionFps;
+    /// <summary>Frame rate for the current mode, or the motion rate within a second of input.</summary>
+    public int Fps => Mode == EncodingMode.Motion || _time.GetUtcNow() < _inputHoldUntil ? MotionFps : TextFps;
+
+    /// <summary>Pointer, scroll, or key input: hold the motion frame rate for the next second. The mode (and so the QP ceiling) still follows the screen.</summary>
+    public void NoteInput() => _inputHoldUntil = _time.GetUtcNow().AddSeconds(1);
 
     /// <summary>The Mac's starting bitrate: <c>clamp(pixels × fps × 0.08 / 1000, 4 000, 60 000)</c> kbps.</summary>
     public static int StartBitrate(int pixels, int fps) =>
