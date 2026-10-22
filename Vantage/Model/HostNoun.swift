@@ -31,6 +31,17 @@ nonisolated struct HostNoun: Hashable, Sendable {
     /// "Macs" / "PCs".
     var plural: String { "\(name)s" }
 
+    /// What Casement Host calls the button that shows a pairing code: "Pair a Device" in the
+    /// Mac's menu bar menu, "Show Pairing Code" in the PC's tray menu.
+    var pairingCommand: String { isWindows ? "Show Pairing Code" : "Pair a Device" }
+    /// Where to find it, to follow "On ⟨name⟩, ": "click the Casement Host icon in the menu bar and choose
+    /// “Pair a Device.”"
+    var pairingInstruction: String {
+        isWindows
+            ? "click the Casement Host icon near the clock on the taskbar and choose “\(pairingCommand).”"
+            : "click the Casement Host icon in the menu bar and choose “\(pairingCommand).”"
+    }
+
     /// The SF Symbol for the host in lists and menus.
     var symbol: String { isWindows ? "pc" : "macbook" }
 }

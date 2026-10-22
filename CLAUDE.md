@@ -95,7 +95,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   sign-in for third-party apps, so the user pastes a key from the admin console; it lives in the
   Keychain. `TailscaleAccountScreen` offers the two key kinds as separate pages (`TailscaleOAuthSetup`, `TailscaleTokenSetup`); the fixture also accepts any key there so sign-in can be exercised. `TailscaleDevicesSheet` lists Macs and PCs (probed with `HostAvailabilityProbe`) and greys out
   other platforms. Debug flags: `-VantageTailscaleFixture 1` serves a fictional tailnet,
-  `-VantageOpenTailscaleDevices 1` opens the picker on launch,
+  `-VantageOpenTailscaleDevices 1` opens the picker on launch (`-VantageTailscaleJustAdded 1` adds
+  its Studio Mac and Drew-PC, showing the "Next Step" pairing rows, which name Casement Host's
+  button through `HostNoun.pairingCommand`/`pairingInstruction`),
   `-VantageOpenScreen settings|controls|security|help|about|tailscale|tailscaleOAuth|tailscaleToken|addDevice|controlStrip|controlStripMac|controlStripPC|editPC|transfers` presents one
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
   `controlStripMac` edits the first saved Mac and `controlStripPC`/`editPC` the first PC, so pair
