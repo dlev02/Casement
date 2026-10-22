@@ -430,6 +430,46 @@ struct DropToSendHint: View {
     }
 }
 
+/// Asks before sending a file another app opened in Casement ("Send “Report.pdf” to Studio?").
+/// Any app, or the system, can ask Casement to open a file, so nothing opened that way leaves
+/// without a yes; Don't Send deletes the copy.
+struct SharedFileConfirmation: ViewModifier {
+    /// Where the files would go ("Studio", "the computer you're connected to"); nil while there's
+    /// nowhere to send them, and the question waits.
+    let destination: String?
+    /// False while another view asks instead, or the app is locked.
+    let isActive: Bool
+    /// After Send: the files are in `SharedFileInbox.pending`.
+    let onSend: () -> Void
+    private let inbox = SharedFileInbox.shared
+
+    func body(content: Content) -> some View {
+        content.alert(title, isPresented: isPresented) {
+            Button("Send") {
+                inbox.approve()
+                onSend()
+            }
+            Button("Don't Send", role: .cancel) { inbox.decline() }
+        } message: {
+            Text(inbox.offered.count == 1
+                 ? "Another app asked Casement to send this file. Send it only if you just shared it to Casement."
+                 : "Another app asked Casement to send these files. Send them only if you just shared them to Casement.")
+        }
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { isActive && destination != nil && !inbox.offered.isEmpty }, set: { _ in })
+    }
+
+    private var title: String {
+        let target = destination ?? ""
+        if inbox.offered.count == 1, let name = inbox.offered.first?.lastPathComponent {
+            return "Send “\(name)” to \(target)?"
+        }
+        return "Send \(inbox.offered.count) files to \(target)?"
+    }
+}
+
 /// Files dragged onto the Mac's screen, or onto its row in the device list: copied out of the
 /// drag (its files only live for the callback) and queued for the Mac's Downloads.
 ///

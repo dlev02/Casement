@@ -35,6 +35,10 @@ struct MacRootView: View {
         .searchable(text: $store.searchText, placement: .sidebar, prompt: "Search")
         .focusedSceneValue(\.selectedMac, selectedDevice)
         .deviceActionPresentations(actions)
+        // A file opened in Casement waits for a yes before it goes anywhere.
+        .modifier(SharedFileConfirmation(destination: MacWindowRouter.shared.sharedFilesDestination,
+                                         isActive: !AppLock.shared.isLocked,
+                                         onSend: { MacWindowRouter.shared.sendSharedFiles() }))
         .task {
             // Runs before the window root's onAppear hands the router its openWindow.
             MacWindowRouter.shared.attach(openWindow)
@@ -398,6 +402,13 @@ final class MacWindowRouter {
             return
         }
         for copy in inbox.take() { link.files.sendOutboxCopy(copy) }
+    }
+
+    /// Where files opened in Casement would go, named for the confirmation: an open session
+    /// takes them, else the Mac used most recently.
+    var sharedFilesDestination: String? {
+        if openSessions > 0 { return "the computer you're connected to" }
+        return DeviceStore.shared.devices.max(by: { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) })?.name
     }
 
     func sessionWindowOpened() { openSessions += 1 }

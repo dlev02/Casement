@@ -110,10 +110,14 @@ struct ContentView: View {
             default: break
             }
         }
+        // A file opened in Casement waits for the person's yes before it goes anywhere. In a
+        // session on iPhone and iPad the session asks, naming its own computer.
+        .modifier(SharedFileConfirmation(destination: sharedFilesDestination?.name,
+                                         isActive: !lock.isLocked && sharedFilesAskHere,
+                                         onSend: openSessionForSharedFiles))
         .onOpenURL { url in
             if url.isFileURL {
                 sharedFiles.accept(url)
-                openSessionForSharedFiles()
             } else if let id = DeviceCatalog.macID(from: url) {
                 pending.requestedMacID = id
             }
@@ -152,13 +156,26 @@ struct ContentView: View {
     /// straight to the Mac used most recently without opening its screen (its row in the list
     /// shows it moving). A Mac too old for that is opened as before. Waits for Face ID like any
     /// other request.
+    /// The Mac used most recently: where files opened in Casement go when no session takes them.
+    private var sharedFilesDestination: SavedDevice? {
+        store.devices.max { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) }
+    }
+
+    /// The list asks about files opened in Casement unless a session (iOS) is up to ask itself.
+    private var sharedFilesAskHere: Bool {
+        #if os(iOS)
+        selectedDevice == nil
+        #else
+        true
+        #endif
+    }
+
     private func openSessionForSharedFiles() {
         guard !sharedFiles.pending.isEmpty, !lock.isLocked else { return }
         #if os(iOS)
         guard selectedDevice == nil else { return } // the open session takes them
         #endif
-        let recent = store.devices.max { ($0.lastConnected ?? .distantPast) < ($1.lastConnected ?? .distantPast) }
-        guard let device = recent else { return }
+        guard let device = sharedFilesDestination else { return }
         let link = FileTransferCenter.shared.link(for: device)
         guard link.canSendWithoutScreen else {
             selectedDevice = device
