@@ -27,15 +27,39 @@ struct MacSettingsView: View {
             }
         }
         .frame(width: 560)
-        .frame(minHeight: 440, idealHeight: 560)
         .macWindowRoot()
         .accessibilityIdentifier("settings")
     }
 
     /// Each tab can drill in (Customize Controls, the Tailscale account), so each has a stack.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        NavigationStack { content() }
-            .formStyle(.grouped)
+        SettingsPage(content: content())
+    }
+}
+
+/// One tab, sized to what it shows, like the Settings windows of Apple's own apps: a short tab
+/// makes a short window rather than a tall one that's mostly empty, and a long one stops at
+/// `maxHeight` and scrolls.
+private struct SettingsPage<Content: View>: View {
+    let content: Content
+    @State private var contentHeight: CGFloat?
+
+    private static var minHeight: CGFloat { 160 }
+    private static var maxHeight: CGFloat { 620 }
+
+    var body: some View {
+        NavigationStack {
+            content
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    // The toolbar's inset is outside this frame already; keep a margin under the
+                    // last footer like System Settings.
+                    geometry.contentSize.height + 20
+                } action: { _, height in
+                    contentHeight = height
+                }
+        }
+        .formStyle(.grouped)
+        .frame(height: contentHeight.map { min(max($0, Self.minHeight), Self.maxHeight) } ?? 420)
     }
 }
 

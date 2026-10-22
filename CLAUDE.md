@@ -713,7 +713,12 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `InjectedEventMarkerTests`.
 - **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
   Security (`hand.raised`), each a grouped form in its own `NavigationStack`; the last tab is remembered
-  (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Controls on the Mac:
+  (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Each tab sizes the
+  window to its content (`SettingsPage`, 160–620 pt, longer tabs scroll), as Apple's apps do. It is
+  the only settings UI on the Mac: any in-app Settings button is a `SettingsLink`/`openSettings`,
+  never the iPad's `SettingsScreen` list (which also hides Help & FAQ and About there). The iPad
+  build installed on an Apple silicon Mac ("Designed for iPad", runs from a `Wrapper/` bundle) is
+  an iOS app and still shows the iPad screens; `#if os(macOS)` never reaches it. Controls on the Mac:
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
   off; `MacKeyboardSettings` has the keys), Dictation, Session Controls; no touch, trackpad,
   on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
