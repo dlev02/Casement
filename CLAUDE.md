@@ -289,7 +289,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   embedded provisioning profile carries `com.apple.developer.ubiquity-kvstore-identifier`
   (`$(TeamIdentifierPrefix)$(CFBundleIdentifier)`, in both client entitlements files; iCloud is
   enabled on the client's App ID). A build without a profile (the simulator, or another team's
-  copy) reports `notEntitled` and keeps the list local.
+  copy) reports `notEntitled` and keeps the list local. Sync is on by default: `DeviceStore.init`
+  turns it on once (`CloudSync.shouldTurnOnByDefault`) when the person never chose, the build is
+  entitled, and an iCloud account is signed in; never on the Mac. Turning it on pulls and merges
+  before pushing, and an empty list is never pushed over iCloud's. The app lock and other settings
+  stay per device on purpose.
 - **Dictation** (`Vantage/Dictation`, `VantageHost/Dictation`, design in
   `docs/research/audio-dictation-files.md` §B/§D): the strip's mic button (hold to talk, tap to
   toggle) opens `DictationPanel`. "On this iPad" runs `SpeechAnalyzer` (`LiveTranscriber`,

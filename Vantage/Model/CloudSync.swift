@@ -72,6 +72,9 @@ final class CloudSync {
 
     // MARK: Switching
 
+    /// Turning sync on pulls what iCloud already has first (merged through `onRemoteDevices`);
+    /// the caller then pushes the merged list. Pushing first replaced the list in iCloud with
+    /// this device's, which on a new iPhone is empty.
     func setEnabled(_ enabled: Bool, devices: [SavedDevice]) {
         guard enabled != isEnabled else { return }
         migrateSecrets(toSynchronizable: enabled, deviceIDs: devices.map(\.id))
@@ -79,11 +82,25 @@ final class CloudSync {
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
         if enabled {
             startObserving()
-            push(devices: devices, tombstones: [:])
             pullNow()
         } else {
             stopObserving()
         }
+    }
+
+    /// Sync starts on by itself, once, on an iPhone, iPad, or Vision Pro whose copy of Casement
+    /// is signed for iCloud and signed into an iCloud account, unless the person has already
+    /// chosen either way. Setting things up once is the point, and a new device can't offer to
+    /// bring the list over if it waits for a switch nobody knows about. Not on the Mac: its
+    /// sandboxed app has no switch yet and synced Keychain items there haven't been tried. A
+    /// device without iCloud asks again next launch, so signing in later still turns it on.
+    var shouldTurnOnByDefault: Bool {
+        #if os(macOS)
+        false
+        #else
+        !isEnabled && UserDefaults.standard.object(forKey: Self.enabledKey) == nil
+            && deviceListAvailability == .available
+        #endif
     }
 
     private func migrateSecrets(toSynchronizable: Bool, deviceIDs: [UUID]) {

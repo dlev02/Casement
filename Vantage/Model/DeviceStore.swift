@@ -39,13 +39,22 @@ final class DeviceStore {
         applyLaunchOptions()
         publishCatalog()
         cloud.onRemoteDevices = { [weak self] devices, tombstones in self?.merge(remote: devices, tombstones: tombstones) }
-        cloud.pullNow()
+        if cloud.shouldTurnOnByDefault {
+            setCloudSync(true)
+        } else {
+            cloud.pullNow()
+        }
     }
 
     // MARK: iCloud
 
     func setCloudSync(_ enabled: Bool) {
         cloud.setEnabled(enabled, devices: devices)
+        // What iCloud had is merged in by now; hand back the combined list. A device with
+        // nothing to add (a new iPhone before its first sync) leaves iCloud's list alone.
+        if enabled, !devices.isEmpty || !tombstones.isEmpty {
+            cloud.push(devices: devices, tombstones: tombstones)
+        }
     }
 
     /// Folds in the list from another device: newer copy of each Mac wins, removals win over

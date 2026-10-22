@@ -354,7 +354,7 @@ struct SecuritySettings: View {
             } header: {
                 Text("iCloud")
             } footer: {
-                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Casement up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else.")
+                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Casement up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else. The app lock and other settings stay with each device.")
             }
             #endif
         }
