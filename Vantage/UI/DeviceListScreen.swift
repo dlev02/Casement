@@ -98,7 +98,12 @@ struct DeviceListScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .listLeading) {
+            #if os(macOS)
+            // The Mac's settings are the Settings window (⌘,), never the iPad's pushed list.
+            SettingsLink { Label("Settings", systemImage: "gearshape") }
+            #else
             NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
+            #endif
         }
         ToolbarItemGroup(placement: .listTrailing) {
             Menu {
