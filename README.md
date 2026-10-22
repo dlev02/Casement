@@ -44,7 +44,7 @@ Casement is free and open source. Version 1.0 is **in App Review** for iPhone, i
 
 | Computer | Download | Install |
 | --- | --- | --- |
-| Mac (macOS 26 or later) | `Casement-Host-1.0-mac.dmg` | Open the DMG and drag Casement Host to Applications. Signed and notarized by Apple. |
+| Mac (macOS 26 or later) | `Casement-Host-…-mac.dmg` | Open the DMG and drag Casement Host to Applications, then open it. A setup window walks you through Screen Recording, Accessibility, starting at login, and pairing. Signed and notarized by Apple. |
 | Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder. |
 | Windows PC (ARM) | `Casement-Host-…-windows-arm64.zip` | The same; not yet tested on ARM hardware. |
 
