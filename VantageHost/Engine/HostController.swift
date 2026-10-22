@@ -91,6 +91,7 @@ final class HostController {
     func start() {
         refreshPermissions()
         refreshTailscale()
+        monitorPermissions()
         observeDisplayChanges()
         listener.onAccept = { [weak self] connection in
             Task { @MainActor in self?.accept(connection) }
@@ -564,14 +565,33 @@ final class HostController {
         }
     }
 
+    /// Called when Screen Recording or Accessibility was allowed and no longer is (the setup
+    /// window opens again).
+    var onRequiredPermissionLost: (() -> Void)?
+    private var permissionMonitor: Task<Void, Never>?
+
     /// Live: both checks ask macOS again every time (the views poll this while they're open).
     func refreshPermissions() {
         let screen = ScreenCapture.preflightPermission()
         let input = InputInjector.hasPermission()
+        let lost = (hasScreenPermission && !screen) || (hasInputPermission && !input)
         if screen != hasScreenPermission { hasScreenPermission = screen }
         if input != hasInputPermission {
             hasInputPermission = input
             log.info("accessibility \(input ? "allowed" : "not allowed", privacy: .public)")
+        }
+        if lost { onRequiredPermissionLost?() }
+    }
+
+    /// A slow check in the background, so a permission turned off in System Settings is noticed
+    /// without the menu being open.
+    private func monitorPermissions() {
+        guard permissionMonitor == nil else { return }
+        permissionMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                self?.refreshPermissions()
+            }
         }
     }
 
