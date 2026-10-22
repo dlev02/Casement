@@ -38,6 +38,19 @@ nonisolated struct PointerMapping: Equatable, Sendable {
                                    snap: onSide ? Self.cornerSnap : Self.edgeSnap))
     }
 
+    /// View points per display point: how much the picture is scaled to fit the view.
+    var pictureScale: CGFloat {
+        guard displaySize.width > 0 else { return 1 }
+        return videoRect.width / displaySize.width
+    }
+
+    /// Where a display point is drawn in the view (the inverse of `displayPoint`, without the
+    /// edge snapping), for the pointer this device draws itself.
+    func viewPoint(forDisplayPoint point: CGPoint) -> CGPoint {
+        let rect = videoRect, scale = pictureScale
+        return CGPoint(x: rect.minX + point.x * scale, y: rect.minY + point.y * scale)
+    }
+
     /// One axis: `offset` into a picture `length` view points long, onto a display `extent`
     /// points long whose last row or column starts at `extent - 1`.
     private static func map(_ offset: CGFloat, across length: CGFloat, onto extent: CGFloat, snap: CGFloat) -> CGFloat {

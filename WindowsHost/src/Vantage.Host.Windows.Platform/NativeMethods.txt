@@ -53,6 +53,19 @@ GetSystemMetrics
 SendInput
 GetMessageExtraInfo
 
+// Pointer shape (for clients that draw the pointer themselves)
+GetCursorInfo
+GetIconInfo
+DrawIconEx
+CreateCompatibleDC
+CreateDIBSection
+SelectObject
+DeleteObject
+DeleteDC
+GetObject
+BITMAP
+BITMAPINFO
+
 // Clipboard
 AddClipboardFormatListener
 RemoveClipboardFormatListener

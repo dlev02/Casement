@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Pure code from the Windows platform, so the pretend pointer runs the same pixel path. -->
+    <Compile Include="..\Vantage.Host.Windows.Platform\Cursor\CursorImage.cs" Link="Shared\CursorImage.cs" />
+    <Compile Include="..\Vantage.Host.Windows.Platform\Clipboard\PngWriter.cs" Link="Shared\PngWriter.cs" />
+    <Compile Include="..\Vantage.Host.Windows.Platform\Clipboard\DibCodec.cs" Link="Shared\DibCodec.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Vantage.Protocol.Tests" />
   </ItemGroup>
 

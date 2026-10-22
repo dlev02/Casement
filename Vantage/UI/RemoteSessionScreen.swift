@@ -825,6 +825,8 @@ struct RemoteSessionScreen: View {
         if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
         session.onClipboard = { payload in ClipboardSync.apply(payload) }
+        session.onCursorShape = { shape in input.setCursorShape(shape) }
+        session.onCursor = { position in input.setCursorVisible(position.isVisible) }
         video.onNeedsKeyframe = {
             Task { @MainActor in session.send(.requestKeyframe) }
         }

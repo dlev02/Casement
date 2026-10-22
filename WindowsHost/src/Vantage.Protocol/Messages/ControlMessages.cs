@@ -115,6 +115,8 @@ public sealed record ClientFeatures
     [JsonPropertyName("macAudio")] public bool? MacAudio { get; init; }
     [JsonPropertyName("fileTransfer")] public bool? FileTransfer { get; init; }
     [JsonPropertyName("filesOnly")] public bool? FilesOnly { get; init; }
+    /// <summary>The client draws the pointer itself from <c>cursorShape</c>/<c>cursorPosition</c>.</summary>
+    [JsonPropertyName("localCursor")] public bool? LocalCursor { get; init; }
 }
 
 public sealed record Hello : IMessage
@@ -169,6 +171,11 @@ public sealed record HostCapabilities
     [JsonPropertyName("filesOnlySessions")] public bool? FilesOnlySessions { get; init; }
     /// <summary><see cref="HostPlatforms"/> value; nil means macOS to the client.</summary>
     [JsonPropertyName("platform")] public string? Platform { get; init; }
+    /// <summary>
+    /// For a client with <c>features.localCursor</c>: the video leaves the pointer out and the host
+    /// sends <c>cursorShape</c> and <c>cursorPosition</c> instead.
+    /// </summary>
+    [JsonPropertyName("cursorShapes")] public bool? CursorShapes { get; init; }
 }
 
 public sealed record HostReadiness
@@ -361,7 +368,7 @@ public sealed record VideoConfig : IMessage
     [JsonPropertyName("fps")] public required int Fps { get; init; }
 }
 
-/// <summary>Not sent by Windows v1 (the cursor is in the video).</summary>
+/// <summary>The pointer's look, for a client that draws it (<c>features.localCursor</c>). PNG pixels; sizes and hotspot in points.</summary>
 public sealed record CursorShape : IMessage
 {
     MessageKind IMessage.Kind => MessageKind.CursorShape;

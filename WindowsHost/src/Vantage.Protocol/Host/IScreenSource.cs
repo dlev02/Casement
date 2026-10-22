@@ -40,8 +40,8 @@ public interface IScreenSource
 
     /// <summary>
     /// Starts capturing <see cref="CaptureRequest.Display"/> at up to <see cref="CaptureRequest.Fps"/>
-    /// frames per second, with the cursor drawn into the frames (the Mac does the same; the client
-    /// never draws one). Throws <see cref="CaptureUnavailableException"/> when capture can't start
+    /// frames per second, with the cursor drawn into the frames unless
+    /// <see cref="CaptureRequest.IncludesCursor"/> is false (a client that draws the pointer itself). Throws <see cref="CaptureUnavailableException"/> when capture can't start
     /// (display gone or asleep, secure desktop, access revoked); the core then retries with backoff
     /// for the whole session and never ends it over this.
     /// </summary>
@@ -67,7 +67,8 @@ public interface IScreenSource
 /// <summary>What to capture.</summary>
 /// <param name="Display">The display, as last returned by <see cref="IScreenSource.GetDisplaysAsync"/>.</param>
 /// <param name="Fps">Frames per second to aim for (≤ 60). May change later through <see cref="ICaptureStream.SetFrameRate"/>.</param>
-public sealed record CaptureRequest(DisplayInfo Display, int Fps);
+/// <param name="IncludesCursor">Draw the pointer into the frames. False when the client draws it from <see cref="ICursorSource"/>.</param>
+public sealed record CaptureRequest(DisplayInfo Display, int Fps, bool IncludesCursor = true);
 
 /// <summary>A running capture. Disposing stops it (no <c>onStopped</c> callback follows).</summary>
 public interface ICaptureStream : IAsyncDisposable

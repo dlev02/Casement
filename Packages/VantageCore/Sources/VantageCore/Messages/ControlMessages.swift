@@ -190,9 +190,14 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// What the host runs (also in `Challenge.hostPlatform`). Nil from older hosts, which are all
     /// Macs.
     public var platform: HostPlatform?
+    /// For a client that said `ClientFeatures.localCursor`: the video leaves the pointer out, and
+    /// the host sends `cursorShape` (at stream start and whenever the pointer's look changes) and
+    /// `cursorPosition` (when it's shown or hidden). Nil from hosts that always draw the pointer
+    /// into the video (every Mac: macOS has no public API for the system cursor's image).
+    public var cursorShapes: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
-                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil) {
+                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -202,6 +207,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.fileTransfer = fileTransfer
         self.filesOnlySessions = filesOnlySessions
         self.platform = platform
+        self.cursorShapes = cursorShapes
     }
 }
 

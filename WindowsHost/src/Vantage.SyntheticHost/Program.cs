@@ -41,6 +41,7 @@ var environment = new HostEnvironment
     HostName = options.HostName ?? (options.Platform == HostPlatforms.Windows ? "Synthetic PC" : "Synthetic Mac"),
     Platform = options.Platform,
     Screen = new ClipScreenSource(display, log),
+    Cursor = options.CursorShapes ? new SyntheticCursorSource() : null,
     Encoders = new ClipEncoderFactory(clip),
     CreateInputSink = () => new LoggingInputSink(events, loggerFactory.CreateLogger("Vantage.Input")),
     Clipboard = new MemoryClipboard(options.ClipboardText, events),

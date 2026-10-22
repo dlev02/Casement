@@ -16,7 +16,7 @@ namespace Vantage.Host.Windows.Capture;
 
 /// <summary>
 /// One Windows.Graphics.Capture session on one monitor (spec §7.2; plan §1 "Capture"): a
-/// free-threaded frame pool of 3 buffers on the monitor's GPU, cursor in the frames, no yellow
+/// free-threaded frame pool of 3 buffers on the monitor's GPU, cursor in the frames (unless the client draws it), no yellow
 /// border when borderless access was granted, <c>MinUpdateInterval</c> (24H2+) plus a throttle,
 /// and <c>DirtyRegionMode.ReportOnly</c> (24H2+) for the dirty ratio. Each frame is copied into a
 /// pooled texture so WGC's buffer is returned at once. The item closing (display unplugged or
@@ -45,7 +45,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
     private bool _disposed;
     private int _framesSinceLog;
 
-    private WgcCaptureStream(MonitorEntry monitor, GpuDevice gpu, GraphicsCaptureItem item, int fps, bool borderless,
+    private WgcCaptureStream(MonitorEntry monitor, GpuDevice gpu, GraphicsCaptureItem item, int fps, bool includesCursor, bool borderless,
                              Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
     {
         Gpu = gpu;
@@ -62,7 +62,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
 
         _pool = Direct3D11CaptureFramePool.CreateFreeThreaded(gpu.WinRtDevice, DirectXPixelFormat.B8G8R8A8UIntNormalized, PoolBuffers, _size);
         _session = _pool.CreateCaptureSession(item);
-        _session.IsCursorCaptureEnabled = true;
+        _session.IsCursorCaptureEnabled = includesCursor;
         if (borderless && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348))
         {
             try { _session.IsBorderRequired = false; }
@@ -97,11 +97,11 @@ internal sealed class WgcCaptureStream : ICaptureStream
     public int FrameHeight { get; }
 
     /// <summary>Creates the item for <paramref name="monitor"/> and starts capturing.</summary>
-    public static WgcCaptureStream Start(MonitorEntry monitor, GpuDevice gpu, int fps, bool borderless,
+    public static WgcCaptureStream Start(MonitorEntry monitor, GpuDevice gpu, int fps, bool includesCursor, bool borderless,
                                          Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
     {
         var item = CreateItemForMonitor(monitor.Monitor);
-        var stream = new WgcCaptureStream(monitor, gpu, item, fps, borderless, onFrame, onStopped, log);
+        var stream = new WgcCaptureStream(monitor, gpu, item, fps, includesCursor, borderless, onFrame, onStopped, log);
         stream._session.StartCapture();
         log.LogInformation("capturing {Name} ({Gdi}) at {Width}×{Height} on {Adapter}; dirty regions {Dirty}, min interval {Min}",
                            monitor.Info.Name, monitor.GdiName, stream.FrameWidth, stream.FrameHeight, gpu.AdapterName,
