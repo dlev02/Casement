@@ -328,9 +328,11 @@ struct HostMenuView: View {
         NSApplication.shared.terminate(nil)
     }
 
-    /// Restart Safely (when it can) and Quit, under the pointer.
+    /// Set Up Casement Host, Restart Safely (when it can) and Quit, under the pointer.
     private func showMoreMenu() {
         let menu = NSMenu()
+        menu.addItem(closureMenuItem("Set Up Casement Host…", symbol: "checklist") { HostSetup.shared.show(controller) })
+        menu.addItem(.separator())
         if controller.canRestartSafely {
             menu.addItem(closureMenuItem("Restart Safely…", symbol: "restart") { controller.restartSafely() })
             menu.addItem(.separator())
@@ -418,7 +420,7 @@ private struct CopyButton: View {
 /// (for an iPad without a Tailscale key, which can't list the tailnet), six big digits in two
 /// groups of three, how long they last, a new code, and Done (which withdraws it, rather than
 /// leaving a live code nobody can see).
-private struct PairingCodePanel: View {
+struct PairingCodePanel: View {
     let code: String
     /// This Mac's tailnet name; empty while Tailscale isn't running.
     let address: String

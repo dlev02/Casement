@@ -14,6 +14,8 @@ import VantageCore
 ///   synthetic host too; it's skipped there otherwise.
 /// - `--preview-arrival /path[,/path…]`: show the on-screen arrival notice for those files at launch.
 /// - `--appearance light|dark`: force the host's own windows into one appearance (screenshots).
+/// - `--open-setup`: show the first-run setup window at launch as a preview: nothing it shows is
+///   saved (setup isn't marked done, Start at Login isn't changed). Screenshots.
 /// - `--open-menu`: show the menu bar popover's content in a window too (screenshots when the
 ///   menu bar is too crowded to show the item).
 /// - `--log-input-events`: log the key events reaching the session (`InputEventLog`).
@@ -46,6 +48,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let appearance: String?
     /// Also host the menu's content in a window at launch (DEBUG only).
     let openMenu: Bool
+    /// Show the setup window as a preview at launch (DEBUG only).
+    let openSetup: Bool
     /// Log key events with their flags through a listen-only tap (DEBUG only).
     let logInputEvents: Bool
     /// Quit this long after launch (DEBUG only).
@@ -98,6 +102,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
             appearance = nil
         }
         openMenu = args.contains("--open-menu")
+        openSetup = args.contains("--open-setup")
         logInputEvents = args.contains("--log-input-events")
         if let index = args.firstIndex(of: "--exit-after"), index + 1 < args.count,
            let seconds = Double(args[index + 1]), seconds > 0 {
@@ -133,6 +138,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         previewArrival = []
         appearance = nil
         openMenu = false
+        openSetup = false
         logInputEvents = false
         exitAfterSeconds = nil
         fakeDisplaySleep = false

@@ -36,6 +36,17 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         if HostOptions.shared.fixedPairingCode != nil {
             controller.generatePairingCode()
         }
+        // A permission turned off later brings the setup window back to put it right.
+        controller.onRequiredPermissionLost = { [weak self] in
+            guard let self, !HostOptions.shared.syntheticCapture else { return }
+            HostSetup.shared.show(self.controller)
+        }
+        if HostOptions.shared.openSetup {
+            HostSetup.shared.show(controller, preview: true)
+        } else if !HostOptions.shared.syntheticCapture {
+            // Test hosts (synthetic capture) never need the screen or input, so they skip it.
+            HostSetup.shared.showIfNeeded(controller)
+        }
         #if DEBUG
         switch HostOptions.shared.appearance {
         case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)

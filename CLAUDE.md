@@ -577,6 +577,18 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   (`TrustStore.cancelPairingCode`) and the controller clears it when its 10 minutes end, so the
   menu never shows a dead code. Screenshots: `--open-menu` (on glass, since the real item often
   hides behind the notch), `--appearance light|dark`.
+- **Host setup window** (`HostSetup`/`SetupView` in `UI/SetupWindow.swift`): one compact window,
+  six numbered steps that turn into green checks (Screen Recording, Accessibility, Start at Login,
+  notifications, Tailscale, Pair a Device with the pairing panel inline) and a progress bar. It
+  opens under the menu bar icon at launch until it has been closed once (`setup.completed`),
+  whenever Screen Recording or Accessibility is missing at launch, when either goes missing later
+  (`HostController.onRequiredPermissionLost`, a 15 s background check), and from More › Set Up
+  Casement Host…. Start at Login is on by default there and applied when the window closes.
+  Synthetic hosts never open it. Permissions are checked live (`HostPermission`); Allow… asks
+  macOS and opens the permission's list, and once asked but still missing the UI says to remove
+  Casement Host with − and add it again (a stale TCC entry from another signature, e.g. a Debug
+  build: the switch looks on but `AXIsProcessTrusted()` is false). Never run `tccutil` from the
+  app. `--open-setup` (DEBUG) shows it as a preview that saves nothing.
 - **Host Settings** (`HostSettingsView` and its tabs): one convention, System Settings'. A row
   says what it is, with at most one short line under it saying what it does; anything longer is
   the section's footer (`Footer`), never a text row inside the section; values and buttons sit on
