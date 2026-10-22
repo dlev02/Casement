@@ -654,6 +654,9 @@ struct FileTransferSessionTests {
         let inbox = SharedFileInbox()
         inbox.accept(original)
         #expect(FileManager.default.fileExists(atPath: original.path), "the other app's file stays put")
+        #expect(inbox.take().isEmpty, "nothing is sent before the person says Send")
+        #expect(inbox.offered.count == 1)
+        inbox.approve()
         let copies = inbox.take()
         #expect(inbox.pending.isEmpty)
         let copy = try #require(copies.first)
@@ -666,6 +669,26 @@ struct FileTransferSessionTests {
         files.failWaiting("Update Casement Host.")
         #expect(files.transfers.first?.state == .failed("Update Casement Host."))
         #expect(!FileManager.default.fileExists(atPath: copy.path), "the outbox copy is cleaned up")
+    }
+
+    /// A file from a folder nobody shares from (the App Group container another app on the team
+    /// can write to, the app's own Library) is never offered, and Don't Send removes the copy.
+    @Test func filesFromPrivateFoldersAreRefusedAndDeclinedOnesAreRemoved() throws {
+        let group = try scratchDirectory("group")
+        let elsewhere = try scratchDirectory("shared")
+        defer { try? FileManager.default.removeItem(at: group); try? FileManager.default.removeItem(at: elsewhere) }
+        let planted = try randomFile(bytes: 1_000, in: group, name: "meta_casper_signals_storage.sqlite")
+        let inbox = SharedFileInbox()
+        inbox.privateFolders = [group]
+        inbox.accept(planted)
+        inbox.accept(group)
+        #expect(inbox.offered.isEmpty && inbox.pending.isEmpty)
+
+        inbox.accept(try randomFile(bytes: 1_000, in: elsewhere, name: "Notes.txt"))
+        let copy = try #require(inbox.offered.first)
+        inbox.decline()
+        #expect(inbox.offered.isEmpty && inbox.take().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: copy.path))
     }
 }
 

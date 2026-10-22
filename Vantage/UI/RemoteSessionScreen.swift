@@ -369,7 +369,12 @@ struct RemoteSessionScreen: View {
         } message: {
             Text("\(device.name)'s Casement Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
         }
-        // Files opened in Vantage from other apps join this session's queue.
+        #if os(iOS)
+        // On iPhone and iPad the session asks about files opened in Casement, naming its
+        // computer (on visionOS and the Mac the device list asks).
+        .modifier(SharedFileConfirmation(destination: device.name, isActive: true, onSend: {}))
+        #endif
+        // Files opened in Casement from other apps join this session's queue once approved.
         .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
             guard count > 0 else { return }
             for copy in SharedFileInbox.shared.take() { session.files.sendOutboxCopy(copy) }
