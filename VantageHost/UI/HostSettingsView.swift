@@ -161,9 +161,20 @@ struct HostSettingsView: View {
                 }
             } header: {
                 Text("Permissions")
+            } footer: {
+                if controller.permissionStillMissingAfterAsking {
+                    Footer(HostPermission.staleEntryHelp)
+                }
             }
         }
         .formStyle(.grouped)
+        .task {
+            // Live while the tab is up, so Allowed appears as soon as macOS grants it.
+            while !Task.isCancelled {
+                controller.refreshPermissions()
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
     }
 
     @State private var removing: TrustStore.TrustedClient?

@@ -41,6 +41,11 @@ final class HostController {
     private(set) var tailscaleSelfName: String = ""
     private(set) var hasScreenPermission = false
     private(set) var hasInputPermission = false
+    /// The user has asked for Screen Recording since launch (Allow…), so if it's still missing,
+    /// the UI explains the stale-entry fix (`HostPermission.staleEntryHelp`).
+    private(set) var askedForScreenPermission = false
+    /// The same for Accessibility.
+    private(set) var askedForInputPermission = false
     private(set) var trustedClients: [TrustStore.TrustedClient] = []
     private(set) var readiness: Readiness.Report?
     /// The code on show, until it's used, burned, withdrawn (Done), or its ten minutes run out.
@@ -194,14 +199,26 @@ final class HostController {
         }
     }
 
+    /// Asks macOS (which adds Casement Host to the list) and opens the list itself: with a stale
+    /// entry from another copy of the app, macOS shows no prompt at all, so the pane is the one
+    /// place the user can fix it.
     func requestScreenPermission() {
         ScreenCapture.requestPermission()
+        HostPermission.screenRecording.openSettings()
+        askedForScreenPermission = true
         refreshPermissions()
     }
 
     func requestInputPermission() {
         InputInjector.requestPermission()
+        HostPermission.accessibility.openSettings()
+        askedForInputPermission = true
         refreshPermissions()
+    }
+
+    /// A permission was asked for and macOS still says no: time to explain the stale entry.
+    var permissionStillMissingAfterAsking: Bool {
+        (askedForScreenPermission && !hasScreenPermission) || (askedForInputPermission && !hasInputPermission)
     }
 
     func revoke(_ fingerprint: String) {
@@ -547,9 +564,15 @@ final class HostController {
         }
     }
 
+    /// Live: both checks ask macOS again every time (the views poll this while they're open).
     func refreshPermissions() {
-        hasScreenPermission = ScreenCapture.preflightPermission()
-        hasInputPermission = InputInjector.hasPermission()
+        let screen = ScreenCapture.preflightPermission()
+        let input = InputInjector.hasPermission()
+        if screen != hasScreenPermission { hasScreenPermission = screen }
+        if input != hasInputPermission {
+            hasInputPermission = input
+            log.info("accessibility \(input ? "allowed" : "not allowed", privacy: .public)")
+        }
     }
 
     func refreshTailscale() {

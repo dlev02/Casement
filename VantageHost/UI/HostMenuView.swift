@@ -189,13 +189,15 @@ struct HostMenuView: View {
                 }
                 if needsScreen {
                     Button { controller.requestScreenPermission() } label: {
-                        SettingsRow("Allow Screen Recording", subtitle: "To show this Mac's screen.",
+                        SettingsRow("Allow Screen Recording",
+                                    subtitle: controller.askedForScreenPermission ? HostPermission.staleEntryHelpShort : "To show this Mac's screen.",
                                     symbol: "rectangle.dashed.badge.record", color: .orange) { RowAction("Allow") }
                     }
                 }
                 if needsInput {
                     Button { controller.requestInputPermission() } label: {
-                        SettingsRow("Allow Accessibility", subtitle: "To click and type on this Mac.",
+                        SettingsRow("Allow Accessibility",
+                                    subtitle: controller.askedForInputPermission ? HostPermission.staleEntryHelpShort : "To click and type on this Mac.",
                                     symbol: "accessibility", color: .orange) { RowAction("Allow") }
                     }
                 }
