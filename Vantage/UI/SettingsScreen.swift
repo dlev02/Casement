@@ -14,6 +14,7 @@ struct SettingsScreen: View {
                 NavigationLink { ConnectionSettings() } label: { Label("Connection", systemImage: "network") }
                 NavigationLink { SecuritySettings() } label: { Label("Privacy & Security", systemImage: "lock") }
             }
+            #if !os(macOS) // the Mac has Help › Casement Help and Casement › About Casement windows
             Section {
                 NavigationLink { HelpScreen() } label: { Label("Help & FAQ", systemImage: "questionmark.circle") }
                 NavigationLink { AboutScreen() } label: {
@@ -24,6 +25,7 @@ struct SettingsScreen: View {
                     }
                 }
             }
+            #endif
         }
         .navigationTitle("Settings")
     }
@@ -294,8 +296,18 @@ struct ConnectionSettings: View {
                         Text(address).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
+                #if os(macOS)
+                // System Settings puts a section's buttons together on the trailing edge.
+                HStack {
+                    Spacer()
+                    Link("Manage Devices", destination: URL(string: "https://login.tailscale.com/admin/machines")!)
+                        .buttonStyle(.bordered)
+                    Button("Open Tailscale") { TailscaleReachability.openTailscaleApp() }
+                }
+                #else
                 Button("Open Tailscale") { TailscaleReachability.openTailscaleApp() }
                 Link("Manage Tailscale Devices", destination: URL(string: "https://login.tailscale.com/admin/machines")!)
+                #endif
             } header: {
                 Text("Network")
             } footer: {
