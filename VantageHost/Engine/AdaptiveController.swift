@@ -19,17 +19,27 @@ nonisolated struct AdaptiveController {
     private var smoothedDirty: Double = 0
     private var lastAdjustment = Date.distantPast
     private var probeHoldUntil = Date.distantPast
+    /// Input keeps the frame rate up for a moment: a moving pointer dirties too little of the screen
+    /// to leave text mode, so it would otherwise update at 30 fps.
+    private var inputHoldUntil = Date.distantPast
 
     init(limits: Limits = Limits(), startBitrateKbps: Int = 20_000) {
         self.limits = limits
         self.bitrateKbps = startBitrateKbps
     }
 
-    /// Smooths dirty ratio and returns the resulting mode + target fps.
-    mutating func observe(dirtyRatio: Double) -> (mode: Mode, fps: Int) {
+    /// Smooths dirty ratio and returns the resulting mode + target fps. The mode (and so the QP
+    /// ceiling) follows the screen alone; recent input only raises the fps.
+    mutating func observe(dirtyRatio: Double, now: Date = Date()) -> (mode: Mode, fps: Int) {
         smoothedDirty = smoothedDirty * 0.9 + dirtyRatio * 0.1
         mode = smoothedDirty < 0.02 ? .text : .motion
-        return (mode, mode == .text ? limits.textFPS : limits.motionFPS)
+        let fps = mode == .motion || now < inputHoldUntil ? limits.motionFPS : limits.textFPS
+        return (mode, fps)
+    }
+
+    /// Pointer, scroll, or key input: hold the motion frame rate for the next second.
+    mutating func noteInput(now: Date = Date()) {
+        inputHoldUntil = now.addingTimeInterval(1)
     }
 
     /// Applies client feedback; returns a new bitrate if it changed.
