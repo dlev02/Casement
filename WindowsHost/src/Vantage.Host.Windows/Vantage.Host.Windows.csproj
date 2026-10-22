@@ -51,4 +51,26 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
+  <!-- Windows App SDK 2.x leaves Microsoft.WindowsAppRuntime.Insights.Resource.dll out of the
+       self-contained layout, and without it AppNotificationManager.Register() throws "Unable to
+       load resource dll" (microsoft/WindowsAppSDK#6774, fixed upstream by #6725 but not in 2.5.1),
+       so no toasts. The file ships only inside the runtime MSIX in the Runtime package, next to a
+       Microsoft.WindowsAppRuntime.dll identical to the one we deploy: copy it out of there. Drop
+       this once a release puts it in the output (or stops needing it). -->
+  <PropertyGroup>
+    <InsightsResourceDll>Microsoft.WindowsAppRuntime.Insights.Resource.dll</InsightsResourceDll>
+  </PropertyGroup>
+
+  <Target Name="AddWindowsAppRuntimeInsightsResource" BeforeTargets="AssignTargetPaths" Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
+    <PropertyGroup>
+      <InsightsResourceDir>$(IntermediateOutputPath)WindowsAppRuntimeInsights\</InsightsResourceDir>
+      <_InsightsMsix>$(MicrosoftWindowsAppSDKPackageDir)tools\MSIX\win10-$(PlatformTarget)\Microsoft.WindowsAppRuntime.2.msix</_InsightsMsix>
+    </PropertyGroup>
+    <Warning Condition="!Exists('$(_InsightsMsix)')" Text="$(_InsightsMsix) not found, so $(InsightsResourceDll) isn't copied and app notifications may fail. Check whether this Windows App SDK still needs the workaround." />
+    <Unzip Condition="Exists('$(_InsightsMsix)')" SourceFiles="$(_InsightsMsix)" DestinationFolder="$(InsightsResourceDir)" Include="$(InsightsResourceDll)" SkipUnchangedFiles="true" />
+    <ItemGroup Condition="Exists('$(_InsightsMsix)')">
+      <None Include="$(InsightsResourceDir)$(InsightsResourceDll)" Link="$(InsightsResourceDll)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
 </Project>
