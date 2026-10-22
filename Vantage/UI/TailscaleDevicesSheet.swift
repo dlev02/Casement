@@ -61,6 +61,13 @@ struct TailscaleDevicesSheet: View {
             }
         } else {
             List {
+                if !addedJustNow.isEmpty {
+                    Section {
+                        ForEach(addedJustNow) { device in nextStepRow(device) }
+                    } header: {
+                        Text("Next Step")
+                    }
+                }
                 if macs.isEmpty {
                     Section {
                         Text("No Macs or PCs on this tailnet yet.").foregroundStyle(.secondary)
@@ -118,6 +125,33 @@ struct TailscaleDevicesSheet: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Computers added in this sheet, in the order they're listed.
+    private var addedJustNow: [TailscaleDevice] { macs.filter { justAdded.contains($0.id) } }
+
+    /// What to do on a computer just added: pairing happens there, in Casement Host, and nothing
+    /// in this app says so until the first connection asks for a code.
+    private func nextStepRow(_ device: TailscaleDevice) -> some View {
+        let host = HostNoun(device.platform == .windows ? .windows : .macOS)
+        return HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "key.horizontal.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Color.accentColor.gradient, in: .rect(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Pair with \(device.displayName)").font(.body.weight(.semibold))
+                Text("On \(device.displayName), \(host.pairingInstruction) Then connect from here and type in the code.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tailscale.nextStep")
     }
 
     private func unsupportedRow(_ device: TailscaleDevice) -> some View {
@@ -212,6 +246,11 @@ struct TailscaleDevicesSheet: View {
         defer { isLoading = false }
         do {
             devices = try await account.devices()
+            #if DEBUG
+            // `-VantageTailscaleJustAdded 1` (with the fixture): a Mac and a PC as if just added,
+            // to screenshot the pairing step without tapping (AXe taps don't reach this app).
+            if ProcessInfo.processInfo.arguments.contains("-VantageTailscaleJustAdded") { justAdded = ["1", "3"] }
+            #endif
             await probeMacs()
         } catch {
             errorMessage = error.localizedDescription
