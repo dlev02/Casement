@@ -71,6 +71,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             HostName = HostName(),
             Platform = options.Platform,
             Screen = new WindowsScreenSource(logging),
+            Cursor = new Cursor.WindowsCursorSource(logging),
             Encoders = encoders,
             CreateInputSink = () => new WindowsInputTranslator(injector, inputLog),
             Clipboard = clipboard,

@@ -8,6 +8,10 @@ import VantageCore
 final class RemoteInteractionView: UIView {
     let input: InputController
     private let displayLayer: AVSampleBufferDisplayLayer
+    /// The host's pointer, drawn here when the host leaves it out of the video (a PC): it follows
+    /// the pointer in the same frame, the way Remote Desktop's does.
+    private let cursorLayer = CALayer()
+    private var cursorImage: CGImage?
     private var hardwareModifiers: KeyModifiers = []
     private var stickyModifiers: KeyModifiers = []
     /// The keyboard's modifiers as the host should see them ("⌘ acts as Ctrl" on a PC), plus the
@@ -42,6 +46,10 @@ final class RemoteInteractionView: UIView {
         super.init(frame: .zero)
         backgroundColor = .black
         layer.addSublayer(displayLayer)
+        cursorLayer.isHidden = true
+        cursorLayer.contentsGravity = .resize
+        layer.addSublayer(cursorLayer)
+        input.onLocalCursorChange = { [weak self] in self?.updateLocalCursor() }
         setupGestures()
         setupPointer()
         #if !os(visionOS)
@@ -88,6 +96,28 @@ final class RemoteInteractionView: UIView {
         super.layoutSubviews()
         displayLayer.frame = bounds
         input.viewSize = bounds.size
+        updateLocalCursor()
+    }
+
+    /// Puts the host's pointer where this device last sent it, at the picture's scale.
+    private func updateLocalCursor() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let cursor = input.localCursor, input.localCursorVisible else {
+            cursorLayer.isHidden = true
+            return
+        }
+        let mapping = input.pointerMapping
+        let scale = LocalCursor.drawScale(pictureScale: mapping.pictureScale)
+        if cursorImage !== cursor.image {
+            cursorImage = cursor.image
+            cursorLayer.contents = cursor.image
+        }
+        cursorLayer.bounds = CGRect(x: 0, y: 0, width: cursor.size.width * scale, height: cursor.size.height * scale)
+        cursorLayer.anchorPoint = CGPoint(x: cursor.hotspot.x / cursor.size.width, y: cursor.hotspot.y / cursor.size.height)
+        cursorLayer.position = mapping.viewPoint(forDisplayPoint: input.cursorPoint)
+        cursorLayer.isHidden = false
     }
 
     // MARK: Gestures

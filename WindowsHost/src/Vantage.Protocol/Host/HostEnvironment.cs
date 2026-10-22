@@ -18,6 +18,12 @@ public sealed class HostEnvironment
     /// <summary>Displays and capture.</summary>
     public required IScreenSource Screen { get; init; }
 
+    /// <summary>
+    /// The pointer's shape for clients that draw it themselves; null when the platform can't read
+    /// it (the pointer then stays in the video for every client).
+    /// </summary>
+    public ICursorSource? Cursor { get; init; }
+
     /// <summary>Encoders for captured frames.</summary>
     public required IVideoEncoderFactory Encoders { get; init; }
 

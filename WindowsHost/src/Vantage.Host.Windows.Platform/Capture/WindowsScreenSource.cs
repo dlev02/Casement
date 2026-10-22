@@ -80,7 +80,7 @@ public sealed class WindowsScreenSource : IScreenSource
 
         try
         {
-            return WgcCaptureStream.Start(monitor, gpu, request.Fps, borderless, onFrame, onStopped, _log);
+            return WgcCaptureStream.Start(monitor, gpu, request.Fps, request.IncludesCursor, borderless, onFrame, onStopped, _log);
         }
         catch (CaptureUnavailableException)
         {

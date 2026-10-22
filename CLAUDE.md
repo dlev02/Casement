@@ -242,6 +242,17 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   and ⌃, and ⌘V paste-through watches for Ctrl+V); strip modifiers and shortcuts never go through it.
   Test: `KeyRemapTests`. Checked against the Windows synthetic host's input log (`--input-log`):
   every PC shortcut and remapped ⌘/⌃ key arrives as the scan codes above.
+- **Local pointer** (a PC; the Remote Desktop model): the client says `Hello.features.localCursor`;
+  a host with `HostCapabilities.cursorShapes` (the Windows host: `ICursorSource`,
+  `WindowsCursorSource` polls `GetCursorInfo` at 120 Hz and draws a new handle on black and white
+  through `CursorImage`, inverting cursors such as the I-beam become black with a white edge)
+  captures without the pointer (`CaptureRequest.IncludesCursor`, WGC `IsCursorCaptureEnabled`)
+  and sends `cursorShape` on change plus `cursorPosition` for visibility. The client draws it at
+  its own pointer position the moment input is sent (`InputController.localCursor`; iOS a
+  `CALayer` in `RemoteInteractionView`, the Mac client an `NSCursor`), sized with the picture
+  (`LocalCursor.drawScale`). A Mac host can't (no public API for the system cursor's image), so
+  its pointer stays in the video and the client keeps hiding its own. Debug: Windows synthetic host
+  `--cursor-shapes` cycles an arrow, an inverting I-beam and hidden every 2 s.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture
@@ -945,7 +956,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
   `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
   `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
-  `$TMPDIR/VantageSynthetic/WindowsHostState`), and `--pairing-code-rearm <s>`. Loopback is always
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, and `--cursor-shapes`. Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.

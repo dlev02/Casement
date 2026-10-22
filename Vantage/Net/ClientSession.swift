@@ -54,7 +54,12 @@ final class ClientSession {
 
     /// Called with each decoded video message (config/frame) so the renderer can consume it.
     var onVideo: ((Message) -> Void)?
+    /// Where the host's pointer is and whether it shows (hosts with `cursorShapes` only).
     var onCursor: ((CursorPosition) -> Void)?
+    /// The host's pointer for this view to draw itself, so it moves with the mouse at once instead
+    /// of a video frame later; nil when the host draws it into the video (every Mac, older PCs).
+    /// Reset to nil at each sign-in; a host with `cursorShapes` sends one when the stream starts.
+    var onCursorShape: ((CursorShape?) -> Void)?
     var onClipboard: ((ClipboardPayload) -> Void)?
     var onDictationResult: ((DictationResult) -> Void)?
     /// Mac audio (`audioConfig`, then `audioPacket`s) for the player. Only flows after
@@ -311,7 +316,7 @@ final class ClientSession {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true))
+                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true))
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -332,6 +337,7 @@ final class ClientSession {
             displays = result.displays ?? []
             capabilities = result.capabilities
             if let platform = result.capabilities?.platform { hostPlatform = platform }
+            onCursorShape?(nil) // until the host sends the pointer it leaves out of the video
             return (true, result.sessionToken)
         case .pairingRequired, .badPairingCode:
             pairingError = result.status == .badPairingCode
@@ -358,6 +364,8 @@ final class ClientSession {
             onVideo?(message)
         case .cursorPosition(let position):
             onCursor?(position)
+        case .cursorShape(let shape):
+            onCursorShape?(shape)
         case .clipboard(let payload):
             onClipboard?(payload)
         case .streamConfig(let config):

@@ -92,6 +92,7 @@ public sealed class HostSessionCore
     private DateTimeOffset _lastWakeForInput = DateTimeOffset.MinValue;
     private IInputSink? _input;
     private IDisposable? _clipboardWatch;
+    private IDisposable? _cursorWatch;
     private IDisposable? _statusWatch;
     private IDisposable? _keepAwake;
     private HostStatus? _lastStatus;
@@ -317,6 +318,7 @@ public sealed class HostSessionCore
                 FileTransfer = _clientTakesFiles ? true : null,
                 FilesOnlySessions = _clientTakesFiles ? true : null,
                 Platform = _env.Platform,
+                CursorShapes = _env.Cursor is not null ? true : null,
             },
         }).ConfigureAwait(false);
         _log.LogInformation("client authenticated: {Client}", hello.ClientName);
@@ -499,7 +501,11 @@ public sealed class HostSessionCore
         };
         var fps = Math.Clamp(select.TargetFPS, 1, 60);
         var hello = _hello!;
-        var capture = await _env.Screen.StartAsync(new CaptureRequest(chosen, fps), OnCapturedFrame, OnCaptureStopped, CancellationToken.None).ConfigureAwait(false);
+        // A client that draws the pointer itself gets it at its own frame rate, the way Remote
+        // Desktop does; leaving it out of the video also stops a moving pointer from costing frames.
+        var localCursor = hello.Features?.LocalCursor == true && _env.Cursor is not null;
+        var capture = await _env.Screen.StartAsync(new CaptureRequest(chosen, fps, IncludesCursor: !localCursor), OnCapturedFrame, OnCaptureStopped,
+                                                   CancellationToken.None).ConfigureAwait(false);
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
         _adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
         _currentFps = fps;
@@ -538,12 +544,23 @@ public sealed class HostSessionCore
         }
         if (_env.Clipboard.Read() is { IsEmpty: false } initial) _connection.PostBulk(initial);
 
+        _cursorWatch?.Dispose();
+        _cursorWatch = localCursor ? _env.Cursor!.Watch(chosen, state => _queue.Post(() => SendCursor(state))) : null;
+
         await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = VideoCodec.H264, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
         _needsKeyframe = true;
         StartWatchdog(); // a capture that never sends a frame counts as failed after 5 s
         _listener.SessionChanged();
         _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}); stream setup took {Ms} ms",
                             chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+    }
+
+    /// <summary>The pointer's look first, then where it is and whether it shows, on the control lane.</summary>
+    private void SendCursor(CursorState state)
+    {
+        if (State != SessionState.Streaming || _cursorWatch is null) return;
+        if (state.Shape is { } shape) _connection.Post(shape);
+        _connection.Post(new CursorPosition { X = state.X, Y = state.Y, IsVisible = state.IsVisible });
     }
 
     private void OnCapturedFrame(ICapturedFrame frame)
@@ -972,6 +989,8 @@ public sealed class HostSessionCore
     {
         var capture = _capture;
         var encoder = _encoder;
+        _cursorWatch?.Dispose();
+        _cursorWatch = null;
         _capture = null;
         _encoder = null;
         _encoderSink = null;
@@ -1056,6 +1075,7 @@ public sealed class HostSessionCore
                     _input = null;
                 }
                 _clipboardWatch?.Dispose();
+                _cursorWatch?.Dispose();
                 _statusWatch?.Dispose();
                 _keepAwake?.Dispose();
             }

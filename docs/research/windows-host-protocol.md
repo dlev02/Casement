@@ -16,7 +16,9 @@ Things that differ from what one might assume:
    kVK before sending (`HIDKeyMap`, called from `Vantage/Input/InputController.swift`). A Windows
    host needs a kVK → Windows scan code table (§7.5).
 2. **The Mac host never sends `cursorPosition` or `cursorShape`.** The cursor is drawn into the
-   video (`ScreenCapture.swift`: `showsCursor = true`), and the client never sets `onCursor`.
+   video (`ScreenCapture.swift`: `showsCursor = true`). A Windows host may: with
+   `HostCapabilities.cursorShapes` and a client's `features.localCursor`, it leaves the pointer out
+   of the video and sends both, and the client draws the pointer itself.
 3. **Video is AVCC, not Annex-B.** Each NAL unit gets a 4-byte big-endian length prefix, and
    SPS/PPS travel separately in `videoConfig`. The client builds its format description only from
    `videoConfig`; frames that arrive before it are dropped with a keyframe request.
@@ -98,14 +100,14 @@ C→H means client to host; H→C means host to client. "Windows v1" is what the
 | 62 | modifierState | JSON | C→H | never sent by current clients; ignore |
 | 63 | audioRequest | JSON | C→H | never arrives unless `audio` is advertised; don't advertise |
 | 64 | dictationControl | JSON | C→H | gated by `dictationEngines`; don't advertise |
-| 70 | cursorShape | JSON | H→C | **don't send in v1** (the client ignores it) |
+| 70 | cursorShape | JSON | H→C | only to a client with `features.localCursor`, when the host advertises `cursorShapes` |
 | 71 | videoConfig | JSON | H→C | send |
 | 72 | hostStatus | JSON | H→C | send |
 | 73 | audioConfig | JSON | H→C | never send |
 | 74 | dictationResult | JSON | H→C | never send |
 | 80–84 | fileOffer/Accept/Complete/Result/Cancel | JSON | both, file channel only | handle and send |
 | 100 | videoFrame | bin | H→C | send |
-| 101 | cursorPosition | bin | H→C | **don't send in v1** |
+| 101 | cursorPosition | bin | H→C | same rule; the client uses `isVisible` |
 | 102 | audioPacket | bin | H→C | never send |
 | 103 | fileChunkToClient | bin | H→C, file channel | send |
 | 120 | pointerEvent | bin | C→H | handle |
@@ -296,7 +298,7 @@ is tolerated by VideoToolbox; drop it if decoding misbehaves. The client feeds `
 to `AVSampleBufferDisplayLayer` under the format description built from the last `videoConfig`,
 marked display-immediately.
 
-**cursorPosition (101)**: `x f32 | y f32 | isVisible u8` = 9 bytes, in display points. Not sent in v1.
+**cursorPosition (101)**: `x f32 | y f32 | isVisible u8` = 9 bytes, in display points. Sent with `cursorShape` (see CLAUDE.md, Local pointer).
 
 **pointerEvent (120, C→H)**: 15 bytes.
 

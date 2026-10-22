@@ -11,8 +11,10 @@ import VantageCore
 ///
 /// The pointer always points absolutely through `PointerMapping`, so the picture's edges are the
 /// Mac's edges: the last point of the view is the Mac's last row or column, and a drag that
-/// leaves the view keeps arriving here and pins to the edge. The local cursor is blank over the
-/// picture (the Mac draws its own pointer into the video) and normal over the SwiftUI overlays
+/// leaves the view keeps arriving here and pins to the edge. Over the picture the local cursor is
+/// the host's own pointer when the host sends its look (a PC: `cursorShape`, left out of the
+/// video), so it moves with the mouse like Remote Desktop's, and blank otherwise (a Mac draws its
+/// pointer into the video); it's normal over the SwiftUI overlays
 /// on top (the control strip, notices), where moves aren't sent. Nothing is sent while View Only
 /// is on, while locked, or for events the host posted itself (`isFromVantageHost`).
 final class RemoteInteractionNSView: NSView {
@@ -38,7 +40,11 @@ final class RemoteInteractionNSView: NSView {
     private var heldButtons: Set<PointerButton> = []
     private var scroll = ScrollTranslator()
     private var trackingArea: NSTrackingArea?
-    private var showsBlankCursor = false
+    private var shownCursor: NSCursor?
+    private var isOverPicture = false
+    /// The host's pointer as an `NSCursor`, rebuilt when its image or the picture's scale changes.
+    private var remoteCursor: NSCursor?
+    private var remoteCursorKey: (image: CGImage, scale: CGFloat)?
 
     init(input: InputController, displayLayer: AVSampleBufferDisplayLayer) {
         self.input = input
@@ -50,6 +56,7 @@ final class RemoteInteractionNSView: NSView {
         layer?.addSublayer(displayLayer)
         keyboard.view = self
         keyboard.onLostKeyboard = { [weak self] in self?.releaseButtons() }
+        input.onLocalCursorChange = { [weak self] in self?.updateRemoteCursor() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -66,6 +73,7 @@ final class RemoteInteractionNSView: NSView {
         displayLayer.frame = bounds
         CATransaction.commit()
         input.viewSize = bounds.size
+        updateRemoteCursor()
     }
 
     override func viewDidChangeBackingProperties() {
@@ -114,12 +122,35 @@ final class RemoteInteractionNSView: NSView {
         updateCursor(overPicture: false)
     }
 
-    /// Blank over the picture while input goes to the Mac; the arrow everywhere else.
+    /// Over the picture while input goes to the host: its pointer when it sends one, else blank.
+    /// The arrow everywhere else.
     private func updateCursor(overPicture: Bool) {
-        let blank = overPicture && sendsInput
-        guard blank != showsBlankCursor else { return }
-        showsBlankCursor = blank
-        (blank ? Self.blankCursor : NSCursor.arrow).set()
+        isOverPicture = overPicture
+        let wanted: NSCursor = overPicture && sendsInput
+            ? (input.localCursorVisible ? remoteCursor : nil) ?? Self.blankCursor
+            : .arrow
+        guard wanted !== shownCursor else { return }
+        shownCursor = wanted
+        wanted.set()
+    }
+
+    /// Called after every pointer move too, so it only rebuilds when something changed (this
+    /// Mac's own cursor already sits where the move went).
+    private func updateRemoteCursor() {
+        guard let cursor = input.localCursor else {
+            remoteCursor = nil
+            remoteCursorKey = nil
+            updateCursor(overPicture: isOverPicture)
+            return
+        }
+        let scale = LocalCursor.drawScale(pictureScale: input.pointerMapping.pictureScale)
+        if remoteCursorKey?.image !== cursor.image || remoteCursorKey?.scale != scale {
+            let size = NSSize(width: cursor.size.width * scale, height: cursor.size.height * scale)
+            remoteCursor = NSCursor(image: NSImage(cgImage: cursor.image, size: size),
+                                    hotSpot: NSPoint(x: cursor.hotspot.x * scale, y: cursor.hotspot.y * scale))
+            remoteCursorKey = (cursor.image, scale)
+        }
+        updateCursor(overPicture: isOverPicture)
     }
 
     private static let blankCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)

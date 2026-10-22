@@ -1,6 +1,30 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 import VantageCore
+
+/// The host's pointer as this device draws it: a PC sends its look (`cursorShape`) and leaves it
+/// out of the video, so the pointer moves the moment the mouse does, the way Remote Desktop's
+/// does, rather than a capture, encode, network trip and decode later.
+nonisolated struct LocalCursor: @unchecked Sendable {
+    let image: CGImage
+    /// In host display points.
+    let size: CGSize
+    let hotspot: CGPoint
+
+    init?(_ shape: CursorShape) {
+        guard shape.widthPoints > 0, shape.heightPoints > 0,
+              let source = CGImageSourceCreateWithData(shape.pngData as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        self.image = image
+        size = CGSize(width: shape.widthPoints, height: shape.heightPoints)
+        hotspot = CGPoint(x: shape.hotspotX, y: shape.hotspotY)
+    }
+
+    /// How big to draw it for a picture scaled by `pictureScale`: with the picture, but never so
+    /// small it's hard to find nor larger than the host's own size by much.
+    static func drawScale(pictureScale: CGFloat) -> CGFloat { min(max(pictureScale, 0.75), 1.25) }
+}
 
 /// Translates client-side gestures/keys into wire input events, tracking the pointer position
 /// for both touch (absolute) and trackpad (relative) modes and normalizing to the streamed
@@ -35,6 +59,26 @@ final class InputController {
 
     var send: ((Message) -> Void)?
 
+    /// The host's pointer when this device draws it (nil: it's in the video).
+    private(set) var localCursor: LocalCursor?
+    /// The host hides its pointer (a game, typing): don't draw ours either.
+    private(set) var localCursorVisible = true
+    /// The session view redraws the pointer: after every move this controller sends, and when the
+    /// shape or visibility changes.
+    var onLocalCursorChange: (() -> Void)?
+
+    func setCursorShape(_ shape: CursorShape?) {
+        localCursor = shape.flatMap(LocalCursor.init)
+        if shape == nil { localCursorVisible = true }
+        onLocalCursorChange?()
+    }
+
+    func setCursorVisible(_ visible: Bool) {
+        guard visible != localCursorVisible else { return }
+        localCursorVisible = visible
+        onLocalCursorChange?()
+    }
+
     // MARK: Pointer
 
     /// Absolute move to a point in the client view (pointer, Pencil, direct-touch tap/drag). Points
@@ -65,6 +109,7 @@ final class InputController {
 
     private func emitPointer(action: PointerAction, button: PointerButton, clickCount: Int, modifiers: KeyModifiers) {
         send?(.pointerEvent(PointerEvent(action: action, button: button, x: Float(cursorPoint.x), y: Float(cursorPoint.y), clickCount: UInt8(max(1, clickCount)), modifiers: modifiers)))
+        if localCursor != nil { onLocalCursorChange?() }
     }
 
     // MARK: Scroll

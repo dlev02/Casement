@@ -51,12 +51,17 @@ public struct ClientFeatures: Codable, Sendable, Equatable {
     /// session without a stream, so the client checks `HostCapabilities.filesOnlySessions`
     /// before relying on it and hangs up if it's missing.
     public var filesOnly: Bool?
+    /// The client can draw the host's pointer itself (`cursorShape`, `cursorPosition`). A host
+    /// with `HostCapabilities.cursorShapes` then leaves the pointer out of the video, so it moves
+    /// at the client's own frame rate instead of a capture-encode-decode round trip later.
+    public var localCursor: Bool?
 
-    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil, localCursor: Bool? = nil) {
         self.dictation = dictation
         self.macAudio = macAudio
         self.fileTransfer = fileTransfer
         self.filesOnly = filesOnly
+        self.localCursor = localCursor
     }
 }
 
