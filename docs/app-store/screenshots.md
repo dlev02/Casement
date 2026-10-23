@@ -10,6 +10,7 @@ app. Captions or a frame are allowed if the app is still the subject.
 | --- | --- | --- | --- | --- |
 | iPhone | **6.9" (Dynamic Island, large)** | 1320 × 2868 portrait / 2868 × 1320 landscape (1290 × 2796 and 1260 × 2736 are also accepted) | iPhone 17 Pro Max or 18 Pro Max simulator. The local "Vesper Screens iPhone 17 Pro Max" sim captures exactly 1320 × 2868 (measured). | Apple's page names the **6.3" (Dynamic Island, medium)** size as the required iPhone set, at 1206 × 2622 or 1179 × 2556. It falls back to scaled large-display shots, so a 6.9" set alone should satisfy it. If App Store Connect still asks, recapture the same shots on the iPhone 18 Pro simulator. |
 | iPad | **13"** | 2752 × 2064 landscape (or 2064 × 2752 portrait; 2732 × 2048 also accepted) | iPad Pro 13-inch (M4/M5) simulator; measured 2064 × 2752 portrait | Required because the app runs on iPad. Use landscape: a remote desktop is landscape. |
+| iPhone Duo | **iPhone Duo** (`APP_IPHONE_DUO`) | 2007 × 2853 portrait / 2853 × 2007 landscape (inner display); 1398 × 2034 / 2034 × 1398 (outer display). Read with `asc screenshots sizes --all`, 2026-10-22. | iPhone Duo simulator on the iOS 27.1 runtime (the only runtime that takes it). `simctl io … screenshot` defaults to the inner display; add `--display=primary` for the outer one. | Its own set, beside the 6.9" one. The set uses 2007 × 2853 throughout; the frames place outer-display captures inside it. |
 | Mac | **16:10** | 2880 × 1800 (or 2560 × 1600, 1440 × 900, 1280 × 800) | A Debug Mac build on this Mac, window captured and placed on a 2880 × 1800 canvas | Required for the Mac version. |
 | Apple Vision Pro | **3840 × 2160** | 3840 × 2160 only | "Vantage Vision Pro" simulator (visionOS 27) | Required for the visionOS version. Check the simulator's capture size (`xcrun simctl io <sim> screenshot`). If it isn't 3840 × 2160, place the capture on a 3840 × 2160 canvas without stretching it. |
 
@@ -83,6 +84,26 @@ swapped for something neutral.
 Mixing orientations in one set is allowed, but the product page shows every shot at its own
 shape. If the mix looks uneven, make all of them portrait and drop shot 1's landscape session in
 favor of the portrait device list.
+
+## iPhone Duo 2007 × 2853 (5 shots, uploaded 2026-10-22)
+
+The finished set is `screenshots/iphone-duo/`; the page that frames it is
+`screenshots/iphone-duo/frames/frames.html` (one slide per `#n`), the simulator captures are in
+`frames/captures/`, and `frames/render.sh` renders all five with headless Chrome. Same look as the
+other sets: lavender and navy surfaces, a blue eyebrow, a bold two-line headline.
+
+| # | Caption | Pose | Screen | Staging |
+| --- | --- | --- | --- | --- |
+| 1 | **Fold it into a laptop.** "Your Mac on top, a keyboard below." | Half folded (tabletop) | Mac session above the fold; strip, deck switch and the full keyboard below. Drawn as a laptop: the capture is split at the fold and the lower half laid on the desk in perspective. | `-vantage.tabletopDeck keyboard`, synthetic host with a 1338 × 910 pt `mac-desktop.html` render (the upper half's shape) |
+| 2 | **Your computer, in your pocket.** | Closed | Outer display: Mac session with the three-row strip. The device runs off the top: the outer display letterboxes the Mac above the picture. | Same host, auto-connect |
+| 3 | **All your computers in one place.** | Closed | Device list with live Available dots on two rows | `-vantage.savedDevices <hex> -VantageReadOnlyDevices 1` listing `studio-mac.localhost:47881` and `gaming-pc.localhost:47882` (both synthetic hosts) plus two `example.ts.net` entries |
+| 4 | **Your Windows PC, too.** | Half folded | PC session with the keyboard showing ctrl, alt and win | Second synthetic host with `--platform windows` and `pc-desktop.html` |
+| 5 | **Files, both ways.** | Closed | Transfers sheet with a multi-file summary | `-VantageOpenScreen transfers` |
+
+Poses only change from Device Hub (Xcode › Open Developer Tool › Device Hub): no `simctl` or
+`devicectl` command opens, closes or folds the Duo. An open-flat shot (the session across the
+whole inner display) isn't in this set yet; add it as shot 2 when a capture exists. Tabletop's
+"Keyboard and Trackpad" deck shortens Caps Lock to "caps l…" at this width, so it isn't used.
 
 ## Mac 2880 × 1800 (5 shots)
 
