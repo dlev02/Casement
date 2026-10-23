@@ -21,7 +21,13 @@ struct RemoteSessionScreen: View {
     @State private var stickyModifiers: KeyModifiers = []
     @State private var showKeyboard = false
     @State private var hasVideo = false
-    @State private var viewportSize = CGSize(width: 1210, height: 834)
+    /// The whole screen, under the safe area.
+    @State private var screenSize = CGSize(width: 1210, height: 834)
+    @State private var screenInsets = EdgeInsets()
+    /// An iPhone Duo set up like a laptop: the picture above the fold, keyboard and trackpad below.
+    @State private var foldedLikeALaptop: TabletopLayout?
+    @AppStorage(TabletopDeckMode.enabledKey) private var tabletopEnabled = true
+    private var tabletop: TabletopLayout? { tabletopEnabled ? foldedLikeALaptop : nil }
     @Environment(\.displayScale) private var displayScale
     @AppStorage("vantage.trackpadSensitivity") private var trackpadSensitivity = 1.5
     @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
@@ -87,6 +93,9 @@ struct RemoteSessionScreen: View {
     #endif
 
     private var isLive: Bool { session.state == .connected && hasVideo }
+    /// What the host fits its picture to: the screen, or the half above the fold in tabletop (so a
+    /// virtual display takes that shape and fills it).
+    private var viewportSize: CGSize { tabletop?.picture.size ?? screenSize }
     #if os(visionOS)
     /// The Mac display's width over its height (16:10 until the host says which display).
     private var visionPictureAspect: CGFloat {
@@ -107,7 +116,14 @@ struct RemoteSessionScreen: View {
 
     var body: some View {
         ZStack {
-            #if !os(visionOS) // the window's glass frames the picture there
+            #if os(iOS)
+            Color.black.ignoresSafeArea()
+                .onGeometryChange(for: TabletopLayout?.self) { proxy in
+                    if #available(iOS 27.1, *) { TabletopLayout(proxy) } else { nil }
+                } action: { layout in
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.4)) { foldedLikeALaptop = layout }
+                }
+            #elseif !os(visionOS) // the window's glass frames the picture there
             Color.black.ignoresSafeArea()
             #endif
 
@@ -123,6 +139,9 @@ struct RemoteSessionScreen: View {
                     .aspectRatio(visionPictureAspect, contentMode: .fit)
                     .clipShape(.rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
                     #else
+                    // The half above the fold in tabletop; nil sizes fill the screen as always.
+                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea()
                     #endif
             }
@@ -134,6 +153,7 @@ struct RemoteSessionScreen: View {
 
             if let screenNote {
                 MacScreenNote(kind: screenNote, host: host, isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
+                    .padding(.bottom, belowPicture)
                     .transition(.opacity)
             } else if !isLive {
                 connectionOverlay
@@ -185,6 +205,7 @@ struct RemoteSessionScreen: View {
                         .padding(.bottom, 16)
                 }
             }
+            .padding(.bottom, belowPicture)
             #if os(visionOS)
             // The control strip is an ornament under the window; the dictation panel floats over
             // the bottom of the Mac, just above it.
@@ -195,7 +216,12 @@ struct RemoteSessionScreen: View {
                     .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
             }
             #else
-            if session.state == .connected && (!controlsHidden || isDictationActive) {
+            #if os(iOS)
+            if session.state == .connected, let tabletop {
+                tabletopDeck(tabletop)
+            }
+            #endif
+            if session.state == .connected && tabletop == nil && (!controlsHidden || isDictationActive) {
                 GeometryReader { geometry in
                     // The dictation panel stacks on the strip's inner side, so it stays in the
                     // corner the user chose and keeps the middle of the Mac visible.
@@ -290,6 +316,13 @@ struct RemoteSessionScreen: View {
         #endif
         // The picture fills the whole screen, under the safe area, so the viewport the host
         // fits to is that size too (an iPhone Duo's side bar and camera make the insets uneven).
+        .onGeometryChange(for: EdgeInsets.self) { proxy in
+            #if os(iOS)
+            proxy.safeAreaInsets
+            #else
+            EdgeInsets()
+            #endif
+        } action: { screenInsets = $0 }
         .onGeometryChange(for: CGSize.self) { proxy in
             #if os(iOS)
             let insets = proxy.safeAreaInsets
@@ -298,7 +331,7 @@ struct RemoteSessionScreen: View {
             #else
             return proxy.size
             #endif
-        } action: { viewportSize = $0 }
+        } action: { screenSize = $0 }
         // Once a fold, rotation, or resize has settled, so a live resize asks once, not per frame.
         .task(id: viewportSize) {
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
@@ -493,9 +526,42 @@ struct RemoteSessionScreen: View {
         #if os(visionOS)
         true // the strip is an ornament under the window
         #else
-        !toolbarDock.isTop || controlsHidden
+        !toolbarDock.isTop || controlsHidden || tabletop != nil
         #endif
     }
+
+    /// How far the bottom of the safe area sits below the picture: the deck's share in tabletop,
+    /// so banners and notes stay on the half that stands up.
+    private var belowPicture: CGFloat {
+        guard let tabletop else { return 0 }
+        return max(0, screenSize.height - screenInsets.bottom - tabletop.picture.maxY)
+    }
+
+    #if os(iOS)
+    /// Tabletop: the strip, keyboard and trackpad on the half on the desk, and dictation's panel
+    /// over the bottom of the picture, where it can be read.
+    private func tabletopDeck(_ layout: TabletopLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            dictationPanel
+                .frame(maxWidth: 520)
+                .frame(width: layout.picture.width, height: layout.picture.height, alignment: .bottom)
+                .padding(.bottom, 12)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
+            TabletopDeck(input: input, stickyModifiers: $stickyModifiers, host: hostPlatform,
+                         onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
+                if !controlsHidden { controlStrip }
+            }
+            // The container already stops above the home indicator.
+            .padding(EdgeInsets(top: 0, leading: max(16, screenInsets.leading), bottom: 12,
+                                trailing: max(16, screenInsets.trailing)))
+            .frame(width: layout.deck.width, height: layout.deck.height)
+            .offset(y: layout.deck.minY)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea()
+        .transition(.opacity)
+    }
+    #endif
 
     /// Banners slide down from the top, or just fade with Reduce Motion.
     private var bannerTransition: AnyTransition {

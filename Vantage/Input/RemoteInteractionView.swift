@@ -5,9 +5,14 @@ import VantageCore
 
 /// The core interaction surface: hosts the video layer and captures touch, trackpad/mouse pointer,
 /// scroll, and hardware keyboard input, forwarding everything through `InputController`.
+///
+/// Without a display layer it's a trackpad of its own (the lower half of an iPhone Duo set up
+/// like a laptop): the same finger gestures as Trackpad mode, always relative, and nothing about
+/// the picture (its size, the local pointer, a mouse's absolute position) is taken from it.
 final class RemoteInteractionView: UIView {
     let input: InputController
-    private let displayLayer: AVSampleBufferDisplayLayer
+    private let displayLayer: AVSampleBufferDisplayLayer?
+    private var isTrackpadSurface: Bool { displayLayer == nil }
     /// The host's pointer, drawn here when the host leaves it out of the video (a PC): it follows
     /// the pointer in the same frame, the way Remote Desktop's does.
     private let cursorLayer = CALayer()
@@ -36,29 +41,33 @@ final class RemoteInteractionView: UIView {
         // you. The touch mode setting is an iPad concept.
         true
         #else
-        input.mode == .direct || isPencilTouch
+        !isTrackpadSurface && (input.mode == .direct || isPencilTouch)
         #endif
     }
 
-    init(input: InputController, displayLayer: AVSampleBufferDisplayLayer) {
+    init(input: InputController, displayLayer: AVSampleBufferDisplayLayer?) {
         self.input = input
         self.displayLayer = displayLayer
         super.init(frame: .zero)
+        setupGestures()
+        // One element for VoiceOver, touched directly: gestures on the picture go to the Mac
+        // rather than being read out.
+        isAccessibilityElement = true
+        accessibilityTraits = .allowsDirectInteraction
+        guard let displayLayer else {
+            accessibilityLabel = "Trackpad"
+            return
+        }
         backgroundColor = .black
         layer.addSublayer(displayLayer)
         cursorLayer.isHidden = true
         cursorLayer.contentsGravity = .resize
         layer.addSublayer(cursorLayer)
         input.onLocalCursorChange = { [weak self] in self?.updateLocalCursor() }
-        setupGestures()
         setupPointer()
         #if !os(visionOS)
         addInteraction(UIPencilInteraction(delegate: self))
         #endif
-        // One element for VoiceOver, touched directly: gestures on the picture go to the Mac
-        // rather than being read out.
-        isAccessibilityElement = true
-        accessibilityTraits = .allowsDirectInteraction
         #if DEBUG
         if ClientOptions.pointerProbe {
             accessibilityIdentifier = "session.pointerProbe"
@@ -94,6 +103,7 @@ final class RemoteInteractionView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        guard let displayLayer else { return }
         displayLayer.frame = bounds
         input.viewSize = bounds.size
         updateLocalCursor()
@@ -391,6 +401,7 @@ final class RemoteInteractionView: UIView {
     /// Moves the pointer, then emits a down or up for every button whose state changed. Motion with
     /// a button held only arrives here, which is what makes right- and middle-button drags work.
     private func updateButtons(mask: UIEvent.ButtonMask, touch: UITouch) {
+        guard !isTrackpadSurface else { return } // a mouse points at the picture, not at the pad
         let location = touch.location(in: self)
         let clickCount = max(1, touch.tapCount)
         input.moveAbsolute(viewPoint: location, action: .move, button: .left, clickCount: 1, modifiers: heldModifiers)
