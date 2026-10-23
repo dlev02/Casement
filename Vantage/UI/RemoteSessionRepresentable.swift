@@ -56,3 +56,20 @@ final class RemoteSessionViewController: UIViewController {
     // nil) — and if SwiftUI ever started asking, every mouse would stop moving the Mac's pointer.
 }
 #endif
+
+#if os(iOS)
+/// A trackpad of its own beside the picture (an iPhone Duo set up like a laptop): Trackpad mode's
+/// gestures, always relative, whatever the touch mode says about the picture.
+struct TrackpadSurface: UIViewRepresentable {
+    let input: InputController
+    let stickyModifiers: KeyModifiers
+
+    func makeUIView(context: Context) -> RemoteInteractionView {
+        RemoteInteractionView(input: input, displayLayer: nil)
+    }
+
+    func updateUIView(_ view: RemoteInteractionView, context: Context) {
+        view.setStickyModifiers(stickyModifiers)
+    }
+}
+#endif

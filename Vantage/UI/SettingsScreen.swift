@@ -91,6 +91,8 @@ struct ControlSettings: View {
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
     @AppStorage(Haptic.settingKey) private var haptics = true
+    @AppStorage(TabletopDeckMode.enabledKey) private var tabletopLayout = true
+    @AppStorage(TabletopDeckMode.defaultsKey) private var tabletopDeck = TabletopDeckMode.trackpad
     @AppStorage(MacKeyboardSettings.captureShortcutsKey) private var captureShortcuts = true
     @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapCommandControl = false
 
@@ -185,6 +187,24 @@ struct ControlSettings: View {
             } footer: {
                 Text("Choose which controls show and in what order. A Mac or PC can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
             }
+
+            #if os(iOS)
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                Section {
+                    Toggle("Laptop Layout", isOn: $tabletopLayout)
+                    Picker("Lower Half", selection: $tabletopDeck) {
+                        ForEach(TabletopDeckMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.symbol).tag(mode)
+                        }
+                    }
+                    .disabled(!tabletopLayout)
+                } header: {
+                    Text("Folded Like a Laptop")
+                } footer: {
+                    Text("On an iPhone that folds, standing the top half up like a laptop moves the screen to the top half and the controls, a trackpad, and a keyboard to the half on the desk. You can switch what the lower half shows during the session too.")
+                }
+            }
+            #endif
 
             if Haptics.isSupported {
                 Section {
