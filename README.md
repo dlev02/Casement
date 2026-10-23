@@ -34,6 +34,12 @@
   </tr>
 </table>
 
+<p align="center">
+  <img src="docs/images/iphone-duo-laptop.png" width="480" alt="Casement on a half-folded iPhone Duo: a Mac's screen on the upper half and a full keyboard with the control strip on the lower half">
+  <br>
+  <sub>Half fold an iPhone Duo and it becomes a laptop: your Mac on top, a keyboard or trackpad below.</sub>
+</p>
+
 <sub>Screenshots show made-up desktops streamed from a test host.</sub>
 
 ## Getting Casement
