@@ -29,7 +29,8 @@ pushed to App Store Connect as drafts (nothing submitted).
 | [`export-compliance.md`](export-compliance.md) | Why `ITSAppUsesNonExemptEncryption = NO` is right and where it's set |
 | [`app-review.md`](app-review.md) | Review notes (3,266 of 4,000 bytes), the Guideline 4.2.7 check, ranked App Review risks, the user-facing string sweep |
 | [`pricing-availability.md`](pricing-availability.md) | Content rights, Free, territories (exclude China mainland), EU trader status, other App Information fields |
-| [`screenshots.md`](screenshots.md) | Required sizes for iPhone, iPad, Mac, and Vision Pro, shots with captions, and the debug flags that stage each one |
+| [`screenshots.md`](screenshots.md) | Required sizes for iPhone, iPhone Duo, iPad, Mac, and Vision Pro, shots with captions, and the debug flags that stage each one |
+| [`screenshots/`](screenshots) | The uploaded sets, one folder per display type; `iphone-duo/frames/` has the page, captures and script that make the iPhone Duo set |
 | [`naming.md`](naming.md) | The rename research that chose Casement |
 | [`check-lengths.py`](check-lengths.py) | Counts every limited field: `python3 -I docs/app-store/check-lengths.py` |
 

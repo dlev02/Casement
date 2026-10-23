@@ -1,0 +1,103 @@
+<!doctype html>
+<!-- App Store frames for iPhone Duo (APP_IPHONE_DUO), 2007 x 2853 portrait, the inner display's size.
+     One slide per render: frames.html#1 … #5 (render.sh does all of them).
+     captures/ holds the simulator screenshots: tabletop-* are the inner display (2007 x 2853) half
+     folded like a laptop, closed-* the outer display (1398 x 2034). Made-up desktops only. -->
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:2007px;height:2853px;overflow:hidden}
+body{font-family:-apple-system,"SF Pro Display",system-ui;-webkit-font-smoothing:antialiased;position:relative}
+.slide{position:absolute;inset:0;overflow:hidden;display:none}
+.slide.on{display:block}
+/* The kit's two surfaces (see the iPhone and iPad sets): light lavender with blue glows, and deep navy. */
+.light{background:
+  radial-gradient(1100px 900px at 0% 0%,#a9bcf1 0%,rgba(169,188,241,0) 70%),
+  radial-gradient(1000px 1100px at 105% 92%,#aebfec 0%,rgba(174,191,236,0) 70%),
+  linear-gradient(180deg,#ebeff7,#e2e7f0 60%,#dbe0ea)}
+.dark{background:
+  radial-gradient(1200px 900px at 0% 0%,#14307a 0%,rgba(20,48,122,0) 70%),
+  radial-gradient(1100px 1000px at 100% 100%,#0d2a78 0%,rgba(13,42,120,0) 70%),
+  linear-gradient(180deg,#0a1840,#050f2f 55%,#000525)}
+.cap{position:absolute;left:0;right:0;top:230px;text-align:center}
+.eyebrow{font:600 54px/1 -apple-system,"SF Pro Text";letter-spacing:.09em;text-transform:uppercase;color:#2352e0}
+.dark .eyebrow{color:#8caeff}
+h1{margin-top:44px;font-weight:700;font-size:190px;line-height:1.0;letter-spacing:-.035em;color:#0b1324}
+.dark h1{color:#fff}
+.sub{margin-top:44px;font-size:64px;line-height:1.25;color:#3d4660;letter-spacing:-.01em}
+.dark .sub{color:#b9c6e8}
+
+/* Device frames: a dark body with a thin titanium edge. */
+.dev{position:absolute;background:#16171a;border-radius:var(--r);padding:var(--b);
+  box-shadow:0 0 0 5px #9a9ea6,0 0 0 9px #3a3c42,0 70px 140px rgba(10,20,60,.35),0 20px 50px rgba(10,20,60,.25)}
+.dark .dev{box-shadow:0 0 0 5px #6f7480,0 0 0 9px #26282e,0 70px 160px rgba(0,0,0,.6)}
+.dev img{display:block;width:100%;height:auto;border-radius:calc(var(--r) - var(--b))}
+/* Closed: the outer display. */
+.closed{--r:150px;--b:34px;width:1420px;left:294px;top:900px}
+/* The inner display held upright, with the fold across the middle. */
+.inner{--r:120px;--b:30px;width:1560px;left:224px;top:930px}
+.inner .crease{position:absolute;left:var(--b);right:var(--b);top:50%;height:6px;margin-top:-3px;
+  background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.18),rgba(0,0,0,.35),rgba(255,255,255,0))}
+
+/* Half folded like a laptop: the lid stands up, the deck lies on the desk toward you. */
+.scene{position:absolute;left:50%;top:900px;width:var(--w);margin-left:calc(var(--w) / -2);
+  perspective:7000px;perspective-origin:50% -40%;--w:1600px}
+.lid,.deck{position:absolute;left:0;width:var(--w);background:#16171a;padding:28px;
+  box-shadow:0 0 0 5px #9a9ea6,0 0 0 9px #3a3c42}
+.lid{top:0;border-radius:104px 104px 0 0;padding-bottom:0;transform-origin:50% 100%;transform:rotateX(7deg)}
+.deck{border-radius:0 0 104px 104px;padding-top:0;transform-origin:50% 0%;transform:rotateX(64deg)}
+.hinge{position:absolute;left:-9px;right:-9px;height:16px;border-radius:8px;
+  background:linear-gradient(180deg,#c3c7cf,#7d828c 55%,#4a4d55)}
+.scr{width:100%;overflow:hidden;position:relative}
+.lid .scr{border-radius:76px 76px 0 0}
+.deck .scr{border-radius:0 0 76px 76px}
+.scr img{display:block;width:100%;position:absolute;left:0}
+.glow{position:absolute;left:50%;width:2000px;margin-left:-1000px;height:520px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(20,35,90,.30),rgba(20,35,90,0))}
+</style></head><body>
+
+<!-- 1. Hero: half folded like a laptop, the Mac above the fold, a keyboard below -->
+<section class="slide light" id="s1">
+  <div class="cap"><div class="eyebrow">iPhone Duo</div><h1>Fold it into<br>a laptop.</h1>
+    <div class="sub">Your Mac on top, a keyboard below.</div></div>
+  <div class="glow" style="top:2290px"></div>
+  <div class="scene" data-src="captures/tabletop-keyboard.png"></div>
+</section>
+
+<!-- 2. Closed: the session with the control strip -->
+<section class="slide dark" id="s2">
+  <!-- Device above the caption: the top of the outer display is letterboxing, so it runs off the canvas. -->
+  <div class="dev closed" style="top:-610px;width:1700px;left:153px"><img src="captures/closed-session-strip.png" alt=""></div>
+  <div class="cap" style="top:2000px"><div class="eyebrow">Folded</div><h1>Your computer,<br>in your pocket.</h1></div>
+</section>
+
+<!-- 3. Closed: the device list -->
+<section class="slide light" id="s3">
+  <div class="cap"><div class="eyebrow">Your computers</div><h1>All your computers<br>in one place.</h1></div>
+  <div class="dev closed"><img src="captures/closed-devices.png" alt=""></div>
+</section>
+
+<!-- 4. Half folded on a PC: ctrl, alt and win on the keyboard -->
+<section class="slide dark" id="s4">
+  <div class="cap"><div class="eyebrow">Mac and PC</div><h1>Your Windows<br>PC, too.</h1></div>
+  <div class="dev inner"><img src="captures/tabletop-pc-keyboard.png" alt=""><div class="crease"></div></div>
+</section>
+
+<!-- 5. Files -->
+<section class="slide light" id="s5">
+  <div class="cap"><div class="eyebrow">File transfer</div><h1>Files,<br>both ways.</h1></div>
+  <div class="dev closed"><img src="captures/closed-transfers.png" alt=""></div>
+</section>
+
+<script>
+// The laptop: one inner-display capture (2007 x 2853, portrait) split at the fold.
+for (const scene of document.querySelectorAll('.scene')) {
+  const W = parseFloat(getComputedStyle(scene).getPropertyValue('--w')), pad = 28;
+  const fold = (W - 2 * pad) * 1426.5 / 2007, src = scene.dataset.src;
+  scene.innerHTML =
+    `<div class="lid" style="height:${fold + pad}px"><div class="scr" style="height:${fold}px"><img src="${src}" style="top:0"></div></div>` +
+    `<div class="deck" style="top:${fold + pad}px;height:${fold + pad}px"><div class="scr" style="height:${fold}px"><img src="${src}" style="top:${-fold}px"></div></div>` +
+    `<div class="hinge" style="top:${fold + pad - 8}px"></div>`;
+}
+document.getElementById('s' + ((location.hash || '#1').slice(1))).classList.add('on');
+</script>
+</body></html>
