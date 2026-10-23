@@ -147,10 +147,11 @@ struct ControlStrip: View {
     }
 
     /// The layout in one row where it fits, otherwise in two to five rows split where the
-    /// category changes (see `ControlStripLayout.rows`).
+    /// category changes (see `ControlStripLayout.rows`), or, where whole groups would need
+    /// another row, carrying a group on into the next one.
     private var expanded: some View {
         ViewThatFits(in: .horizontal) {
-            ForEach(rowLayouts, id: \.count) { rows in
+            ForEach(Array(rowLayouts.enumerated()), id: \.offset) { _, rows in
                 rowsView(rows)
             }
         }
@@ -163,13 +164,19 @@ struct ControlStrip: View {
     /// The layout followed by the fixed trailing buttons.
     private var slots: [StripSlot] { items.map(StripSlot.item) + [.menu, .collapse] }
 
-    /// One candidate per row count, dropping counts that can't be filled.
+    /// Candidates from fewest rows to most, dropping counts that can't be filled. Each count
+    /// tries whole groups first, then the same count with a group carried on into the next row,
+    /// so a phone gets three rows rather than four before it gets another row.
     private var rowLayouts: [[[StripSlot]]] {
         let slots = self.slots
         var layouts: [[[StripSlot]]] = []
         for count in 1...5 {
-            let rows = ControlStripLayout.rows(slots, count: count, separatorWeight: 9 / stripButtonSide) { $0.category }
-            if rows.count > (layouts.last?.count ?? 0) { layouts.append(rows) }
+            for splitting in [false, true] {
+                let rows = ControlStripLayout.rows(slots, count: count, separatorWeight: 9 / stripButtonSide,
+                                                   splittingGroups: splitting) { $0.category }
+                guard rows.count == count, !layouts.contains(rows) else { continue }
+                layouts.append(rows)
+            }
         }
         return layouts
     }

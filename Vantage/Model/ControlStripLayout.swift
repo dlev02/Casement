@@ -378,9 +378,14 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
     /// possible. Falls back to splitting anywhere when there are fewer groups than rows. Returns
     /// fewer rows when there aren't enough controls to fill them.
     ///
+    /// `splittingGroups` lets a group carry on into the next row, for a phone too narrow for
+    /// whole groups in few rows: the widest row is still as narrow as possible, then cuts land
+    /// where the category changes wherever they can.
+    ///
     /// Generic so the strip can include its fixed trailing buttons; `separatorWeight` is a
     /// separator's width as a fraction of a button's.
     static func rows<Element>(_ elements: [Element], count: Int, separatorWeight: Double = 0.2,
+                              splittingGroups: Bool = false,
                               category: (Element) -> StripItem.Category) -> [[Element]] {
         guard count > 1, elements.count > 1 else { return elements.isEmpty ? [] : [elements] }
         var groups: [[Element]] = []
@@ -391,7 +396,7 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
                 groups.append([element])
             }
         }
-        let chunks = groups.count >= count ? groups : elements.map { [$0] }
+        let chunks = groups.count >= count && !splittingGroups ? groups : elements.map { [$0] }
         let rowCount = min(count, chunks.count)
 
         func width(_ range: Range<Int>) -> Double {
@@ -401,10 +406,14 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
             return total
         }
 
-        // Smallest widest row first, then the most even split. Small inputs (a strip has a few
-        // dozen controls at most), so plain memoised search is plenty.
-        // Cost is (widest row, sum of squared widths), compared in that order.
-        typealias Cost = (widest: Double, squares: Double)
+        // Smallest widest row first, then the fewest cuts inside a group, then the most even
+        // split. Small inputs (a strip has a few dozen controls at most), so plain memoised
+        // search is plenty.
+        typealias Cost = (widest: Double, splits: Int, squares: Double)
+        /// Whether a cut before `chunk` lands inside a group.
+        func splitsGroup(at chunk: Int) -> Int {
+            category(chunks[chunk - 1].last!) == category(chunks[chunk].first!) ? 1 : 0
+        }
         var memo: [Int: (Cost, [Int])] = [:]
         func best(from start: Int, rows: Int) -> (Cost, [Int]) {
             let key = start * 64 + rows
@@ -412,13 +421,13 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
             var result: (Cost, [Int])
             if rows == 1 {
                 let w = width(start..<chunks.count)
-                result = ((w, w * w), [])
+                result = ((w, 0, w * w), [])
             } else {
-                result = ((.infinity, .infinity), [])
+                result = ((.infinity, .max, .infinity), [])
                 for end in (start + 1)...(chunks.count - rows + 1) {
                     let w = width(start..<end)
                     let (rest, cuts) = best(from: end, rows: rows - 1)
-                    let cost: Cost = (max(w, rest.widest), w * w + rest.squares)
+                    let cost: Cost = (max(w, rest.widest), splitsGroup(at: end) + rest.splits, w * w + rest.squares)
                     if cost < result.0 { result = (cost, [end] + cuts) }
                 }
             }
