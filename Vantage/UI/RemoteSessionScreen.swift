@@ -288,7 +288,22 @@ struct RemoteSessionScreen: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         #endif
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
+        // The picture fills the whole screen, under the safe area, so the viewport the host
+        // fits to is that size too (an iPhone Duo's side bar and camera make the insets uneven).
+        .onGeometryChange(for: CGSize.self) { proxy in
+            #if os(iOS)
+            let insets = proxy.safeAreaInsets
+            return CGSize(width: proxy.size.width + insets.leading + insets.trailing,
+                          height: proxy.size.height + insets.top + insets.bottom)
+            #else
+            return proxy.size
+            #endif
+        } action: { viewportSize = $0 }
+        // Once a fold, rotation, or resize has settled, so a live resize asks once, not per frame.
+        .task(id: viewportSize) {
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            session.updateViewport(currentViewport())
+        }
         .onChange(of: session.state) { _, state in
             if state == .connected {
                 store.markConnected(device)
