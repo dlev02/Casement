@@ -134,6 +134,17 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   description folded into the label made it "Reorder Escape, Esc key" on iOS 27. Tests:
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
+- **iPhone Duo tabletop** (`TabletopDeck.swift`, iOS 27.1): half-folded with the fold running
+  across (the inner display in portrait; open flat in landscape the fold runs top to bottom), the
+  session splits at the fold. `TabletopLayout` comes from the division reserved region
+  (`GeometryProxy.reservedRegions(kind: .division)`, measured on the full-screen black background;
+  the geometry callback fires on fold, so no hinge is read): the picture above, the strip plus
+  `TabletopDeckMode` (trackpad, default; keyboard; both) below, a switch beside the strip, and
+  Settings → Controls → Folded Like a Laptop (`vantage.tabletopLayout`, `vantage.tabletopDeck`).
+  The viewport becomes the upper half, so a Virtual Display Mac fills it. `TrackpadSurface` is a
+  `RemoteInteractionView` with no display layer (always relative, never sets `viewSize`). On the
+  27.1 Duo simulator each half is about 669 × 455 pt; AXe taps don't reach it, the simulator
+  tool's tap does.
 - **Software keyboard**: `SoftwareKeyboardMode` (Unicode Text or Keystrokes). Keystrokes maps
   characters through `CharacterKeyMap` (US layout) to real key events; unmapped characters fall
   back to Unicode text. Held ⌘/⌥/⌃ from the control strip always route through keystrokes.
