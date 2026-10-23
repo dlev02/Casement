@@ -185,6 +185,19 @@ final class ClientSession {
         channel?.sendDetached(message)
     }
 
+    /// The session view changed size: an iPhone Duo folding or unfolding, a rotation, Split View,
+    /// a resized window. Reconnects use the new size, and a Mac that streams a virtual display
+    /// sized to this view is asked for one in the new shape, so the picture fills the screen
+    /// again instead of keeping the old one's shape inside black bars. A Mac's own display has
+    /// its own shape whatever this view's is, so nothing is sent for it.
+    func updateViewport(_ viewport: Viewport) {
+        guard viewport != self.viewport else { return }
+        self.viewport = viewport
+        guard state == .connected, let device, device.useVirtualDisplay == true else { return }
+        send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: .auto,
+                                          preferredCodec: device.preferredCodec, useVirtualDisplay: true)))
+    }
+
     func selectDisplay(_ selection: DisplaySelection, targetFPS: Int, quality: QualityPreset) {
         let codec = device?.preferredCodec
         send(.selectDisplay(SelectDisplay(selection: selection, targetFPS: targetFPS, quality: quality, preferredCodec: codec)))
