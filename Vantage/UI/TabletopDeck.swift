@@ -137,6 +137,9 @@ struct TabletopKeyboard: View {
     let host: HostPlatform
     @Binding var modifiers: KeyModifiers
     let onKey: (UInt16, KeyModifiers) -> Void
+    /// Modifier keys latch and release with the strip's haptics. Other keys stay quiet: no
+    /// haptics for typing, and apps can't follow the system's Keyboard Feedback setting.
+    @State private var modifierTap = ModifierTap()
 
     private static let spacing: CGFloat = 5
 
@@ -149,6 +152,7 @@ struct TabletopKeyboard: View {
                 }
             }
         }
+        .haptic(trigger: modifierTap) { _, tap in tap.latched ? .latch : .unlatch }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Keyboard")
     }
@@ -219,7 +223,9 @@ struct TabletopKeyboard: View {
 
     private func press(_ key: KeyCap) {
         if let modifier = key.modifier {
-            if modifiers.contains(modifier) { modifiers.remove(modifier) } else { modifiers.insert(modifier) }
+            let latched = !modifiers.contains(modifier)
+            if latched { modifiers.insert(modifier) } else { modifiers.remove(modifier) }
+            modifierTap = ModifierTap(count: modifierTap.count + 1, latched: latched)
             return
         }
         onKey(key.code, modifiers)
