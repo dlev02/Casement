@@ -665,7 +665,7 @@ private struct StripContentTransition: Transition {
 }
 
 /// A tap on a sticky modifier: which way it went, and a count so two taps the same way both play.
-private struct ModifierTap: Equatable {
+struct ModifierTap: Equatable {
     var count = 0
     var latched = false
 }
