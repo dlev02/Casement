@@ -313,6 +313,9 @@ struct DeviceListEmptyState: View {
             Button("Add Manually…") { actions.showAddDevice = true }.buttonStyle(.glass)
             Link("Get Casement Host", destination: AppInfo.hostDownloadURL)
         }
+        // A readable measure on wide screens (an unfolded iPhone Duo, an iPad), as Apple's own
+        // empty states keep, rather than one long line from edge to edge.
+        .frame(maxWidth: 460)
     }
 }
 
