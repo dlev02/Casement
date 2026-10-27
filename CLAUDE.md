@@ -36,6 +36,12 @@ groups). Read this before working here.
 | `VantageWidgets` | `VantageWidgets/` | iOS widget extension (`VantageWidgets.entitlements`: the App Group) (WidgetKit + App Intents), embedded in `Vantage` on iOS only (`platformFilters = (ios, )` on the embed file and dependency) |
 | — | `Shared/` | Synced folder compiled into both `Vantage` and `VantageWidgets`: `DeviceCatalog`, `MacEntity`, widget views |
 
+Inside them: the client is `Vantage/{Model, UI, Input, Video, Audio, Dictation, Transfer, Net,
+Intents, Mac}` (`Mac/` is the macOS-only shell); the host `VantageHost/{Engine, Input, System, UI,
+Net, Transfer, Dictation, Parakeet}` (`Engine/` is capture, encode, audio and adaptive bitrate,
+`System/` power, lock, restart and virtual display); VantageCore
+`Sources/VantageCore/{Wire, Messages, Transport, Identity, ScreenSharing, Transfer}`.
+
 The pbxproj is edited by hand: new targets need a `PBXNativeTarget`, build phases, config list,
 product reference, and a `PBXFileSystemSynchronizedBuildFileExceptionSet` for any `Info.plist`
 inside a synced folder (otherwise it lands in Copy Bundle Resources and the build fails with
@@ -340,7 +346,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   engine (`HostTranscriber.paddedForTranscription`). Tests:
   `Tests/HostDictationTests` (stub `mw`; `VANTAGE_TEST_REAL_MW=1` runs real MacWhisper and Apple on
   `say` speech).
-  **Built-in Parakeet** (optional, off by default): Vantage Host → Settings → Dictation toggles
+  **Built-in Parakeet** (optional, off by default): Casement Host → Settings → Dictation toggles
   `ParakeetModel` (`VantageHost/Parakeet`, FluidAudio 0.16.x, Parakeet TDT v3 on Core ML; the
   package is linked into the host target only). Turning it on downloads ~490 MB to
   `~/Library/Application Support/Vantage Host/Models/parakeet-tdt-0.6b-v3` (Remove deletes it and
@@ -480,7 +486,7 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   instead of truncating at accessibility text sizes), **without the screen** from the device list: the Mac's
   context menu (and a VoiceOver action) "Send Files…" opens the Files picker for that Mac, and
   files dropped on its row or card go to it (accent "Drop to send" hint), both over a files-only
-  session; and "Open in Vantage" from other apps (`CFBundleDocumentTypes`
+  session; and "Open in Casement" from other apps (`CFBundleDocumentTypes`
   public.data/public.content, rank Alternate → `onOpenURL` → `SharedFileInbox` copies it out,
   then the open session queues it, or it goes files-only to the most recent Mac, whose row shows
   it; a Mac known to predate files-only sessions is opened instead; waits for Face ID). Disconnect never asks on a current Mac: the screen goes and the
@@ -853,7 +859,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   2026-09-30 to remove them; old local branches and agent worktrees still hold the originals, so
   never push those.
 - **In the app**: About links Source Code, Privacy Policy, and Report a Problem (`AppInfo`
-  `githubURL`/`privacyURL`/`supportURL`, GitHub URLs; they work once the repo is public). The
+  `githubURL`/`privacyURL`/`supportURL`; the repo has been public since 2026-10-11). The
   Ko-fi donation link lives only on GitHub: App Review guideline 3.1.1 rejects in-app links that
   take money outside in-app purchase, so never add it to the app.
 - **App Store readiness**: `Vantage/PrivacyInfo.xcprivacy` declares UserDefaults (CA92.1), file
@@ -864,6 +870,17 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Apple's (CryptoKit, CommonCrypto for the ARD login) and used for authentication and integrity.
   Vantage Host can't be on the Mac App Store (unsandboxed, CGEvent injection); it ships as a
   notarized Developer ID download.
+- **Releases and versions**: version numbers live only in the pbxproj (`MARKETING_VERSION` and
+  `CURRENT_PROJECT_VERSION` per target; the client and widget share one pair, the host has its
+  own) and a bump is its own commit ("Set build N for the App Store"). The client ships through
+  App Store Connect (one universal record for iOS, macOS and visionOS; TestFlight first): the
+  listing, review notes, privacy answers, screenshot sets and the `asc` metadata files are in
+  `docs/app-store/` (`README.md` is the index; `python3 -I docs/app-store/check-lengths.py`
+  counts every limited field). Casement Host ships on GitHub Releases tagged `host-x.y`
+  (notarized Mac DMG and zip plus the Windows zips, with SHA-256 checksums; `v1.0` was the first).
+  Device delivery logs go in `docs/testing/<date>.md`. `.github/workflows/claude-issue-fix.yml`
+  hands each new bug report (or an issue labelled `claude-fix`) to Drew's "Bug report to draft
+  PR" routine, which may open a draft PR from `claude/issue-<n>`; nothing there merges.
 
 ## Build & test
 
@@ -1029,11 +1046,9 @@ Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 478
   shortcuts and password above). That also works at a logged-out login window if the Mac is
   reachable, but not at FileVault pre-boot.
 
-## Known v1 limitations
+## Known limitations
 
-- Software-keyboard Backspace and Return send virtual key events; other text uses Unicode input.
-  Hardware behavior still needs a physical-device check.
-- Clipboard carries text, RTF, and PNG images both ways; files go over the file channel (above).
 - Virtual-display provisioning is wired but falls back to the main display if BetterDisplay's CLI
-  isn't available. Drew verified real Mac video, pointer/clicks, and software-keyboard typing on the physical iPad.
-  Clipboard, hardware keyboard, BetterDisplay, and biometric session recovery still need device checks.
+  isn't available. Real Mac video, pointer, clicks and software-keyboard typing are verified on a
+  physical iPad; BetterDisplay and biometric session recovery still need device checks (the
+  per-feature bullets above name what else does).
