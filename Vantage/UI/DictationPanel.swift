@@ -187,7 +187,7 @@ struct DictationPanel: View {
             }
             if dictation.phase == .listening {
                 LevelMeter(level: dictation.level)
-                    .frame(height: 18)
+                    .frame(height: 36)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -273,15 +273,18 @@ struct DictationPanel: View {
     }
 }
 
-/// A row of bars that follows the microphone level.
+/// A row of bars that follows the microphone level. The newest level sits in the middle and
+/// older ones move outward, so speech reads as a moving shape rather than one block swelling.
 private struct LevelMeter: View {
     let level: Float
-    private let bars = 28
+    private static let bars = 31
+    private static let center = bars / 2
+    @State private var history = [Float](repeating: 0, count: center + 1)
 
     var body: some View {
         GeometryReader { geometry in
             HStack(alignment: .center, spacing: 3) {
-                ForEach(0..<bars, id: \.self) { index in
+                ForEach(0..<Self.bars, id: \.self) { index in
                     Capsule()
                         .fill(.tint.opacity(0.75))
                         .frame(height: max(3, geometry.size.height * height(for: index)))
@@ -289,17 +292,19 @@ private struct LevelMeter: View {
             }
             .frame(maxHeight: .infinity)
         }
-        .animation(.easeOut(duration: 0.12), value: level)
+        .animation(.easeOut(duration: 0.1), value: history)
+        .onAppear { history = history.map { _ in level } }
+        .onChange(of: level) { _, level in
+            history.insert(level, at: 0)
+            history.removeLast()
+        }
         .accessibilityHidden(true)
     }
 
-    /// A symmetric envelope scaled by the level, so the meter swells from the middle.
     private func height(for index: Int) -> CGFloat {
-        let center = Double(bars - 1) / 2
-        let distance = abs(Double(index) - center) / center
-        let envelope = 1 - distance * 0.7
-        let wobble = 0.85 + 0.15 * sin(Double(index) * 1.7)
-        return CGFloat(Double(level) * envelope * wobble)
+        let distance = abs(index - Self.center)
+        let taper = 1 - Double(distance) / Double(Self.center) * 0.45
+        return CGFloat(Double(history[distance]) * taper)
     }
 }
 

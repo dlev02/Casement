@@ -1369,12 +1369,7 @@ private struct PasswordPromptSheet: View {
                         #endif
                         .autocorrectionDisabled()
                     if prompt == .missing {
-                        SecureField("Mac Password", text: $password)
-                            .textContentType(.password)
-                            #if !os(macOS)
-                            .textInputAutocapitalization(.never)
-                            #endif
-                            .autocorrectionDisabled()
+                        PasswordField(title: "Mac Password", text: $password)
                     }
                 } footer: {
                     Text(prompt == .missing
