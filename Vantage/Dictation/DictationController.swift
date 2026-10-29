@@ -631,6 +631,16 @@ final class DictationController {
             level = 0.6
             hasLivePreview = true
             phase = .listening
+            // A speech-like level at the microphone's ~23 Hz, so the meter moves as it would.
+            Task { [weak self] in
+                var tick = 0.0
+                while let self, self.phase == .listening {
+                    let syllables = abs(sin(tick * 0.9)) * (0.55 + 0.45 * sin(tick * 0.23))
+                    self.level = Float(max(0.05, min(1, syllables + .random(in: -0.08...0.08))))
+                    tick += 1
+                    try? await Task.sleep(for: .milliseconds(43))
+                }
+            }
         }
     }
     #endif

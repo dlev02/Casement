@@ -49,6 +49,33 @@ nonisolated final class TrustStore: @unchecked Sendable {
         onChange?()
     }
 
+    /// What iOS and visionOS call every device, now that apps can't read the name its owner gave it.
+    static func isGenericName(_ name: String) -> Bool {
+        ["iPad", "iPhone", "iPod touch", "Apple Vision Pro"].contains(name)
+    }
+
+    func name(ofFingerprint fingerprint: String) -> String? {
+        trustedClients().first { $0.fingerprint == fingerprint }?.name
+    }
+
+    /// Renames a paired device; a blank name keeps the old one.
+    func rename(fingerprint: String, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        var clients = trustedClientsLocked()
+        guard let index = clients.firstIndex(where: { $0.fingerprint == fingerprint }), clients[index].name != name else { return }
+        clients[index].name = name
+        save(clients)
+        onChange?()
+    }
+
+    /// Swaps a generic "iPad" for the device's tailnet name; a name someone chose stays.
+    func adoptTailnetName(_ name: String, fingerprint: String) {
+        guard let current = self.name(ofFingerprint: fingerprint), Self.isGenericName(current) else { return }
+        rename(fingerprint: fingerprint, to: name)
+    }
+
     func revoke(fingerprint: String) {
         lock.lock(); defer { lock.unlock() }
         var clients = trustedClientsLocked()
