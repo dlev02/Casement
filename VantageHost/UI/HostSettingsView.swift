@@ -178,6 +178,8 @@ struct HostSettingsView: View {
     }
 
     @State private var removing: TrustStore.TrustedClient?
+    @State private var renaming: TrustStore.TrustedClient?
+    @State private var newName = ""
 
     private var devicesTab: some View {
         Form {
@@ -191,6 +193,7 @@ struct HostSettingsView: View {
                         LabeledContent {
                             HStack(spacing: 12) {
                                 if connected.contains(client.id) { ConnectedBadge() }
+                                Button("Rename…") { newName = client.name; renaming = client }
                                 Button("Remove…") { removing = client }
                             }
                         } label: {
@@ -218,6 +221,13 @@ struct HostSettingsView: View {
             Button("Remove", role: .destructive) { controller.revoke(client.fingerprint) }
         } message: { _ in
             Text("It's disconnected now and needs a new pairing code to connect again.")
+        }
+        .alert("Rename \(renaming?.name ?? "Device")", isPresented: Binding(
+            get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { client in
+            TextField("Name", text: $newName)
+            Button("Rename") { controller.rename(client.fingerprint, to: newName) }
+                .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {}
         }
     }
 
