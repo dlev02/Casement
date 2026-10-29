@@ -236,7 +236,14 @@ actor HostSession {
                 adaptive.noteInput()
                 if admitsInput(isRelease: !event.isDown) { injector?.handle(event) }
             case .textInput(let input):
-                if admitsInput(isRelease: false) { injector?.typeText(input.text) }
+                guard admitsInput(isRelease: false), let injector else { break }
+                // More than one key event's worth (a dictation, a paste from the iPad) is pasted:
+                // Chromium and Electron apps drop keys from a fast burst of typed text.
+                if input.text.utf16.count > 16, !HostOptions.shared.syntheticCapture {
+                    await clipboard.paste(input.text) { injector.pressPaste() }
+                } else {
+                    injector.typeText(input.text)
+                }
             case .clipboard(let payload):
                 // Awaited, so a ⌘V the client sends right behind its clipboard pastes this one.
                 if !HostOptions.shared.syntheticCapture { await clipboard.apply(payload) }
