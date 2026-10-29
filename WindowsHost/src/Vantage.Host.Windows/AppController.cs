@@ -3,12 +3,15 @@ using Microsoft.Extensions.Logging;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 using Microsoft.Windows.Storage.Pickers;
 using Vantage.Host.Windows.Composition;
 using Vantage.Host.Windows.Files;
+using Vantage.Host.Windows.Input;
 using Vantage.Host.Windows.Logging;
+using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Storage;
 using Vantage.Host.Windows.Tailscale;
 using Vantage.Host.Windows.Tray;
@@ -141,6 +144,9 @@ public sealed class AppController
         };
         Runtime.Files.Saved += (path, _) => _arrivals.Add(path);
         Runtime.Environment.Trust.Changed += () => RunOnUi(Refresh);
+        if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
+        _log.LogInformation("running {Mode}", ElevatedWindows.ThisProcessIsElevated ? "as administrator" : "without administrator rights");
+        if (!options.Synthetic) TurnOnStartAtLoginOnce();
 
         try
         {
@@ -161,6 +167,7 @@ public sealed class AppController
             ShowWindow();
         }
         Refresh();
+        if (TakeOpenOnLaunch() is { } page) ShowWindow(page);
         Tailnet = await Runtime.Tailscale.GetSelfAsync();
         Refresh();
     }
@@ -225,8 +232,41 @@ public sealed class AppController
     /// <summary>Forgets a paired iPad and closes its connections.</summary>
     public Task RevokeAsync(string fingerprint) => Runtime?.Listener.RevokeAsync(fingerprint) ?? Task.CompletedTask;
 
+    /// <summary>Whether this copy runs as administrator (so it can control administrator apps).</summary>
+    public static bool IsElevated => ElevatedWindows.ThisProcessIsElevated;
+
+    /// <summary>"Control apps running as administrator" is on.</summary>
+    public bool ControlsAdminApps => Runtime?.Settings.Current.ControlAdminApps ?? false;
+
+    /// <summary>
+    /// Turns "Control apps running as administrator" on (registers the elevated task, which Windows
+    /// asks permission for, then restarts through it, back on General) or off (deletes the task; this
+    /// copy stays elevated until it next starts). False when Windows' prompt was declined or failed.
+    /// </summary>
+    public async Task<bool> SetControlsAdminAppsAsync(bool on)
+    {
+        if (Runtime is null) return false;
+        if (!(on ? await AdminLaunch.RegisterAsync(ExecutablePath) : await AdminLaunch.UnregisterAsync()))
+        {
+            _log.LogWarning("couldn't {Action} the administrator task", on ? "register" : "delete");
+            return false;
+        }
+        Runtime.Settings.Update(s => s with { ControlAdminApps = on });
+        _log.LogInformation("control of administrator apps turned {State}", on ? "on" : "off");
+        if (on && !IsElevated)
+        {
+            await QuitAsync(afterStop: async () =>
+            {
+                WriteOpenOnLaunch("general");
+                if (!await AdminLaunch.RunAsync()) _log.LogError("the administrator task didn't start");
+            });
+        }
+        return true;
+    }
+
     /// <summary>Stops the host and exits.</summary>
-    public async Task QuitAsync()
+    /// <param name="afterStop">Runs once the listener and tray are gone, just before exiting.</param>
+    public async Task QuitAsync(Func<Task>? afterStop = null)
     {
         if (_quitting) return;
         _quitting = true;
@@ -240,6 +280,12 @@ public sealed class AppController
             try { AppNotificationManager.Default.Unregister(); } catch (Exception) { }
         }
         if (Runtime is not null) await Runtime.DisposeAsync();
+        if (afterStop is not null)
+        {
+            // The next copy registers as the running instance.
+            AppInstance.GetCurrent().UnregisterKey();
+            await afterStop();
+        }
         _logging?.Dispose();
         _fileLog?.Dispose();
         Application.Current.Exit();
@@ -314,6 +360,61 @@ public sealed class AppController
         }
     }
 
+    private void OnElevatedWindowBlocked(ElevatedWindow window)
+    {
+        if (!Sessions.Any(s => !s.IsFilesOnly)) return;
+        Notify(new AppNotificationBuilder()
+            .AddText($"{window.Name} runs as administrator")
+            .AddText("To use it from Casement, turn on Control apps running as administrator in Casement Host's settings.")
+            .AddArgument("action", "general")
+            .AddButton(new AppNotificationButton("Settings").AddArgument("action", "general")));
+    }
+
+    /// <summary>Start at login is on for a new install (host apps start at login); the person can turn it off.</summary>
+    private void TurnOnStartAtLoginOnce()
+    {
+        var settings = Runtime!.Settings;
+        if (settings.Current.StartAtLoginSettled || DebugBuild) return;
+        try
+        {
+            // Another copy's entry (an installed one, while a build from the repo runs) stays as it is.
+            if (!StartAtLogin.IsRegistered())
+            {
+                StartAtLogin.SetEnabled(ExecutablePath, true);
+                _log.LogInformation("start at login turned on for the first launch");
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            _log.LogWarning("couldn't turn on start at login: {Message}", ex.Message);
+        }
+        settings.Update(s => s with { StartAtLoginSettled = true });
+    }
+
+    private string OpenOnLaunchFile => Path.Combine(Runtime!.Paths.Root, "open-on-launch");
+
+    private void WriteOpenOnLaunch(string page)
+    {
+        try { File.WriteAllText(OpenOnLaunchFile, page); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>The settings page a restart asked to reopen (read once).</summary>
+    private string? TakeOpenOnLaunch()
+    {
+        try
+        {
+            if (!File.Exists(OpenOnLaunchFile)) return null;
+            var page = File.ReadAllText(OpenOnLaunchFile).Trim();
+            File.Delete(OpenOnLaunchFile);
+            return page.Length > 0 ? page : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private void RegisterNotifications()
     {
         try
@@ -326,6 +427,7 @@ public sealed class AppController
                 RunOnUi(() =>
                 {
                     if (action == "show" && path is not null) ExplorerActions.ShowInFolder([path], _log);
+                    else if (action == "general") ShowWindow("general");
                     else ShowWindow();
                 });
             };

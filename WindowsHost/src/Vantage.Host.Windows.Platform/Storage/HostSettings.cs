@@ -26,6 +26,15 @@ public sealed record HostSettings
 
     /// <summary>Show a notification when files arrive.</summary>
     public bool NotifyOnArrival { get; init; } = true;
+
+    /// <summary>
+    /// Start at login was turned on for the first launch or chosen since (it's on unless switched off,
+    /// and the Run value itself is the switch).
+    /// </summary>
+    public bool StartAtLoginSettled { get; init; }
+
+    /// <summary>Start through the elevated task (<c>AdminLaunch</c>) so input reaches administrator apps.</summary>
+    public bool ControlAdminApps { get; init; }
 }
 
 /// <summary>Loads and saves <see cref="HostSettings"/>; thread-safe.</summary>

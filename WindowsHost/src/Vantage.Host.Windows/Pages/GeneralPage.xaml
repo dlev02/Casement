@@ -67,6 +67,20 @@
                     Header="Start Casement Host when I sign in"
                     Toggled="OnStartAtLoginToggled" />
             </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
+                    <ToggleSwitch
+                        x:Name="AdminSwitch"
+                        Header="Control apps running as administrator"
+                        Toggled="OnAdminToggled" />
+                    <TextBlock
+                        x:Name="AdminHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Task Manager and other administrator apps. Windows asks for permission once, on this PC."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

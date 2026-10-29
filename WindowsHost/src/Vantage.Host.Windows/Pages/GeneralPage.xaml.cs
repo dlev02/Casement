@@ -14,6 +14,7 @@ public sealed partial class GeneralPage : Page
     private AppController? _controller;
     private DispatcherTimer? _countdown;
     private bool _updating;
+    private bool _adminBusy;
 
     /// <summary>Creates the page.</summary>
     public GeneralPage()
@@ -78,6 +79,11 @@ public sealed partial class GeneralPage : Page
 
         ShowCodeButton.IsEnabled = _controller.IsListening;
         StartAtLoginSwitch.IsOn = StartAtLogin.IsEnabled(AppController.ExecutablePath);
+        if (!_adminBusy)
+        {
+            AdminSwitch.IsOn = _controller.ControlsAdminApps;
+            AdminSwitch.IsEnabled = _controller.Runtime is not null;
+        }
         UpdateCode();
         _updating = false;
     }
@@ -125,10 +131,33 @@ public sealed partial class GeneralPage : Page
         try
         {
             StartAtLogin.SetEnabled(AppController.ExecutablePath, StartAtLoginSwitch.IsOn);
+            _controller?.Runtime?.Settings.Update(s => s with { StartAtLoginSettled = true });
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
             StartAtLoginSwitch.IsOn = !StartAtLoginSwitch.IsOn;
+        }
+    }
+
+    private async void OnAdminToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updating || _controller is null) return;
+        var on = AdminSwitch.IsOn;
+        _adminBusy = true;
+        AdminSwitch.IsEnabled = false;
+        try
+        {
+            if (!await _controller.SetControlsAdminAppsAsync(on))
+            {
+                _updating = true;
+                AdminSwitch.IsOn = !on;
+                _updating = false;
+            }
+        }
+        finally
+        {
+            _adminBusy = false;
+            AdminSwitch.IsEnabled = true;
         }
     }
 }
