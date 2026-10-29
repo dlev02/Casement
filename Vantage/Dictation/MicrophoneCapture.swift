@@ -128,13 +128,14 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// RMS of the first channel mapped from −50…0 dBFS onto 0…1.
+    /// RMS of the first channel mapped from −55…−15 dBFS onto 0…1: speech near the device sits
+    /// around −35…−20 dBFS, so it fills most of the meter, and only shouting clips it.
     private static func level(of buffer: AVAudioPCMBuffer) -> Float {
         guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         var sum: Float = 0
         for index in 0..<Int(buffer.frameLength) { sum += samples[index] * samples[index] }
         let rms = (sum / Float(buffer.frameLength)).squareRoot()
         let decibels = 20 * log10(max(rms, 0.000_01))
-        return min(1, max(0, (decibels + 50) / 50))
+        return min(1, max(0, (decibels + 55) / 40))
     }
 }
