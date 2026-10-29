@@ -121,12 +121,7 @@ struct AddDeviceSheet: View {
                 .textInputAutocapitalization(.never)
                 #endif
                 .autocorrectionDisabled()
-            SecureField("Mac Password", text: $password)
-                .textContentType(.password)
-                #if canImport(UIKit)
-                .textInputAutocapitalization(.never)
-                #endif
-                .autocorrectionDisabled()
+            PasswordField(title: "Mac Password", text: $password)
             TextField("Home Network Address (optional)", text: $homeAddress)
                 #if canImport(UIKit)
                 .textInputAutocapitalization(.never)
@@ -184,5 +179,42 @@ struct AddDeviceSheet: View {
             if !password.isEmpty { DeviceSecrets.setUsername(username, for: device) }
         }
         dismiss()
+    }
+}
+
+/// A Mac password field with an eye button that shows what was typed.
+struct PasswordField: View {
+    let title: String
+    @Binding var text: String
+    @State private var isRevealed = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack {
+            Group {
+                if isRevealed {
+                    TextField(title, text: $text)
+                } else {
+                    SecureField(title, text: $text)
+                }
+            }
+            .textContentType(.password)
+            #if canImport(UIKit)
+            .textInputAutocapitalization(.never)
+            #endif
+            .autocorrectionDisabled()
+            .focused($isFocused)
+            Button {
+                // Swapping fields drops focus; once the other one is in place, keep typing there.
+                let wasFocused = isFocused
+                isRevealed.toggle()
+                if wasFocused { Task { isFocused = true } }
+            } label: {
+                Image(systemName: isRevealed ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isRevealed ? "Hide Password" : "Show Password")
+            .help(isRevealed ? "Hide Password" : "Show Password")
+        }
     }
 }

@@ -66,7 +66,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   BSD sockets never showed it, so loopback tests can't catch it.
 - **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
   domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
-  that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
+  that the key is trusted. iOS names every device "iPad"/"iPhone", so a paired device still
+  called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
+  Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
+  and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
   guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
   Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
@@ -333,7 +336,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   back to macOS SpeechAnalyzer. All three kinds are capability-gated: the client says
   `Hello.features.dictation`, the host lists `HostCapabilities.dictationEngines`, and the client
   uses the Mac only when that list contains `macwhisper` (older hosts drop the session on unknown
-  kinds). Text is typed through `textInput`. Never log transcripts except `.private`.
+  kinds). Text arrives as `textInput`; the host types up to 16 UTF-16 units and pastes anything
+  longer (`ClipboardBridge.paste`: this-Mac-only, transient-marked, ⌘V, the old clipboard back
+  after 1.5 s unless something was copied meanwhile, never synced to the client). Never go back to
+  typing long text: a burst of Unicode key events drops keys in Chromium and Electron apps (a
+  98.7 s dictation lost letters mid-word; a 1,111-character burst kept only 32 in Chrome). Never log transcripts except `.private`.
   **Startup**: the Mac route sends `begin` and opens the mic as soon as mic permission is known;
   the on-iPad preview prepares alongside and attaches when ready, fed from the 16 kHz uplink with
   the audio so far replayed. Never make the Mac route wait for `LiveTranscriber.make` again: its

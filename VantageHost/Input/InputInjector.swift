@@ -240,6 +240,13 @@ nonisolated final class InputInjector: @unchecked Sendable {
         currentFlags = keyboard.modifierFlags
     }
 
+    /// ⌘V, pressed the way a Mac keyboard does (`KeyboardSequencer`).
+    func pressPaste() {
+        let v: UInt16 = 0x09 // kVK_ANSI_V
+        handle(KeyEvent(keyCode: v, isDown: true, modifiers: .command))
+        handle(KeyEvent(keyCode: v, isDown: false, modifiers: .command))
+    }
+
     /// Types a Unicode string (software keyboard / dictation / emoji path), chunked to 16 units.
     func typeText(_ text: String) {
         queue.async {
