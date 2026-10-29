@@ -39,8 +39,14 @@ straight away.
 
 **Settings…** opens a window with:
 
-- **General**: the PC's tailnet address, Show Pairing Code, and **Start Casement Host when I sign
-  in** (off until you turn it on).
+- **General**: the PC's tailnet address, Show Pairing Code, **Start Casement Host when I sign
+  in** (on from the first launch; Windows' Settings › Apps › Startup lists it too), and **Control
+  apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
+  an app running as administrator, and Task Manager always runs that way, so turn this on to use
+  those apps from Casement. Windows asks for permission once, and only at the PC itself; after
+  that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
+  without asking again. While it's off, Casement Host shows a notification on the PC when a click
+  lands on such an app.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
 - **Display**: which display is shared (the main one) and the video encoder in use.
@@ -59,8 +65,8 @@ for the PC in Casement.
 ### Update or remove
 
 To update, choose **Quit**, replace the Casement Host folder with the one from the new zip, and
-run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in**, quit,
-and delete the folder; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
+run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in** and
+**Control apps running as administrator**, quit, and delete the folder; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
 
 Something not working? [Open an issue](https://github.com/dlev02/Casement/issues/new/choose).
 

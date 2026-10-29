@@ -48,7 +48,16 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         var storage = new DpapiProtectedStorage(Paths.SecretsDirectory);
         var ed25519 = new NSecEd25519();
         var inputLog = logging.CreateLogger("Vantage.Input");
-        IInputInjector injector = options.Synthetic ? new LoggingInputInjector(inputLog) : new SendInputInjector(inputLog);
+        IInputInjector injector;
+        if (options.Synthetic)
+        {
+            injector = new LoggingInputInjector(inputLog);
+        }
+        else
+        {
+            Input = new SendInputInjector(inputLog);
+            injector = Input;
+        }
 
         IHostStatusSource status;
         IPowerControl power;
@@ -114,6 +123,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>User settings.</summary>
     public HostSettingsStore Settings { get; }
+
+    /// <summary>The real input injector (null for synthetic runs).</summary>
+    public SendInputInjector? Input { get; }
 
     /// <summary>The hidden Win32 window (tray, clipboard, notifications).</summary>
     public MessageWindow Window { get; }

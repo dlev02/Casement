@@ -988,6 +988,16 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
+- **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
+  `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
+  `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the
+  foreground one for a key; its process's `TokenElevation`) and raises `ElevatedWindowBlocked`, which
+  the app turns into a notification while a screen session is up. General › Control apps running
+  as administrator (`HostSettings.ControlAdminApps`) registers a trigger-less Task Scheduler task,
+  "Casement Host", with `HighestAvailable` (`AdminLaunch`; one UAC prompt, which only someone at the
+  PC can answer), and every non-elevated launch with the setting on runs that task and exits
+  (`Program.ShouldRelaunchElevated`). Start at login (the Run value) is turned on once at the first
+  launch of a Release build (`StartAtLoginSettled`).
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end

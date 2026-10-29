@@ -53,6 +53,18 @@ GetSystemMetrics
 SendInput
 GetMessageExtraInfo
 
+// Elevated windows (UIPI drops input sent to them)
+WindowFromPoint
+GetForegroundWindow
+GetAncestor
+GetWindowThreadProcessId
+GetWindowTextW
+OpenProcess
+OpenProcessToken
+GetTokenInformation
+TOKEN_ELEVATION
+CloseHandle
+
 // Pointer shape (for clients that draw the pointer themselves)
 GetCursorInfo
 GetIconInfo
