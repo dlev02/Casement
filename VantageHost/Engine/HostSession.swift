@@ -160,6 +160,7 @@ actor HostSession {
             }
             trust.trust(hello.clientPublicKey, name: hello.clientName, model: hello.deviceModel)
         }
+        if !lightweight { nameFromTailnet(DeviceIdentity.fingerprint(of: hello.clientPublicKey)) }
 
         if hello.isReadinessProbe == true {
             let synthetic = HostOptions.shared.syntheticCapture
@@ -213,7 +214,7 @@ actor HostSession {
                                             filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
-        onStreaming(self, hello.clientName, hello.deviceModel, clientKey)
+        onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
         log.info("client authenticated: \(hello.clientName)")
         return true
     }
@@ -589,11 +590,25 @@ actor HostSession {
         log.info("file channel attached; receiving into \(store.directory.path(percentEncoded: false), privacy: .public)")
         let host = peerHost, fallback = clientName
         Task { await engine.run() }
-        // The tailnet knows the device's real name; the app only gets "iPad" from iOS.
-        let name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback
+        // The name it has under Paired Devices, unless that's still iOS's "iPad"; then the
+        // tailnet's, which knows which iPad.
+        let chosen = trust.name(ofFingerprint: clientKey).flatMap { TrustStore.isGenericName($0) ? nil : $0 }
+        let name: String
+        if let chosen { name = chosen } else { name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback }
         onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey,
                                       receiveDirectory: store.directory, clientIsMac: clientModel.hasPrefix("Mac"),
                                       isFilesOnly: state == .filesOnly))
+    }
+
+    /// iOS tells every app the device is "iPad", so two iPads would pair under one name; ask the
+    /// tailnet which one this is, off the handshake path.
+    private func nameFromTailnet(_ fingerprint: String) {
+        guard let current = trust.name(ofFingerprint: fingerprint), TrustStore.isGenericName(current) else { return }
+        let host = peerHost, trust = trust
+        Task.detached {
+            guard let name = TailscaleCLI.deviceName(host: host) else { return }
+            trust.adoptTailnetName(name, fingerprint: fingerprint)
+        }
     }
 
     private func handleViewportChange(_ viewport: Viewport) async {

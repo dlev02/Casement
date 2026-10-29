@@ -222,6 +222,10 @@ final class HostController {
         (askedForScreenPermission && !hasScreenPermission) || (askedForInputPermission && !hasInputPermission)
     }
 
+    func rename(_ fingerprint: String, to name: String) {
+        trust.rename(fingerprint: fingerprint, to: name)
+    }
+
     func revoke(_ fingerprint: String) {
         trust.revoke(fingerprint: fingerprint)
         // A revoked device loses what it has open too, not just its next connection.
@@ -554,6 +558,11 @@ final class HostController {
         }
         trustedClients = clients
         trustLoaded = true
+        for index in connectedDevices.indices {
+            if let client = clients.first(where: { $0.fingerprint == connectedDevices[index].fingerprint }) {
+                connectedDevices[index].name = client.name
+            }
+        }
     }
 
     private func showRecentlyPaired(_ name: String) {
@@ -629,7 +638,7 @@ final class HostController {
 /// A device watching this Mac's screen, as the menu lists it.
 struct ConnectedDevice: Identifiable {
     let session: HostSession
-    let name: String
+    var name: String
     /// The client's hardware model ("iPad16,6", "Mac16,1", "RealityDevice14,1").
     let model: String
     /// Its key's fingerprint, matching `TrustStore.TrustedClient.fingerprint`.
