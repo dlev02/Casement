@@ -47,6 +47,13 @@ public static class StartAtLogin
     /// </summary>
     public static bool IsApproved(byte[]? approval) => approval is not { Length: > 0 } || (approval[0] & 1) == 0;
 
+    /// <summary>Whether a Run value exists at all, for this or another copy of the host.</summary>
+    public static bool IsRegistered()
+    {
+        using var run = Registry.CurrentUser.OpenSubKey(RunKey);
+        return run?.GetValue(ValueName) is string;
+    }
+
     /// <summary>Whether starting at login is on for <paramref name="executablePath"/>.</summary>
     public static bool IsEnabled(string executablePath)
     {

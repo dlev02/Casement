@@ -377,8 +377,12 @@ public sealed class AppController
         if (settings.Current.StartAtLoginSettled || DebugBuild) return;
         try
         {
-            StartAtLogin.SetEnabled(ExecutablePath, true);
-            _log.LogInformation("start at login turned on for the first launch");
+            // Another copy's entry (an installed one, while a build from the repo runs) stays as it is.
+            if (!StartAtLogin.IsRegistered())
+            {
+                StartAtLogin.SetEnabled(ExecutablePath, true);
+                _log.LogInformation("start at login turned on for the first launch");
+            }
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
