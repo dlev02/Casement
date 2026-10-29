@@ -83,13 +83,15 @@ nonisolated enum TailscaleCLI {
         return name
     }
 
-    /// The connected device's own name on the tailnet ("Drew's iPad Pro"), for notifications.
+    /// The connected device's own name on the tailnet ("Drew's iPad Pro", or its machine name
+    /// "drew-ipad-pro" where iOS reports "localhost"), for notifications and paired devices.
     /// Nil when the address isn't a tailnet peer (loopback tests) or the CLI isn't there.
     static func deviceName(host: String) -> String? {
         guard let data = try? run(["whois", "--json", host], timeout: 2),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let node = object["Node"] as? [String: Any] else { return nil }
-        if let hostinfo = node["Hostinfo"] as? [String: Any], let hostname = hostinfo["Hostname"] as? String, !hostname.isEmpty {
+        if let hostinfo = node["Hostinfo"] as? [String: Any], let hostname = hostinfo["Hostname"] as? String,
+           !hostname.isEmpty, hostname != "localhost" {
             return hostname
         }
         return (node["ComputedName"] as? String).flatMap { $0.isEmpty ? nil : $0 }

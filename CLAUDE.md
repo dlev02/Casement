@@ -66,7 +66,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   BSD sockets never showed it, so loopback tests can't catch it.
 - **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
   domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
-  that the key is trusted. A pairing code expires after 10 minutes and is burned after 5 wrong
+  that the key is trusted. iOS names every device "iPad"/"iPhone", so a paired device still
+  called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
+  Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
+  and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
   guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
   Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
