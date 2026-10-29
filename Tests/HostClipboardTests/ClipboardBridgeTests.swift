@@ -107,4 +107,29 @@ struct ClipboardBridgeTests {
         let png = try #require(ClipboardBridge(pasteboard: board).currentPayload().imagePNG)
         #expect(png.starts(with: [0x89, 0x50, 0x4E, 0x47]))
     }
+
+    /// Dictation is pasted through the Mac's clipboard; what the user had copied must come back,
+    /// and neither the dictation nor the restore may reach the iPad as a copy.
+    @Test func pasteGivesTheClipboardBackWithoutAnEcho() async throws {
+        let board = scratchPasteboard()
+        defer { board.releaseGlobally() }
+        copy("copied on the Mac", to: board)
+        let bridge = ClipboardBridge(pasteboard: board)
+        let changes = Changes()
+        bridge.onLocalChange = { changes.append($0) }
+        let pasted = Changes()
+        let boardBox = UncheckedBoard(board: board)
+
+        await bridge.paste("a long dictation that is better pasted than typed") {
+            pasted.append(ClipboardPayload(text: boardBox.board.string(forType: .string)))
+        }
+        #expect(pasted.all.map(\.text) == ["a long dictation that is better pasted than typed"])
+        #expect(board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType")) == true)
+        bridge.poll()
+
+        try await Task.sleep(for: .seconds(ClipboardBridge.pasteRestoreDelay + 0.3))
+        #expect(board.string(forType: .string) == "copied on the Mac")
+        bridge.poll()
+        #expect(changes.all.isEmpty)
+    }
 }

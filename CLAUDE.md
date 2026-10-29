@@ -336,7 +336,11 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   back to macOS SpeechAnalyzer. All three kinds are capability-gated: the client says
   `Hello.features.dictation`, the host lists `HostCapabilities.dictationEngines`, and the client
   uses the Mac only when that list contains `macwhisper` (older hosts drop the session on unknown
-  kinds). Text is typed through `textInput`. Never log transcripts except `.private`.
+  kinds). Text arrives as `textInput`; the host types up to 16 UTF-16 units and pastes anything
+  longer (`ClipboardBridge.paste`: this-Mac-only, transient-marked, ⌘V, the old clipboard back
+  after 1.5 s unless something was copied meanwhile, never synced to the client). Never go back to
+  typing long text: a burst of Unicode key events drops keys in Chromium and Electron apps (a
+  98.7 s dictation lost letters mid-word; a 1,111-character burst kept only 32 in Chrome). Never log transcripts except `.private`.
   **Startup**: the Mac route sends `begin` and opens the mic as soon as mic permission is known;
   the on-iPad preview prepares alongside and attaches when ready, fed from the 16 kHz uplink with
   the audio so far replayed. Never make the Mac route wait for `LiveTranscriber.make` again: its
