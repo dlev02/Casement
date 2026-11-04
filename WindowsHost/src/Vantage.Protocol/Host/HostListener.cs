@@ -157,6 +157,15 @@ public sealed class HostListener : IAsyncDisposable
         _socket?.Dispose();
         foreach (var session in _sessions.Values) session.Abort();
         foreach (var channel in _fileChannels.Values) channel.Engine.Close();
+        try
+        {
+            // Sessions put their display modes back as they tear down; a quitting host may not wait for that.
+            Environment.DisplayFitter?.RestoreAll();
+        }
+        catch (Exception error)
+        {
+            _log.LogError("restoring display modes failed: {Error}", error.Message);
+        }
         Paster.RestoreNow(); // quitting within a paste's restore delay still gives the clipboard back
         if (_acceptLoop is not null)
         {

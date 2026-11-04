@@ -40,6 +40,8 @@ GetMonitorInfoW
 MONITORINFOEXW
 MonitorFromPoint
 EnumDisplaySettingsW
+EnumDisplaySettingsExW
+ChangeDisplaySettingsExW
 GetDpiForMonitor
 GetDisplayConfigBufferSizes
 QueryDisplayConfig

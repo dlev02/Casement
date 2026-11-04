@@ -420,7 +420,7 @@ one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and contin
    - Enumerate displays.
    - If `features.fileTransfer`, issue a 32-byte token.
    - Send `authResult{status:"ok", sessionToken?, displays:[…], capabilities}`.
-   - **Windows v1 capabilities:** `{codecs:["hevc","h264"] (["h264"] on a PC without an HEVC encoder), canManageVirtualDisplay:false, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
+   - **Windows v1 capabilities:** `{codecs:["hevc","h264"] (["h264"] on a PC without an HEVC encoder), canManageVirtualDisplay:<true while display fitting is allowed, §7.2>, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
      `fileTransfer`/`filesOnlySessions` only when the client said `fileTransfer`. Omit
      `dictationEngines` (nil means the client never sends those kinds). Add `audio:true` while the
      PC can capture its sound (§9.5).
@@ -450,8 +450,16 @@ On the first `selectDisplay`:
 1. Start the session-long monitors (power assertion, lock/secure/sleep monitoring) and **send
    `hostStatus` right away** (§8).
 2. Wake the display if it's asleep.
-3. Choose the display. `display(id)`: that display. `fitViewport`: the main display. (There is no
-   virtual display on Windows, so ignore `useVirtualDisplay` and the viewport size.)
+3. Choose the display. `display(id)`: that display. `fitViewport`: the main display. Windows has
+   no user-space virtual display, so `fitViewport` with `useVirtualDisplay: true` (and display
+   fitting allowed in the host's settings) instead switches the main display, temporarily
+   (`ChangeDisplaySettingsEx(…, CDS_FULLSCREEN)`), to the mode closest to the viewport's shape that
+   still has room for the viewport in points at the display's scale (rule in `DisplayModes.Choose`),
+   lists the displays again so `streamConfig.display` describes the new mode, and captures that. A
+   `viewportChanged` re-chooses 500 ms after the last one. `restoreDisplays`, a later
+   `selectDisplay` without it, the session ending, and the host stopping put the user's mode back
+   (Windows also does if the host process dies). One session fits a display at a time; another
+   streams what's there. Without `useVirtualDisplay` the viewport size is ignored.
 4. Start the encoder and capture. The Mac starts at `min(targetFPS, 60)` fps with a starting bitrate
    of `clamp(pixels × fps × 0.08 / 1000, 4 000, 60 000)` kbps.
 5. Send the current clipboard if it isn't empty (the Mac does this before `streamConfig`).
@@ -732,7 +740,7 @@ Windows mapping:
 | wakeDisplay | declare user activity; **also "retry capture now"** | 1 px `SendInput` move and back, plus `SetThreadExecutionState(ES_DISPLAY_REQUIRED)`; retry capture |
 | releaseAllInput | release all | release all |
 | refreshDisplays | send `displayList` | same |
-| restoreDisplays | disconnect the virtual display | no-op |
+| restoreDisplays | disconnect the virtual display | put back the display mode this session fitted (§7.2) |
 
 Synthetic mode on the Mac ignores commands except sleep/wake with the pretend display. While any
 session is active the Mac prevents idle display sleep. On Windows, hold

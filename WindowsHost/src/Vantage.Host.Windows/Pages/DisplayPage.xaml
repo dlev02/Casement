@@ -18,6 +18,19 @@
 
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="4">
+                    <ToggleSwitch
+                        x:Name="FitSwitch"
+                        Header="Let devices change this PC's display mode to fit their screen"
+                        Toggled="OnFitToggled" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="This PC's own screen switches resolution while that device is connected, and goes back when it disconnects."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
                     <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Capture" />
                     <TextBlock x:Name="CaptureText" TextWrapping="Wrap" />
                     <TextBlock x:Name="CaptureDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
@@ -33,7 +46,7 @@
 
             <TextBlock
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Casement shares the main display unless your device picks another one. Matching the PC's display to your device's screen, as the Mac host can, comes later."
+                Text="Casement shares the main display unless your device picks another one. A device set to match its screen switches the main display to the resolution closest to its own shape, since Windows can't add a virtual display the way a Mac can."
                 TextWrapping="Wrap" />
         </StackPanel>
     </ScrollViewer>

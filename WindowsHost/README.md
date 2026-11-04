@@ -63,7 +63,8 @@ straight away.
   lands on such an app.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
-- **Display**: which display is shared (the main one) and the video encoder in use.
+- **Display**: which display is shared (the main one), whether devices may change its resolution
+  to fit their screen (on unless you turn it off), and the video encoder in use.
 - **Files**: every file moving now, and for a minute after it's done (Show in folder for one that
   arrived, **Cancel All** when several are moving),
   where files from your devices are saved (Downloads unless you choose another folder),
@@ -76,8 +77,11 @@ Closing the window keeps Casement Host running in the notification area; use **Q
 Casement Host can send the PC's sound: everything the PC plays except Casement Host's own sounds
 (or, where Windows won't leave those out, everything its output device plays), only after Casement
 asks for it, and nothing while the PC is quiet. The Casement app doesn't offer it for a PC yet. On
-a PC, Casement can't type a saved password or make a virtual display yet, and dictation runs on
-your device. Start, Task View, Task Manager, and the other Windows shortcuts are in Casement's
+a PC, Casement can't type a saved password, and dictation runs on your device. Windows can't add a
+virtual display the way a Mac can, so a device set to match its screen switches the PC's main display
+to the resolution closest to its own shape instead (a 13" iPad gets 2560 × 1600 on a 4K monitor);
+the PC's screen goes back to its own resolution when the device disconnects, and on its own if
+Casement Host stops. Start, Task View, Task Manager, and the other Windows shortcuts are in Casement's
 control strip, and ⌘ acts as Ctrl unless you turn that off for the PC in Casement.
 
 ### Update or remove
