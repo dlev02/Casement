@@ -12,7 +12,8 @@ the PC and on the device you'll connect from.
    `Casement-Host-…-windows-x64.zip` for Intel and AMD processors, or
    `Casement-Host-…-windows-arm64.zip` for ARM (not yet tested on ARM hardware).
 2. Unzip it somewhere you'll keep it, open the **Casement Host** folder, and run `VantageHost.exe`
-   (Vantage is the project's code name).
+   (Vantage is the project's code name). From then on it starts when you sign in, and **Casement
+   Host** is in the Start menu.
 3. The app isn't code-signed yet, so Windows may say it protected your PC from an unknown publisher:
    choose **More info › Run anyway**.
 4. When Windows Defender Firewall asks, choose **Allow access**. Casement Host listens on TCP port
@@ -24,8 +25,10 @@ Each release lists SHA-256 checksums for its downloads.
 
 ## Use it
 
-Casement Host lives in the notification area (open the **^** next to the clock if Windows hides
-its icon there).
+Casement Host lives in the system tray. Windows 11 keeps a new icon behind the **^** next to the
+clock: drag it onto the taskbar to keep it in view, or turn on **Show the icon next to the clock**
+in Settings › General. Closing its window doesn't quit it (the first time, a notification says
+so), and opening Casement Host from the Start menu brings the window back.
 
 - **Click** the icon for a panel with the PC's status, **Show Pairing Code**, your connected and
   paired devices, Settings…, and Quit.
@@ -39,8 +42,15 @@ straight away.
 
 **Settings…** opens a window with:
 
-- **General**: the PC's tailnet address, Show Pairing Code, and **Start Casement Host when I sign
-  in** (off until you turn it on).
+- **General**: the PC's tailnet address, Show Pairing Code, **Start Casement Host when I sign
+  in** (on from the first launch; Windows' Settings › Apps › Startup lists it too), **Show the
+  icon next to the clock** (the same choice as Settings › Personalization › Taskbar › Other
+  system tray icons), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
+  an app running as administrator, and Task Manager always runs that way, so turn this on to use
+  those apps from Casement. Windows asks for permission once, and only at the PC itself; after
+  that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
+  without asking again. While it's off, Casement Host shows a notification on the PC when a click
+  lands on such an app.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
 - **Display**: which display is shared (the main one) and the video encoder in use.
@@ -59,8 +69,9 @@ for the PC in Casement.
 ### Update or remove
 
 To update, choose **Quit**, replace the Casement Host folder with the one from the new zip, and
-run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in**, quit,
-and delete the folder; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
+run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in** and
+**Control apps running as administrator**, quit, and delete the folder and the **Casement Host**
+shortcut in the Start menu; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
 
 Something not working? [Open an issue](https://github.com/dlev02/Casement/issues/new/choose).
 

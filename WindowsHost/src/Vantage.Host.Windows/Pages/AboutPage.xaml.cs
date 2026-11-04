@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -27,11 +26,7 @@ public sealed partial class AboutPage : Page
 
     private void Update()
     {
-        var version = typeof(AboutPage).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                      ?? typeof(AboutPage).Assembly.GetName().Version?.ToString() ?? "";
-        // "1.0.1+<40-character commit>" reads better as "1.0.1 (04efdd0)".
-        if (version.Split('+') is [var number, { Length: >= 7 } commit]) version = $"{number} ({commit[..7]})";
-        VersionText.Text = $"Version {version} · protocol {Protocol.VantageProtocol.Version}";
+        VersionText.Text = $"Version {Composition.WindowsHostRuntime.AppVersion} · protocol {Protocol.VantageProtocol.Version}";
         if (_controller?.Runtime is not { } runtime) return;
         var tailnet = _controller.Tailnet?.PrimaryAddress is { } address ? $" · {address}" : "";
         HostText.Text = $"{runtime.Environment.HostName}{tailnet} · port {runtime.ListenerOptions.Port}";

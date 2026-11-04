@@ -6,6 +6,7 @@ using Vantage.Host.Windows.Files;
 using Vantage.Host.Windows.Logging;
 using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Tailscale;
+using Vantage.Host.Windows.Tray;
 
 namespace Vantage.Host.Windows.Tests;
 
@@ -259,6 +260,57 @@ public class StartupAndTuningTests
         Assert.True(StartAtLogin.IsApproved(null));
         Assert.True(StartAtLogin.IsApproved([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
         Assert.False(StartAtLogin.IsApproved([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+    }
+
+    [Fact]
+    public void StartMenuShortcutRecognisesItsOwnTarget()
+    {
+        Assert.Equal(@"C:\Users\you\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Casement Host.lnk",
+                     StartMenuShortcut.PathIn(@"C:\Users\you\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"));
+        Assert.True(StartMenuShortcut.PointsAt(Exe, Exe));
+        Assert.True(StartMenuShortcut.PointsAt(Exe.ToUpperInvariant(), Exe));
+        Assert.False(StartMenuShortcut.PointsAt(@"C:\Other\VantageHost.exe", Exe));
+        Assert.False(StartMenuShortcut.PointsAt(null, Exe));
+        Assert.False(StartMenuShortcut.PointsAt("", Exe));
+    }
+
+    [Fact]
+    public void StartMenuShortcutIsWrittenOnceAndFollowsAMove()
+    {
+        if (!OperatingSystem.IsWindows()) return; // IShellLink
+        var directory = Path.Combine(Path.GetTempPath(), "casement-shortcut-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exe = Path.Combine(directory, "Casement Host", "VantageHost.exe");
+            Assert.True(StartMenuShortcut.Ensure(exe, directory));
+            Assert.True(File.Exists(StartMenuShortcut.PathIn(directory)));
+            Assert.Equal(exe, StartMenuShortcut.TargetOf(StartMenuShortcut.PathIn(directory)));
+            Assert.False(StartMenuShortcut.Ensure(exe, directory)); // already right
+
+            var moved = Path.Combine(directory, "Elsewhere", "VantageHost.exe");
+            Assert.True(StartMenuShortcut.Ensure(moved, directory));
+            Assert.Equal(moved, StartMenuShortcut.TargetOf(StartMenuShortcut.PathIn(directory)));
+
+            StartMenuShortcut.Remove(directory);
+            Assert.Null(StartMenuShortcut.TargetOf(StartMenuShortcut.PathIn(directory)));
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TrayIconEntryMatchingAndMeaning()
+    {
+        Assert.True(TrayIconVisibility.Matches(Exe, Exe));
+        Assert.True(TrayIconVisibility.Matches(Exe.ToLowerInvariant(), Exe));
+        Assert.False(TrayIconVisibility.Matches(@"C:\Other\VantageHost.exe", Exe));
+        Assert.False(TrayIconVisibility.Matches(null, Exe));
+        Assert.True(TrayIconVisibility.IsShown(1));
+        Assert.False(TrayIconVisibility.IsShown(0));
+        Assert.False(TrayIconVisibility.IsShown(null)); // Windows leaves the value out for a hidden icon
+        Assert.False(TrayIconVisibility.IsShown("1"));
     }
 
     [Theory]
