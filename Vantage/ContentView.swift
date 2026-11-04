@@ -69,6 +69,14 @@ struct ContentView: View {
             .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         }
         #endif
+        #if os(iOS)
+        .sheet(isPresented: Bindable(MacHostedSettingsRequest.shared).isPresented) {
+            MacHostedSettingsSheet()
+                .environment(store)
+                .environment(reachability)
+                .environment(tailscaleAccount)
+        }
+        #endif
         #if DEBUG
         .sheet(item: $debugScreen) { screen in
             NavigationStack { DebugScreenView(screen: screen) }
