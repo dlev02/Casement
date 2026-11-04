@@ -40,7 +40,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         Tailscale = new TailscaleCli(logging);
         Files = new WindowsFileStore(options.Synthetic && options.ReceiveFolder is null ? null : Settings,
                                      options.ReceiveFolder ?? (options.Synthetic ? SyntheticReceiveFolder() : null), logging);
-        Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl));
+        Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl, Codec: options.Codec));
         IVideoEncoderFactory encoders = options.DumpH264 is { } dump
             ? new DumpingEncoderFactory(Encoders, dump, logging.CreateLogger("Vantage.Encode"))
             : Encoders;

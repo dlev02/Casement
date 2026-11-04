@@ -7,6 +7,7 @@ using Vantage.Host.Windows.Logging;
 using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Tailscale;
 using Vantage.Host.Windows.Tray;
+using Vantage.Protocol.Messages;
 
 namespace Vantage.Host.Windows.Tests;
 
@@ -98,6 +99,36 @@ public class NalUnitsTests
 
     [Fact]
     public void TruncatedAvccThrows() => Assert.Throws<FormatException>(() => NalUnits.AvccToAnnexB([0, 0, 0, 9, 1]));
+
+    [Fact]
+    public void HevcTypesAndKeyframes()
+    {
+        // VPS (32), SPS (33), PPS (34), IDR_W_RADL (19): the type is bits 1–6 of a two-byte header.
+        byte[] idr = [0, 0, 0, 1, 0x40, 0x01, 0x0C, 0, 0, 1, 0x42, 0x01, 0x01, 0, 0, 0, 1, 0x44, 0x01, 0xC1, 0, 0, 0, 1, 0x26, 0x01, 0xAF];
+        Assert.Equal([32, 33, 34, 19], NalUnits.Types(idr, VideoCodec.Hevc));
+        Assert.True(NalUnits.HasKeyframe(idr, VideoCodec.Hevc));
+        Assert.True(NalUnits.Contains(idr, NalUnits.SpsType(VideoCodec.Hevc), VideoCodec.Hevc));
+        Assert.False(NalUnits.HasKeyframe(idr, VideoCodec.H264)); // read as H.264 there's no type 5
+
+        byte[] cra = [0, 0, 0, 1, 0x2A, 0x01, 0xAF];
+        Assert.True(NalUnits.HasKeyframe(cra, VideoCodec.Hevc));
+        byte[] trail = [0, 0, 0, 1, 0x02, 0x01, 0xD0];
+        Assert.False(NalUnits.HasKeyframe(trail, VideoCodec.Hevc));
+        Assert.Equal(NalUnits.Types(idr), NalUnits.Types(idr, VideoCodec.H264));
+        Assert.Equal(7, NalUnits.SpsType(VideoCodec.H264));
+    }
+}
+
+public class EncoderNameTests
+{
+    [Theory]
+    [InlineData("NVIDIA HEVC Encoder MFT", VideoCodec.Hevc, true, "NVIDIA HEVC Encoder MFT (hardware)")]
+    [InlineData("NVIDIA H.264 Encoder MFT", VideoCodec.H264, true, "NVIDIA H.264 Encoder MFT (hardware)")]
+    [InlineData("AMDh265Encoder", VideoCodec.Hevc, true, "AMDh265Encoder (hardware)")]
+    [InlineData("Some Encoder MFT", VideoCodec.Hevc, true, "Some Encoder MFT (HEVC, hardware)")]
+    [InlineData("Microsoft H.264 Encoder MFT", VideoCodec.H264, false, "Microsoft H.264 Encoder MFT (software)")]
+    public void TheShownNameSaysTheCodecAndKind(string friendly, VideoCodec codec, bool hardware, string expected) =>
+        Assert.Equal(expected, MediaFoundationEncoderFactory.DisplayName(friendly, codec, hardware));
 }
 
 public class HostCommandLineTests
@@ -118,7 +149,7 @@ public class HostCommandLineTests
         var options = HostCommandLine.Parse(["--port", "47821", "--pairing-code", "246810", "--exit-after", "30", "--receive-folder", @"C:\temp\in",
                                              "--log-file", @"C:\temp\host.log", "--dump-h264", @"C:\temp\v.h264", "--platform", "macos",
                                              "--synthetic", "--encoder", "software", "--rate-control", "lowdelayvbr", "--verbose",
-                                             "--send-file-on-connect", @"C:\temp\f.bin", "--capture-fails-for", "6", "--background"],
+                                             "--send-file-on-connect", @"C:\temp\f.bin", "--capture-fails-for", "6", "--background", "--codec", "hevc"],
                                             debugBuild: true);
         Assert.Equal(47821, options.Port);
         Assert.Equal("246810", options.PairingCode);
@@ -134,6 +165,17 @@ public class HostCommandLineTests
         Assert.Equal(@"C:\temp\f.bin", options.SendFileOnConnect);
         Assert.Equal(TimeSpan.FromSeconds(6), options.CaptureFailsFor);
         Assert.True(options.Background);
+        Assert.Equal(VideoCodec.Hevc, options.Codec);
+    }
+
+    [Theory]
+    [InlineData("h264", VideoCodec.H264)]
+    [InlineData("HEVC", VideoCodec.Hevc)]
+    [InlineData("h265", VideoCodec.Hevc)]
+    public void CodecFlag(string value, VideoCodec expected)
+    {
+        Assert.Equal(expected, HostCommandLine.Parse(["--codec", value], debugBuild: false).Codec);
+        Assert.Null(HostCommandLine.Parse([], debugBuild: false).Codec);
     }
 
     [Theory]
@@ -150,6 +192,7 @@ public class HostCommandLineTests
     [InlineData("--pairing-code", "12345")]
     [InlineData("--platform", "linux")]
     [InlineData("--encoder", "gpu")]
+    [InlineData("--codec", "av1")]
     [InlineData("--exit-after", "-1")]
     [InlineData("--what", "")]
     public void BadValues(string flag, string value) =>

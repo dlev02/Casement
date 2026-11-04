@@ -1,6 +1,8 @@
+using Vantage.Protocol.Messages;
+
 namespace Vantage.Host.Windows.Encode;
 
-/// <summary>Rate control for the H.264 MFT (<c>CODECAPI_AVEncCommonRateControlMode</c>).</summary>
+/// <summary>Rate control for the H.264 / HEVC MFT (<c>CODECAPI_AVEncCommonRateControlMode</c>).</summary>
 public enum RateControl
 {
     /// <summary>Constant bitrate (the default; what NVENC's low-latency preset is tuned for).</summary>
@@ -24,8 +26,12 @@ public enum EncoderPreference
 /// <param name="Preference">Hardware, software, or either.</param>
 /// <param name="RateControl">CBR or low-delay VBR.</param>
 /// <param name="BufferFrames">VBV buffer (<c>AVEncCommonBufferSize</c>) in frames at the current bitrate and frame rate.</param>
+/// <param name="Codec">
+/// <c>--codec</c>: the only codec to advertise and encode, whatever the client prefers (testing);
+/// null advertises HEVC first when the PC has an HEVC encoder, then H.264.
+/// </param>
 public sealed record EncoderTuning(EncoderPreference Preference = EncoderPreference.Auto, RateControl RateControl = RateControl.Cbr,
-                                   double BufferFrames = 2)
+                                   double BufferFrames = 2, VideoCodec? Codec = null)
 {
     /// <summary>GOP length: effectively infinite (IDRs only on request; spec §7.2).</summary>
     public const uint GopSize = 216_000;

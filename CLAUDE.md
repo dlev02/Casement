@@ -988,7 +988,8 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   IDR, then a bulk lane for chunks and clipboard; keepalive 5/2/3), `Auth/` (NSec Ed25519, the
   111-byte transcript, fingerprints, `PairingCodes`, file-backed trust and identity stores over
   `IProtectedStorage`), `Files/` (`FileTransferEngine`, `FileNames` with the Windows rules,
-  `AttachTokenRegistry`), `Video/` (Annex-B ↔ AVCC, SPS/PPS, IDR detection), `Adaptive/`,
+  `AttachTokenRegistry`), `Video/` (Annex-B ↔ AVCC/HVCC, parameter sets and IDR detection for
+  H.264 and HEVC, chosen by `VideoCodec`; the codec-less overloads are H.264), `Adaptive/`,
   `Input/` (`WindowsInputTranslator`: kVK → set-1 scan codes, chords, held state, scroll
   remainder, point → virtual-desktop pixels; only `IInputInjector` calls `SendInput`), and
   `Host/` (`HostListener`, `HostSessionCore`, and the platform interfaces: `IScreenSource`,
@@ -1083,6 +1084,22 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   with a non-false default (`AskBeforeRestart`, `NotifyOnArrival`, `AfterArrival`) are `set`, not
   `init`: the source-generated reader gives an `init` property the file lacks `default`. Tests:
   `RestartGuardTests` (incl. `SettingsMissingFromTheFileKeepTheirDefaults`). The real messages and the restart screen still need a check on the PC.
+- **HEVC** (the Mac's `preferredCodec ?? .hevc`): `MfVideoEncoder` (was `MfH264Encoder`) encodes
+  H.264 or HEVC with the same MFT plumbing and low-latency settings; HEVC is `MFVideoFormat_HEVC`,
+  Main 8-bit 4:2:0 (`eAVEncH265VProfile_Main_420_8`), no CABAC switch. `MediaFoundationEncoderFactory`
+  probes once (`MFTEnum2`, any adapter) and advertises `[hevc, h264]` when the PC has an HEVC
+  encoder, else `[h264]`; Windows ships no software HEVC encoder, so a failure on the capture GPU
+  makes `Create` throw, `HostSessionCore` falls back to H.264 for that stream, and the factory stops
+  offering HEVC. `HostSessionCore.ChooseCodec`: the client's `preferredCodec` if the host has it
+  (and the client's `supportedCodecs` lists it), else the host's first; `streamConfig` and
+  `videoConfig` name what was chosen, HEVC's `parameterSets` are `[VPS, SPS, PPS]` from the IDR (or
+  `MF_MT_MPEG_SEQUENCE_HEADER`), and IRAP slices (16–21) count as keyframes. `--codec h264|hevc`
+  offers and streams only that codec; About shows "NVIDIA HEVC Encoder MFT (hardware)". The
+  synthetic host stays H.264. Checked on the RTX 5070 Ti at 3840 × 2160, 40 Mbps CBR: in-band
+  AUD/VPS/SPS/PPS on every IDR, two IDR_W_RADL slices, TRAIL_R P-frames, Main profile, High tier,
+  level 5.1 (NVIDIA ignores the ICodecAPI profile and B-frame keys, as for H.264; the media type
+  sets them). Tests: `HevcVideoTests`, `HevcSessionTests`, `NalUnitsTests`, `EncoderNameTests`. An
+  iPad decoding the PC's HEVC still needs a device check.
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end

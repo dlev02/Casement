@@ -73,6 +73,7 @@ public sealed class HostSessionCore
     private bool _needsKeyframe = true;
     private bool _configSentForEncoder;
     private byte[][]? _lastParameterSets;
+    private VideoCodec _codec = VideoCodec.H264;
     private ulong _sequence;
     private ulong _framesSent;
     private AdaptiveController _adaptive = new(20_000);
@@ -523,10 +524,22 @@ public sealed class HostSessionCore
         _adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
         _currentFps = fps;
         _currentMaxQP = _adaptive.MaxQP;
+        var codec = ChooseCodec(select.PreferredCodec, _env.Encoders.SupportedCodecs, hello.SupportedCodecs);
         IVideoEncoder encoder;
         try
         {
-            encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(VideoCodec.H264, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            try
+            {
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            }
+            catch (CaptureUnavailableException error) when (codec != VideoCodec.H264 && _env.Encoders.SupportedCodecs.Contains(VideoCodec.H264))
+            {
+                // Advertised but refused on this capture's GPU (another adapter has the HEVC
+                // encoder, or the driver turned the settings down): H.264 still gets a picture.
+                _log.LogWarning("{Codec} encoder unavailable ({Reason}); streaming H.264", codec, error.Message);
+                codec = VideoCodec.H264;
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            }
             var sink = new EncoderSink(this, encoder);
             encoder.Start(sink);
             _encoderSink = sink;
@@ -538,6 +551,7 @@ public sealed class HostSessionCore
         }
         _capture = capture;
         _encoder = encoder;
+        _codec = codec;
         _configSentForEncoder = false;
         _lastParameterSets = null;
         _captureStartedAt = _env.Time.GetUtcNow();
@@ -562,12 +576,27 @@ public sealed class HostSessionCore
         _cursorWatch?.Dispose();
         _cursorWatch = localCursor ? _env.Cursor!.Watch(chosen, state => _queue.Post(() => SendCursor(state))) : null;
 
-        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = VideoCodec.H264, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
+        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
         _needsKeyframe = true;
         StartWatchdog(); // a capture that never sends a frame counts as failed after 5 s
         _listener.SessionChanged();
-        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}); stream setup took {Ms} ms",
-                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}); stream setup took {Ms} ms",
+                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// The codec to stream: the client's <c>preferredCodec</c> when this host can encode it, else the
+    /// host's best (the first of <paramref name="hostCodecs"/>, HEVC when there is an HEVC encoder),
+    /// as the Mac does with <c>preferredCodec ?? .hevc</c>. A codec the client's <c>hello</c> left
+    /// out of a non-empty <c>supportedCodecs</c> is never chosen; H.264 is the last resort.
+    /// </summary>
+    public static VideoCodec ChooseCodec(VideoCodec? preferred, IReadOnlyList<VideoCodec> hostCodecs, IReadOnlyList<VideoCodec>? clientCodecs)
+    {
+        bool Usable(VideoCodec codec) => hostCodecs.Contains(codec) && (clientCodecs is not { Count: > 0 } || clientCodecs.Contains(codec));
+        if (preferred is { } wanted && Usable(wanted)) return wanted;
+        foreach (var codec in hostCodecs)
+            if (Usable(codec)) return codec;
+        return VideoCodec.H264;
     }
 
     /// <summary>The pointer's look first, then where it is and whether it shows, on the control lane.</summary>
@@ -677,7 +706,7 @@ public sealed class HostSessionCore
         AccessUnit unit;
         try
         {
-            unit = output.Format == NalFormat.AnnexB ? AnnexB.ToAccessUnit(output.Data) : AnnexB.FromUnits(AnnexB.SplitAvcc(output.Data));
+            unit = output.Format == NalFormat.AnnexB ? AnnexB.ToAccessUnit(output.Data, _codec) : AnnexB.FromUnits(AnnexB.SplitAvcc(output.Data), _codec);
         }
         catch (FormatException error)
         {
@@ -688,16 +717,13 @@ public sealed class HostSessionCore
         if (unit.Avcc.Length == 0) return;
         if (unit.IsKeyframe)
         {
-            var sps = unit.Sps ?? output.ParameterSets?.FirstOrDefault(p => NalType.Of(p) == NalType.Sps);
-            var pps = unit.Pps ?? output.ParameterSets?.FirstOrDefault(p => NalType.Of(p) == NalType.Pps);
-            if (sps is not null && pps is not null)
+            if (WireParameterSets(unit, output.ParameterSets) is { } sets)
             {
-                byte[][] sets = [sps, pps];
                 if (!_configSentForEncoder || _lastParameterSets is null || !SameSets(sets, _lastParameterSets))
                 {
                     _connection.PostVideo(new VideoConfig
                     {
-                        Codec = VideoCodec.H264,
+                        Codec = _codec,
                         Width = output.Width,
                         Height = output.Height,
                         ParameterSets = sets,
@@ -732,6 +758,26 @@ public sealed class HostSessionCore
         // The link is behind: this P-frame is gone, so the picture needs an IDR once it catches up.
         _needsKeyframe = true;
         if (_adaptive.NoteBacklog() is { } bitrate) _encoder?.SetBitrate(bitrate);
+    }
+
+    /// <summary>
+    /// The keyframe's parameter sets in wire order for the current codec (H.264 <c>[SPS, PPS]</c>,
+    /// HEVC <c>[VPS, SPS, PPS]</c>), each from the AU or else from what the encoder handed over
+    /// beside it; null while any is missing.
+    /// </summary>
+    private byte[][]? WireParameterSets(AccessUnit unit, IReadOnlyList<byte[]>? side)
+    {
+        byte[]? Side(int type) => side?.FirstOrDefault(p => NalType.Of(p, _codec) == type);
+        if (_codec == VideoCodec.Hevc)
+        {
+            var vps = unit.Vps ?? Side(HevcNalType.Vps);
+            var hevcSps = unit.Sps ?? Side(HevcNalType.Sps);
+            var hevcPps = unit.Pps ?? Side(HevcNalType.Pps);
+            return vps is not null && hevcSps is not null && hevcPps is not null ? [vps, hevcSps, hevcPps] : null;
+        }
+        var sps = unit.Sps ?? Side(NalType.Sps);
+        var pps = unit.Pps ?? Side(NalType.Pps);
+        return sps is not null && pps is not null ? [sps, pps] : null;
     }
 
     private static bool SameSets(byte[][] a, byte[][] b) =>
