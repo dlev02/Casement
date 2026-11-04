@@ -39,6 +39,6 @@ public sealed partial class DisplayPage : Page
             DisplayDetail.Text = string.Create(CultureInfo.CurrentCulture,
                 $"{main.PixelWidth} × {main.PixelHeight} pixels at {main.Scale * 100:0}% scale ({main.PointWidth} × {main.PointHeight} on the iPad), {main.RefreshRate:0} Hz");
         }
-        EncoderText.Text = runtime.Encoders.CurrentEncoderName ?? "Chosen when an iPad first connects (the graphics card's H.264 encoder when it has one).";
+        EncoderText.Text = runtime.Encoders.CurrentEncoderName ?? "Chosen when an iPad first connects (the graphics card's HEVC or H.264 encoder when it has one).";
     }
 }

@@ -195,7 +195,7 @@ so the peer is loopback (a DEBUG host accepts it):
 
 | Project | Output | What |
 | --- | --- | --- |
-| `src/Vantage.Host.Windows.Platform/` | library | WGC capture on the monitor's GPU, D3D11 BGRA→NV12, Media Foundation H.264 (hardware MFT by adapter LUID, software fallback), `SendInput`, Win32 clipboard, WTS/secure-desktop/display-power status, keep-awake, DPAPI storage, receive folder + Mark of the Web, Tailscale CLI, tray icon, start at login, and `WindowsHostRuntime` (the composition root). |
+| `src/Vantage.Host.Windows.Platform/` | library | WGC capture on the monitor's GPU, D3D11 BGRA→NV12, Media Foundation HEVC and H.264 (hardware MFT by adapter LUID; H.264 falls back to software, HEVC to H.264), `SendInput`, Win32 clipboard, WTS/secure-desktop/display-power status, keep-awake, DPAPI storage, receive folder + Mark of the Web, Tailscale CLI, tray icon, start at login, and `WindowsHostRuntime` (the composition root). |
 | `src/Vantage.Host.Windows.Cli/` | `VantageHostCli.exe` | The real pipeline with console logging and no UI (bring-up, SSH). Keys: P new pairing code, Q quit. |
 | `src/Vantage.Host.Windows/` | `VantageHost.exe` | The WinUI 3 tray app (Windows App SDK 2.5, unpackaged, self-contained). Same flags as the CLI. |
 | `tools/InputProbe/` | `InputProbe.exe` | Logs mouse/keyboard events with `injected` and `vantage` marks (the Windows `click-target.swift`). |
@@ -207,10 +207,13 @@ runs the Windows tests too. Export `DOTNET_CLI_TELEMETRY_OPTOUT=1 TESTINGPLATFOR
 first; the scripts do. XAML compiles only on Windows: build the app from `Vantage.Windows.PC.slnx`.
 
 Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
-`--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream),
+`--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream,
+H.264 or HEVC: whichever the session streams),
 `--platform windows|macos`, `--synthetic` (separate `Vantage Host (Synthetic)` data folder, input
 logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
-auto|hardware|software`, `--rate-control cbr|lowdelayvbr`, `--send-file-on-connect PATH` and
+auto|hardware|software`, `--codec h264|hevc` (offer and stream only that codec, whatever the client
+prefers; default HEVC when the PC has an HEVC encoder, then H.264; `run-dev.ps1 -Codec`),
+`--rate-control cbr|lowdelayvbr`, `--send-file-on-connect PATH` and
 `--capture-fails-for S` (Debug), `--background`, `--verbose`. Logs default to
 `%LOCALAPPDATA%\Vantage Host\logs\host.log`; `run-dev.ps1` uses `dev.log`.
 
@@ -239,8 +242,11 @@ ffplay /tmp/vantage.h264
 
 What the log should show, on a PC with an NVIDIA card and an AMD iGPU: `GPU: NVIDIA GeForce …` (the
 monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
-`encoder: NVIDIA H.264 Encoder MFT (hardware, async) …`, then `…: first frame N bytes, NAL types
-[7,8,5]` (SPS, PPS, IDR; a 9 or 6 in front is an AUD/SEI the core drops). If the NVIDIA MFT
+`HEVC encoder found (hardware)`, `encoder: NVIDIA HEVC Encoder MFT (HEVC, hardware, async) …`, then
+`…: first frame N bytes, NAL types [35,32,33,34,19,19]` (AUD, VPS, SPS, PPS, two IDR_W_RADL slices).
+With `-Codec h264` (or a client that prefers H.264): `encoder: NVIDIA H.264 Encoder MFT (H.264,
+hardware, async) …` and `NAL types [9,7,8,5]` (AUD, SPS, PPS, IDR; the core drops the AUD and any SEI).
+Pass `-Codec` with `-DumpH264` so the file holds one codec (`ffprobe` reads either). If the NVIDIA MFT
 misbehaves, rerun with `-Encoder software` to separate encoder problems from pipeline ones.
 `ffprobe` should report High profile, `has_b_frames=0`, `color_primaries=bt709`,
 `color_transfer=iec61966-2-1` (or `bt709`) and `color_range=tv`.

@@ -20,7 +20,7 @@ Things that differ from what one might assume:
    `HostCapabilities.cursorShapes` and a client's `features.localCursor`, it leaves the pointer out
    of the video and sends both, and the client draws the pointer itself.
 3. **Video is AVCC, not Annex-B.** Each NAL unit gets a 4-byte big-endian length prefix, and
-   SPS/PPS travel separately in `videoConfig`. The client builds its format description only from
+   SPS/PPS (HEVC: VPS/SPS/PPS) travel separately in `videoConfig`. The client builds its format description only from
    `videoConfig`; frames that arrive before it are dropped with a keyframe request.
 4. **An unknown message kind closes the connection on both Swift sides.** A Windows host may
    tolerate unknown kinds, but it must never send a kind the client didn't ask for.
@@ -159,7 +159,10 @@ message. The host must **never send** a kind the client didn't opt into.
 
 ### 5.1 Enums
 
-- `VideoCodec`: `"h264"`, `"hevc"`
+- `VideoCodec`: `"h264"`, `"hevc"`. The Mac offers `["hevc","h264"]` and streams
+  `preferredCodec ?? hevc`; the Windows host offers `["hevc","h264"]` when the PC has an HEVC
+  encoder MFT (else `["h264"]`), streams `preferredCodec` when it has it, else its first, and the
+  synthetic hosts offer `["h264"]` only.
 - `QualityPreset`: `"auto"`, `"text"`, `"motion"`, `"maximum"`
 - `AuthStatus`: `"ok"`, `"pairingRequired"`, `"badPairingCode"`, `"badSignature"`, `"denied"`,
   `"versionMismatch"`
@@ -287,14 +290,17 @@ DictationResult (74). Their schemas are in `AudioMessages.swift` and `DictationM
 |---|---|---|
 | 0 | u64 | sequence: per encoder, starts at 0, +1 per frame |
 | 8 | u64 | captureNanos: host monotonic ns (the client ignores it today) |
-| 16 | u8 | isKeyframe: 1 if the AU contains an IDR (H.264 NAL type 5) |
+| 16 | u8 | isKeyframe: 1 if the AU contains an IDR (H.264 NAL type 5; HEVC an IRAP slice, types 16–21, in practice IDR_W_RADL 19 or IDR_N_LP 20) |
 | 17 | u32 | width: encoded width |
 | 21 | u32 | height |
 | 25 | … | data: one access unit in **AVCC** form (see below) |
 
 The data is a sequence of `[u32 **big-endian** NAL length][NAL bytes]` with no start codes. Remove
 SPS (7), PPS (8) and AUD (9) from the AU; they travel in `videoConfig`. Keep slices (1, 5). SEI (6)
-is tolerated by VideoToolbox; drop it if decoding misbehaves. The client feeds `data` as one sample
+is tolerated by VideoToolbox; drop it if decoding misbehaves. HEVC is the same framing (the
+`hvcC` lengths are 4 bytes too) over HEVC's two-byte NAL headers (type = bits 1–6 of the first
+byte): remove VPS (32), SPS (33), PPS (34) and AUD (35), keep the slices (0–31); the Windows host
+drops prefix/suffix SEI (39, 40). The client feeds `data` as one sample
 to `AVSampleBufferDisplayLayer` under the format description built from the last `videoConfig`,
 marked display-immediately.
 
@@ -407,7 +413,7 @@ delta is the translation divided by 10 points per line. See §7.4 for the Window
    - Enumerate displays.
    - If `features.fileTransfer`, issue a 32-byte token.
    - Send `authResult{status:"ok", sessionToken?, displays:[…], capabilities}`.
-   - **Windows v1 capabilities:** `{codecs:["h264"], canManageVirtualDisplay:false, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
+   - **Windows v1 capabilities:** `{codecs:["hevc","h264"] (["h264"] on a PC without an HEVC encoder), canManageVirtualDisplay:false, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
      `fileTransfer`/`filesOnlySessions` only when the client said `fileTransfer`. Omit
      `dictationEngines` and `audio` (nil means the client never sends those kinds).
 10. The client then immediately sends
@@ -441,11 +447,13 @@ On the first `selectDisplay`:
 4. Start the encoder and capture. The Mac starts at `min(targetFPS, 60)` fps with a starting bitrate
    of `clamp(pixels × fps × 0.08 / 1000, 4 000, 60 000)` kbps.
 5. Send the current clipboard if it isn't empty (the Mac does this before `streamConfig`).
-6. `send streamConfig{display, codec, fps, bitrateKbps}`. Use the codec actually chosen: **always
-   `h264` on Windows v1**, whatever `preferredCodec` says. The client decodes by `videoConfig.codec`.
+6. `send streamConfig{display, codec, fps, bitrateKbps}`. Use the codec actually chosen: on
+   Windows `preferredCodec` when the host can encode it, else the first of `codecs` (HEVC when
+   offered, as the Mac's `preferredCodec ?? .hevc`), and H.264 when the HEVC encoder can't be made
+   on the capture GPU. The client decodes by `videoConfig.codec`.
 7. Set `needsKeyframe = true`.
 
-**Every encoded frame:** if it's an IDR and its SPS/PPS differ from the last ones sent (or it's the
+**Every encoded frame:** if it's an IDR and its parameter sets (SPS/PPS; HEVC VPS/SPS/PPS) differ from the last ones sent (or it's the
 first frame), send `videoConfig` **before** the `videoFrame`. Sending `videoConfig` before every IDR
 is also safe.
 
@@ -479,8 +487,9 @@ is attached it **keeps running** (§10).
 
 ### 7.3 Video format expected by the client (`VideoStreamView.swift`, Mac `VideoEncoder.swift`)
 
-- H.264, progressive 4:2:0 8-bit (the Mac captures `'420v'`, i.e. NV12 video range). High profile
-  (Main also works), CABAC, **no B-frames or reordering**, low-latency rate control.
+- H.264 or HEVC, progressive 4:2:0 8-bit (the Mac captures `'420v'`, i.e. NV12 video range).
+  H.264 High profile (Main also works) with CABAC, or HEVC Main; **no B-frames or reordering**,
+  low-latency rate control.
 - Colour: the Mac tags BT.709 primaries, sRGB transfer and BT.709 matrix, video range. The client
   doesn't override colour, so what's in the SPS VUI is used. Aim for `colour_primaries=1`,
   `transfer_characteristics=13` (sRGB), or 1 if the encoder can't, `matrix_coefficients=1`,

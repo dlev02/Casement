@@ -1,6 +1,7 @@
 using System.Globalization;
 using Vantage.Host.Windows.Encode;
 using Vantage.Protocol;
+using Vantage.Protocol.Messages;
 
 namespace Vantage.Host.Windows.Composition;
 
@@ -40,6 +41,9 @@ public sealed record HostCommandLine
     /// <summary><c>--encoder auto|hardware|software</c>.</summary>
     public EncoderPreference Encoder { get; init; } = EncoderPreference.Auto;
 
+    /// <summary><c>--codec h264|hevc</c>: offer and stream only this codec, whatever the client prefers (testing); null for HEVC-then-H.264.</summary>
+    public VideoCodec? Codec { get; init; }
+
     /// <summary><c>--rate-control cbr|lowdelayvbr</c>.</summary>
     public RateControl RateControl { get; init; } = RateControl.Cbr;
 
@@ -61,10 +65,11 @@ public sealed record HostCommandLine
           --exit-after SECONDS        quit by itself
           --receive-folder PATH       save received files here
           --log-file PATH             also log to this file
-          --dump-h264 PATH            append the encoded H.264 (Annex-B) to PATH
+          --dump-h264 PATH            append the encoded video (H.264 or HEVC, Annex-B) to PATH
           --platform windows|macos    what the host reports itself as
           --synthetic                 separate trust store; log input instead of injecting it
           --encoder auto|hardware|software
+          --codec h264|hevc           offer and stream only this codec (default: HEVC when the PC has an encoder, then H.264)
           --rate-control cbr|lowdelayvbr
           --send-file-on-connect PATH send a file to each client that attaches (debug builds)
           --capture-fails-for SECONDS make capture fail at first (debug builds)
@@ -134,6 +139,17 @@ public sealed record HostCommandLine
                             "hardware" => EncoderPreference.HardwareOnly,
                             "software" => EncoderPreference.SoftwareOnly,
                             _ => throw new ArgumentException("--encoder is auto, hardware or software."),
+                        },
+                    };
+                    break;
+                case "--codec":
+                    result = result with
+                    {
+                        Codec = Value().ToLowerInvariant() switch
+                        {
+                            "h264" or "h.264" or "avc" => VideoCodec.H264,
+                            "hevc" or "h265" or "h.265" => VideoCodec.Hevc,
+                            _ => throw new ArgumentException("--codec is h264 or hevc."),
                         },
                     };
                     break;
