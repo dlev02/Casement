@@ -334,6 +334,40 @@ public class HostListenerTests
         connection.Close();
     }
 
+    /// <summary>An iPad flick glides on the real session (its queue and the system clock), and the glide ends with the session.</summary>
+    [Fact]
+    public async Task FlickGlidesUntilTheSessionEnds()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var (connection, _, _) = await client.ConnectAsync(host.Port, "246810");
+        await connection.SendAsync(new SelectDisplay { Selection = new DisplaySelection.Display(1), TargetFPS = 30, Quality = QualityPreset.Auto });
+        Assert.True((await Loopback.Next<VideoFrame>(connection)).IsKeyframe);
+
+        await connection.SendAsync(new ScrollEvent
+        {
+            Phase = ScrollPhase.Ended, Momentum = MomentumPhase.Began, IsContinuous = true,
+            DeltaX = 0, DeltaY = 4, X = 400, Y = 250, VelocityX = 0, VelocityY = 3000,
+        });
+        List<ScrollEvent> Scrolls()
+        {
+            lock (host.Input.Events) return host.Input.Events.OfType<ScrollEvent>().ToList();
+        }
+        for (var i = 0; i < 100 && Scrolls().Count < 6; i++) await Task.Delay(20);
+        var scrolls = Scrolls();
+        Assert.Equal((ScrollPhase.Ended, MomentumPhase.None), (scrolls[0].Phase, scrolls[0].Momentum));
+        Assert.Equal((ScrollPhase.None, MomentumPhase.Began), (scrolls[1].Phase, scrolls[1].Momentum));
+        Assert.All(scrolls.Skip(2), s => Assert.True(s.Momentum == MomentumPhase.Changed && s.DeltaY > 0));
+
+        connection.Close();
+        for (var i = 0; i < 50 && host.Input.Releases == 0; i++) await Task.Delay(20);
+        Assert.True(host.Input.Releases > 0);
+        var ended = Scrolls();
+        Assert.Equal(MomentumPhase.Ended, ended[^1].Momentum); // cut short: 3000 pt/s glides for about 2.7 s
+        await Task.Delay(200);
+        Assert.Equal(ended.Count, Scrolls().Count);
+    }
+
     [Fact]
     public async Task MissingPictureIsExplainedUntilFramesReturn()
     {

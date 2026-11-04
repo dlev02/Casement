@@ -75,7 +75,8 @@ internal sealed class LoggingInputSink : IInputSink
         _translator.Scroll(e);
         Write(new JsonObject
         {
-            ["type"] = "scroll", ["phase"] = e.Phase.ToString().ToLowerInvariant(), ["continuous"] = e.IsContinuous,
+            ["type"] = "scroll", ["phase"] = e.Phase.ToString().ToLowerInvariant(), ["momentum"] = e.Momentum.ToString().ToLowerInvariant(),
+            ["continuous"] = e.IsContinuous,
             ["deltaX"] = e.DeltaX, ["deltaY"] = e.DeltaY, ["x"] = e.X, ["y"] = e.Y, ["modifiers"] = (uint)e.Modifiers,
         });
     }

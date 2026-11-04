@@ -517,8 +517,13 @@ modifier keys are held. On Windows, press the missing modifier keys around the c
 - Discrete (wheel): `wheel = round(deltaY × 120)` via `MOUSEEVENTF_WHEEL`.
 - Continuous (trackpad): accumulate `deltaY × 120 / 48` per point and carry the fractional remainder.
 - Horizontal: `MOUSEEVENTF_HWHEEL` with `−deltaX` using the same scale (positive HWHEEL scrolls right).
-- The Mac forwards scroll phases unchanged. Momentum synthesis from velocity on `ended` is optional
-  (decaying wheel events for about 600 ms, cancelled by the next `began`).
+- The Mac forwards scroll phases unchanged, except an iPad flick (`ended` + momentum `began` +
+  velocity), which a host must glide like the Mac's `ScrollMomentum`: post the `ended` alone, then
+  momentum began/changed/ended frames every 1/60 s in whole points, the velocity decaying 0.998 per
+  ms; under 60 pt/s nothing glides, and it ends under 10 pt/s or after 3 s. The next scroll, a
+  button press, `releaseAllInput` or the session ending stops it with its end frame. The Windows
+  host does this in `MomentumInputSink`; the frames go through the continuous-scroll conversion
+  above (remainder carried), so a glide is a stream of small wheel events.
 - Mac reference, for context: continuous `wheel1 = −deltaY` pixels; discrete `wheel1 = deltaY` lines.
 
 **Keys** (behaviour, not wire format; the client relies on it):

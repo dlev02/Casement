@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Vantage.Protocol.Adaptive;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Files;
+using Vantage.Protocol.Input;
 using Vantage.Protocol.Messages;
 using Vantage.Protocol.Transport;
 using Vantage.Protocol.Video;
@@ -534,8 +535,10 @@ public sealed class HostSessionCore
         _captureHasFramed = false;
         Display = chosen;
 
-        // The input sink (and whatever it holds) survives capture restarts.
-        _input ??= _env.CreateInputSink();
+        // The input sink (and whatever it holds) survives capture restarts. It glides after an
+        // iPad flick as the Mac host does, ticking on this session's queue; teardown's ReleaseAll
+        // and Dispose end the glide and its timer.
+        _input ??= new MomentumInputSink(_env.CreateInputSink(), _env.Time, work => _queue.Post(work));
         _input.SetDisplay(chosen);
 
         if (_clipboardWatch is null)
@@ -1068,8 +1071,15 @@ public sealed class HostSessionCore
                 {
                     try
                     {
-                        _input.ReleaseAll();
-                        _input.Dispose();
+                        // Dispose even if releasing failed: it stops a glide's timer for good.
+                        try
+                        {
+                            _input.ReleaseAll();
+                        }
+                        finally
+                        {
+                            _input.Dispose();
+                        }
                     }
                     catch (Exception error)
                     {
