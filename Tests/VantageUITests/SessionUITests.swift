@@ -110,7 +110,8 @@ nonisolated final class SessionUITests: XCTestCase {
     }
 
     /// Mac Audio from the strip against the synthetic host's chime: the toggle turns on, packets
-    /// arrive and play with the buffer holding its depth, and it turns off again.
+    /// arrive and play with the buffer holding its depth, and it turns off again. Against the
+    /// Windows synthetic host (`--platform windows`) the same toggle is named PC Audio.
     @MainActor func testMacAudioToggleStreamsTheMacsSound() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-VantageAutoConnect", Self.host, "-VantagePairingCode", "246810", "-VantageMacAudio", "0",
@@ -118,7 +119,7 @@ nonisolated final class SessionUITests: XCTestCase {
         app.launch()
         let toggle = app.buttons["session.toolbar.macAudio"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertEqual(toggle.label, "Mac Audio")
+        XCTAssertTrue(["Mac Audio", "PC Audio"].contains(toggle.label), toggle.label)
         XCTAssertEqual(toggle.value as? String, "Off")
         XCTAssertTrue(toggle.isEnabled, "the synthetic host offers audio")
         toggle.tap()

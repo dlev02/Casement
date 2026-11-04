@@ -257,7 +257,7 @@ struct ControlStrip: View {
         .accessibilityIdentifier("session.toolbar.disconnect")
     }
 
-    /// A toggle like the modifier keys: tinted and filled while the Mac's sound plays here. Dimmed,
+    /// A toggle like the modifier keys: tinted and filled while the host's sound plays here. Dimmed,
     /// with the reason as its VoiceOver hint, when the host can't send audio.
     private var macAudioButton: some View {
         let isOn = macAudio.isOn
@@ -267,11 +267,11 @@ struct ControlStrip: View {
         }
         .buttonStyle(StripButtonStyle(isActive: isOn, isDimmed: macAudio.unavailableReason != nil))
         .disabled(macAudio.unavailableReason != nil)
-        .help(StripItem.macAudio.label)
-        .accessibilityLabel(StripItem.macAudio.label)
+        .help(StripItem.macAudio.label(for: host))
+        .accessibilityLabel(StripItem.macAudio.label(for: host))
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
-        .accessibilityHint(macAudio.unavailableReason ?? "Plays the Mac's sound on \(LocalDevice.this).")
+        .accessibilityHint(macAudio.unavailableReason ?? "Plays \(noun.thePossessive) sound on \(LocalDevice.this).")
         .accessibilityIdentifier("session.toolbar.macAudio")
     }
 
@@ -394,13 +394,12 @@ struct ControlStrip: View {
             #endif
 
             Section {
-                if !noun.isWindows { // a PC has no audio to send
-                    Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
-                        Label(StripItem.macAudio.label, systemImage: StripItem.macAudio.symbol)
-                    }
-                    .disabled(macAudio.unavailableReason != nil)
-                    .accessibilityIdentifier("session.menu.macAudio")
+                // Any host may send sound; one that can't (`HostCapabilities.audio`) dims it.
+                Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
+                    Label(StripItem.macAudio.label(for: host), systemImage: StripItem.macAudio.symbol)
                 }
+                .disabled(macAudio.unavailableReason != nil)
+                .accessibilityIdentifier("session.menu.macAudio")
                 Button(action: files.onSend) {
                     Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
                 }
@@ -556,7 +555,7 @@ private struct StripButtonStyle: ButtonStyle {
     var isActive = false
     /// The glyph colour when it isn't active (Disconnect is red).
     var tint: Color?
-    /// Shown as unavailable (Mac Audio on a host that can't send it).
+    /// Shown as unavailable (the audio toggle on a host that can't send it).
     var isDimmed = false
 
     init(isActive: Bool = false, tint: Color? = nil, isDimmed: Bool = false) {
@@ -727,9 +726,9 @@ private struct DictationStripButton: View {
     }
 }
 
-/// What the strip needs to draw and flip the Mac Audio toggle.
+/// What the strip needs to draw and flip the Mac (or PC) Audio toggle.
 struct MacAudioToggle {
-    /// The user wants the Mac's sound here (and nothing has failed this session).
+    /// The user wants the host's sound here (and nothing has failed this session).
     var isOn = false
     /// Nil when the host can send audio; otherwise why the toggle is dimmed.
     var unavailableReason: String?
