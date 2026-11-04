@@ -1004,6 +1004,13 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, and `--cursor-shapes`. Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
+- **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
+  sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
+  0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
+  translator's wheel conversion, ticking on the session's `TimeProvider` and queue (frames due by
+  the clock, so Windows' 15.6 ms timer doesn't slow it). The next scroll, a button press,
+  `releaseAll` and teardown end it. The synthetic host's input log shows the frames (`momentum`).
+  Tests: `ScrollMomentumTests`, `HostListenerTests.FlickGlidesUntilTheSessionEnds`.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,

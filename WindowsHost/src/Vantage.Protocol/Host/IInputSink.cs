@@ -40,6 +40,10 @@ public interface IInputSink : IDisposable
     /// A scroll. Positive <see cref="ScrollEvent.DeltaY"/> means content moves down (a positive
     /// Windows wheel delta). Discrete: <c>round(deltaY × 120)</c>. Continuous: <c>deltaY × 120 / 48</c>
     /// per point, fractional remainder carried. Horizontal uses <c>−deltaX</c> with the same scale.
+    /// The session wraps the sink in <see cref="Input.MomentumInputSink"/>, so the glide after an iPad
+    /// flick arrives here too, as continuous scrolls with phase none and a momentum phase; they
+    /// convert the same way, so a glide is a stream of small wheel events with the remainder carried
+    /// on from the gesture.
     /// </summary>
     void Scroll(ScrollEvent scrollEvent);
 
