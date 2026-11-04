@@ -76,10 +76,31 @@ struct AppearanceSettings: View {
             } footer: {
                 Text("Automatic follows the system setting. This changes Casement's own screens and controls, not the Mac you're viewing.")
             }
+            #if os(iOS)
+            DeviceListLayoutSection()
+            #endif
         }
         .navigationTitle("Appearance")
     }
 }
+
+#if os(iOS)
+/// Settings → Appearance → Device List: the same choice as the list's own Grid/List button.
+private struct DeviceListLayoutSection: View {
+    @Environment(DeviceStore.self) private var store
+
+    var body: some View {
+        Section("Device List") {
+            Picker("Show Devices As", selection: Binding(get: { store.isGridLayout }, set: { store.isGridLayout = $0 })) {
+                Label("Grid", systemImage: "square.grid.2x2").tag(true)
+                Label("List", systemImage: "list.bullet").tag(false)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        }
+    }
+}
+#endif
 
 struct ControlSettings: View {
     @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad

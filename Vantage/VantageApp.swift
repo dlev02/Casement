@@ -32,6 +32,9 @@ struct VantageApp: App {
         WindowGroup {
             ContentView()
         }
+        #if os(iOS)
+        .commands { MacHostedSettingsCommand() } // Casement › Settings… when the iPad app runs on a Mac
+        #endif
         #if os(visionOS)
         // The app's phase only reaches background once every window has, so an open session
         // doesn't lock just because the device list was closed.
