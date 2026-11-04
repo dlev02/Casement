@@ -28,6 +28,9 @@ struct DeviceListScreen: View {
                 }
             }
             .navigationTitle("Casement")
+            #if os(iOS)
+            .modifier(MacHostedListBar())
+            #endif
             .searchable(text: $store.searchText, prompt: "Search devices")
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .top) { TailscaleBanner() }
@@ -106,17 +109,27 @@ struct DeviceListScreen: View {
             #endif
         }
         ToolbarItemGroup(placement: .listTrailing) {
+            // Layout is its own button, not an item tucked under Sort: it shows what a click
+            // switches to (also Settings → Appearance → Device List).
+            Button { store.isGridLayout.toggle() } label: {
+                Label(store.isGridLayout ? "Show as List" : "Show as Grid",
+                      systemImage: store.isGridLayout ? "list.bullet" : "square.grid.2x2")
+            }
+            .accessibilityIdentifier("deviceList.layout")
             Menu {
                 DeviceSortPicker()
-                Divider()
-                Button { store.isGridLayout.toggle() } label: {
-                    Label(store.isGridLayout ? "List" : "Grid", systemImage: store.isGridLayout ? "list.bullet" : "square.grid.2x2")
-                }
             } label: {
-                Label("Sort and Layout", systemImage: "arrow.up.arrow.down")
+                Label("Sort", systemImage: "arrow.up.arrow.down")
             }
             AddDeviceMenu(actions: actions)
         }
+        #if os(iOS)
+        // The iPad app on a Mac already says "Casement" in the window's title bar; a second copy
+        // in the bar (and a third, centred, in Mission Control) only repeats it.
+        if MacHostedIPadApp.isRunning {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 0, height: 0).accessibilityHidden(true) }
+        }
+        #endif
     }
 
     /// Nothing at all while checks are off, rather than a "Checking…" that never ends.

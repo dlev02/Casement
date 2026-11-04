@@ -84,6 +84,7 @@ struct ContentView: View {
             FileTransferCenter.shared.onFeedback = { Haptics.play($0) }
             #if os(iOS)
             TransferBackgroundActivity.shared.start()
+            lock.watchProtectedData()
             #endif
             #if DEBUG
             debugScreen = ClientOptions.openScreen
@@ -93,6 +94,9 @@ struct ContentView: View {
             switch phase {
             case .active:
                 reachability.refresh()
+                #if os(iOS)
+                lock.appWillReturn()
+                #endif
                 lock.authenticate()
                 // Files cut off while the app was away pick up where they stopped.
                 #if os(iOS)
@@ -104,7 +108,7 @@ struct ContentView: View {
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes
                 #else
-                lock.lockIfNeeded()
+                lock.appDidEnterBackground() // the iPad app on a Mac doesn't lock on every Space swipe
                 TransferBackgroundActivity.shared.appDidEnterBackground()
                 #endif
             default: break

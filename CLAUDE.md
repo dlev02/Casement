@@ -116,6 +116,14 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
   and threw away half-typed input whenever the user switched apps (e.g. copying a Tailscale
   secret from Safari on iPhone). visionOS still swaps views.
+- **The iPad app on a Mac** ("Designed for iPad", e.g. a TestFlight install; `MacHostedIPadApp`,
+  `ProcessInfo.isiOSAppOnMac`): not the native Mac app, but people do run it. Its scene goes to
+  the background whenever the window leaves the screen (another Space, a full-screen app), so
+  `AppLock.appDidEnterBackground` doesn't lock there; it locks when protected data goes away or
+  after `macAwayLimit` (10 min) out of sight. The device list drops its large title and bar
+  background there (`MacHostedListBar`; the window's title bar already says Casement).
+  The list's Grid/List is its own toolbar button beside Sort, and Settings → Appearance →
+  Device List.
 - **Control strip motion** (`ControlStrip`, `ToolbarPlacement` in `SessionPreferences.swift`): the
   pill and the full strip share one glass surface that resizes; don't go back to two
   `glassEffectID` shapes, which swapped in a single frame instead of morphing. Dragging uses
