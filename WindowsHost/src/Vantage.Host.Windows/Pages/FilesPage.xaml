@@ -8,6 +8,26 @@
         <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
             <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="Files" />
 
+            <!-- Files moving either way, paused, or finished in the last minute; hidden when there are none. -->
+            <Border x:Name="TransfersCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Transfers" />
+                        <Button
+                            x:Name="CancelAllButton"
+                            Grid.Column="1"
+                            Click="OnCancelAll"
+                            Content="Cancel All"
+                            Visibility="Collapsed" />
+                    </Grid>
+                    <StackPanel x:Name="TransferList" Spacing="12" />
+                </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="8">
                     <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Save files from the iPad in" />

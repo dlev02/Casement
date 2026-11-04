@@ -31,9 +31,15 @@ in Settings › General. Closing its window doesn't quit it (the first time, a n
 so), and opening Casement Host from the Start menu brings the window back.
 
 - **Click** the icon for a panel with the PC's status, **Show Pairing Code**, your connected and
-  paired devices, Settings…, and Quit.
+  paired devices, the files moving right now (each with a progress bar and a Cancel button, and
+  Show in folder once it has arrived), Settings…, and Quit.
 - **Right-click** it for a menu with Show Pairing Code…, Settings…, and Quit, plus Send File and
-  Disconnect for each connected device.
+  Disconnect for each connected device, and a Files section: each file's progress, Cancel or
+  Show in folder, and Open Receive Folder.
+- While files move, the icon turns into a ring that fills as they go, with an arrow pointing down
+  (arriving) or up (going to your device); hover over it to read "Receiving Report.pdf, 45%". A
+  file cut off by a dropped connection says "Paused at 45% · resumes when Drew's iPad
+  reconnects" and carries on from there when that device is back within an hour.
 
 To pair a device, add the PC in Casement (**Add from Tailscale…**, or **Add Manually…** with the
 PC's Tailscale name or address), choose **Show Pairing Code** in the panel, and type the six
@@ -54,7 +60,9 @@ straight away.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
 - **Display**: which display is shared (the main one) and the video encoder in use.
-- **Files**: where files from your devices are saved (Downloads unless you choose another folder),
+- **Files**: every file moving now, and for a minute after it's done (Show in folder for one that
+  arrived, **Cancel All** when several are moving),
+  where files from your devices are saved (Downloads unless you choose another folder),
   and whether to show a notification when they arrive. Received files are marked as downloaded
   from the internet, so Windows checks them like any download.
 - **About**: the version, Open Logs Folder (handy for bug reports), and Quit.

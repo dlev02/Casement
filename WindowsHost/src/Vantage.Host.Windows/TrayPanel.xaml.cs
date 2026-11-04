@@ -19,7 +19,8 @@ namespace Vantage.Host.Windows.App;
 /// <summary>
 /// What a left click on the tray icon opens, like the Mac host's menu-bar popover: a small acrylic
 /// panel beside the taskbar with the listener's state, Show Pairing Code (the code shows right here),
-/// connected and paired devices, Settings… and Quit. A borderless, always-on-top window placed by
+/// connected and paired devices, files moving (with Cancel, and Show in folder once received),
+/// Settings… and Quit. A borderless, always-on-top window placed by
 /// <see cref="TrayPanelPlacement"/> from the icon's rectangle; it hides when it loses focus or on Esc,
 /// and a click on the icon while it's open closes it. Right click keeps the native menu.
 /// </summary>
@@ -31,7 +32,11 @@ public sealed partial class TrayPanel : Window
     /// <summary>Gap to the taskbar and screen edges in DIPs (Windows 11's flyouts use 12).</summary>
     private const double Margin = 12;
 
+    /// <summary>Rows the panel shows before "N more in Settings": it sits beside the taskbar and mustn't outgrow the screen.</summary>
+    private const int MaxTransferRows = 4;
+
     private readonly AppController _controller;
+    private readonly TransferRows _transferRows;
     private readonly DispatcherTimer _countdown = new() { Interval = TimeSpan.FromSeconds(1) };
     private ScreenRect _icon;
     private long _hiddenAt;
@@ -43,6 +48,7 @@ public sealed partial class TrayPanel : Window
     {
         _controller = controller;
         InitializeComponent();
+        _transferRows = new TransferRows(TransferList, controller);
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsResizable = false;
@@ -144,10 +150,15 @@ public sealed partial class TrayPanel : Window
     {
         var runtime = _controller.Runtime;
         var listening = _controller.IsListening;
+        // Files moving say so here, as the tooltip does ("Receiving Report.pdf, 45%").
+        var moving = _controller.Problem is null ? _controller.Transfers.Summary : null;
         StatusText.Text = _controller.Problem
+            ?? moving
             ?? (listening ? $"Listening on {runtime?.Environment.HostName}" : "Starting…");
         StatusDot.Fill = ThemeBrush(_controller.Problem is not null ? "SystemFillColorCriticalBrush"
+                               : moving is not null ? "AccentFillColorDefaultBrush"
                                : listening ? "SystemFillColorSuccessBrush" : "SystemFillColorCautionBrush");
+        UpdateTransfers();
         ShowCodeButton.IsEnabled = listening;
 
         ConnectedList.Children.Clear();
@@ -182,6 +193,24 @@ public sealed partial class TrayPanel : Window
             _ => $"Paired: {string.Join(", ", paired.Select(p => p.Name))}",
         };
         UpdateCode();
+    }
+
+    /// <summary>The newest files (the Files page lists them all); the card hides when there are none.</summary>
+    private void UpdateTransfers()
+    {
+        var all = _controller.Transfers.Items;
+        var shown = all.Skip(Math.Max(0, all.Count - MaxTransferRows)).ToList();
+        _transferRows.Sync(shown);
+        TransfersSection.Visibility = all.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var more = all.Count - shown.Count;
+        MoreTransfers.Visibility = more > 0 ? Visibility.Visible : Visibility.Collapsed;
+        MoreTransfers.Content = more == 1 ? "1 more in Settings" : $"{more} more in Settings";
+    }
+
+    private void OnMoreTransfers(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        _controller.ShowWindow("files");
     }
 
     private Grid DeviceRow(Guid sessionId, string name, string detail)

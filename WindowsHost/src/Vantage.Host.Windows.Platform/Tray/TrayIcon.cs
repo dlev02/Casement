@@ -12,8 +12,9 @@ namespace Vantage.Host.Windows.Tray;
 
 /// <summary>
 /// The notification-area icon, native Windows 11 style (plan §1): <c>NOTIFYICON_VERSION_4</c>;
-/// a display glyph (an arrow into it while an iPad is connected) in white on a dark taskbar and
-/// near-black on a light one, swapped on <c>WM_SETTINGCHANGE("ImmersiveColorSet")</c>; the standard
+/// a display glyph (an arrow into it while an iPad is connected), or while files move a progress
+/// ring with an arrow (<see cref="TrayGlyph"/>, drawn at the taskbar's icon size), in white on a
+/// dark taskbar and near-black on a light one, swapped on <c>WM_SETTINGCHANGE("ImmersiveColorSet")</c>; the standard
 /// tooltip (<c>NIF_SHOWTIP</c>); left click / Enter (<c>NIN_SELECT</c>/<c>NIN_KEYSELECT</c>) raises
 /// <see cref="OpenRequested"/> with where the icon is (<c>Shell_NotifyIconGetRect</c>, else the click
 /// point) for the tray panel; right click / Shift+F10 (<c>WM_CONTEXTMENU</c>) shows a Win32 popup
@@ -177,12 +178,29 @@ public sealed unsafe class TrayIcon : IDisposable
 
     private HICON CurrentIcon()
     {
-        var name = $"tray-{(_state.Clients.Count > 0 ? "connected" : "idle")}-{(TaskbarIsLight() ? "light" : "dark")}.ico";
+        var light = TaskbarIsLight();
+        var theme = light ? "light" : "dark";
+        // While files move the ring says more than the connection arrow (the Mac does the same).
+        var name = _state.Activity is { } activity
+            ? $"moving-{activity.Step}-{(activity.PointsDown ? "down" : "up")}-{theme}"
+            : $"tray-{(_state.Clients.Count > 0 ? "connected" : "idle")}-{theme}.ico";
         if (_icons.TryGetValue(name, out var cached)) return cached;
-        var size = PInvoke.GetSystemMetricsForDpi((SYSTEM_METRICS_INDEX)SM_CXSMICON, PInvoke.GetDpiForSystem());
-        var icon = LoadEmbeddedIcon(name, size > 0 ? size : 16);
+        var metric = PInvoke.GetSystemMetricsForDpi((SYSTEM_METRICS_INDEX)SM_CXSMICON, PInvoke.GetDpiForSystem());
+        var size = metric > 0 ? metric : 16;
+        var icon = _state.Activity is { } moving
+            ? CreateIcon(TrayGlyph.IconResource(size, moving.Fraction, moving.PointsDown, light), size)
+            : LoadEmbeddedIcon(name, size);
+        // At most 25 fills × 2 arrows × 2 themes besides the four glyphs; freed on a DPI change and at exit.
         _icons[name] = icon;
         return icon;
+    }
+
+    private static HICON CreateIcon(byte[] resource, int size)
+    {
+        fixed (byte* pointer = resource)
+        {
+            return PInvoke.CreateIconFromResourceEx(pointer, (uint)resource.Length, true, 0x00030000, size, size, IMAGE_FLAGS.LR_DEFAULTCOLOR);
+        }
     }
 
     private HICON LoadEmbeddedIcon(string name, int size)
