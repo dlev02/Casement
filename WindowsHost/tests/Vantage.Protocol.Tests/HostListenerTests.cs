@@ -22,7 +22,7 @@ internal sealed class TestHost : IAsyncDisposable
 
     public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
                     IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null, bool captureUnsupported = false,
-                    IVideoEncoderFactory? encoders = null, IAudioSource? audio = null)
+                    IVideoEncoderFactory? encoders = null, IAudioSource? audio = null, IDisplayFitter? displayFitter = null)
     {
         Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
@@ -36,6 +36,7 @@ internal sealed class TestHost : IAsyncDisposable
             Screen = screen,
             Encoders = encoders ?? new ClipEncoderFactory(new Clip(VideoTests.ClipPath())),
             Audio = audio,
+            DisplayFitter = displayFitter,
             CreateInputSink = () => Input,
             Clipboard = Clipboard,
             Status = Display,

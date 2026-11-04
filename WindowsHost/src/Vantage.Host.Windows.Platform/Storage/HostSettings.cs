@@ -47,6 +47,12 @@ public sealed record HostSettings
     /// </summary>
     public bool AskBeforeRestart { get; set; } = true;
 
+    /// <summary>
+    /// Let a device that asks for a display fitted to its screen switch the shared display's mode
+    /// while it's connected (<c>DisplayFitter</c>; the mode comes back afterwards). On by default.
+    /// </summary>
+    public bool AllowDisplayFitting { get; set; } = true;
+
     /// <summary>The "still running in the system tray" notification was shown (once, the first time the window is closed).</summary>
     public bool TrayHintShown { get; init; }
 }

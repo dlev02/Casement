@@ -31,6 +31,13 @@ public sealed class HostEnvironment
     /// </summary>
     public IAudioSource? Audio { get; init; }
 
+    /// <summary>
+    /// Switches the shared display's mode to fit a device's screen (<c>fitViewport</c> with
+    /// <c>useVirtualDisplay</c>); null when the platform can't (the synthetic host), and then
+    /// <c>canManageVirtualDisplay</c> is false.
+    /// </summary>
+    public IDisplayFitter? DisplayFitter { get; init; }
+
     /// <summary>Encoders for captured frames.</summary>
     public required IVideoEncoderFactory Encoders { get; init; }
 

@@ -83,11 +83,15 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
               : options.Audio == AudioLoopback.Off ? null
               : new WasapiAudioSource(logging, options.Audio);
 
+        // Synthetic runs share the PC with a real host and never touch its display modes.
+        DisplayFitter = options.Synthetic ? null : Own(new DisplayFitter(() => Settings.Current.AllowDisplayFitting, logging));
+
         Environment = new HostEnvironment
         {
             HostName = HostName(),
             Platform = options.Platform,
             Screen = Screen,
+            DisplayFitter = DisplayFitter,
             Cursor = new Cursor.WindowsCursorSource(logging),
             Audio = Audio,
             Encoders = encoders,
@@ -169,6 +173,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>The screen source (its <see cref="WindowsScreenSource.DirtyRegions"/> is shown on the Display page).</summary>
     public WindowsScreenSource Screen { get; }
+
+    /// <summary>Switches the display's mode to fit a device's screen (null for synthetic runs).</summary>
+    public DisplayFitter? DisplayFitter { get; }
 
     /// <summary>The encoder factory (its <see cref="MediaFoundationEncoderFactory.CurrentEncoderName"/> is shown in About).</summary>
     public MediaFoundationEncoderFactory Encoders { get; }

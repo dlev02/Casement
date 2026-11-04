@@ -216,7 +216,10 @@ public abstract record DisplaySelection
     /// <summary>Stream this existing display.</summary>
     public sealed record Display(uint Id) : DisplaySelection;
 
-    /// <summary>Fit the viewport. Windows v1 streams the primary display and ignores the size.</summary>
+    /// <summary>
+    /// Fit the viewport. Windows streams the primary display; with <see cref="SelectDisplay.UseVirtualDisplay"/>
+    /// it first switches that display to the mode closest to the viewport (<see cref="Host.IDisplayFitter"/>).
+    /// </summary>
     public sealed record FitViewport(Viewport Viewport) : DisplaySelection;
 }
 
