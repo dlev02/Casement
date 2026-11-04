@@ -76,6 +76,8 @@ public sealed class HostSessionCore
     private VideoCodec _codec = VideoCodec.H264;
     private ulong _sequence;
     private ulong _framesSent;
+    private ulong _idleSkipped;
+    private EncodingMode _loggedMode = EncodingMode.Motion;
     private AdaptiveController _adaptive = new(20_000);
     private int _currentFps = 60;
     private int _currentMaxQP = 44;
@@ -631,6 +633,12 @@ public sealed class HostSessionCore
         _captureHasFramed = true;
         if (_captureLostAt is not null) CaptureRecovered();
         var fps = Math.Min(_adaptive.Observe(frame.DirtyRatio), _wanted?.TargetFPS ?? 60);
+        if (_adaptive.Mode != _loggedMode)
+        {
+            _loggedMode = _adaptive.Mode;
+            _log.LogInformation("video mode {Mode} (max QP {QP}); {Skipped} unchanged frames skipped so far",
+                                _loggedMode == EncodingMode.Text ? "text" : "motion", _adaptive.MaxQP, _idleSkipped);
+        }
         if (fps != _currentFps)
         {
             _currentFps = fps;
@@ -647,7 +655,11 @@ public sealed class HostSessionCore
         previous?.Dispose();
 
         // Idle suppression: skip a static frame, but always honour a pending keyframe.
-        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0) return;
+        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0)
+        {
+            _idleSkipped++;
+            return;
+        }
         if (_encodesInFlight >= 1)
         {
             _pendingEncode = true;

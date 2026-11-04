@@ -40,6 +40,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         Tailscale = new TailscaleCli(logging);
         Files = new WindowsFileStore(options.Synthetic && options.ReceiveFolder is null ? null : Settings,
                                      options.ReceiveFolder ?? (options.Synthetic ? SyntheticReceiveFolder() : null), logging);
+        Screen = new WindowsScreenSource(logging, options.DirtyRegions);
         Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl, Codec: options.Codec));
         IVideoEncoderFactory encoders = options.DumpH264 is { } dump
             ? new DumpingEncoderFactory(Encoders, dump, logging.CreateLogger("Vantage.Encode"))
@@ -79,7 +80,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         {
             HostName = HostName(),
             Platform = options.Platform,
-            Screen = new WindowsScreenSource(logging),
+            Screen = Screen,
             Cursor = new Cursor.WindowsCursorSource(logging),
             Encoders = encoders,
             CreateInputSink = () => new WindowsInputTranslator(injector, inputLog),
@@ -154,6 +155,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>The receive folder and file marking; raises <see cref="WindowsFileStore.Saved"/>.</summary>
     public WindowsFileStore Files { get; }
+
+    /// <summary>The screen source (its <see cref="WindowsScreenSource.DirtyRegions"/> is shown on the Display page).</summary>
+    public WindowsScreenSource Screen { get; }
 
     /// <summary>The encoder factory (its <see cref="MediaFoundationEncoderFactory.CurrentEncoderName"/> is shown in About).</summary>
     public MediaFoundationEncoderFactory Encoders { get; }

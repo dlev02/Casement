@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Encode;
 using Vantage.Protocol;
 using Vantage.Protocol.Messages;
@@ -47,6 +48,13 @@ public sealed record HostCommandLine
     /// <summary><c>--rate-control cbr|lowdelayvbr</c>.</summary>
     public RateControl RateControl { get; init; } = RateControl.Cbr;
 
+    /// <summary>
+    /// <c>--dirty-regions native|compare|none</c>: where the capture's dirty ratio comes from. Native
+    /// (the default) falls back to compare before Windows 11 24H2; compare and none force the
+    /// fallback or switch it off, to test them on a newer PC.
+    /// </summary>
+    public DirtyRegionSource DirtyRegions { get; init; } = DirtyRegionSource.Native;
+
     /// <summary><c>--send-file-on-connect PATH</c> (debug).</summary>
     public string? SendFileOnConnect { get; init; }
 
@@ -71,6 +79,9 @@ public sealed record HostCommandLine
           --encoder auto|hardware|software
           --codec h264|hevc           offer and stream only this codec (default: HEVC when the PC has an encoder, then H.264)
           --rate-control cbr|lowdelayvbr
+          --dirty-regions native|compare|none
+                                      what tells the encoder the screen changed (default native: Windows 11 24H2's own,
+                                      else the GPU compares each frame with the last)
           --send-file-on-connect PATH send a file to each client that attaches (debug builds)
           --capture-fails-for SECONDS make capture fail at first (debug builds)
           --background                start in the tray (used at sign-in)
@@ -162,6 +173,12 @@ public sealed record HostCommandLine
                             "lowdelayvbr" or "vbr" => RateControl.LowDelayVbr,
                             _ => throw new ArgumentException("--rate-control is cbr or lowdelayvbr."),
                         },
+                    };
+                    break;
+                case "--dirty-regions":
+                    result = result with
+                    {
+                        DirtyRegions = FrameChange.Parse(Value()) ?? throw new ArgumentException("--dirty-regions is native, compare or none."),
                     };
                     break;
                 case "--send-file-on-connect":

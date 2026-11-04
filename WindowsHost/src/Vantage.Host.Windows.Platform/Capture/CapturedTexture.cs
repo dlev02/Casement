@@ -8,15 +8,25 @@ namespace Vantage.Host.Windows.Capture;
 internal sealed class CapturedTexture : ICapturedFrame
 {
     private readonly TexturePool _pool;
+    private readonly FrameEstimate? _estimate;
+    private readonly double _dirtyRatio;
     private ID3D11Texture2D? _texture;
 
-    public CapturedTexture(GpuDevice gpu, ID3D11Texture2D texture, TexturePool pool, ulong timestampNanos, double dirtyRatio)
+    /// <param name="gpu">The capture's device.</param>
+    /// <param name="texture">The pooled copy of the frame.</param>
+    /// <param name="pool">Where the texture goes back on dispose.</param>
+    /// <param name="timestampNanos">Capture time.</param>
+    /// <param name="dirtyRatio">The ratio when there's no <paramref name="estimate"/> (native dirty regions, or 1).</param>
+    /// <param name="estimate">The GPU compare's pending answer, read when the core first asks.</param>
+    public CapturedTexture(GpuDevice gpu, ID3D11Texture2D texture, TexturePool pool, ulong timestampNanos, double dirtyRatio,
+                           FrameEstimate? estimate = null)
     {
         Gpu = gpu;
         _texture = texture;
         _pool = pool;
         TimestampNanos = timestampNanos;
-        DirtyRatio = dirtyRatio;
+        _dirtyRatio = dirtyRatio;
+        _estimate = estimate;
         Width = pool.Width;
         Height = pool.Height;
     }
@@ -28,7 +38,7 @@ internal sealed class CapturedTexture : ICapturedFrame
 
     public ulong TimestampNanos { get; }
 
-    public double DirtyRatio { get; }
+    public double DirtyRatio => _estimate?.Ratio ?? _dirtyRatio;
 
     public int Width { get; }
 

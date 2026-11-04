@@ -213,7 +213,10 @@ H.264 or HEVC: whichever the session streams),
 logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
 auto|hardware|software`, `--codec h264|hevc` (offer and stream only that codec, whatever the client
 prefers; default HEVC when the PC has an HEVC encoder, then H.264; `run-dev.ps1 -Codec`),
-`--rate-control cbr|lowdelayvbr`, `--send-file-on-connect PATH` and
+`--rate-control cbr|lowdelayvbr`, `--dirty-regions native|compare|none` (what tells the core the
+screen changed: Windows 11 24H2's dirty regions by default, else a GPU compare of each frame with the
+last; `compare` forces the fallback on a newer PC and `none` turns it off; `run-dev.ps1
+-DirtyRegions`), `--send-file-on-connect PATH` and
 `--capture-fails-for S` (Debug), `--background`, `--verbose`. Logs default to
 `%LOCALAPPDATA%\Vantage Host\logs\host.log`; `run-dev.ps1` uses `dev.log`.
 
@@ -241,7 +244,9 @@ ffplay /tmp/vantage.h264
 ```
 
 What the log should show, on a PC with an NVIDIA card and an AMD iGPU: `GPU: NVIDIA GeForce …` (the
-monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
+monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions native, min interval True` (24H2+; `compare` before 24H2 or
+with `-DirtyRegions compare`, which then logs `dirty compare on …: N frames in 10 s, M unchanged, …`
+every 10 s, and the session logs `video mode text …` once the screen goes still),
 `HEVC encoder found (hardware)`, `encoder: NVIDIA HEVC Encoder MFT (HEVC, hardware, async) …`, then
 `…: first frame N bytes, NAL types [35,32,33,34,19,19]` (AUD, VPS, SPS, PPS, two IDR_W_RADL slices).
 With `-Codec h264` (or a client that prefers H.264): `encoder: NVIDIA H.264 Encoder MFT (H.264,

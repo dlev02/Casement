@@ -18,6 +18,14 @@
 
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="4">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Capture" />
+                    <TextBlock x:Name="CaptureText" TextWrapping="Wrap" />
+                    <TextBlock x:Name="CaptureDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
                     <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Video encoder" />
                     <TextBlock x:Name="EncoderText" TextWrapping="Wrap" />
                 </StackPanel>

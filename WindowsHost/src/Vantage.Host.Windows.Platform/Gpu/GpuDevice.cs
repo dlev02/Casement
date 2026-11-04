@@ -23,11 +23,13 @@ namespace Vantage.Host.Windows.Gpu;
 /// </remarks>
 public sealed class GpuDevice : IDisposable
 {
+    private readonly ID3D11Multithread _multithread;
     private int _references = 1;
 
-    private GpuDevice(ID3D11Device device, ID3D11DeviceContext context, ID3D11VideoDevice videoDevice,
+    private GpuDevice(ID3D11Device device, ID3D11DeviceContext context, ID3D11Multithread multithread, ID3D11VideoDevice videoDevice,
                       ID3D11VideoContext videoContext, IDirect3DDevice winRtDevice, AdapterDescription1 adapter)
     {
+        _multithread = multithread;
         Device = device;
         Context = context;
         VideoDevice = videoDevice;
@@ -123,10 +125,8 @@ public sealed class GpuDevice : IDisposable
                                              levels, out ID3D11Device device, out ID3D11DeviceContext context);
         result.CheckError();
 
-        using (var multithread = device.QueryInterface<ID3D11Multithread>())
-        {
-            multithread.SetMultithreadProtected(true);
-        }
+        var multithread = device.QueryInterface<ID3D11Multithread>();
+        multithread.SetMultithreadProtected(true);
 
         var videoDevice = device.QueryInterface<ID3D11VideoDevice>();
         var videoContext = context.QueryInterface<ID3D11VideoContext>();
@@ -149,7 +149,7 @@ public sealed class GpuDevice : IDisposable
         log.LogInformation("GPU: {Adapter} (vendor 0x{Vendor:X4}, LUID {Luid:X}), feature level {Level}",
                            description.Description, description.VendorId,
                            ((long)description.Luid.HighPart << 32) | description.Luid.LowPart, device.FeatureLevel);
-        return new GpuDevice(device, context, videoDevice, videoContext, winRtDevice, description);
+        return new GpuDevice(device, context, multithread, videoDevice, videoContext, winRtDevice, description);
     }
 
     /// <summary>
@@ -179,6 +179,47 @@ public sealed class GpuDevice : IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a device on the first hardware adapter, or on WARP, for tests that need a GPU but no
+    /// monitor. Throws when there is none (the test then skips).
+    /// </summary>
+    internal static GpuDevice CreateForTesting(bool warp, ILogger log)
+    {
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
+        IDXGIAdapter1 adapter;
+        if (warp)
+        {
+            factory.EnumWarpAdapter(out IDXGIAdapter1? warpAdapter).CheckError();
+            adapter = warpAdapter!;
+        }
+        else
+        {
+            factory.EnumAdapters1(0, out adapter).CheckError();
+        }
+        using (adapter)
+        {
+            return Create(adapter, log);
+        }
+    }
+
+    /// <summary>
+    /// Holds the device's multithread lock until disposed, so a sequence of context calls (bind,
+    /// dispatch, unbind; map, read, unmap) can't interleave with the encoder's or capture's. Each
+    /// call is already atomic; a sequence isn't. Recursive, like the lock each call takes.
+    /// </summary>
+    public ContextScope LockContext()
+    {
+        _multithread.Enter();
+        return new ContextScope(_multithread);
+    }
+
+    /// <summary>Releases <see cref="LockContext"/>'s lock.</summary>
+    public readonly struct ContextScope(ID3D11Multithread multithread) : IDisposable
+    {
+        /// <inheritdoc />
+        public void Dispose() => multithread.Leave();
+    }
+
     /// <summary>Takes another reference (capture and the encoder each hold one).</summary>
     public GpuDevice AddReference()
     {
@@ -193,6 +234,7 @@ public sealed class GpuDevice : IDisposable
         (WinRtDevice as IDisposable)?.Dispose();
         VideoContext.Dispose();
         VideoDevice.Dispose();
+        _multithread.Dispose();
         Context.Dispose();
         Device.Dispose();
     }

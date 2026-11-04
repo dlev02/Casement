@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using Vantage.Host.Windows.Capture;
 
 namespace Vantage.Host.Windows.App.Pages;
 
@@ -39,6 +40,14 @@ public sealed partial class DisplayPage : Page
             DisplayDetail.Text = string.Create(CultureInfo.CurrentCulture,
                 $"{main.PixelWidth} × {main.PixelHeight} pixels at {main.Scale * 100:0}% scale ({main.PointWidth} × {main.PointHeight} on the iPad), {main.RefreshRate:0} Hz");
         }
+        var dirty = runtime.Screen.DirtyRegions;
+        CaptureText.Text = $"Windows Graphics Capture; dirty regions: {FrameChange.Name(dirty)}";
+        CaptureDetail.Text = dirty switch
+        {
+            DirtyRegionSource.Native => "Windows reports which parts of the screen changed, so a still screen costs almost nothing.",
+            DirtyRegionSource.Compare => "The graphics card compares each frame with the last to find what changed, so a still screen costs almost nothing.",
+            _ => "Every frame counts as changed, so a still screen streams at the full frame rate.",
+        };
         EncoderText.Text = runtime.Encoders.CurrentEncoderName ?? "Chosen when an iPad first connects (the graphics card's HEVC or H.264 encoder when it has one).";
     }
 }
