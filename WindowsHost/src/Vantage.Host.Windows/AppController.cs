@@ -46,6 +46,8 @@ public sealed class AppController
     private TrayPanel? _panel;
     private bool _notificationsRegistered;
     private bool _quitting;
+    private DispatcherQueueTimer? _progressRefresh;
+    private DispatcherQueueTimer? _transferTick;
 
     /// <param name="args">Command-line flags.</param>
     /// <param name="ui">The UI thread's dispatcher.</param>
@@ -84,6 +86,15 @@ public sealed class AppController
 
     /// <summary>File channels now.</summary>
     public IReadOnlyList<FileChannelSnapshot> FileChannels => Safe(() => Runtime?.Listener.FileChannels) ?? [];
+
+    /// <summary>Files moving, paused, and finished in the last minute (the tray, the panel and Settings › Files show them).</summary>
+    public HostTransferList Transfers { get; } = new();
+
+    /// <summary>
+    /// Progress arrives up to ten times a second per file; the tray icon, tooltip and rows are
+    /// redrawn at most this often. Starts, ends and pauses refresh at once.
+    /// </summary>
+    private static readonly TimeSpan ProgressRefreshInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>Starts the host, the tray and notifications.</summary>
     public async Task StartAsync()
@@ -138,10 +149,25 @@ public sealed class AppController
             Notify(new AppNotificationBuilder().AddText($"{name} is paired").AddText("It can connect to this PC from now on."));
             Refresh();
         });
-        listener.FileTransfer += (_, transferEvent) =>
+        listener.FileSendQueued += (channel, item) => RunOnUi(() =>
         {
-            if (transferEvent is FileTransferEvent.Finished) RunOnUi(Refresh);
-        };
+            Transfers.Queue(channel, ChannelName(channel), item);
+            Refresh();
+        });
+        listener.FileTransfer += (channel, transferEvent) => RunOnUi(() => OnTransferEvent(channel, transferEvent));
+        listener.FileTransferPaused += pause => RunOnUi(() =>
+        {
+            // Not a failure: no notification; the row says it resumes when the device is back.
+            Transfers.Pause(pause);
+            Refresh();
+        });
+        _progressRefresh = _ui.CreateTimer();
+        _progressRefresh.Interval = ProgressRefreshInterval;
+        _progressRefresh.IsRepeating = false;
+        _progressRefresh.Tick += (_, _) => Refresh();
+        _transferTick = _ui.CreateTimer();
+        _transferTick.Interval = TimeSpan.FromSeconds(1);
+        _transferTick.Tick += (_, _) => OnTransferTick();
         Runtime.Files.Saved += (path, _) => _arrivals.Add(path);
         Runtime.Environment.Trust.Changed += () => RunOnUi(Refresh);
         if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
@@ -274,6 +300,8 @@ public sealed class AppController
         _log.LogInformation("quitting");
         _window?.CloseForQuit();
         _panel?.CloseForQuit();
+        _progressRefresh?.Stop();
+        _transferTick?.Stop();
         _tray?.Dispose();
         _arrivals?.Dispose();
         if (_notificationsRegistered)
@@ -305,10 +333,88 @@ public sealed class AppController
             _tray?.Update(new TrayState(
                 Runtime.Environment.HostName, IsListening, Problem,
                 [.. sessions.Where(s => !s.IsFilesOnly).Select(s => new TrayClient(s.Id, s.ClientName))],
-                [.. channels.Select(c => new TrayFileTarget(c.Id, c.ClientName))]));
+                [.. channels.Select(c => new TrayFileTarget(c.Id, c.ClientName))])
+            {
+                Transfers = [.. Transfers.Items.Select(TrayTransfer.From)],
+                Activity = Transfers.Activity,
+                TransferSummary = Transfers.Summary,
+            });
+        }
+        _progressRefresh?.Stop();
+        if (_transferTick is { } tick)
+        {
+            if (Transfers.NeedsTicking && !tick.IsRunning) tick.Start();
+            else if (!Transfers.NeedsTicking && tick.IsRunning) tick.Stop();
         }
         StateChanged?.Invoke();
     }
+
+    /// <summary>Cancels a file (the tray, the panel, Settings › Files). A cancelled receive's partial is deleted.</summary>
+    public void CancelTransfer(Guid transferId)
+    {
+        if (Runtime is null || Transfers.Find(transferId) is not { IsActive: true } transfer) return;
+        _log.LogInformation("cancelling a file {Direction} {Device}", transfer.Direction == FileDirection.Sending ? "to" : "from", transfer.DeviceName);
+        Runtime.Listener.CancelTransfer(transfer.ChannelId, transferId);
+        // Queued and paused files have nothing moving to report back; a moving one ends with the engine's Cancelled.
+        Transfers.MarkCancelled(transferId);
+        Refresh();
+    }
+
+    /// <summary>Cancels every file still waiting, moving or paused (Settings › Files › Cancel All, after asking).</summary>
+    public void CancelAllTransfers()
+    {
+        foreach (var transfer in Transfers.Items.Where(t => t.IsActive).ToList()) CancelTransfer(transfer.Id);
+    }
+
+    /// <summary>Selects a received file in File Explorer.</summary>
+    public void ShowTransferInFolder(Guid transferId)
+    {
+        if (Transfers.Find(transferId)?.SavedPath is { } path) ExplorerActions.ShowInFolder([path], _log);
+    }
+
+    /// <summary>Opens the folder received files are saved in.</summary>
+    public void OpenReceiveFolder()
+    {
+        if (Runtime is { } runtime) ExplorerActions.OpenFolder(runtime.Files.ReceiveDirectory, _log);
+    }
+
+    private void OnTransferEvent(Guid channel, FileTransferEvent transferEvent)
+    {
+        var ended = Transfers.Apply(channel, ChannelName(channel), transferEvent);
+        if (ended is { State: HostTransferState.Failed }) NotifyFailed(ended);
+        if (transferEvent is FileTransferEvent.Progress)
+        {
+            if (_progressRefresh is { IsRunning: false } timer) timer.Start();
+        }
+        else
+        {
+            Refresh();
+        }
+    }
+
+    /// <summary>Paused files whose device didn't come back fail now; finished rows leave after a minute.</summary>
+    private void OnTransferTick()
+    {
+        var before = Transfers.Items.Count;
+        var expired = Transfers.Tick();
+        foreach (var transfer in expired) NotifyFailed(transfer);
+        if (expired.Count > 0 || Transfers.Items.Count != before || !Transfers.NeedsTicking) Refresh();
+    }
+
+    /// <summary>"Couldn't send Report.pdf" (the Mac's wording, in Windows' sentence case).</summary>
+    private void NotifyFailed(HostTransfer transfer)
+    {
+        var sending = transfer.Direction == FileDirection.Sending;
+        var reason = transfer.FailureReason ?? HostTransferList.LostConnection;
+        Notify(new AppNotificationBuilder()
+            .AddText(sending ? $"Couldn't send {transfer.Name}" : $"Couldn't receive {transfer.Name}")
+            .AddText(sending ? $"{transfer.DeviceName}: {reason}" : reason)
+            .AddArgument("action", "files"));
+    }
+
+    /// <summary>The device on a file channel; a row it starts keeps the name after the channel closes.</summary>
+    private string ChannelName(Guid channelId) =>
+        FileChannels.FirstOrDefault(c => c.Id == channelId)?.ClientName ?? "your device";
 
     private async Task HandleAsync(TrayCommand command)
     {
@@ -319,6 +425,18 @@ public sealed class AppController
                 break;
             case TrayCommandKind.SendFile:
                 await SendFilesAsync(command.Target);
+                break;
+            case TrayCommandKind.CancelTransfer:
+                CancelTransfer(command.Target);
+                break;
+            case TrayCommandKind.ShowTransfer:
+                ShowTransferInFolder(command.Target);
+                break;
+            case TrayCommandKind.OpenReceiveFolder:
+                OpenReceiveFolder();
+                break;
+            case TrayCommandKind.ShowTransfers:
+                ShowWindow("files");
                 break;
             case TrayCommandKind.Disconnect:
                 await DisconnectAsync(command.Target);
@@ -461,7 +579,7 @@ public sealed class AppController
                 RunOnUi(() =>
                 {
                     if (action == "show" && path is not null) ExplorerActions.ShowInFolder([path], _log);
-                    else if (action == "general") ShowWindow("general");
+                    else if (action is "general" or "files") ShowWindow(action);
                     else ShowWindow();
                 });
             };

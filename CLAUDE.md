@@ -1025,6 +1025,25 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   back to typing, logged once. The synthetic host's input log shows `pasteWrite`, the chord's two
   `key` entries (`key 1D down`, `key 2F down`, …) and `pasteRestore`. Tests: `ClipboardPasteTests`,
   `ClipboardFormatsTests`, `HostListenerTests.LongTextIsPastedAndTheClipboardComesBackUnheard`.
+- **Transfers on the PC** (the Mac's menu Files section and ring): `HostTransferList`
+  (`Platform/Files/HostTransfers.cs`, UI thread only) keeps a `HostTransfer` per id from the
+  listener's `FileSendQueued` (a send waiting its turn), `FileTransfer` and `FileTransferPaused`;
+  speed and time left are the Mac's `record` (≥ 0.5 s samples, 0.6 old + 0.4 new), and
+  `HostTransferText` words everything as the Mac does ("12.4 MB of 48.0 MB · 6.20 MB/s · 5 sec
+  left", "Paused at 45% · resumes when Drew's iPad reconnects", "Received from Drew's iPad · in
+  Downloads"; sizes 1,024-based and cut like Explorer's). The listener reports a send's `Finished`
+  itself (the engine's is lost when the connection closes under it) and a cut-off send or receive
+  as `FileTransferPaused` instead of a failure, so no "Couldn't send" notification; the next
+  `Started` with that id carries the row on, and one not back by `ResumesBefore` (1 h) fails then.
+  `CancelTransfer` also forgets a paused send and deletes a paused receive's partial. The tray icon
+  becomes a ring with an arrow while files move (`TrayGlyph`, drawn per update at the taskbar's
+  size into a DIB for `CreateIconFromResourceEx`, 24 steps, cached; down if anything arrives;
+  paused files left out), the tooltip and the panel's status say "Receiving Report.pdf, 45%";
+  the menu lists the newest 5 (name: detail, Cancel ⟨file⟩, Show ⟨file⟩ in folder) plus Open
+  Receive Folder; the panel's Transfers card (newest 4) and Settings › Files (all, Cancel All with
+  a confirmation) share `TransferRows`. Finished rows stay 60 s; the app redraws progress at most
+  every 250 ms. Tests: `HostTransferListTests`, `TrayGlyphTests`, `TrayMenuModelTests`,
+  `HostListenerTests.ACutOffSendIsPausedNotFailed…`, `CancellingAPausedSendForgetsIt`.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,

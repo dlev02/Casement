@@ -527,6 +527,105 @@ public class HostListenerTests
     }
 
     [Fact]
+    public async Task ACutOffSendIsPausedNotFailedAndResumesUnderItsIdWhenTheDeviceReturns()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<(Guid Channel, FileTransferEvent Event)>();
+        var queued = new System.Collections.Concurrent.ConcurrentQueue<FileTransferItem>();
+        var paused = new TaskCompletionSource<FileTransferPause>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<FileTransferOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Listener.FileTransfer += (channel, transferEvent) =>
+        {
+            events.Enqueue((channel, transferEvent));
+            if (transferEvent is FileTransferEvent.Finished done) finished.TrySetResult(done.Outcome);
+        };
+        host.Listener.FileSendQueued += (_, item) => queued.Enqueue(item);
+        host.Listener.FileTransferPaused += pause => paused.TrySetResult(pause);
+
+        // A file channel that takes the offer and then drops, without answering.
+        var (primary, _, result) = await client.ConnectAsync(host.Port, "246810");
+        var raw = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await raw.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var channel = await WaitForAsync(() => host.Listener.FileChannels.FirstOrDefault());
+        var file = Path.Combine(host.Root, "Report.pdf");
+        await File.WriteAllBytesAsync(file, new byte[300_000]);
+        var send = host.Listener.SendFileAsync(channel.Id, file);
+        var offer = await Loopback.Next<FileOffer>(raw);
+        var item = Assert.Single(queued);
+        Assert.Equal((offer.Id, "Report.pdf", 300_000UL, FileDirection.Sending), (item.Id, item.Name, item.ByteCount, item.Direction));
+        raw.Close();
+
+        var pause = await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal((offer.Id, FileDirection.Sending, "Test iPad"), (pause.TransferId, pause.Direction, pause.ClientName));
+        Assert.IsType<FileTransferOutcome.Failed>(await send.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Task.Delay(200);
+        Assert.DoesNotContain(events, e => e.Event is FileTransferEvent.Finished);
+
+        // The same device again: the listener re-offers it under the same id and it arrives.
+        primary.Close();
+        (primary, _, result) = await client.ConnectAsync(host.Port);
+        var again = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await again.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var received = Directory.CreateDirectory(Path.Combine(host.Root, "client")).FullName;
+        var engine = new FileTransferEngine(again, FileTransferRole.Client, new FileTransferConfiguration { ReceiveDirectory = received });
+        _ = engine.RunAsync();
+        Assert.IsType<FileTransferOutcome.Sent>(await finished.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Contains(events, e => e.Event is FileTransferEvent.Started started && started.Item.Id == offer.Id);
+        Assert.Single(events, e => e.Event is FileTransferEvent.Finished);
+        engine.Close();
+        primary.Close();
+    }
+
+    [Fact]
+    public async Task CancellingAPausedSendForgetsIt()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var paused = new TaskCompletionSource<FileTransferPause>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<(Guid, FileTransferEvent.Finished)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Listener.FileTransferPaused += pause => paused.TrySetResult(pause);
+        host.Listener.FileTransfer += (channel, transferEvent) =>
+        {
+            if (transferEvent is FileTransferEvent.Finished done) finished.TrySetResult((channel, done));
+        };
+        var (primary, _, result) = await client.ConnectAsync(host.Port, "246810");
+        var raw = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await raw.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var channel = await WaitForAsync(() => host.Listener.FileChannels.FirstOrDefault());
+        var file = Path.Combine(host.Root, "Report.pdf");
+        await File.WriteAllBytesAsync(file, new byte[1000]);
+        _ = host.Listener.SendFileAsync(channel.Id, file);
+        await Loopback.Next<FileOffer>(raw);
+        raw.Close();
+        var pause = await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        host.Listener.CancelTransfer(pause.FileChannelId, pause.TransferId);
+        var (from, done) = await finished.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal((channel.Id, pause.TransferId, (FileTransferOutcome)new FileTransferOutcome.Cancelled(false)), (from, done.Id, done.Outcome));
+
+        // Reattaching re-offers nothing.
+        primary.Close();
+        (primary, _, result) = await client.ConnectAsync(host.Port);
+        var again = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await again.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Loopback.Next<FileOffer>(again, TimeSpan.FromMilliseconds(700)));
+        again.Close();
+        primary.Close();
+    }
+
+    private static async Task<T> WaitForAsync<T>(Func<T?> read) where T : class
+    {
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (read() is { } value) return value;
+            await Task.Delay(20);
+        }
+        throw new TimeoutException();
+    }
+
+    [Fact]
     public async Task RevokingSendsDisconnect()
     {
         await using var host = new TestHost();
