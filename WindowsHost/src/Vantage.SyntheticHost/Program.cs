@@ -1,9 +1,11 @@
 // Vantage.SyntheticHost: the Windows host's session logic on macOS (or anywhere), for loopback
 // interop tests. It streams a pre-encoded clip, logs input and clipboard to JSONL, and saves files
-// to a temp folder. Loopback peers are always accepted (it is a DEBUG tool).
+// to a temp folder, and plays a chime as the PC's sound. Loopback peers are always accepted (it is
+// a DEBUG tool).
 
 using Microsoft.Extensions.Logging;
 using Vantage.Protocol;
+using Vantage.Protocol.Audio;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Host;
 using Vantage.SyntheticHost;
@@ -42,6 +44,7 @@ var environment = new HostEnvironment
     Platform = options.Platform,
     Screen = new ClipScreenSource(display, log),
     Cursor = options.CursorShapes ? new SyntheticCursorSource() : null,
+    Audio = options.Audio ? new SyntheticAudioSource() : null,
     Encoders = new ClipEncoderFactory(clip),
     CreateInputSink = () => new LoggingInputSink(events, loggerFactory.CreateLogger("Vantage.Input")),
     Clipboard = new MemoryClipboard(options.ClipboardText, events),

@@ -34,7 +34,7 @@ public enum MessageKind : byte
     AttachMedia = 60,
     TextInput = 61,
     ModifierState = 62,
-    /// <summary>Gated on <c>HostCapabilities.audio</c>; a Windows v1 host never advertises it.</summary>
+    /// <summary>Gated on <c>HostCapabilities.audio</c> (advertised when the PC can capture its sound).</summary>
     AudioRequest = 63,
     /// <summary>Gated on <c>HostCapabilities.dictationEngines</c>; never advertised on Windows v1.</summary>
     DictationControl = 64,

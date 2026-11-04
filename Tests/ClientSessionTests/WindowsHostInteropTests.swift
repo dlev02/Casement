@@ -59,7 +59,7 @@ struct WindowsHostInteropTests {
         #expect(session.capabilities?.platform == .windows)
         #expect(session.capabilities?.codecs == [.h264])
         #expect(session.capabilities?.fileTransfer == true)
-        #expect(session.capabilities?.audio == nil, "no Mac audio on Windows")
+        #expect(session.capabilities?.audio == true, "the synthetic PC offers its chime as the PC's sound")
         #expect(session.dictationEngines == nil, "no host dictation on Windows")
         #expect(!session.displays.isEmpty)
 

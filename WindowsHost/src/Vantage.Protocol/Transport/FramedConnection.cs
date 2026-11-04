@@ -24,6 +24,12 @@ public sealed record FramedConnectionOptions
 
     /// <summary>Queued video bytes above which new P-frames are dropped.</summary>
     public int MaxQueuedVideoBytes { get; init; } = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// <c>audioPacket</c>s queued (not yet written) above which new ones are refused: 50 is half a
+    /// second, past which the client's jitter buffer would cut the backlog anyway.
+    /// </summary>
+    public int MaxQueuedAudioPackets { get; init; } = 50;
 }
 
 /// <summary>A frame kind this build doesn't know: its payload was read and skipped (spec §3).</summary>
@@ -49,7 +55,10 @@ public sealed record UndecodableMessage(MessageKind MessageKind, Exception Error
 /// and a pong never waits behind a queue of video. The video lane is bounded: past
 /// <see cref="FramedConnectionOptions.MaxQueuedVideoFrames"/> frames or
 /// <see cref="FramedConnectionOptions.MaxQueuedVideoBytes"/> bytes, new droppable frames (P-frames)
-/// are refused whole, and the sender forces an IDR once the lane drains.
+/// are refused whole, and the sender forces an IDR once the lane drains. Audio packets ride the
+/// control lane (<see cref="PostAudio"/>): 10 ms of sound is ~180 bytes, so it costs a pong
+/// nothing to wait behind one, while behind video or file chunks it would arrive in bursts the
+/// client's buffer has to cut.
 /// </summary>
 public sealed class FramedConnection : IAsyncDisposable
 {
@@ -65,6 +74,7 @@ public sealed class FramedConnection : IAsyncDisposable
     private readonly SemaphoreSlim _wake = new(0);
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _videoBytes;
+    private int _audioPackets;
     private bool _started;
     private bool _isClosed;
 
@@ -227,6 +237,23 @@ public sealed class FramedConnection : IAsyncDisposable
     }
 
     /// <summary>
+    /// Queues an <c>audioPacket</c> on the control lane without waiting. Refused (false) while
+    /// <see cref="FramedConnectionOptions.MaxQueuedAudioPackets"/> are already waiting, so a stalled
+    /// socket can't pile up sound: the client sees a sequence gap and resets its decoder, then
+    /// carries on with current audio instead of seconds-old audio.
+    /// </summary>
+    public bool PostAudio(IMessage message)
+    {
+        lock (_lock)
+        {
+            if (_isClosed || _audioPackets >= _options.MaxQueuedAudioPackets) return false;
+            _audioPackets++;
+        }
+        Enqueue(_control, new Outbound(MessageCodec.EncodeFrame(message), IsVideo: false, null, null, IsAudio: true));
+        return true;
+    }
+
+    /// <summary>
     /// Queues a bulk message (file chunks, clipboard) behind control and video. <paramref name="completion"/>
     /// runs once it has been written (null) or failed; use it to keep a few chunks in flight.
     /// </summary>
@@ -278,7 +305,12 @@ public sealed class FramedConnection : IAsyncDisposable
 
     private Outbound? DequeueLocked()
     {
-        if (_control.Count > 0) return _control.Dequeue();
+        if (_control.Count > 0)
+        {
+            var control = _control.Dequeue();
+            if (control.IsAudio) _audioPackets--;
+            return control;
+        }
         if (_video.Count > 0)
         {
             var next = _video.Dequeue();
@@ -406,6 +438,7 @@ public sealed class FramedConnection : IAsyncDisposable
             _video.Clear();
             _bulk.Clear();
             _videoBytes = 0;
+            _audioPackets = 0;
         }
         _closing.Cancel();
         try
@@ -429,5 +462,5 @@ public sealed class FramedConnection : IAsyncDisposable
         outbound.Completion?.Invoke(error);
     }
 
-    private sealed record Outbound(byte[] Frame, bool IsVideo, TaskCompletionSource? Done, Action<Exception?>? Completion);
+    private sealed record Outbound(byte[] Frame, bool IsVideo, TaskCompletionSource? Done, Action<Exception?>? Completion, bool IsAudio = false);
 }

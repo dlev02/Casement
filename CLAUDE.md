@@ -863,7 +863,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
   also let Drew ship their work through app stores, which is what keeps the App Store build
   possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
-  CC BY 4.0, NSec/Vortice MIT); check any new one.
+  CC BY 4.0, NSec/Vortice MIT, Concentus BSD-3-Clause); check any new one.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
@@ -1002,7 +1002,8 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
   `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
   `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
-  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, and `--cursor-shapes`. Loopback is always
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, and `--no-audio`
+  (it otherwise offers the Mac synthetic host's −18 dBFS chime as the PC's sound). Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
@@ -1121,6 +1122,43 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   readback 0.2 ms mean; WGC here sends nothing at all for a truly still screen. Tests:
   `FrameChangeTests`, `FrameComparerGpuTests` (skipped without a D3D11 device; prints the 4K cost,
   ~0.65 ms per frame with a synchronous readback). A real 22H2/23H2 or Windows 10 PC is unchecked.
+- **The PC's sound** (the Mac's Mac audio, same wire: `audioRequest` 63 → `audioConfig` 73, then
+  `audioPacket` 102 every 10 ms; Opus 48 kHz stereo, 480-frame packets, 128 kbps). `HostEnvironment.Audio`
+  (`IAudioSource`, null = none) delivers 10 ms `AudioBlock`s; `HostSessionCore` advertises
+  `capabilities.audio` only while `UnavailableReason` is null (to every client, like the Mac), answers
+  `audioRequest` only from a client with `features.macAudio`, posts `audioConfig` and starts capture
+  on the first `enabled: true` (a failed start adds `audioConfig.unavailable` with the source's
+  reason), stops on `enabled: false`, teardown, or the source's `onStopped` (then `unavailable`).
+  `Protocol/Audio`: `AudioRepacketizer` (the Mac's rules: the sample count is the clock, a buffer more than
+  15 ms off it or flagged discontinuous pads the partial block with silence and starts a new
+  timeline), `SilenceGate` (process loopback keeps delivering digital silence where SCK and endpoint
+  loopback deliver nothing: after 500 ms of blocks under −90 dBFS it holds blocks back, so
+  `captureNanos` jumps and the client sees a pause, not endless quiet packets), `PcmConverter` (any
+  WASAPI layout to 48 kHz stereo float; −3 dB fold-down, linear resampling as a fallback only),
+  `AudioStreamEncoder` (Concentus, the managed libopus port, on its own loop; a bounded queue of 50
+  blocks so the capture thread never waits; sequence continuous across pauses; stats every 10 s in
+  `Vantage.Audio`: packets/s, kbps, bytes/packet, ms/encode, silent blocks held back, timeline
+  restarts), `SyntheticAudioSource`/`ChimeSynth` (the Mac's chime). Packets go on the control lane
+  through `FramedConnection.PostAudio` (~180 B each: never behind a P-frame or a 256 KiB chunk, and
+  refused past 50 queued so a stalled socket drops sound instead of delaying it). Platform
+  `Audio/`: `WasapiAudioSource` probes once (30 s retry after a failure) and opens process loopback
+  (`ActivateAudioInterfaceAsync` on `VAD\Process_Loopback`, `EXCLUDE_TARGET_PROCESS_TREE` for the
+  host's PID, 48 kHz float asked for), else the default render endpoint's loopback (48 kHz float
+  through `AUTOCONVERTPCM`, else the mix format through `PcmConverter`); `WasapiLoopbackCapture` is
+  one MTA thread on the WASAPI event (20 ms timeout), `qpcPosition` × 100 as `captureNanos` (now
+  minus the packet when flagged or missing), and reopens on an `IMMNotificationClient` default-device
+  change or an invalidated device (backing off to 4 s, ~8 s in all, then `onStopped`). All COM is by
+  vtable (`WasapiInterop.cs`, callbacks through `NativeCallbackObject`). `--audio auto|process|endpoint|off`
+  (`run-dev.ps1 -Audio`). Checked on Drew's PC (default output a SteelSeries Sonar virtual device)
+  with SAPI speech: `audioConfig` 13 ms after the request, 100.3 packets/s, 159 bytes a packet
+  (3–261), every step 10 ms except two 250 ms jumps at sentence breaks (the gate), 0 packets in the
+  2.5 s of silence before speech, decoded RMS ~0.02 while speaking, 0.1–0.3 ms per encode; process
+  loopback's timestamps jump 25–50 ms as a render stream starts or stops (logged as a timeline
+  restart, inside the gate's silence). Tests: `AudioRepacketizerTests`, `SilenceGateTests`,
+  `PcmConverterTests`, `AudioEncodingTests` (layout bytes, JSON keys, Opus round trip),
+  `FramedConnectionAudioTests`, `AudioSessionTests` (gated both ways, config/unavailable, restarts
+  from 0, stops on disconnect); opt-in `AudioLiveTests` (`VANTAGE_LIVE_PC_AUDIO=1`; the PC speaks).
+  An iPad hearing a PC still needs a device check (and the client to show Mac Audio for a PC).
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
@@ -1147,7 +1185,8 @@ host with `--send-file-on-connect` named by `VANTAGE_INTEROP_FILES_HOST` and
 device reattaches). The unchanged `LiveHostFilesTests` and `SessionUITests` (hosts via
 `TEST_RUNNER_VANTAGE_TEST_HOST` with `--send-file-on-connect`, `…_SYNTHETIC_HOST` with
 `--display-asleep`, `…_UNAVAILABLE_HOST` with `--capture-fails-for 6`) also run against it; the
-Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 47860 and never 47820.
+Mac-audio UI test runs against it only with `--platform macos` (the client still hides Mac Audio for
+a PC, `StripItem.unavailable(on:)`; unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
 
 ## Reboot, lock screen, and login window (what is and isn't possible)
 

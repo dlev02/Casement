@@ -92,7 +92,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 | **Casement** for Mac | macOS 26 | Native, sandboxed, one window per computer |
 | **Casement** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
 | **Casement Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
-| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Mac audio, Type Password, and the virtual display are Mac-only |
+| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Type Password and the virtual display are Mac-only |
 
 Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Casement Host listens on TCP port 47820, and only to Tailscale addresses. Casement has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
 
@@ -191,7 +191,7 @@ Casement collects nothing. There are no Casement servers, and the developer neve
 
 - The computer has to be on, awake enough to reach, and logged in. Tailscale can't wake a sleeping Mac, and nothing can get past FileVault's pre-boot screen remotely (Restart Safely avoids it for planned restarts).
 - There's no curtain mode: someone at the computer sees what you're doing.
-- Windows hosts don't stream sound, type saved passwords, or make virtual displays yet.
+- Windows hosts don't type saved passwords or make virtual displays yet, and the apps don't play a PC's sound yet (Casement Host for Windows can already send it).
 - Casement streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
 
 ## Support Casement
@@ -216,4 +216,4 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Casement is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
 
-It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT). Casement isn't affiliated with Apple, Microsoft, or Tailscale.
+It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [Concentus](https://github.com/lostromb/concentus) (BSD 3-Clause, a C# port of Opus). Casement isn't affiliated with Apple, Microsoft, or Tailscale.

@@ -73,10 +73,12 @@ straight away.
 
 Closing the window keeps Casement Host running in the notification area; use **Quit** to stop it.
 
-On a PC, Casement can't play the computer's sound, type a saved password, or make a virtual
-display yet, and dictation runs on your device. Start, Task View, Task Manager, and the other
-Windows shortcuts are in Casement's control strip, and ⌘ acts as Ctrl unless you turn that off
-for the PC in Casement.
+Casement Host can send the PC's sound: everything the PC plays except Casement Host's own sounds
+(or, where Windows won't leave those out, everything its output device plays), only after Casement
+asks for it, and nothing while the PC is quiet. The Casement app doesn't offer it for a PC yet. On
+a PC, Casement can't type a saved password or make a virtual display yet, and dictation runs on
+your device. Start, Task View, Task Manager, and the other Windows shortcuts are in Casement's
+control strip, and ⌘ acts as Ctrl unless you turn that off for the PC in Casement.
 
 ### Update or remove
 
@@ -121,6 +123,10 @@ the Swift code disagree, the Swift code in `Packages/VantageCore` and `VantageHo
   an `IInputInjector` (`SendInput`) underneath.
 - `IClipboard`, `IHostStatusSource` (`HostConditions`), `IPowerControl`, `IPeerDirectory` (whois),
   `IFileStore` (receive folder, Hidden attribute, Zone.Identifier).
+- `IAudioSource` (optional): 10 ms blocks of 48 kHz stereo float with capture timestamps. The core
+  gates silence, encodes Opus (Concentus) and sends `audioConfig`/`audioPacket`. On Windows,
+  `Audio/WasapiAudioSource` (process loopback, else endpoint loopback); `--audio
+  auto|process|endpoint|off` picks one.
 - `IProtectedStorage` (DPAPI on Windows) under the library's `ProtectedIdentityStore` and
   `ProtectedTrustStore`; `IEd25519` (NSec by default).
 
@@ -145,7 +151,7 @@ tests and the simulator can talk to it:
 dotnet src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --port 47862 --pairing-code 246810 \
   [--pairing-code-rearm 3] [--display-asleep] [--capture-fails-for 6] [--send-file-on-connect PATH] \
   [--receive-folder PATH] [--input-log PATH.jsonl] [--clipboard-text TEXT] [--platform windows|macos] \
-  [--state-dir PATH] [--exit-after S] [--log-input-events]
+  [--state-dir PATH] [--exit-after S] [--log-input-events] [--no-audio]
 xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47862 -VantagePairingCode 246810
 ```
 

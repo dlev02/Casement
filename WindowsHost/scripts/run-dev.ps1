@@ -14,6 +14,7 @@
   powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1 -DumpH264 C:\temp\vantage.h264 -ExitAfter 60
   powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1 -Codec hevc -DumpH264 C:\temp\vantage.h265 -ExitAfter 60
   powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1 -DirtyRegions compare -ExitAfter 60
+  powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1 -Audio endpoint
   powershell -ExecutionPolicy Bypass -File scripts\run-dev.ps1 -Stop
 #>
 param(
@@ -24,6 +25,7 @@ param(
     [ValidateSet("auto", "hardware", "software")] [string]$Encoder = "auto",
     [ValidateSet("", "h264", "hevc")] [string]$Codec = "",
     [ValidateSet("", "native", "compare", "none")] [string]$DirtyRegions = "",
+    [ValidateSet("", "auto", "process", "endpoint", "off")] [string]$Audio = "",
     [string]$ReceiveFolder,
     [switch]$Synthetic,
     [switch]$Verbose,
@@ -67,6 +69,7 @@ if ($DumpH264) {
 }
 if ($Codec) { $arguments += @("--codec", $Codec) }
 if ($DirtyRegions) { $arguments += @("--dirty-regions", $DirtyRegions) }
+if ($Audio) { $arguments += @("--audio", $Audio) }
 if ($ExitAfter -gt 0) { $arguments += @("--exit-after", $ExitAfter) }
 if ($ReceiveFolder) { $arguments += @("--receive-folder", "`"$ReceiveFolder`"") }
 if ($Synthetic) { $arguments += "--synthetic" }

@@ -24,6 +24,13 @@ public sealed class HostEnvironment
     /// </summary>
     public ICursorSource? Cursor { get; init; }
 
+    /// <summary>
+    /// The PC's sound for clients that ask (<c>Hello.features.macAudio</c>, then
+    /// <c>audioRequest</c>); null when the platform has none (no <c>audio</c> capability is
+    /// advertised).
+    /// </summary>
+    public IAudioSource? Audio { get; init; }
+
     /// <summary>Encoders for captured frames.</summary>
     public required IVideoEncoderFactory Encoders { get; init; }
 
@@ -61,7 +68,7 @@ public sealed class HostEnvironment
     /// <summary>Clock for timeouts, expiry, and backoff (tests substitute a fake).</summary>
     public TimeProvider Time { get; init; } = TimeProvider.System;
 
-    /// <summary>Loggers. Categories: <c>Vantage.Listener</c>, <c>Vantage.Session</c>, <c>Vantage.Files</c>, <c>Vantage.Input</c>.</summary>
+    /// <summary>Loggers. Categories: <c>Vantage.Listener</c>, <c>Vantage.Session</c>, <c>Vantage.Files</c>, <c>Vantage.Input</c>, <c>Vantage.Audio</c>.</summary>
     public required ILoggerFactory Logging { get; init; }
 }
 
