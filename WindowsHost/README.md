@@ -209,7 +209,7 @@ so the peer is loopback (a DEBUG host accepts it):
 | `src/Vantage.Host.Windows.Cli/` | `VantageHostCli.exe` | The real pipeline with console logging and no UI (bring-up, SSH). Keys: P new pairing code, Q quit. |
 | `src/Vantage.Host.Windows/` | `VantageHost.exe` | The WinUI 3 tray app (Windows App SDK 2.5, unpackaged, self-contained). Same flags as the CLI. |
 | `tools/InputProbe/` | `InputProbe.exe` | Logs mouse/keyboard events with `injected` and `vantage` marks (the Windows `click-target.swift`). |
-| `tests/Vantage.Host.Windows.Tests/` | xUnit | The pure parts (coordinates, dirty regions, DPI maths, clipboard text/DIB/PNG, tray menu, Tailscale JSON, NAL units, flags, receive folder, start at login). |
+| `tests/Vantage.Host.Windows.Tests/` | xUnit | The pure parts (coordinates, dirty regions and the GPU frame compare, display modes, DPI maths, clipboard text/DIB/PNG, tray menu and transfer rows, restart guard, Tailscale JSON, NAL units, flags, receive folder, start at login, Start menu shortcut), plus opt-in live tests (`VANTAGE_LIVE_PC_AUDIO=1`). |
 
 On the Mac, `dotnet build Vantage.Windows.slnx` compiles everything but the WinUI app (the
 Windows projects set `EnableWindowsTargeting`), and `dotnet test --solution Vantage.Windows.slnx`
@@ -283,6 +283,7 @@ the tray icon for the tray panel (`TrayPanel`, like the Mac host's menu-bar popo
 Pairing Code with the code right there, connected and paired devices, Settings…, Quit; acrylic,
 placed by `TrayPanelPlacement` from `Shell_NotifyIconGetRect`, gone on Esc or a click elsewhere),
 right-click for the native menu. Settings… opens the window (General shows the tailnet address);
-turn on "Start Casement Host when I sign in" there. Closing the window keeps it in the
-tray; Quit is in the tray panel, the tray menu and on the About page. A device then pairs with
-`<pc-address>:47820`.
+"Start Casement Host when I sign in" is on from the first Release launch, and the app writes its
+own Start menu shortcut, so `publish.ps1`'s is only for Debug builds. Closing the window keeps it
+in the tray (a notification says so the first time); Quit is in the tray panel, the tray menu and
+on the About page. A device then pairs with `<pc-address>:47820`.

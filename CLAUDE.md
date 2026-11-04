@@ -1181,7 +1181,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   An iPad hearing a PC still needs a device check (and the client to show Mac Audio for a PC).
 
 ```
-cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
+cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 470+ tests, incl. listener end to end; 3 opt-in live ones skip
 dotnet WindowsHost/src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --port 47862 \
   --pairing-code 246810 --pairing-code-rearm 3 --display-asleep --clipboard-text "from the PC" \
   --input-log /tmp/in.jsonl --state-dir "$(mktemp -d)"
@@ -1245,3 +1245,8 @@ a PC, `StripItem.unavailable(on:)`; unchecked on the Mac so far). Use ports ≥ 
   isn't available. Real Mac video, pointer, clicks and software-keyboard typing are verified on a
   physical iPad; BetterDisplay and biometric session recovery still need device checks (the
   per-feature bullets above name what else does).
+- Windows host (1.3, 2026-11-04): a saved password can't be typed at the Windows lock screen (the
+  secure desktop is reachable only from a SYSTEM service, a separate decision). HEVC, the PC's
+  sound, display fitting and the restart guard were checked on Drew-PC with the console host and a
+  throwaway client, not yet from a real iPad or through a real restart; the transfer UI was only
+  compiled.

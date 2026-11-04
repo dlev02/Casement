@@ -51,7 +51,7 @@ Casement is free and open source. Version 1.0 is **in App Review** for iPhone, i
 | Computer | Download | Install |
 | --- | --- | --- |
 | Mac (macOS 26 or later) | `Casement-Host-…-mac.dmg` | Open the DMG and drag Casement Host to Applications, then open it. A setup window walks you through Screen Recording, Accessibility, starting at login, and pairing. Signed and notarized by Apple. |
-| Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder. |
+| Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder once. From then on it starts when you sign in and is in the Start menu. |
 | Windows PC (ARM) | `Casement-Host-…-windows-arm64.zip` | The same; not yet tested on ARM hardware. |
 
 The Windows app isn't code-signed yet, so Windows may say the publisher is unknown: choose **More info › Run anyway**. Allow it through Windows Firewall when asked. Each release lists SHA-256 checksums.
@@ -62,7 +62,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 ## What it does
 
-**See your screen, sharp and fast.** Hardware HEVC or H.264 encoding with low-latency settings, colour-accurate from end to end. Bitrate and frame rate adapt to your connection; text stays crisp and motion stays smooth. Optionally, a Mac can make a virtual display shaped like your iPad (with [BetterDisplay](https://github.com/waydabber/BetterDisplay)).
+**See your screen, sharp and fast.** Hardware HEVC or H.264 encoding with low-latency settings, colour-accurate from end to end. Bitrate and frame rate adapt to your connection; text stays crisp and motion stays smooth. Optionally, a Mac can make a virtual display shaped like your iPad (with [BetterDisplay](https://github.com/waydabber/BetterDisplay)), and a PC can switch its display to the resolution closest to your screen's shape while you're connected.
 
 **Control it naturally.**
 - *iPad and iPhone:* Trackpad or Direct Touch, two- and three-finger clicks, scrolling with momentum, Apple Pencil, and a hardware keyboard, mouse, or trackpad. Move the pointer into a screen edge or corner and the Mac's Dock, menu bar, and hot corners respond.
@@ -72,7 +72,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Move files both ways.** Drop files onto the screen, send them from another app, or send them from the device list without opening the screen at all. Big transfers resume where they stopped after a dropped connection and keep going after you disconnect.
 
-**Hear your Mac.** Stream the Mac's sound to your device with low latency (Opus).
+**Hear your Mac or PC.** Stream the computer's sound to your device with low latency (Opus).
 
 **Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
 
@@ -92,7 +92,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 | **Casement** for Mac | macOS 26 | Native, sandboxed, one window per computer |
 | **Casement** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
 | **Casement Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
-| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Type Password and the virtual display are Mac-only |
+| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Sends sound and fits its display to your device from version 1.3. Type Password is Mac-only |
 
 Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Casement Host listens on TCP port 47820, and only to Tailscale addresses. Casement has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
 
@@ -101,7 +101,7 @@ Both devices need [Tailscale](https://tailscale.com), signed in to the same tail
 1. **Install Tailscale** on the computer and on your iPad, iPhone, Mac, or Vision Pro, and sign in to the same tailnet on both.
 2. **Start Casement Host** on the computer.
    - *Mac:* it lives in the menu bar. Choose **Allow Screen Recording** and **Allow Accessibility** in its menu, approve Casement Host in System Settings › Privacy & Security, and reopen it if macOS asks.
-   - *Windows:* it lives in the notification area. Click its icon for a panel with your devices and **Show Pairing Code**. See [`WindowsHost/README.md`](WindowsHost/README.md) for details.
+   - *Windows:* it lives in the system tray (behind the **^** next to the clock until you drag it out) and in the Start menu. Click its icon for a panel with your devices and **Show Pairing Code**. See [`WindowsHost/README.md`](WindowsHost/README.md) for details.
 3. **Add the computer** in Casement with **+**.
    - **Add from Tailscale…** lists your tailnet's Macs and PCs, with a live check for Casement Host. It needs a read-only key from the Tailscale admin console: an API access token, or an OAuth client with the `devices:core:read` scope. The key stays in your Keychain.
    - **Add Manually…** takes the computer's Tailscale IP address or MagicDNS name.
@@ -160,12 +160,12 @@ Quit the synthetic host afterwards, and leave port 47820 to the real host.
 ## How it works
 
 ```text
-Mac host:      ScreenCaptureKit ─→ VideoToolbox (HEVC/H.264) ─┐
-Windows host:  Graphics Capture ─→ Media Foundation (H.264) ──┤
-                                                              │  one framed TCP stream per session,
-                                                              │  plus a second one for files,
-                                                              ▼  inside Tailscale's WireGuard tunnel
-Client:        AVSampleBufferDisplayLayer ←── VantageCore ←───┘
+Mac host:      ScreenCaptureKit ─→ VideoToolbox (HEVC/H.264) ─────┐
+Windows host:  Graphics Capture ─→ Media Foundation (HEVC/H.264) ─┤
+                                                                  │  one framed TCP stream per session,
+                                                                  │  plus a second one for files,
+                                                                  ▼  inside Tailscale's WireGuard tunnel
+Client:        AVSampleBufferDisplayLayer ←── VantageCore ←───────┘
                touch, pointer, keyboard, clipboard, mic ──→ CGEvent / SendInput on the host
 ```
 
@@ -191,7 +191,7 @@ Casement collects nothing. There are no Casement servers, and the developer neve
 
 - The computer has to be on, awake enough to reach, and logged in. Tailscale can't wake a sleeping Mac, and nothing can get past FileVault's pre-boot screen remotely (Restart Safely avoids it for planned restarts).
 - There's no curtain mode: someone at the computer sees what you're doing.
-- Windows hosts don't type saved passwords or make virtual displays yet, and the apps don't play a PC's sound yet (Casement Host for Windows can already send it).
+- Windows hosts don't type saved passwords. Instead of a virtual display, a PC switches its own display mode to fit your device (Casement Host 1.3 or later).
 - Casement streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
 
 ## Support Casement
