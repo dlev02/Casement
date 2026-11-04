@@ -72,7 +72,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Move files both ways.** Drop files onto the screen, send them from another app, or send them from the device list without opening the screen at all. Big transfers resume where they stopped after a dropped connection and keep going after you disconnect.
 
-**Hear your Mac.** Stream the Mac's sound to your device with low latency (Opus).
+**Hear your Mac or PC.** Stream the computer's sound to your device with low latency (Opus).
 
 **Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
 
@@ -92,7 +92,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 | **Casement** for Mac | macOS 26 | Native, sandboxed, one window per computer |
 | **Casement** for Apple Vision Pro | visionOS 26 | Native, one window per computer |
 | **Casement Host** for Mac | macOS 26 | Menu-bar app. Needs Screen Recording and Accessibility |
-| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Type Password and the virtual display are Mac-only |
+| **Casement Host** for Windows | Windows 10 (2004) or Windows 11 | Tray app. Sends sound and fits its display to your device from version 1.3. Type Password is Mac-only |
 
 Both devices need [Tailscale](https://tailscale.com), signed in to the same tailnet. Casement Host listens on TCP port 47820, and only to Tailscale addresses. Casement has its own protocol: it doesn't connect to VNC, Microsoft Remote Desktop, or Apple's Screen Sharing (apart from typing passwords).
 
@@ -191,7 +191,7 @@ Casement collects nothing. There are no Casement servers, and the developer neve
 
 - The computer has to be on, awake enough to reach, and logged in. Tailscale can't wake a sleeping Mac, and nothing can get past FileVault's pre-boot screen remotely (Restart Safely avoids it for planned restarts).
 - There's no curtain mode: someone at the computer sees what you're doing.
-- Windows hosts don't type saved passwords or make virtual displays yet, and the apps don't play a PC's sound yet (Casement Host for Windows can already send it).
+- Windows hosts don't type saved passwords. Instead of a virtual display, a PC switches its own display mode to fit your device (Casement Host 1.3 or later).
 - Casement streams one display: the main display, or a virtual one sized to your iPad. There's no switching between several displays yet.
 
 ## Support Casement

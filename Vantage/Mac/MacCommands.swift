@@ -86,7 +86,7 @@ struct MacCommands: Commands {
         Toggle("View Only", isOn: toggle(\.isViewOnly) { $0.toggleViewOnly() })
             .disabled(session == nil)
         Divider()
-        Toggle("Mac Audio", isOn: toggle(\.macAudioOn) { $0.toggleMacAudio() })
+        Toggle("\(hostName) Audio", isOn: toggle(\.macAudioOn) { $0.toggleMacAudio() })
             .keyboardShortcut("a", modifiers: Self.vantageChord)
             .disabled(session?.macAudioAvailable != true)
         Button(session?.isDictating == true ? "Stop Dictating" : "Dictate") { session?.toggleDictation() }
