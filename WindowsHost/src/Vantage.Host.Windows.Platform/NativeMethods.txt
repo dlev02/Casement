@@ -118,6 +118,11 @@ GUID_CONSOLE_DISPLAY_STATE
 SetThreadExecutionState
 LockWorkStation
 
+// Restart guard (sign-out, restart and shutdown while a device is connected)
+ShutdownBlockReasonCreate
+ShutdownBlockReasonDestroy
+SetProcessShutdownParameters
+
 // Files
 SHGetKnownFolderPath
 FOLDERID_Downloads

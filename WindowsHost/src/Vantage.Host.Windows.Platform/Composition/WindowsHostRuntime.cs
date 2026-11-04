@@ -103,6 +103,16 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             CaptureFailsFor = debugBuild ? options.CaptureFailsFor : null,
         };
         Listener = new HostListener(Environment, ListenerOptions);
+
+        // Synthetic runs share the PC with a real host and never hold its restarts.
+        if (!options.Synthetic)
+        {
+            var guard = Own(new RestartGuard(Window, Settings.Current.AskBeforeRestart, logging));
+            RestartGuard = guard;
+            Settings.Changed += settings => guard.Enabled = settings.AskBeforeRestart;
+            Listener.Changed += () => guard.Update(ConnectedDeviceNames());
+            guard.EndingSession += EndEverySessionAsync;
+        }
     }
 
     /// <summary>Builds everything; nothing listens until <see cref="StartAsync"/>.</summary>
@@ -129,6 +139,15 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>The hidden Win32 window (tray, clipboard, notifications).</summary>
     public MessageWindow Window { get; }
+
+    /// <summary>Holds sign-outs and restarts while a device is connected (null for synthetic runs).</summary>
+    public RestartGuard? RestartGuard { get; }
+
+    /// <summary>
+    /// Raised (from the guard's wait on the message window's thread) once Windows is really
+    /// signing out or restarting and the listener has stopped; the app quits on it.
+    /// </summary>
+    public event Action<SessionEnding>? WindowsSessionEnded;
 
     /// <summary>The Tailscale CLI.</summary>
     public TailscaleCli Tailscale { get; }
@@ -188,6 +207,39 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             try { _owned[i].Dispose(); }
             catch (Exception ex) { _log.LogDebug("dispose: {Message}", ex.Message); }
         }
+    }
+
+    /// <summary>One name per device with a screen session (what the restart screen names).</summary>
+    private List<string> ConnectedDeviceNames()
+    {
+        try
+        {
+            return [.. Listener.Sessions.Where(s => !s.IsFilesOnly).DistinctBy(s => s.Fingerprint).Select(s => s.ClientName)];
+        }
+        catch (Exception ex) when (ex is NotImplementedException or ObjectDisposedException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Windows is signing out or restarting: the listener stops, so every connection just drops
+    /// without a <c>disconnect</c> (as on the Mac) and the iPad keeps retrying until the host is
+    /// back after sign-in; files pause and resume then.
+    /// </summary>
+    private async Task EndEverySessionAsync(SessionEnding kind)
+    {
+        try
+        {
+            var count = Listener.Sessions.Count(s => !s.IsFilesOnly);
+            _log.LogInformation("{Kind}: stopping with {Count} screen session(s) connected", RestartGuardPolicy.LogName(kind), count);
+            await Listener.StopAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is NotImplementedException or ObjectDisposedException or InvalidOperationException or IOException)
+        {
+            _log.LogDebug("stopping for the session end: {Message}", ex.Message);
+        }
+        WindowsSessionEnded?.Invoke(kind);
     }
 
     private T Own<T>(T disposable) where T : IDisposable

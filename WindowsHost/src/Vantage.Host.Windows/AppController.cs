@@ -169,6 +169,8 @@ public sealed class AppController
         _transferTick.Interval = TimeSpan.FromSeconds(1);
         _transferTick.Tick += (_, _) => OnTransferTick();
         Runtime.Files.Saved += (path, _) => _arrivals.Add(path);
+        // Windows is signing out or restarting and the listener has stopped; the tray icon and the window go too.
+        Runtime.WindowsSessionEnded += kind => RunOnUi(() => _ = QuitAsync());
         Runtime.Environment.Trust.Changed += () => RunOnUi(Refresh);
         if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
         _log.LogInformation("running {Mode}", ElevatedWindows.ThisProcessIsElevated ? "as administrator" : "without administrator rights");
@@ -258,6 +260,16 @@ public sealed class AppController
 
     /// <summary>Forgets a paired iPad and closes its connections.</summary>
     public Task RevokeAsync(string fingerprint) => Runtime?.Listener.RevokeAsync(fingerprint) ?? Task.CompletedTask;
+
+    /// <summary>"Ask before restarting while a device is connected" is on (null for synthetic runs, which never hold a restart).</summary>
+    public bool? AsksBeforeRestart => Runtime?.RestartGuard is null ? null : Runtime.Settings.Current.AskBeforeRestart;
+
+    /// <summary>Turns "Ask before restarting while a device is connected" on or off (the guard follows the setting).</summary>
+    public void SetAsksBeforeRestart(bool on)
+    {
+        if (Runtime is null) return;
+        Runtime.Settings.Update(s => s with { AskBeforeRestart = on });
+    }
 
     /// <summary>Whether this copy runs as administrator (so it can control administrator apps).</summary>
     public static bool IsElevated => ElevatedWindows.ThisProcessIsElevated;

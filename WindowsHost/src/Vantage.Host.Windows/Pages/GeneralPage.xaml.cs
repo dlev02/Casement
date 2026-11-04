@@ -9,7 +9,7 @@ using WindowsClipboard = global::Windows.ApplicationModel.DataTransfer.Clipboard
 
 namespace Vantage.Host.Windows.App.Pages;
 
-/// <summary>Status, tailnet address, the pairing code, and start at login.</summary>
+/// <summary>Status, tailnet address, the pairing code, start at login, and asking before a restart.</summary>
 public sealed partial class GeneralPage : Page
 {
     private AppController? _controller;
@@ -86,6 +86,9 @@ public sealed partial class GeneralPage : Page
         TrayIconHint.Text = iconShown is null
             ? "Windows lists the icon once it has appeared. Until then, find it behind the ^ next to the clock."
             : "Otherwise Windows keeps it behind the ^ next to the clock.";
+        var asks = _controller.AsksBeforeRestart;
+        RestartGuardSwitch.IsEnabled = asks is not null;
+        RestartGuardSwitch.IsOn = asks ?? false;
         if (!_adminBusy)
         {
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
@@ -157,6 +160,12 @@ public sealed partial class GeneralPage : Page
         TrayIconSwitch.IsOn = !TrayIconSwitch.IsOn;
         _updating = false;
         TrayIconHint.Text = "Windows wouldn't change it here. Drag the icon onto the taskbar, or choose it under Settings › Personalization › Taskbar › Other system tray icons.";
+    }
+
+    private void OnRestartGuardToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        _controller?.SetAsksBeforeRestart(RestartGuardSwitch.IsOn);
     }
 
     private async void OnAdminToggled(object sender, RoutedEventArgs e)

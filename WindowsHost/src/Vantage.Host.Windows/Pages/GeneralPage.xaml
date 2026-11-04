@@ -78,6 +78,20 @@
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="4">
                     <ToggleSwitch
+                        x:Name="RestartGuardSwitch"
+                        Header="Ask before restarting while a device is connected"
+                        Toggled="OnRestartGuardToggled" />
+                    <TextBlock
+                        x:Name="RestartGuardHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Windows stops on its restart screen and names Casement Host there, so someone at the PC can cancel or go ahead. A forced restart can't be stopped."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
+                    <ToggleSwitch
                         x:Name="TrayIconSwitch"
                         Header="Show the icon next to the clock"
                         Toggled="OnTrayIconToggled" />

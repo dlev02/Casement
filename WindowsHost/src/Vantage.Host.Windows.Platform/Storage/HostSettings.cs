@@ -15,17 +15,22 @@ public enum AfterArrival
     OpenFile,
 }
 
-/// <summary>User settings (Settings window), stored as <c>settings.json</c> next to the identity.</summary>
+/// <summary>
+/// User settings (Settings window), stored as <c>settings.json</c> next to the identity. Settings
+/// whose default isn't false/zero use <c>set</c>, not <c>init</c>: the source-generated reader
+/// passes <c>default</c> for an <c>init</c> property the file lacks, so a file saved before a
+/// setting existed would load it as false/zero instead of its default.
+/// </summary>
 public sealed record HostSettings
 {
     /// <summary>Chosen receive folder, or null for Downloads.</summary>
     public string? ReceiveFolder { get; init; }
 
     /// <summary>What to do after a file arrives.</summary>
-    public AfterArrival AfterArrival { get; init; } = AfterArrival.ShowInFolder;
+    public AfterArrival AfterArrival { get; set; } = AfterArrival.ShowInFolder;
 
     /// <summary>Show a notification when files arrive.</summary>
-    public bool NotifyOnArrival { get; init; } = true;
+    public bool NotifyOnArrival { get; set; } = true;
 
     /// <summary>
     /// Start at login was turned on for the first launch or chosen since (it's on unless switched off,
@@ -35,6 +40,12 @@ public sealed record HostSettings
 
     /// <summary>Start through the elevated task (<c>AdminLaunch</c>) so input reaches administrator apps.</summary>
     public bool ControlAdminApps { get; init; }
+
+    /// <summary>
+    /// Hold a sign-out, restart or shutdown on Windows' "This app is preventing restart" screen while
+    /// a device is connected (<c>RestartGuard</c>; on by default, like the Mac's).
+    /// </summary>
+    public bool AskBeforeRestart { get; set; } = true;
 
     /// <summary>The "still running in the system tray" notification was shown (once, the first time the window is closed).</summary>
     public bool TrayHintShown { get; init; }
