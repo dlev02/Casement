@@ -121,7 +121,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   the background whenever the window leaves the screen (another Space, a full-screen app), so
   `AppLock.appDidEnterBackground` doesn't lock there; it locks when protected data goes away or
   after `macAwayLimit` (10 min) out of sight. The device list drops its large title and bar
-  background there (`MacHostedListBar`; the window's title bar already says Casement).
+  background there (`MacHostedListBar`; the window's title bar already says Casement), and
+  Casement › Settings… (⌘,) opens Casement's Settings in a sheet (`MacHostedSettingsCommand`)
+  instead of macOS's generic settings window for iOS apps.
   The list's Grid/List is its own toolbar button beside Sort, and Settings → Appearance →
   Device List.
 - **Control strip motion** (`ControlStrip`, `ToolbarPlacement` in `SessionPreferences.swift`): the
