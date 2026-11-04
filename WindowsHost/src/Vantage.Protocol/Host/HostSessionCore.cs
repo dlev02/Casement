@@ -1,8 +1,10 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using Vantage.Protocol.Adaptive;
+using Vantage.Protocol.Audio;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Files;
+using Vantage.Protocol.Input;
 using Vantage.Protocol.Messages;
 using Vantage.Protocol.Transport;
 using Vantage.Protocol.Video;
@@ -28,7 +30,8 @@ public enum SessionState
 /// probe, files-only), then either the files-only loop or the screen session: display choice,
 /// capture → encode → <c>videoConfig</c>/<c>videoFrame</c> with idle suppression, forced IDRs and
 /// P-frame dropping under backpressure, the capture watchdog and <c>HostStatus</c>, input (with the
-/// display-sleep rule), clipboard, host commands, adaptive bitrate, and pings. Teardown revokes its
+/// display-sleep rule), clipboard, host commands, adaptive bitrate, the PC's sound for clients that
+/// ask (<c>audioRequest</c> → <c>audioConfig</c>/<c>audioPacket</c>), and pings. Teardown revokes its
 /// attach token and releases all input; an attached file channel carries on.
 /// </summary>
 /// <remarks>
@@ -46,6 +49,9 @@ public sealed class HostSessionCore
     private static readonly TimeSpan s_captureNoFrameLimit = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan s_unavailableNotice = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan s_maxRecoveryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan s_refitDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan s_modeSettleLimit = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan s_captureCatchUp = TimeSpan.FromSeconds(2);
 
     private readonly HostListener _listener;
     private readonly HostEnvironment _env;
@@ -61,6 +67,13 @@ public sealed class HostSessionCore
 
     // Streaming state (queue only).
     private SelectDisplay? _wanted;
+    // The client asked for the display fitted to its screen (fitViewport + useVirtualDisplay) and
+    // hasn't sent restoreDisplays since: capture (re)starts fit the mode through IDisplayFitter.
+    private bool _fitting;
+    private DateTimeOffset _refitDue;
+    private bool _refitScheduled;
+    private DateTimeOffset? _modeChangedAt; // the next capture start checks it got the new mode's size
+    private int _captureGeneration; // which capture start a stop callback belongs to
     private bool _streamStarting;
     private SelectDisplay? _pendingStart;
     private ICaptureStream? _capture;
@@ -72,8 +85,11 @@ public sealed class HostSessionCore
     private bool _needsKeyframe = true;
     private bool _configSentForEncoder;
     private byte[][]? _lastParameterSets;
+    private VideoCodec _codec = VideoCodec.H264;
     private ulong _sequence;
     private ulong _framesSent;
+    private ulong _idleSkipped;
+    private EncodingMode _loggedMode = EncodingMode.Motion;
     private AdaptiveController _adaptive = new(20_000);
     private int _currentFps = 60;
     private int _currentMaxQP = 44;
@@ -96,6 +112,12 @@ public sealed class HostSessionCore
     private IDisposable? _statusWatch;
     private IDisposable? _keepAwake;
     private HostStatus? _lastStatus;
+
+    // Audio (queue only, except the encoder, which sends packets from its own loop).
+    private bool _clientTakesAudio;
+    private IAudioCapture? _audioCapture;
+    private AudioStreamEncoder? _audioEncoder;
+    private long _audioDropped;
 
     internal HostSessionCore(HostListener listener, FramedConnection connection)
     {
@@ -253,11 +275,14 @@ public sealed class HostSessionCore
 
         if (hello.IsReadinessProbe == true)
         {
-            // Never enumerate displays, start capture, or touch the clipboard for a probe.
+            // Never enumerate displays, start capture, or touch the clipboard for a probe. Windows has no
+            // grants to report, but capture can still be unsupported (no Windows.Graphics.Capture, a
+            // service session): say so here, where the client's device list reads it, instead of
+            // answering "ready" and denying the stream request a moment later.
             await _connection.SendAsync(new AuthResult
             {
                 Status = AuthStatus.Ok,
-                Readiness = new HostReadiness { ScreenRecordingGranted = true, AccessibilityGranted = true },
+                Readiness = new HostReadiness { ScreenRecordingGranted = _env.Screen.IsCaptureSupported, AccessibilityGranted = true },
             }).ConfigureAwait(false);
             return false;
         }
@@ -301,6 +326,7 @@ public sealed class HostSessionCore
         if (_env.Status.Current.IsDisplayAsleep) await WakeDisplayForStreamingAsync().ConfigureAwait(false);
         var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
         _clientTakesFiles = hello.Features?.FileTransfer == true;
+        _clientTakesAudio = hello.Features?.MacAudio == true;
         var sessionToken = _clientTakesFiles ? _listener.AttachTokens.Issue(this, Peer) : null;
         State = SessionState.Streaming;
         ConnectedAt = _env.Time.GetUtcNow();
@@ -312,13 +338,16 @@ public sealed class HostSessionCore
             Capabilities = new HostCapabilities
             {
                 Codecs = _env.Encoders.SupportedCodecs,
-                CanManageVirtualDisplay = false,
+                // No virtual displays on Windows: a fitter switches the shared display's mode instead.
+                CanManageVirtualDisplay = _env.DisplayFitter is { IsEnabled: true },
                 Clipboard = true,
                 MaxFPS = 60,
                 FileTransfer = _clientTakesFiles ? true : null,
                 FilesOnlySessions = _clientTakesFiles ? true : null,
                 Platform = _env.Platform,
                 CursorShapes = _env.Cursor is not null ? true : null,
+                // Like the Mac, offered to every client; only one that said macAudio is answered.
+                Audio = _env.Audio is { UnavailableReason: null } ? true : null,
             },
         }).ConfigureAwait(false);
         _log.LogInformation("client authenticated: {Client}", hello.ClientName);
@@ -416,7 +445,13 @@ public sealed class HostSessionCore
                 if (AdmitsInput(!key.IsDown)) _input?.Key(key);
                 break;
             case TextInput text:
-                if (AdmitsInput(false)) _input?.Text(text.Text);
+                if (AdmitsInput(false) && _input is { } input)
+                {
+                    // More than one key event's worth (a dictation, a paste from the iPad) is pasted:
+                    // Chromium and Electron apps drop keys from a fast burst of typed text. A
+                    // clipboard another app is holding falls back to typing, so nothing is lost.
+                    if (!ClipboardPaster.ShouldPaste(text.Text) || !_listener.Paster.Paste(text.Text, input)) input.Text(text.Text);
+                }
                 break;
             case ClipboardPayload clipboard:
                 if (!clipboard.IsEmpty) _env.Clipboard.Apply(clipboard);
@@ -425,14 +460,26 @@ public sealed class HostSessionCore
                 if (_adaptive.Apply(feedback) is { } bitrate) _encoder?.SetBitrate(bitrate);
                 break;
             case RequestKeyframe:
-            case ViewportChanged:
+                await RequestKeyframeAsync().ConfigureAwait(false);
+                break;
+            case ViewportChanged changed:
+                if (_fitting && _wanted is { Selection: DisplaySelection.FitViewport } fitted)
+                {
+                    _wanted = fitted with { Selection = new DisplaySelection.FitViewport(changed.Viewport) };
+                    ScheduleRefit();
+                }
                 await RequestKeyframeAsync().ConfigureAwait(false);
                 break;
             case HostCommandMessage command:
                 await HandleCommandAsync(command.Command).ConfigureAwait(false);
                 break;
+            case AudioRequest request:
+                if (!_clientTakesAudio) break; // never send audio kinds to a client that didn't ask for them
+                if (request.Enabled) await StartAudioAsync().ConfigureAwait(false);
+                else await StopAudioAsync().ConfigureAwait(false);
+                break;
             default:
-                break; // audioRequest, dictation, modifierState, …: never advertised, ignored
+                break; // dictation, modifierState, …: never advertised, ignored
         }
     }
 
@@ -441,6 +488,7 @@ public sealed class HostSessionCore
     private async Task SelectDisplayAsync(SelectDisplay select)
     {
         _wanted = select;
+        _fitting = select is { Selection: DisplaySelection.FitViewport, UseVirtualDisplay: true } && _env.DisplayFitter is { IsEnabled: true };
         if (_captureFailsUntil is null && _listener.Options.CaptureFailsFor is { } fails)
         {
             _captureFailsUntil = _env.Time.GetUtcNow() + fails;
@@ -495,6 +543,7 @@ public sealed class HostSessionCore
         await StopCaptureAsync().ConfigureAwait(false);
         if (_captureFailsUntil is { } until && _env.Time.GetUtcNow() < until) throw new CaptureUnavailableException("capture fails on purpose (--capture-fails-for)");
         var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
+        displays = await FitDisplayModeAsync(select, displays).ConfigureAwait(false);
         var chosen = select.Selection switch
         {
             DisplaySelection.Display byId => displays.FirstOrDefault(d => d.Id == byId.Id)
@@ -507,16 +556,42 @@ public sealed class HostSessionCore
         // A client that draws the pointer itself gets it at its own frame rate, the way Remote
         // Desktop does; leaving it out of the video also stops a moving pointer from costing frames.
         var localCursor = hello.Features?.LocalCursor == true && _env.Cursor is not null;
-        var capture = await _env.Screen.StartAsync(new CaptureRequest(chosen, fps, IncludesCursor: !localCursor), OnCapturedFrame, OnCaptureStopped,
-                                                   CancellationToken.None).ConfigureAwait(false);
+        var request = new CaptureRequest(chosen, fps, IncludesCursor: !localCursor);
+        var capture = await StartCaptureAsync(request).ConfigureAwait(false);
+        if (_modeChangedAt is { } modeChangedAt)
+        {
+            // Just after a mode change, Windows.Graphics.Capture can still size a new capture for
+            // the old mode, which then stops at its first frame: start again until it matches (≤ 2 s).
+            _modeChangedAt = null;
+            while ((capture.FrameWidth != chosen.PixelWidth || capture.FrameHeight != chosen.PixelHeight)
+                   && _env.Time.GetUtcNow() - modeChangedAt < s_captureCatchUp)
+            {
+                _log.LogInformation("capture still sized {Width}x{Height} for the old mode; starting it again", capture.FrameWidth, capture.FrameHeight);
+                await SafeDisposeAsync(capture).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(100), _env.Time, CancellationToken.None).ConfigureAwait(false);
+                capture = await StartCaptureAsync(request).ConfigureAwait(false);
+            }
+        }
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
         _adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
         _currentFps = fps;
         _currentMaxQP = _adaptive.MaxQP;
+        var codec = ChooseCodec(select.PreferredCodec, _env.Encoders.SupportedCodecs, hello.SupportedCodecs);
         IVideoEncoder encoder;
         try
         {
-            encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(VideoCodec.H264, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            try
+            {
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            }
+            catch (CaptureUnavailableException error) when (codec != VideoCodec.H264 && _env.Encoders.SupportedCodecs.Contains(VideoCodec.H264))
+            {
+                // Advertised but refused on this capture's GPU (another adapter has the HEVC
+                // encoder, or the driver turned the settings down): H.264 still gets a picture.
+                _log.LogWarning("{Codec} encoder unavailable ({Reason}); streaming H.264", codec, error.Message);
+                codec = VideoCodec.H264;
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+            }
             var sink = new EncoderSink(this, encoder);
             encoder.Start(sink);
             _encoderSink = sink;
@@ -528,14 +603,17 @@ public sealed class HostSessionCore
         }
         _capture = capture;
         _encoder = encoder;
+        _codec = codec;
         _configSentForEncoder = false;
         _lastParameterSets = null;
         _captureStartedAt = _env.Time.GetUtcNow();
         _captureHasFramed = false;
         Display = chosen;
 
-        // The input sink (and whatever it holds) survives capture restarts.
-        _input ??= _env.CreateInputSink();
+        // The input sink (and whatever it holds) survives capture restarts. It glides after an
+        // iPad flick as the Mac host does, ticking on this session's queue; teardown's ReleaseAll
+        // and Dispose end the glide and its timer.
+        _input ??= new MomentumInputSink(_env.CreateInputSink(), _env.Time, work => _queue.Post(work));
         _input.SetDisplay(chosen);
 
         if (_clipboardWatch is null)
@@ -550,12 +628,159 @@ public sealed class HostSessionCore
         _cursorWatch?.Dispose();
         _cursorWatch = localCursor ? _env.Cursor!.Watch(chosen, state => _queue.Post(() => SendCursor(state))) : null;
 
-        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = VideoCodec.H264, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
+        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
         _needsKeyframe = true;
         StartWatchdog(); // a capture that never sends a frame counts as failed after 5 s
         _listener.SessionChanged();
-        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}); stream setup took {Ms} ms",
-                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}); stream setup took {Ms} ms",
+                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// With capture stopped: fits the main display's mode to the viewport while the client wants a
+    /// fitted display (the Mac's virtual display, done the Windows way), or puts back a mode this
+    /// session changed once it doesn't. Returns the displays as they are afterwards. A refused mode,
+    /// or a display another session holds, streams what's there.
+    /// </summary>
+    private async Task<IReadOnlyList<DisplayInfo>> FitDisplayModeAsync(SelectDisplay select, IReadOnlyList<DisplayInfo> displays)
+    {
+        if (_env.DisplayFitter is not { } fitter) return displays;
+        var main = displays.FirstOrDefault(d => d.IsMain) ?? displays.FirstOrDefault();
+        bool changed;
+        try
+        {
+            if (_fitting && select.Selection is DisplaySelection.FitViewport fit && main is not null)
+            {
+                var result = fitter.Fit(Id, main, fit.Viewport);
+                if (result is DisplayFitResult.Busy) _log.LogInformation("another device has display {Id} fitted to its screen; streaming it as it is", main.Id);
+                changed = result is DisplayFitResult.Changed;
+            }
+            else
+            {
+                // A display chosen by id while fitting, or fitting over: only the latter puts the mode back.
+                changed = !_fitting && fitter.Restore(Id);
+            }
+        }
+        catch (Exception error)
+        {
+            _log.LogError("fitting the display mode failed: {Error}", error.Message);
+            return displays;
+        }
+        if (!changed) return displays;
+        _modeChangedAt = _env.Time.GetUtcNow();
+
+        // The monitor's rect follows the mode at once, but give it a moment (≤ 1 s) to report the
+        // new size so streamConfig describes the mode being shown.
+        var started = _env.Time.GetTimestamp();
+        while (true)
+        {
+            var now = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
+            var after = main is null ? null : now.FirstOrDefault(d => d.Id == main.Id);
+            if (main is null || after is null || after.PixelWidth != main.PixelWidth || after.PixelHeight != main.PixelHeight
+                || _env.Time.GetElapsedTime(started) >= s_modeSettleLimit)
+            {
+                if (after is not null)
+                    _log.LogInformation("display {Id} now {Width}x{Height} at {Scale}x ({PointWidth}x{PointHeight} points)",
+                                        after.Id, after.PixelWidth, after.PixelHeight, after.Scale, after.PointWidth, after.PointHeight);
+                return now;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(100), _env.Time, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// A fitted session's viewport changed (rotation, Stage Manager, a window resize): fit again
+    /// 500 ms after the last change, so a rotation animation switches the mode once, not per step.
+    /// </summary>
+    private void ScheduleRefit()
+    {
+        _refitDue = _env.Time.GetUtcNow() + s_refitDelay;
+        if (_refitScheduled) return;
+        _refitScheduled = true;
+        var ended = _ended.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var wait = s_refitDelay;
+                while (true)
+                {
+                    await Task.Delay(wait, _env.Time, ended).ConfigureAwait(false);
+                    TimeSpan? more = null;
+                    await _queue.RunAsync(async () =>
+                    {
+                        var left = _refitDue - _env.Time.GetUtcNow();
+                        if (left > TimeSpan.Zero)
+                        {
+                            more = left;
+                            return;
+                        }
+                        _refitScheduled = false;
+                        await RefitAsync().ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+                    if (more is not { } next) return;
+                    wait = next;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Session over.
+            }
+        });
+    }
+
+    private async Task RefitAsync()
+    {
+        if (State != SessionState.Streaming || !_fitting || _env.DisplayFitter is not { } fitter
+            || _wanted is not { Selection: DisplaySelection.FitViewport fit } wanted || Display is not { } display) return;
+        if (_streamStarting)
+        {
+            ScheduleRefit(); // a start is running; look again once it's done
+            return;
+        }
+        if (!fitter.WouldChange(Id, display, fit.Viewport)) return;
+        _log.LogInformation("viewport now {Width}x{Height} points at {Scale}x: fitting the display again",
+                            fit.Viewport.WidthPoints, fit.Viewport.HeightPoints, fit.Viewport.Scale);
+        _needsKeyframe = true;
+        if (await StartStreamAsync(wanted).ConfigureAwait(false) == false) CaptureUnavailable();
+    }
+
+    /// <summary><c>restoreDisplays</c>: put the mode back now and stream the display as it is.</summary>
+    private async Task RestoreDisplaysAsync()
+    {
+        if (_env.DisplayFitter is not { } fitter) return;
+        var wasFitting = _fitting;
+        _fitting = false;
+        if (_streamStarting) return; // the start under way sees _fitting off and restores the mode itself
+        if (!wasFitting || _wanted is null)
+        {
+            if (fitter.Restore(Id)) _log.LogInformation("display mode restored");
+            return;
+        }
+        // Stop first: a running capture would stop itself on the size change, and its late stop
+        // could land on the capture that replaces it.
+        await StopCaptureAsync().ConfigureAwait(false);
+        if (fitter.Restore(Id))
+        {
+            _log.LogInformation("display mode restored");
+            _modeChangedAt = _env.Time.GetUtcNow();
+        }
+        await RestartStreamAsync("display mode restored").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The codec to stream: the client's <c>preferredCodec</c> when this host can encode it, else the
+    /// host's best (the first of <paramref name="hostCodecs"/>, HEVC when there is an HEVC encoder),
+    /// as the Mac does with <c>preferredCodec ?? .hevc</c>. A codec the client's <c>hello</c> left
+    /// out of a non-empty <c>supportedCodecs</c> is never chosen; H.264 is the last resort.
+    /// </summary>
+    public static VideoCodec ChooseCodec(VideoCodec? preferred, IReadOnlyList<VideoCodec> hostCodecs, IReadOnlyList<VideoCodec>? clientCodecs)
+    {
+        bool Usable(VideoCodec codec) => hostCodecs.Contains(codec) && (clientCodecs is not { Count: > 0 } || clientCodecs.Contains(codec));
+        if (preferred is { } wanted && Usable(wanted)) return wanted;
+        foreach (var codec in hostCodecs)
+            if (Usable(codec)) return codec;
+        return VideoCodec.H264;
     }
 
     /// <summary>The pointer's look first, then where it is and whether it shows, on the control lane.</summary>
@@ -571,12 +796,20 @@ public sealed class HostSessionCore
         if (!_queue.Post(() => Ingest(frame))) frame.Dispose();
     }
 
-    private void OnCaptureStopped(string reason)
+    /// <summary>Starts a capture whose stop callback is ignored once a newer start has replaced it.</summary>
+    private Task<ICaptureStream> StartCaptureAsync(CaptureRequest request)
+    {
+        var generation = ++_captureGeneration;
+        return _env.Screen.StartAsync(request, OnCapturedFrame, reason => OnCaptureStopped(generation, reason), CancellationToken.None);
+    }
+
+    private void OnCaptureStopped(int generation, string reason)
     {
         _queue.Post(async () =>
         {
-            // Only the capture that is current: a stop from a replaced one is old news.
-            if (_capture is not null) await CaptureStoppedAsync(_capture, reason).ConfigureAwait(false);
+            // Only the capture that is current: a stop from a replaced one (posted before it was
+            // disposed, say a capture that came up sized for the old display mode) is old news.
+            if (generation == _captureGeneration && _capture is not null) await CaptureStoppedAsync(_capture, reason).ConfigureAwait(false);
         });
     }
 
@@ -590,6 +823,12 @@ public sealed class HostSessionCore
         _captureHasFramed = true;
         if (_captureLostAt is not null) CaptureRecovered();
         var fps = Math.Min(_adaptive.Observe(frame.DirtyRatio), _wanted?.TargetFPS ?? 60);
+        if (_adaptive.Mode != _loggedMode)
+        {
+            _loggedMode = _adaptive.Mode;
+            _log.LogInformation("video mode {Mode} (max QP {QP}); {Skipped} unchanged frames skipped so far",
+                                _loggedMode == EncodingMode.Text ? "text" : "motion", _adaptive.MaxQP, _idleSkipped);
+        }
         if (fps != _currentFps)
         {
             _currentFps = fps;
@@ -606,7 +845,11 @@ public sealed class HostSessionCore
         previous?.Dispose();
 
         // Idle suppression: skip a static frame, but always honour a pending keyframe.
-        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0) return;
+        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0)
+        {
+            _idleSkipped++;
+            return;
+        }
         if (_encodesInFlight >= 1)
         {
             _pendingEncode = true;
@@ -665,7 +908,7 @@ public sealed class HostSessionCore
         AccessUnit unit;
         try
         {
-            unit = output.Format == NalFormat.AnnexB ? AnnexB.ToAccessUnit(output.Data) : AnnexB.FromUnits(AnnexB.SplitAvcc(output.Data));
+            unit = output.Format == NalFormat.AnnexB ? AnnexB.ToAccessUnit(output.Data, _codec) : AnnexB.FromUnits(AnnexB.SplitAvcc(output.Data), _codec);
         }
         catch (FormatException error)
         {
@@ -676,16 +919,13 @@ public sealed class HostSessionCore
         if (unit.Avcc.Length == 0) return;
         if (unit.IsKeyframe)
         {
-            var sps = unit.Sps ?? output.ParameterSets?.FirstOrDefault(p => NalType.Of(p) == NalType.Sps);
-            var pps = unit.Pps ?? output.ParameterSets?.FirstOrDefault(p => NalType.Of(p) == NalType.Pps);
-            if (sps is not null && pps is not null)
+            if (WireParameterSets(unit, output.ParameterSets) is { } sets)
             {
-                byte[][] sets = [sps, pps];
                 if (!_configSentForEncoder || _lastParameterSets is null || !SameSets(sets, _lastParameterSets))
                 {
                     _connection.PostVideo(new VideoConfig
                     {
-                        Codec = VideoCodec.H264,
+                        Codec = _codec,
                         Width = output.Width,
                         Height = output.Height,
                         ParameterSets = sets,
@@ -722,6 +962,26 @@ public sealed class HostSessionCore
         if (_adaptive.NoteBacklog() is { } bitrate) _encoder?.SetBitrate(bitrate);
     }
 
+    /// <summary>
+    /// The keyframe's parameter sets in wire order for the current codec (H.264 <c>[SPS, PPS]</c>,
+    /// HEVC <c>[VPS, SPS, PPS]</c>), each from the AU or else from what the encoder handed over
+    /// beside it; null while any is missing.
+    /// </summary>
+    private byte[][]? WireParameterSets(AccessUnit unit, IReadOnlyList<byte[]>? side)
+    {
+        byte[]? Side(int type) => side?.FirstOrDefault(p => NalType.Of(p, _codec) == type);
+        if (_codec == VideoCodec.Hevc)
+        {
+            var vps = unit.Vps ?? Side(HevcNalType.Vps);
+            var hevcSps = unit.Sps ?? Side(HevcNalType.Sps);
+            var hevcPps = unit.Pps ?? Side(HevcNalType.Pps);
+            return vps is not null && hevcSps is not null && hevcPps is not null ? [vps, hevcSps, hevcPps] : null;
+        }
+        var sps = unit.Sps ?? Side(NalType.Sps);
+        var pps = unit.Pps ?? Side(NalType.Pps);
+        return sps is not null && pps is not null ? [sps, pps] : null;
+    }
+
     private static bool SameSets(byte[][] a, byte[][] b) =>
         a.Length == b.Length && a.Zip(b).All(pair => pair.First.AsSpan().SequenceEqual(pair.Second));
 
@@ -751,7 +1011,8 @@ public sealed class HostSessionCore
                 _connection.Post(new DisplayList { Displays = displays });
                 break;
             case HostCommand.RestoreDisplays:
-                break; // no virtual displays on Windows
+                await RestoreDisplaysAsync().ConfigureAwait(false);
+                break;
         }
     }
 
@@ -1049,6 +1310,73 @@ public sealed class HostSessionCore
         return engine;
     }
 
+    // MARK: Audio
+
+    /// <summary>
+    /// Starts the PC's sound (Mac <c>HostSession.startAudio</c>): <c>audioConfig</c> first, then
+    /// capture feeding the encoder, whose packets go straight onto the control lane from its own
+    /// loop (never through this queue, so input and video never wait on sound, nor sound on them).
+    /// Any failure answers <c>audioConfig.unavailable</c> instead.
+    /// </summary>
+    private async Task StartAudioAsync()
+    {
+        if (_audioCapture is not null || State != SessionState.Streaming) return;
+        if (_env.Audio is not { } source)
+        {
+            _connection.Post(AudioConfig.UnavailableBecause($"This {HostNoun} can't capture its sound."));
+            return;
+        }
+        var began = _env.Time.GetTimestamp();
+        var connection = _connection;
+        var encoder = new AudioStreamEncoder(packet =>
+        {
+            if (!connection.PostAudio(packet)) Interlocked.Increment(ref _audioDropped);
+        }, _env.Logging.CreateLogger("Vantage.Audio"));
+        IAudioCapture capture;
+        try
+        {
+            // Queued before capture starts: the control lane is in order, so it precedes every packet.
+            _connection.Post(encoder.Config);
+            capture = await source.StartAsync(block => encoder.Enqueue(block),
+                                              reason => _queue.Post(() => AudioStoppedAsync(encoder, reason)),
+                                              _ended.Token).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            await encoder.DisposeAsync().ConfigureAwait(false);
+            if (error is OperationCanceledException) return; // the session ended meanwhile
+            if (error is not AudioUnavailableException) throw;
+            _log.LogError("audio didn't start: {Reason}", error.Message);
+            _connection.Post(AudioConfig.UnavailableBecause(error.Message));
+            return;
+        }
+        _audioCapture = capture;
+        _audioEncoder = encoder;
+        _audioDropped = 0;
+        _log.LogInformation("audio started ({Source}) in {Ms:0} ms", capture.Description, _env.Time.GetElapsedTime(began).TotalMilliseconds);
+    }
+
+    private async Task StopAudioAsync()
+    {
+        if (_audioCapture is not { } capture || _audioEncoder is not { } encoder) return;
+        _audioCapture = null;
+        _audioEncoder = null;
+        await capture.DisposeAsync().ConfigureAwait(false);
+        await encoder.DisposeAsync().ConfigureAwait(false);
+        var dropped = Interlocked.Read(ref _audioDropped);
+        _log.LogInformation("audio stopped after {Packets} packets{Dropped}", encoder.PacketsSent,
+                            dropped > 0 ? $" ({dropped} dropped behind a stalled connection)" : "");
+    }
+
+    /// <summary>Capture stopped on its own and couldn't restart: tell the client why.</summary>
+    private async Task AudioStoppedAsync(AudioStreamEncoder encoder, string reason)
+    {
+        if (!ReferenceEquals(encoder, _audioEncoder)) return;
+        _log.LogError("audio stopped: {Reason}", reason);
+        await StopAudioAsync().ConfigureAwait(false);
+        if (State == SessionState.Streaming) _connection.Post(AudioConfig.UnavailableBecause(reason));
+    }
+
     // MARK: Teardown
 
     private async Task TeardownAsync()
@@ -1063,13 +1391,29 @@ public sealed class HostSessionCore
             _recovery = null;
             if (wasStreaming)
             {
+                await StopAudioAsync().ConfigureAwait(false);
                 await StopCaptureAsync().ConfigureAwait(false);
+                try
+                {
+                    if (_env.DisplayFitter?.Restore(Id) == true) _log.LogInformation("display mode restored at session end");
+                }
+                catch (Exception error)
+                {
+                    _log.LogError("restoring the display mode failed: {Error}", error.Message);
+                }
                 if (_input is not null)
                 {
                     try
                     {
-                        _input.ReleaseAll();
-                        _input.Dispose();
+                        // Dispose even if releasing failed: it stops a glide's timer for good.
+                        try
+                        {
+                            _input.ReleaseAll();
+                        }
+                        finally
+                        {
+                            _input.Dispose();
+                        }
                     }
                     catch (Exception error)
                     {

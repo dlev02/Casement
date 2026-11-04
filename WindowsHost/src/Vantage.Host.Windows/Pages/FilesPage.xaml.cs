@@ -7,24 +7,66 @@ using Vantage.Host.Windows.Storage;
 
 namespace Vantage.Host.Windows.App.Pages;
 
-/// <summary>Receive folder, what happens after files arrive, and arrival notifications.</summary>
+/// <summary>
+/// Files moving now (and finished in the last minute, with Show in folder), the receive folder, what
+/// happens after files arrive, and arrival notifications.
+/// </summary>
 public sealed partial class FilesPage : Page
 {
     private AppController? _controller;
+    private TransferRows? _transferRows;
     private bool _updating;
 
     /// <summary>Creates the page.</summary>
     public FilesPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => Update();
+        Loaded += (_, _) =>
+        {
+            if (_controller is not null) _controller.StateChanged += UpdateTransfers;
+            Update();
+            UpdateTransfers();
+        };
+        Unloaded += (_, _) =>
+        {
+            if (_controller is not null) _controller.StateChanged -= UpdateTransfers;
+        };
     }
 
     /// <inheritdoc />
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _controller = e.Parameter as AppController;
+        if (_controller is not null) _transferRows = new TransferRows(TransferList, _controller);
         base.OnNavigatedTo(e);
+    }
+
+    private void UpdateTransfers()
+    {
+        if (_controller is null || _transferRows is null) return;
+        var transfers = _controller.Transfers.Items;
+        _transferRows.Sync(transfers);
+        TransfersCard.Visibility = transfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // One file has its own Cancel; Cancel All is for a batch.
+        CancelAllButton.Visibility = transfers.Count(t => t.IsActive) >= 2 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void OnCancelAll(object sender, RoutedEventArgs e)
+    {
+        if (_controller is null) return;
+        var active = _controller.Transfers.Items.Count(t => t.IsActive);
+        if (active == 0) return;
+        var confirm = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = $"Cancel {active} transfers?",
+            Content = "Files on their way to your devices stop, and files still arriving here are deleted.",
+            PrimaryButtonText = "Cancel All",
+            CloseButtonText = "Keep Going",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        _controller.CancelAllTransfers();
     }
 
     private HostSettingsStore? Settings => _controller?.Runtime?.Settings;

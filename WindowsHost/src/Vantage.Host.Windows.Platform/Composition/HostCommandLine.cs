@@ -1,6 +1,9 @@
 using System.Globalization;
+using Vantage.Host.Windows.Audio;
+using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Encode;
 using Vantage.Protocol;
+using Vantage.Protocol.Messages;
 
 namespace Vantage.Host.Windows.Composition;
 
@@ -40,8 +43,25 @@ public sealed record HostCommandLine
     /// <summary><c>--encoder auto|hardware|software</c>.</summary>
     public EncoderPreference Encoder { get; init; } = EncoderPreference.Auto;
 
+    /// <summary><c>--codec h264|hevc</c>: offer and stream only this codec, whatever the client prefers (testing); null for HEVC-then-H.264.</summary>
+    public VideoCodec? Codec { get; init; }
+
     /// <summary><c>--rate-control cbr|lowdelayvbr</c>.</summary>
     public RateControl RateControl { get; init; } = RateControl.Cbr;
+
+    /// <summary>
+    /// <c>--dirty-regions native|compare|none</c>: where the capture's dirty ratio comes from. Native
+    /// (the default) falls back to compare before Windows 11 24H2; compare and none force the
+    /// fallback or switch it off, to test them on a newer PC.
+    /// </summary>
+    public DirtyRegionSource DirtyRegions { get; init; } = DirtyRegionSource.Native;
+
+    /// <summary>
+    /// <c>--audio auto|process|endpoint|off</c>: how the PC's sound is captured. Auto (the default)
+    /// is process loopback without the host's own sounds, falling back to the output device's
+    /// loopback; the other two force one, to test them; off never offers sound.
+    /// </summary>
+    public AudioLoopback Audio { get; init; } = AudioLoopback.Auto;
 
     /// <summary><c>--send-file-on-connect PATH</c> (debug).</summary>
     public string? SendFileOnConnect { get; init; }
@@ -61,11 +81,18 @@ public sealed record HostCommandLine
           --exit-after SECONDS        quit by itself
           --receive-folder PATH       save received files here
           --log-file PATH             also log to this file
-          --dump-h264 PATH            append the encoded H.264 (Annex-B) to PATH
+          --dump-h264 PATH            append the encoded video (H.264 or HEVC, Annex-B) to PATH
           --platform windows|macos    what the host reports itself as
           --synthetic                 separate trust store; log input instead of injecting it
           --encoder auto|hardware|software
+          --codec h264|hevc           offer and stream only this codec (default: HEVC when the PC has an encoder, then H.264)
           --rate-control cbr|lowdelayvbr
+          --dirty-regions native|compare|none
+                                      what tells the encoder the screen changed (default native: Windows 11 24H2's own,
+                                      else the GPU compares each frame with the last)
+          --audio auto|process|endpoint|off
+                                      how the PC's sound is captured (default auto: every app but this host,
+                                      else everything the output device plays)
           --send-file-on-connect PATH send a file to each client that attaches (debug builds)
           --capture-fails-for SECONDS make capture fail at first (debug builds)
           --background                start in the tray (used at sign-in)
@@ -137,6 +164,17 @@ public sealed record HostCommandLine
                         },
                     };
                     break;
+                case "--codec":
+                    result = result with
+                    {
+                        Codec = Value().ToLowerInvariant() switch
+                        {
+                            "h264" or "h.264" or "avc" => VideoCodec.H264,
+                            "hevc" or "h265" or "h.265" => VideoCodec.Hevc,
+                            _ => throw new ArgumentException("--codec is h264 or hevc."),
+                        },
+                    };
+                    break;
                 case "--rate-control":
                     result = result with
                     {
@@ -145,6 +183,25 @@ public sealed record HostCommandLine
                             "cbr" => RateControl.Cbr,
                             "lowdelayvbr" or "vbr" => RateControl.LowDelayVbr,
                             _ => throw new ArgumentException("--rate-control is cbr or lowdelayvbr."),
+                        },
+                    };
+                    break;
+                case "--dirty-regions":
+                    result = result with
+                    {
+                        DirtyRegions = FrameChange.Parse(Value()) ?? throw new ArgumentException("--dirty-regions is native, compare or none."),
+                    };
+                    break;
+                case "--audio":
+                    result = result with
+                    {
+                        Audio = Value().ToLowerInvariant() switch
+                        {
+                            "auto" => AudioLoopback.Auto,
+                            "process" => AudioLoopback.Process,
+                            "endpoint" or "device" => AudioLoopback.Endpoint,
+                            "off" or "none" => AudioLoopback.Off,
+                            _ => throw new ArgumentException("--audio is auto, process, endpoint or off."),
                         },
                     };
                     break;

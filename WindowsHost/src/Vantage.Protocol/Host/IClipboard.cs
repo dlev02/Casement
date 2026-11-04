@@ -34,4 +34,34 @@ public interface IClipboard
     /// disposing the result stops it. The synthetic host never watches.
     /// </summary>
     IDisposable Watch(Action<ClipboardPayload> onChanged);
+
+    /// <summary>
+    /// Puts <paramref name="text"/> (wire text, LF line endings) on the clipboard for a paste
+    /// (<see cref="ClipboardPaster"/>) and returns what was there before, in one clipboard open so
+    /// nothing slips in between. When <paramref name="earlier"/> is given and the clipboard still holds
+    /// that paste's write, the result keeps <paramref name="earlier"/>'s former contents instead of
+    /// taking the earlier paste's text for them (pastes in a row give back the clipboard from before the
+    /// first). Like <see cref="Apply"/>, the write must not come back through <see cref="Watch"/>.
+    /// Returns null, having changed nothing, when another app holds the clipboard.
+    /// </summary>
+    PasteWrite? WriteForPaste(string text, PasteWrite? earlier);
+
+    /// <summary>
+    /// Puts <paramref name="write"/>'s former contents back, but only while the clipboard still holds
+    /// that write: a copy made since then wins. Not reported through <see cref="Watch"/> either.
+    /// Returns whether it restored; false when something else changed the clipboard or it couldn't be
+    /// opened. Called from a timer thread; marshal as needed.
+    /// </summary>
+    bool RestoreAfterPaste(PasteWrite write);
 }
+
+/// <summary>A clipboard write made for a paste (<see cref="IClipboard.WriteForPaste"/>).</summary>
+/// <param name="Former">
+/// What the clipboard held before, opaque to the session: only the clipboard that made it reads it.
+/// Null means it was empty, and a restore empties it again.
+/// </param>
+/// <param name="Mark">
+/// The clipboard's change mark right after the write (Windows: <c>GetClipboardSequenceNumber</c>), so a
+/// restore can tell whether anything has changed it since.
+/// </param>
+public sealed record PasteWrite(object? Former, ulong Mark);

@@ -21,17 +21,22 @@ internal sealed class TestHost : IAsyncDisposable
     public readonly RecordingFileStore Files;
 
     public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
-                    IPeerDirectory? peers = null)
+                    IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null, bool captureUnsupported = false,
+                    IVideoEncoderFactory? encoders = null, IAudioSource? audio = null, IDisplayFitter? displayFitter = null)
     {
         Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
         Clipboard = new MemoryClipboard(clipboardText, new EventLog(null, false, NullLogger.Instance));
         var storage = new FileProtectedStorage(Path.Combine(Root, "state"));
+        IScreenSource screen = new ClipScreenSource(Display, NullLogger.Instance);
+        if (captureUnsupported) screen = new UnsupportedScreenSource(screen);
         var environment = new HostEnvironment
         {
             HostName = "Test PC",
-            Screen = new ClipScreenSource(Display, NullLogger.Instance),
-            Encoders = new ClipEncoderFactory(new Clip(VideoTests.ClipPath())),
+            Screen = screen,
+            Encoders = encoders ?? new ClipEncoderFactory(new Clip(VideoTests.ClipPath())),
+            Audio = audio,
+            DisplayFitter = displayFitter,
             CreateInputSink = () => Input,
             Clipboard = Clipboard,
             Status = Display,
@@ -48,6 +53,7 @@ internal sealed class TestHost : IAsyncDisposable
             AllowLoopback = true,
             FixedPairingCode = pairingCode,
             CaptureFailsFor = captureFailsFor,
+            PasteRestoreDelay = pasteRestoreDelay ?? ClipboardPaster.DefaultRestoreDelay,
         });
         Listener.StartAsync().GetAwaiter().GetResult();
     }
@@ -59,6 +65,16 @@ internal sealed class TestHost : IAsyncDisposable
         await Listener.StopAsync();
         Directory.Delete(Root, recursive: true);
     }
+}
+
+/// <summary>A PC where capture isn't available (no Windows.Graphics.Capture, or a service session).</summary>
+internal sealed class UnsupportedScreenSource(IScreenSource inner) : IScreenSource
+{
+    public bool IsCaptureSupported => false;
+    public string CaptureUnsupportedMessage => "Screen capture isn't available in this session.";
+    public Task<IReadOnlyList<DisplayInfo>> GetDisplaysAsync(CancellationToken cancellationToken) => inner.GetDisplaysAsync(cancellationToken);
+    public Task<ICaptureStream> StartAsync(CaptureRequest request, Action<ICapturedFrame> onFrame, Action<string> onStopped, CancellationToken cancellationToken) =>
+        throw new CaptureUnavailableException(CaptureUnsupportedMessage);
 }
 
 /// <summary>The synthetic store, remembering who each saved file came from.</summary>
@@ -132,7 +148,8 @@ internal sealed class TestClient
     public byte[] PublicKey => s_ed25519.PublicKeyFromSeed(Seed);
 
     public async Task<(FramedConnection Connection, Challenge Challenge, AuthResult Result)> ConnectAsync(
-        int port, string? code = null, bool probe = false, bool filesOnly = false, bool files = true, ushort version = 2, string host = "127.0.0.1")
+        int port, string? code = null, bool probe = false, bool filesOnly = false, bool files = true, ushort version = 2, string host = "127.0.0.1",
+        bool macAudio = false)
     {
         var connection = await FramedConnection.ConnectAsync(host, port);
         await connection.SendAsync(new Hello
@@ -147,7 +164,7 @@ internal sealed class TestClient
             MaxDecodeHeight = probe || filesOnly ? 0 : 2304,
             Viewport = probe || filesOnly ? null : new Viewport { WidthPoints = 1210, HeightPoints = 834, Scale = 2 },
             IsReadinessProbe = probe ? true : null,
-            Features = new ClientFeatures { FileTransfer = files, FilesOnly = filesOnly ? true : null },
+            Features = new ClientFeatures { FileTransfer = files, FilesOnly = filesOnly ? true : null, MacAudio = macAudio ? true : null },
         });
         var first = await connection.ReceiveAsync();
         if (first is AuthResult early) return (connection, null!, early);
@@ -208,6 +225,25 @@ public class HostListenerTests
         var (_, _, result) = await client.ConnectAsync(host.Port, "246810");
         Assert.Equal(AuthStatus.BadPairingCode, result.Status);
         Assert.Contains("expired", result.Message);
+    }
+
+    [Fact]
+    public async Task ProbeSaysWhenCaptureIsUnsupported()
+    {
+        // The client's device list reads the probe; "ready" followed by a denied stream request
+        // would look like a broken connection instead of a PC that can't share its screen.
+        await using var host = new TestHost(captureUnsupported: true);
+        var client = new TestClient();
+        (await client.ConnectAsync(host.Port, "246810")).Connection.Close();
+
+        var (_, _, probe) = await client.ConnectAsync(host.Port, probe: true);
+        Assert.Equal(AuthStatus.Ok, probe.Status);
+        Assert.False(probe.Readiness!.ScreenRecordingGranted);
+        Assert.True(probe.Readiness.AccessibilityGranted);
+
+        var (_, _, stream) = await client.ConnectAsync(host.Port);
+        Assert.Equal(AuthStatus.Denied, stream.Status);
+        Assert.Contains("capture", stream.Message);
     }
 
     [Fact]
@@ -313,6 +349,58 @@ public class HostListenerTests
         Assert.True(host.Input.Releases > 0, "everything is released when the session ends");
     }
 
+    /// <summary>
+    /// A dictation-length <c>textInput</c> is pasted (clipboard, Ctrl+V, the old clipboard back) on the
+    /// real session; short text is still typed; the client hears neither clipboard write, and still
+    /// hears the PC's next real copy.
+    /// </summary>
+    [Fact]
+    public async Task LongTextIsPastedAndTheClipboardComesBackUnheard()
+    {
+        await using var host = new TestHost(clipboardText: "from the PC", pasteRestoreDelay: TimeSpan.FromSeconds(1));
+        var client = new TestClient();
+        var (connection, _, _) = await client.ConnectAsync(host.Port, "246810");
+        var heard = new List<string?>();
+        async Task<T> Next<T>() where T : class, IMessage
+        {
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (await connection.ReceiveAsync(limit.Token) is { } message)
+            {
+                if (message is ClipboardPayload payload) heard.Add(payload.Text);
+                if (message is T wanted) return wanted;
+            }
+            throw new IOException($"closed before a {typeof(T).Name}");
+        }
+        await connection.SendAsync(new SelectDisplay { Selection = new DisplaySelection.Display(1), TargetFPS = 30, Quality = QualityPreset.Auto });
+        await Next<VideoFrame>();
+
+        const string dictation = "A dictation of more than sixteen units, pasted whole.";
+        await connection.SendAsync(new TextInput { Text = "short typed text" }); // exactly 16
+        await connection.SendAsync(new TextInput { Text = dictation });
+        await connection.SendAsync(new Ping { SentAtNanos = 7 });
+        while ((await Next<Pong>()).EchoNanos != 7)
+        {
+        }
+
+        Assert.Equal(["short typed text"], host.Input.Texts);
+        lock (host.Input.Events)
+        {
+            Assert.Equal(
+                [(ClipboardPaster.VKeyCode, true, KeyModifiers.Control), (ClipboardPaster.VKeyCode, false, KeyModifiers.Control)],
+                host.Input.Events.OfType<KeyEvent>().Select(k => (k.KeyCode, k.IsDown, k.Modifiers)));
+        }
+        Assert.Equal(dictation, host.Clipboard.Read()?.Text);
+        for (var i = 0; i < 150 && host.Clipboard.Read()?.Text != "from the PC"; i++) await Task.Delay(20);
+        Assert.Equal("from the PC", host.Clipboard.Read()?.Text);
+
+        host.Clipboard.Copy(new ClipboardPayload { Text = "copied on the PC" });
+        while ((await Next<ClipboardPayload>()).Text != "copied on the PC")
+        {
+        }
+        Assert.Equal(["from the PC", "copied on the PC"], heard); // the stream's start, then the real copy only
+        connection.Close();
+    }
+
     [Fact]
     public async Task SleepingDisplayIsReportedAndWakeBringsThePictureBack()
     {
@@ -332,6 +420,40 @@ public class HostListenerTests
         do status = await Loopback.Next<HostStatus>(connection); while (status.IsDisplayAsleep != false);
         Assert.True((await Loopback.Next<VideoFrame>(connection)).IsKeyframe);
         connection.Close();
+    }
+
+    /// <summary>An iPad flick glides on the real session (its queue and the system clock), and the glide ends with the session.</summary>
+    [Fact]
+    public async Task FlickGlidesUntilTheSessionEnds()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var (connection, _, _) = await client.ConnectAsync(host.Port, "246810");
+        await connection.SendAsync(new SelectDisplay { Selection = new DisplaySelection.Display(1), TargetFPS = 30, Quality = QualityPreset.Auto });
+        Assert.True((await Loopback.Next<VideoFrame>(connection)).IsKeyframe);
+
+        await connection.SendAsync(new ScrollEvent
+        {
+            Phase = ScrollPhase.Ended, Momentum = MomentumPhase.Began, IsContinuous = true,
+            DeltaX = 0, DeltaY = 4, X = 400, Y = 250, VelocityX = 0, VelocityY = 3000,
+        });
+        List<ScrollEvent> Scrolls()
+        {
+            lock (host.Input.Events) return host.Input.Events.OfType<ScrollEvent>().ToList();
+        }
+        for (var i = 0; i < 100 && Scrolls().Count < 6; i++) await Task.Delay(20);
+        var scrolls = Scrolls();
+        Assert.Equal((ScrollPhase.Ended, MomentumPhase.None), (scrolls[0].Phase, scrolls[0].Momentum));
+        Assert.Equal((ScrollPhase.None, MomentumPhase.Began), (scrolls[1].Phase, scrolls[1].Momentum));
+        Assert.All(scrolls.Skip(2), s => Assert.True(s.Momentum == MomentumPhase.Changed && s.DeltaY > 0));
+
+        connection.Close();
+        for (var i = 0; i < 50 && host.Input.Releases == 0; i++) await Task.Delay(20);
+        Assert.True(host.Input.Releases > 0);
+        var ended = Scrolls();
+        Assert.Equal(MomentumPhase.Ended, ended[^1].Momentum); // cut short: 3000 pt/s glides for about 2.7 s
+        await Task.Delay(200);
+        Assert.Equal(ended.Count, Scrolls().Count);
     }
 
     [Fact]
@@ -437,6 +559,105 @@ public class HostListenerTests
         Assert.Contains("in use", clash.FailureReason);
         await host.Listener.StopAsync();
         Assert.Equal(HostListenerState.Stopped, host.Listener.State);
+    }
+
+    [Fact]
+    public async Task ACutOffSendIsPausedNotFailedAndResumesUnderItsIdWhenTheDeviceReturns()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<(Guid Channel, FileTransferEvent Event)>();
+        var queued = new System.Collections.Concurrent.ConcurrentQueue<FileTransferItem>();
+        var paused = new TaskCompletionSource<FileTransferPause>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<FileTransferOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Listener.FileTransfer += (channel, transferEvent) =>
+        {
+            events.Enqueue((channel, transferEvent));
+            if (transferEvent is FileTransferEvent.Finished done) finished.TrySetResult(done.Outcome);
+        };
+        host.Listener.FileSendQueued += (_, item) => queued.Enqueue(item);
+        host.Listener.FileTransferPaused += pause => paused.TrySetResult(pause);
+
+        // A file channel that takes the offer and then drops, without answering.
+        var (primary, _, result) = await client.ConnectAsync(host.Port, "246810");
+        var raw = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await raw.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var channel = await WaitForAsync(() => host.Listener.FileChannels.FirstOrDefault());
+        var file = Path.Combine(host.Root, "Report.pdf");
+        await File.WriteAllBytesAsync(file, new byte[300_000]);
+        var send = host.Listener.SendFileAsync(channel.Id, file);
+        var offer = await Loopback.Next<FileOffer>(raw);
+        var item = Assert.Single(queued);
+        Assert.Equal((offer.Id, "Report.pdf", 300_000UL, FileDirection.Sending), (item.Id, item.Name, item.ByteCount, item.Direction));
+        raw.Close();
+
+        var pause = await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal((offer.Id, FileDirection.Sending, "Test iPad"), (pause.TransferId, pause.Direction, pause.ClientName));
+        Assert.IsType<FileTransferOutcome.Failed>(await send.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Task.Delay(200);
+        Assert.DoesNotContain(events, e => e.Event is FileTransferEvent.Finished);
+
+        // The same device again: the listener re-offers it under the same id and it arrives.
+        primary.Close();
+        (primary, _, result) = await client.ConnectAsync(host.Port);
+        var again = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await again.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var received = Directory.CreateDirectory(Path.Combine(host.Root, "client")).FullName;
+        var engine = new FileTransferEngine(again, FileTransferRole.Client, new FileTransferConfiguration { ReceiveDirectory = received });
+        _ = engine.RunAsync();
+        Assert.IsType<FileTransferOutcome.Sent>(await finished.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Contains(events, e => e.Event is FileTransferEvent.Started started && started.Item.Id == offer.Id);
+        Assert.Single(events, e => e.Event is FileTransferEvent.Finished);
+        engine.Close();
+        primary.Close();
+    }
+
+    [Fact]
+    public async Task CancellingAPausedSendForgetsIt()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var paused = new TaskCompletionSource<FileTransferPause>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<(Guid, FileTransferEvent.Finished)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Listener.FileTransferPaused += pause => paused.TrySetResult(pause);
+        host.Listener.FileTransfer += (channel, transferEvent) =>
+        {
+            if (transferEvent is FileTransferEvent.Finished done) finished.TrySetResult((channel, done));
+        };
+        var (primary, _, result) = await client.ConnectAsync(host.Port, "246810");
+        var raw = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await raw.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        var channel = await WaitForAsync(() => host.Listener.FileChannels.FirstOrDefault());
+        var file = Path.Combine(host.Root, "Report.pdf");
+        await File.WriteAllBytesAsync(file, new byte[1000]);
+        _ = host.Listener.SendFileAsync(channel.Id, file);
+        await Loopback.Next<FileOffer>(raw);
+        raw.Close();
+        var pause = await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        host.Listener.CancelTransfer(pause.FileChannelId, pause.TransferId);
+        var (from, done) = await finished.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal((channel.Id, pause.TransferId, (FileTransferOutcome)new FileTransferOutcome.Cancelled(false)), (from, done.Id, done.Outcome));
+
+        // Reattaching re-offers nothing.
+        primary.Close();
+        (primary, _, result) = await client.ConnectAsync(host.Port);
+        var again = await FramedConnection.ConnectAsync("127.0.0.1", host.Port);
+        await again.SendAsync(new AttachMedia { SessionToken = result.SessionToken! });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Loopback.Next<FileOffer>(again, TimeSpan.FromMilliseconds(700)));
+        again.Close();
+        primary.Close();
+    }
+
+    private static async Task<T> WaitForAsync<T>(Func<T?> read) where T : class
+    {
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (read() is { } value) return value;
+            await Task.Delay(20);
+        }
+        throw new TimeoutException();
     }
 
     [Fact]

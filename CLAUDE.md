@@ -863,7 +863,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
   also let Drew ship their work through app stores, which is what keeps the App Store build
   possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
-  CC BY 4.0, NSec/Vortice MIT); check any new one.
+  CC BY 4.0, NSec/Vortice MIT, Concentus BSD-3-Clause); check any new one.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
@@ -988,7 +988,8 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   IDR, then a bulk lane for chunks and clipboard; keepalive 5/2/3), `Auth/` (NSec Ed25519, the
   111-byte transcript, fingerprints, `PairingCodes`, file-backed trust and identity stores over
   `IProtectedStorage`), `Files/` (`FileTransferEngine`, `FileNames` with the Windows rules,
-  `AttachTokenRegistry`), `Video/` (Annex-B ↔ AVCC, SPS/PPS, IDR detection), `Adaptive/`,
+  `AttachTokenRegistry`), `Video/` (Annex-B ↔ AVCC/HVCC, parameter sets and IDR detection for
+  H.264 and HEVC, chosen by `VideoCodec`; the codec-less overloads are H.264), `Adaptive/`,
   `Input/` (`WindowsInputTranslator`: kVK → set-1 scan codes, chords, held state, scroll
   remainder, point → virtual-desktop pixels; only `IInputInjector` calls `SendInput`), and
   `Host/` (`HostListener`, `HostSessionCore`, and the platform interfaces: `IScreenSource`,
@@ -1001,9 +1002,50 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
   `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
   `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
-  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, and `--cursor-shapes`. Loopback is always
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, and `--no-audio`
+  (it otherwise offers the Mac synthetic host's −18 dBFS chime as the PC's sound). Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
+- **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
+  sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
+  0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
+  translator's wheel conversion, ticking on the session's `TimeProvider` and queue (frames due by
+  the clock, so Windows' 15.6 ms timer doesn't slow it). The next scroll, a button press,
+  `releaseAll` and teardown end it. The synthetic host's input log shows the frames (`momentum`).
+  Tests: `ScrollMomentumTests`, `HostListenerTests.FlickGlidesUntilTheSessionEnds`.
+- **Long text is pasted**: a `textInput` over 16 UTF-16 units (dictation, a paste from the iPad)
+  goes through the clipboard as on the Mac, since Electron/Chromium apps and some games drop
+  `KEYEVENTF_UNICODE` bursts; 16 or fewer are typed. `ClipboardPaster` (one per listener) calls
+  `IClipboard.WriteForPaste` (one clipboard open: save every memory-block format,
+  `ClipboardFormats.CanSave`, then the text marked out of Win+V history, cloud clipboard and
+  clipboard managers), sends `PasteChord` (V with Control: Ctrl 1D, V 2F through the translator),
+  and after 1.5 s (the Mac's `pasteRestoreDelay`, on the session's `TimeProvider`) calls
+  `RestoreAfterPaste`, which puts the saved formats back only while the sequence number is still
+  the paste's (a copy made meanwhile wins). Pastes in a row keep the first one's saved clipboard;
+  stopping the listener restores at once. Neither write reaches the client (the window owns the
+  clipboard after both; never a "skip the next change" flag). A clipboard another app holds falls
+  back to typing, logged once. The synthetic host's input log shows `pasteWrite`, the chord's two
+  `key` entries (`key 1D down`, `key 2F down`, …) and `pasteRestore`. Tests: `ClipboardPasteTests`,
+  `ClipboardFormatsTests`, `HostListenerTests.LongTextIsPastedAndTheClipboardComesBackUnheard`.
+- **Transfers on the PC** (the Mac's menu Files section and ring): `HostTransferList`
+  (`Platform/Files/HostTransfers.cs`, UI thread only) keeps a `HostTransfer` per id from the
+  listener's `FileSendQueued` (a send waiting its turn), `FileTransfer` and `FileTransferPaused`;
+  speed and time left are the Mac's `record` (≥ 0.5 s samples, 0.6 old + 0.4 new), and
+  `HostTransferText` words everything as the Mac does ("12.4 MB of 48.0 MB · 6.20 MB/s · 5 sec
+  left", "Paused at 45% · resumes when Drew's iPad reconnects", "Received from Drew's iPad · in
+  Downloads"; sizes 1,024-based and cut like Explorer's). The listener reports a send's `Finished`
+  itself (the engine's is lost when the connection closes under it) and a cut-off send or receive
+  as `FileTransferPaused` instead of a failure, so no "Couldn't send" notification; the next
+  `Started` with that id carries the row on, and one not back by `ResumesBefore` (1 h) fails then.
+  `CancelTransfer` also forgets a paused send and deletes a paused receive's partial. The tray icon
+  becomes a ring with an arrow while files move (`TrayGlyph`, drawn per update at the taskbar's
+  size into a DIB for `CreateIconFromResourceEx`, 24 steps, cached; down if anything arrives;
+  paused files left out), the tooltip and the panel's status say "Receiving Report.pdf, 45%";
+  the menu lists the newest 5 (name: detail, Cancel ⟨file⟩, Show ⟨file⟩ in folder) plus Open
+  Receive Folder; the panel's Transfers card (newest 4) and Settings › Files (all, Cancel All with
+  a confirmation) share `TransferRows`. Finished rows stay 60 s; the app redraws progress at most
+  every 250 ms. Tests: `HostTransferListTests`, `TrayGlyphTests`, `TrayMenuModelTests`,
+  `HostListenerTests.ACutOffSendIsPausedNotFailed…`, `CancellingAPausedSendForgetsIt`.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
@@ -1026,6 +1068,117 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the clock reads and writes that value (`TrayIconVisibility`; undocumented, so no entry means the
   switch is disabled, never an error). The app's version in logs and About is
   `WindowsHostRuntime.AppVersion` (the informational version), not the protocol's `HostVersion`.
+- **Restart guard** (the Mac's `RestartGuard`; `Desktop/RestartGuard.cs`, pure `RestartGuardPolicy`):
+  Windows has no veto, so while a screen session is up the guard registers a block reason
+  (`ShutdownBlockReasonCreate` on `MessageWindow`, a hidden top-level window: message-only ones
+  never get `WM_QUERYENDSESSION`) naming the device ("Drew's iPad is connected through Casement
+  Host. …", or "2 devices …") and answers `WM_QUERYENDSESSION` FALSE, so an interactive sign-out,
+  restart or shutdown (Windows Update's too) stops on Windows' "This app is preventing restart"
+  screen, where the person at the PC cancels or goes ahead. `ENDSESSION_CRITICAL` (`shutdown /f`)
+  and `ENDSESSION_CLOSEAPP` (an installer) are never held. `SetProcessShutdownParameters(0x3FF)` asks
+  the host first. On `WM_ENDSESSION` TRUE the runtime logs the kind (restart, sign-out
+  for `ENDSESSION_LOGOFF`, close-app), stops the listener (waiting ≤ 4 s of Windows' ~5) and the
+  app quits. Never send `disconnect` there: connections just drop, as on the Mac, so the iPad keeps
+  retrying and reconnects once the host is back after sign-in. The runtime wires it (`Listener.Changed` →
+  `Update`), so the console host has it too; synthetic runs never make one. General › Ask before
+  restarting while a device is connected (`HostSettings.AskBeforeRestart`, on by default). Settings
+  with a non-false default (`AskBeforeRestart`, `NotifyOnArrival`, `AfterArrival`) are `set`, not
+  `init`: the source-generated reader gives an `init` property the file lacks `default`. Tests:
+  `RestartGuardTests` (incl. `SettingsMissingFromTheFileKeepTheirDefaults`). The real messages and the restart screen still need a check on the PC.
+- **HEVC** (the Mac's `preferredCodec ?? .hevc`): `MfVideoEncoder` (was `MfH264Encoder`) encodes
+  H.264 or HEVC with the same MFT plumbing and low-latency settings; HEVC is `MFVideoFormat_HEVC`,
+  Main 8-bit 4:2:0 (`eAVEncH265VProfile_Main_420_8`), no CABAC switch. `MediaFoundationEncoderFactory`
+  probes once (`MFTEnum2`, any adapter) and advertises `[hevc, h264]` when the PC has an HEVC
+  encoder, else `[h264]`; Windows ships no software HEVC encoder, so a failure on the capture GPU
+  makes `Create` throw, `HostSessionCore` falls back to H.264 for that stream, and the factory stops
+  offering HEVC. `HostSessionCore.ChooseCodec`: the client's `preferredCodec` if the host has it
+  (and the client's `supportedCodecs` lists it), else the host's first; `streamConfig` and
+  `videoConfig` name what was chosen, HEVC's `parameterSets` are `[VPS, SPS, PPS]` from the IDR (or
+  `MF_MT_MPEG_SEQUENCE_HEADER`), and IRAP slices (16–21) count as keyframes. `--codec h264|hevc`
+  offers and streams only that codec; About shows "NVIDIA HEVC Encoder MFT (hardware)". The
+  synthetic host stays H.264. Checked on the RTX 5070 Ti at 3840 × 2160, 40 Mbps CBR: in-band
+  AUD/VPS/SPS/PPS on every IDR, two IDR_W_RADL slices, TRAIL_R P-frames, Main profile, High tier,
+  level 5.1 (NVIDIA ignores the ICodecAPI profile and B-frame keys, as for H.264; the media type
+  sets them). Tests: `HevcVideoTests`, `HevcSessionTests`, `NalUnitsTests`, `EncoderNameTests`. An
+  iPad decoding the PC's HEVC still needs a device check.
+- **Dirty regions before 24H2** (the Mac's SCK dirty rects): WGC reports dirty rectangles only
+  from Windows 11 24H2 (build 26100, `DirtyRegionMode.ReportOnly`); older Windows used to say 1.0
+  for every frame, so `AdaptiveController` never chose text mode and idle frames were never skipped.
+  There `WgcCaptureStream` runs `FrameComparer` instead: a compute shader (`Gpu/FrameCompare.hlsl`,
+  embedded, compiled once at runtime with Vortice.D3DCompiler, `cs_5_0`) compares each delivered
+  frame with the last in 32 × 32 blocks, writes the changed pixels into its own R32_UINT copy of
+  the previous frame (no extra full-frame copy) and one byte per block (8 KB at 4K) to a ring of 8
+  staging textures. The capture thread only queues it and flushes; `CapturedTexture.DirtyRatio`
+  reads the map when the core first asks (`DO_NOT_WAIT` polls for 4 ms, then waits; 1 if the slot
+  was reused). Pure rules in `FrameChange`: no changed block = exactly 0 (the core skips it), else
+  the changed share but at least 0.0005 (a caret blink at 4K–8K stays above `IdleDirtyRatio`);
+  alpha is ignored; the first frame is 1. Every sequence on the shared context holds
+  `GpuDevice.LockContext()`. `--dirty-regions native|compare|none` (default native, which falls
+  back to compare; `run-dev.ps1 -DirtyRegions`); the log says `dirty regions compare`, then
+  `dirty compare on …` every 10 s, and the session logs each `video mode text|motion` change; the
+  Display page shows the source. Checked on the RTX 5070 Ti at 3840 × 2160 with compare forced: a
+  window repainting the same pixels at 10 Hz sent no frames (76 identical frames skipped; `none`
+  sent all of them), a 10 Hz counter went to text mode at ~18 KB/s with ratios 0.0005–0.003,
+  readback 0.2 ms mean; WGC here sends nothing at all for a truly still screen. Tests:
+  `FrameChangeTests`, `FrameComparerGpuTests` (skipped without a D3D11 device; prints the 4K cost,
+  ~0.65 ms per frame with a synchronous readback). A real 22H2/23H2 or Windows 10 PC is unchecked.
+- **Display fitting** (the Mac's virtual display; Windows has none without a signed Indirect Display
+  Driver): `selectDisplay{fitViewport, useVirtualDisplay: true}` switches the main display's mode, as
+  Parsec and Sunshine do. `HostEnvironment.DisplayFitter` (`IDisplayFitter`, null on synthetic hosts)
+  is `Capture/DisplayFitter.cs`: `ChangeDisplaySettingsEx(name, mode, CDS_FULLSCREEN)` (temporary,
+  never in the registry; Windows put the mode back by itself when the host was killed), restore =
+  `ChangeDisplaySettingsEx(name, null, 0)`; one session holds a display, a second streams what's there
+  (`Busy`). `DisplayModes.Choose` (pure, `DisplayModesTests`): candidates ≥ 1280×720, ≤ the native
+  mode, and ≥ viewport points × the display's scale; keep the current mode when its shape is within
+  1% of the viewport's; else the best coverage (letterboxed fraction), ties by pixel count nearest
+  viewport × device scale; switch only for ≥ 5% more coverage (portrait devices and 16:9 phones keep
+  the mode). `HostSessionCore` fits after stopping capture (`FitDisplayModeAsync`), lists displays again
+  (`streamConfig` reports the new mode), refits 500 ms after the last `viewportChanged`
+  (`ScheduleRefit`), and restores on `restoreDisplays`, a non-fitting `selectDisplay`, teardown and
+  `HostListener.StopAsync` (`RestoreAll`). Right after a change WGC can still size a new capture for the
+  old mode: the start retries until the size matches (≤ 2 s), and a capture's stop callback carries
+  its start's generation so a replaced one's late stop is ignored. `canManageVirtualDisplay` follows
+  `HostSettings.AllowDisplayFitting` (Display page switch, default on). Checked on the 4K PG32UCDM: a
+  1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
+  scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and
+  `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter).
+- **The PC's sound** (the Mac's Mac audio, same wire: `audioRequest` 63 → `audioConfig` 73, then
+  `audioPacket` 102 every 10 ms; Opus 48 kHz stereo, 480-frame packets, 128 kbps). `HostEnvironment.Audio`
+  (`IAudioSource`, null = none) delivers 10 ms `AudioBlock`s; `HostSessionCore` advertises
+  `capabilities.audio` only while `UnavailableReason` is null (to every client, like the Mac), answers
+  `audioRequest` only from a client with `features.macAudio`, posts `audioConfig` and starts capture
+  on the first `enabled: true` (a failed start adds `audioConfig.unavailable` with the source's
+  reason), stops on `enabled: false`, teardown, or the source's `onStopped` (then `unavailable`).
+  `Protocol/Audio`: `AudioRepacketizer` (the Mac's rules: the sample count is the clock, a buffer more than
+  15 ms off it or flagged discontinuous pads the partial block with silence and starts a new
+  timeline), `SilenceGate` (process loopback keeps delivering digital silence where SCK and endpoint
+  loopback deliver nothing: after 500 ms of blocks under −90 dBFS it holds blocks back, so
+  `captureNanos` jumps and the client sees a pause, not endless quiet packets), `PcmConverter` (any
+  WASAPI layout to 48 kHz stereo float; −3 dB fold-down, linear resampling as a fallback only),
+  `AudioStreamEncoder` (Concentus, the managed libopus port, on its own loop; a bounded queue of 50
+  blocks so the capture thread never waits; sequence continuous across pauses; stats every 10 s in
+  `Vantage.Audio`: packets/s, kbps, bytes/packet, ms/encode, silent blocks held back, timeline
+  restarts), `SyntheticAudioSource`/`ChimeSynth` (the Mac's chime). Packets go on the control lane
+  through `FramedConnection.PostAudio` (~180 B each: never behind a P-frame or a 256 KiB chunk, and
+  refused past 50 queued so a stalled socket drops sound instead of delaying it). Platform
+  `Audio/`: `WasapiAudioSource` probes once (30 s retry after a failure) and opens process loopback
+  (`ActivateAudioInterfaceAsync` on `VAD\Process_Loopback`, `EXCLUDE_TARGET_PROCESS_TREE` for the
+  host's PID, 48 kHz float asked for), else the default render endpoint's loopback (48 kHz float
+  through `AUTOCONVERTPCM`, else the mix format through `PcmConverter`); `WasapiLoopbackCapture` is
+  one MTA thread on the WASAPI event (20 ms timeout), `qpcPosition` × 100 as `captureNanos` (now
+  minus the packet when flagged or missing), and reopens on an `IMMNotificationClient` default-device
+  change or an invalidated device (backing off to 4 s, ~8 s in all, then `onStopped`). All COM is by
+  vtable (`WasapiInterop.cs`, callbacks through `NativeCallbackObject`). `--audio auto|process|endpoint|off`
+  (`run-dev.ps1 -Audio`). Checked on Drew's PC (default output a SteelSeries Sonar virtual device)
+  with SAPI speech: `audioConfig` 13 ms after the request, 100.3 packets/s, 159 bytes a packet
+  (3–261), every step 10 ms except two 250 ms jumps at sentence breaks (the gate), 0 packets in the
+  2.5 s of silence before speech, decoded RMS ~0.02 while speaking, 0.1–0.3 ms per encode; process
+  loopback's timestamps jump 25–50 ms as a render stream starts or stops (logged as a timeline
+  restart, inside the gate's silence). Tests: `AudioRepacketizerTests`, `SilenceGateTests`,
+  `PcmConverterTests`, `AudioEncodingTests` (layout bytes, JSON keys, Opus round trip),
+  `FramedConnectionAudioTests`, `AudioSessionTests` (gated both ways, config/unavailable, restarts
+  from 0, stops on disconnect); opt-in `AudioLiveTests` (`VANTAGE_LIVE_PC_AUDIO=1`; the PC speaks).
+  An iPad hearing a PC still needs a device check (and the client to show Mac Audio for a PC).
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
@@ -1052,7 +1205,8 @@ host with `--send-file-on-connect` named by `VANTAGE_INTEROP_FILES_HOST` and
 device reattaches). The unchanged `LiveHostFilesTests` and `SessionUITests` (hosts via
 `TEST_RUNNER_VANTAGE_TEST_HOST` with `--send-file-on-connect`, `…_SYNTHETIC_HOST` with
 `--display-asleep`, `…_UNAVAILABLE_HOST` with `--capture-fails-for 6`) also run against it; the
-Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 47860 and never 47820.
+Mac-audio UI test runs against it only with `--platform macos` (the client still hides Mac Audio for
+a PC, `StripItem.unavailable(on:)`; unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
 
 ## Reboot, lock screen, and login window (what is and isn't possible)
 
@@ -1061,7 +1215,8 @@ Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 478
 - **Restart guard**: `RestartGuard` (host) inspects the quit Apple event's `kAEQuitReason`; while a
   device is connected, a restart/shutdown/logout (including Software Update's) gets a confirmation
   alert and `.terminateCancel` aborts it. `sudo reboot` and panics can't be caught. Toggle in host
-  Settings → Reboot.
+  Settings → Reboot. The Windows host can only hold a restart on Windows' own
+  restart screen (see Windows host › Restart guard); a forced one goes ahead.
 - **FileVault** is on for this Mac and auto-login is off, so a cold boot waits at the pre-boot unlock
   screen. Tailscale (the standalone System Extension variant here) only starts after login; nothing
   user-space can pass pre-boot. macOS 26+ can unlock over SSH (`man apple_ssh_and_filevault`), which

@@ -254,7 +254,7 @@ public sealed record KeyEvent : IBinaryMessage
     }
 }
 
-/// <summary>Kind 102: <c>seq u64 | captureNanos u64 | frameCount u16 | opus…</c>. Never sent by Windows v1.</summary>
+/// <summary>Kind 102: <c>seq u64 | captureNanos u64 | frameCount u16 | opus…</c>. The PC's sound, 10 ms per packet.</summary>
 public sealed record AudioPacket : IBinaryMessage
 {
     public const int HeaderLength = 18;

@@ -20,7 +20,7 @@ Things that differ from what one might assume:
    `HostCapabilities.cursorShapes` and a client's `features.localCursor`, it leaves the pointer out
    of the video and sends both, and the client draws the pointer itself.
 3. **Video is AVCC, not Annex-B.** Each NAL unit gets a 4-byte big-endian length prefix, and
-   SPS/PPS travel separately in `videoConfig`. The client builds its format description only from
+   SPS/PPS (HEVC: VPS/SPS/PPS) travel separately in `videoConfig`. The client builds its format description only from
    `videoConfig`; frames that arrive before it are dropped with a keyframe request.
 4. **An unknown message kind closes the connection on both Swift sides.** A Windows host may
    tolerate unknown kinds, but it must never send a kind the client didn't ask for.
@@ -98,17 +98,17 @@ C→H means client to host; H→C means host to client. "Windows v1" is what the
 | 60 | attachMedia | JSON | C→H | first message on a file channel |
 | 61 | textInput | JSON | C→H | handle |
 | 62 | modifierState | JSON | C→H | never sent by current clients; ignore |
-| 63 | audioRequest | JSON | C→H | never arrives unless `audio` is advertised; don't advertise |
+| 63 | audioRequest | JSON | C→H | handle from a client with `features.macAudio` when `audio` is advertised (§9.5) |
 | 64 | dictationControl | JSON | C→H | gated by `dictationEngines`; don't advertise |
 | 70 | cursorShape | JSON | H→C | only to a client with `features.localCursor`, when the host advertises `cursorShapes` |
 | 71 | videoConfig | JSON | H→C | send |
 | 72 | hostStatus | JSON | H→C | send |
-| 73 | audioConfig | JSON | H→C | never send |
+| 73 | audioConfig | JSON | H→C | send in answer to `audioRequest` (§9.5) |
 | 74 | dictationResult | JSON | H→C | never send |
 | 80–84 | fileOffer/Accept/Complete/Result/Cancel | JSON | both, file channel only | handle and send |
 | 100 | videoFrame | bin | H→C | send |
 | 101 | cursorPosition | bin | H→C | same rule; the client uses `isVisible` |
-| 102 | audioPacket | bin | H→C | never send |
+| 102 | audioPacket | bin | H→C | send while audio is on (§9.5) |
 | 103 | fileChunkToClient | bin | H→C, file channel | send |
 | 120 | pointerEvent | bin | C→H | handle |
 | 121 | scrollEvent | bin | C→H | handle |
@@ -159,7 +159,10 @@ message. The host must **never send** a kind the client didn't opt into.
 
 ### 5.1 Enums
 
-- `VideoCodec`: `"h264"`, `"hevc"`
+- `VideoCodec`: `"h264"`, `"hevc"`. The Mac offers `["hevc","h264"]` and streams
+  `preferredCodec ?? hevc`; the Windows host offers `["hevc","h264"]` when the PC has an HEVC
+  encoder MFT (else `["h264"]`), streams `preferredCodec` when it has it, else its first, and the
+  synthetic hosts offer `["h264"]` only.
 - `QualityPreset`: `"auto"`, `"text"`, `"motion"`, `"maximum"`
 - `AuthStatus`: `"ok"`, `"pairingRequired"`, `"badPairingCode"`, `"badSignature"`, `"denied"`,
   `"versionMismatch"`
@@ -276,8 +279,13 @@ JSON; not used in v1.
 
 **File messages (80–84)**: see §10.
 
-**Not used by a Windows v1 host:** AudioRequest (63), AudioConfig (73), DictationControl (64),
-DictationResult (74). Their schemas are in `AudioMessages.swift` and `DictationMessages.swift`.
+**AudioRequest (63)**: `enabled` Bool, `muteMacOutput?` Bool (ignored by every host).
+**AudioConfig (73)**: `codec` ("opus"), `sampleRate` (48000), `channels` (2), `framesPerPacket`
+(480), `bitrate` (128000), `unavailable?` String (a user-facing reason; the other keys keep the
+defaults). Schemas in `AudioMessages.swift`.
+
+**Not used by a Windows host:** DictationControl (64), DictationResult (74)
+(`DictationMessages.swift`).
 
 ## 6. Binary layouts (byte offsets inside the payload)
 
@@ -287,14 +295,17 @@ DictationResult (74). Their schemas are in `AudioMessages.swift` and `DictationM
 |---|---|---|
 | 0 | u64 | sequence: per encoder, starts at 0, +1 per frame |
 | 8 | u64 | captureNanos: host monotonic ns (the client ignores it today) |
-| 16 | u8 | isKeyframe: 1 if the AU contains an IDR (H.264 NAL type 5) |
+| 16 | u8 | isKeyframe: 1 if the AU contains an IDR (H.264 NAL type 5; HEVC an IRAP slice, types 16–21, in practice IDR_W_RADL 19 or IDR_N_LP 20) |
 | 17 | u32 | width: encoded width |
 | 21 | u32 | height |
 | 25 | … | data: one access unit in **AVCC** form (see below) |
 
 The data is a sequence of `[u32 **big-endian** NAL length][NAL bytes]` with no start codes. Remove
 SPS (7), PPS (8) and AUD (9) from the AU; they travel in `videoConfig`. Keep slices (1, 5). SEI (6)
-is tolerated by VideoToolbox; drop it if decoding misbehaves. The client feeds `data` as one sample
+is tolerated by VideoToolbox; drop it if decoding misbehaves. HEVC is the same framing (the
+`hvcC` lengths are 4 bytes too) over HEVC's two-byte NAL headers (type = bits 1–6 of the first
+byte): remove VPS (32), SPS (33), PPS (34) and AUD (35), keep the slices (0–31); the Windows host
+drops prefix/suffix SEI (39, 40). The client feeds `data` as one sample
 to `AVSampleBufferDisplayLayer` under the format description built from the last `videoConfig`,
 marked display-immediately.
 
@@ -341,7 +352,9 @@ delta is the translation divided by 10 points per line. See §7.4 for the Window
 | 3 | u32 | modifiers |
 | 7 | u8 | isRepeat |
 
-**audioPacket (102)**: `seq u64 | captureNanos u64 | frameCount u16 | opus…` (18-byte header). Not used.
+**audioPacket (102)**: `seq u64 | captureNanos u64 | frameCount u16 | opus…` (18-byte header):
+one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and continuous across pauses,
+`captureNanos` the host's monotonic time of its first frame (§9.5).
 
 **micAudio (123)**: `dictationID 16B | seq u32 | format u8 | pcm…` (21-byte header). Not used.
 
@@ -407,9 +420,10 @@ delta is the translation divided by 10 points per line. See §7.4 for the Window
    - Enumerate displays.
    - If `features.fileTransfer`, issue a 32-byte token.
    - Send `authResult{status:"ok", sessionToken?, displays:[…], capabilities}`.
-   - **Windows v1 capabilities:** `{codecs:["h264"], canManageVirtualDisplay:false, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
+   - **Windows v1 capabilities:** `{codecs:["hevc","h264"] (["h264"] on a PC without an HEVC encoder), canManageVirtualDisplay:<true while display fitting is allowed, §7.2>, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
      `fileTransfer`/`filesOnlySessions` only when the client said `fileTransfer`. Omit
-     `dictationEngines` and `audio` (nil means the client never sends those kinds).
+     `dictationEngines` (nil means the client never sends those kinds). Add `audio:true` while the
+     PC can capture its sound (§9.5).
 10. The client then immediately sends
     `selectDisplay{selection:{"fitViewport":{"_0":viewport}}, targetFPS:60, quality:"auto", preferredCodec: <saved preference, may be "hevc">, useVirtualDisplay:false}`.
     From here the receive loop (§7.2) runs.
@@ -436,16 +450,26 @@ On the first `selectDisplay`:
 1. Start the session-long monitors (power assertion, lock/secure/sleep monitoring) and **send
    `hostStatus` right away** (§8).
 2. Wake the display if it's asleep.
-3. Choose the display. `display(id)`: that display. `fitViewport`: the main display. (There is no
-   virtual display on Windows, so ignore `useVirtualDisplay` and the viewport size.)
+3. Choose the display. `display(id)`: that display. `fitViewport`: the main display. Windows has
+   no user-space virtual display, so `fitViewport` with `useVirtualDisplay: true` (and display
+   fitting allowed in the host's settings) instead switches the main display, temporarily
+   (`ChangeDisplaySettingsEx(…, CDS_FULLSCREEN)`), to the mode closest to the viewport's shape that
+   still has room for the viewport in points at the display's scale (rule in `DisplayModes.Choose`),
+   lists the displays again so `streamConfig.display` describes the new mode, and captures that. A
+   `viewportChanged` re-chooses 500 ms after the last one. `restoreDisplays`, a later
+   `selectDisplay` without it, the session ending, and the host stopping put the user's mode back
+   (Windows also does if the host process dies). One session fits a display at a time; another
+   streams what's there. Without `useVirtualDisplay` the viewport size is ignored.
 4. Start the encoder and capture. The Mac starts at `min(targetFPS, 60)` fps with a starting bitrate
    of `clamp(pixels × fps × 0.08 / 1000, 4 000, 60 000)` kbps.
 5. Send the current clipboard if it isn't empty (the Mac does this before `streamConfig`).
-6. `send streamConfig{display, codec, fps, bitrateKbps}`. Use the codec actually chosen: **always
-   `h264` on Windows v1**, whatever `preferredCodec` says. The client decodes by `videoConfig.codec`.
+6. `send streamConfig{display, codec, fps, bitrateKbps}`. Use the codec actually chosen: on
+   Windows `preferredCodec` when the host can encode it, else the first of `codecs` (HEVC when
+   offered, as the Mac's `preferredCodec ?? .hevc`), and H.264 when the HEVC encoder can't be made
+   on the capture GPU. The client decodes by `videoConfig.codec`.
 7. Set `needsKeyframe = true`.
 
-**Every encoded frame:** if it's an IDR and its SPS/PPS differ from the last ones sent (or it's the
+**Every encoded frame:** if it's an IDR and its parameter sets (SPS/PPS; HEVC VPS/SPS/PPS) differ from the last ones sent (or it's the
 first frame), send `videoConfig` **before** the `videoFrame`. Sending `videoConfig` before every IDR
 is also safe.
 
@@ -470,7 +494,7 @@ stream as normal and never reconnects because of missing video.
 - `ping`: send `pong{echoNanos: ping.sentAtNanos}` at once. The client sends a ping and a
   `qualityFeedback` **every 250 ms** while connected; the host never pings.
 - `disconnect`: end the session.
-- `audioRequest`: ignore unless audio was advertised.
+- `audioRequest`: §9.5; ignore from a client without `features.macAudio`.
 - Anything else: ignore.
 
 **Teardown:** revoke the session's attach token; release every held key and button; stop capture,
@@ -479,8 +503,9 @@ is attached it **keeps running** (§10).
 
 ### 7.3 Video format expected by the client (`VideoStreamView.swift`, Mac `VideoEncoder.swift`)
 
-- H.264, progressive 4:2:0 8-bit (the Mac captures `'420v'`, i.e. NV12 video range). High profile
-  (Main also works), CABAC, **no B-frames or reordering**, low-latency rate control.
+- H.264 or HEVC, progressive 4:2:0 8-bit (the Mac captures `'420v'`, i.e. NV12 video range).
+  H.264 High profile (Main also works) with CABAC, or HEVC Main; **no B-frames or reordering**,
+  low-latency rate control.
 - Colour: the Mac tags BT.709 primaries, sRGB transfer and BT.709 matrix, video range. The client
   doesn't override colour, so what's in the SPS VUI is used. Aim for `colour_primaries=1`,
   `transfer_characteristics=13` (sRGB), or 1 if the encoder can't, `matrix_coefficients=1`,
@@ -517,8 +542,13 @@ modifier keys are held. On Windows, press the missing modifier keys around the c
 - Discrete (wheel): `wheel = round(deltaY × 120)` via `MOUSEEVENTF_WHEEL`.
 - Continuous (trackpad): accumulate `deltaY × 120 / 48` per point and carry the fractional remainder.
 - Horizontal: `MOUSEEVENTF_HWHEEL` with `−deltaX` using the same scale (positive HWHEEL scrolls right).
-- The Mac forwards scroll phases unchanged. Momentum synthesis from velocity on `ended` is optional
-  (decaying wheel events for about 600 ms, cancelled by the next `began`).
+- The Mac forwards scroll phases unchanged, except an iPad flick (`ended` + momentum `began` +
+  velocity), which a host must glide like the Mac's `ScrollMomentum`: post the `ended` alone, then
+  momentum began/changed/ended frames every 1/60 s in whole points, the velocity decaying 0.998 per
+  ms; under 60 pt/s nothing glides, and it ends under 10 pt/s or after 3 s. The next scroll, a
+  button press, `releaseAllInput` or the session ending stops it with its end frame. The Windows
+  host does this in `MomentumInputSink`; the frames go through the continuous-scroll conversion
+  above (remainder carried), so a glide is a stream of small wheel events.
 - Mac reference, for context: continuous `wheel1 = −deltaY` pixels; discrete `wheel1 = deltaY` lines.
 
 **Keys** (behaviour, not wire format; the client relies on it):
@@ -531,10 +561,23 @@ modifier keys are held. On Windows, press the missing modifier keys around the c
 - Caps Lock and Fn are never pressed implicitly. Fn has no Windows key: drop it.
 
 **`textInput`:**
-- Type Unicode text. The Mac chunks 16 UTF-16 units per event.
-- Windows: `KEYEVENTF_UNICODE` down and up per UTF-16 unit (surrogates in order).
-- Map `\n` (and `\r\n`) to a VK_RETURN press and `\t` to VK_TAB. Unicode 0x0A isn't Enter in most
-  Windows apps.
+- Up to 16 UTF-16 units (a typed character, a short burst from the software keyboard): type it.
+  Windows: `KEYEVENTF_UNICODE` down and up per UTF-16 unit (surrogates in order). Map `\n` (and
+  `\r\n`) to a VK_RETURN press and `\t` to VK_TAB. Unicode 0x0A isn't Enter in most Windows apps.
+- More than 16 units (a dictation, a paste from the iPad): paste it, as the Mac host does. Chromium
+  and Electron apps (Slack, VS Code, Discord) and some games drop keys from a fast burst of typed
+  text; a paste arrives whole. In one clipboard open, save what the clipboard holds (Windows: every
+  format whose data is a memory block, so files copied in Explorer come back too; not GDI handles,
+  metafiles, or OLE's `DataObject`/`Ole Private Data`), empty it, and write the text as
+  `CF_UNICODETEXT` (LF → CRLF) marked private (`ExcludeClipboardContentFromMonitorProcessing`,
+  `CanIncludeInClipboardHistory` = 0, `CanUploadToCloudClipboard` = 0). Then press Ctrl+V as keys
+  (Ctrl down, V down, V up, Ctrl up, set-1 scan codes 1D and 2F: Ctrl, not ⌘, which is the Windows
+  key), and 1.5 s later (the Mac's `pasteRestoreDelay`: an app that hasn't read the clipboard by
+  the restore pastes the old one) put the saved formats back, only if the clipboard's sequence
+  number is still the one the paste left: a copy made in between wins. Pastes in a row keep the
+  clipboard from before the first. Neither write is sent to the client: both are own-writes (this
+  host's window owns the clipboard after them). If another app holds the clipboard, type the text
+  instead, so nothing is lost.
 
 **`releaseAllInput`, disconnect, and session end:** release every held button, every held key, then
 every held modifier.
@@ -697,7 +740,7 @@ Windows mapping:
 | wakeDisplay | declare user activity; **also "retry capture now"** | 1 px `SendInput` move and back, plus `SetThreadExecutionState(ES_DISPLAY_REQUIRED)`; retry capture |
 | releaseAllInput | release all | release all |
 | refreshDisplays | send `displayList` | same |
-| restoreDisplays | disconnect the virtual display | no-op |
+| restoreDisplays | disconnect the virtual display | put back the display mode this session fitted (§7.2) |
 
 Synthetic mode on the Mac ignores commands except sleep/wake with the pretend display. While any
 session is active the Mac prevents idle display sleep. On Windows, hold
@@ -706,8 +749,41 @@ sleepDisplay still turns the monitor off.
 
 ### 9.5 Audio and dictation
 
-Not in Windows v1. Don't advertise `audio` or `dictationEngines`. The client then hides or disables
-those features and never sends kinds 63, 64 or 123.
+**Dictation**: not on Windows. Don't advertise `dictationEngines`; the client then dictates on the
+device and never sends kinds 64 or 123.
+
+**Sound** (the Mac's `HostSession.startAudio`, `AudioCapture`, `AudioRepacketizer`, `AudioEncoder`):
+
+- Advertise `capabilities.audio: true` (to every screen session, as the Mac does) only while a
+  loopback capture can be opened; Windows probes once at startup and again at most every 30 s
+  after a failure. The client sends `audioRequest` only to a host that advertised it, and audio is
+  off until it asks.
+- Answer only a client whose `hello.features.macAudio` is true; never send kinds 73 or 102 to
+  anyone else (an older client closes the connection on them).
+- `audioRequest{enabled:true}` while off: send `audioConfig` (the format above), then start capture;
+  if capture can't start, follow it with `audioConfig{unavailable:"…"}` ("This PC has no sound
+  output device.", "Windows Audio isn't running on this PC.", "Windows refused loopback capture:
+  …"). `enabled:false`, the session ending, or capture failing for good stops it (the last sends
+  `unavailable` with the reason). A later `enabled:true` starts a new stream, `seq` from 0.
+- Packets: 48 kHz stereo cut into 480-frame (10 ms) blocks whatever size the capture delivers,
+  each block's `captureNanos` from the sample count since the start of its timeline; a capture
+  timestamp more than 15 ms off that, or a flagged discontinuity, finishes the partial block with
+  silence and starts a new timeline. Opus `OPUS_APPLICATION_AUDIO`, 128 kbps VBR, one packet per
+  block (~160 bytes). The client treats a `captureNanos` jump of 30 ms or more as the host pausing
+  (it re-buffers without counting a late packet) and a `seq` gap as loss (it resets its decoder).
+- Silence: ScreenCaptureKit and endpoint loopback deliver nothing while nothing plays, which the
+  client sees as a pause. Process loopback delivers digital silence instead, so Windows holds back
+  blocks after 500 ms below −90 dBFS and resumes with the first block with sound (its
+  `captureNanos` has jumped). `seq` counts packets sent, so it stays continuous.
+- Windows capture: process loopback (`ActivateAudioInterfaceAsync("VAD\Process_Loopback")`,
+  `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE` for the host's process, shared mode,
+  `LOOPBACK | EVENTCALLBACK | AUTOCONVERTPCM`, 48 kHz float asked for) leaves the host's own sounds
+  out like the Mac's `excludesCurrentProcessAudio`; where it can't be activated, the default render
+  endpoint's loopback (48 kHz float through `AUTOCONVERTPCM`, else the mix format converted by the
+  host: channels folded down at −3 dB, linear resampling). `captureNanos` = `qpcPosition` × 100 (the
+  same QPC clock as video frames). A new default output device or an invalidated one reopens the
+  stream on a new timeline. Packets go on the control lane, never behind video or file chunks, and
+  a stalled socket drops them past 50 queued rather than delaying sound.
 
 ### 9.6 disconnect
 

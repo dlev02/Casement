@@ -159,4 +159,7 @@ internal static class CodecApiKeys
     // eAVEncH264VProfile
     public const uint ProfileHigh = 100;
     public const uint ProfileMain = 77;
+
+    // eAVEncH265VProfile (also MF_MT_MPEG2_PROFILE for HEVC output types)
+    public const uint ProfileHevcMain = 1; // eAVEncH265VProfile_Main_420_8
 }

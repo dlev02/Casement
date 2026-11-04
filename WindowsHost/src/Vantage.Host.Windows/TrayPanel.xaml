@@ -101,6 +101,21 @@
                     TextWrapping="Wrap" />
             </StackPanel>
 
+            <!-- Files moving either way, paused, or finished in the last minute; hidden when there are none. -->
+            <StackPanel x:Name="TransfersSection" Spacing="6" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Transfers" />
+                <Border Style="{StaticResource CardStyle}" Padding="12,10,4,10">
+                    <StackPanel Spacing="10">
+                        <StackPanel x:Name="TransferList" Spacing="10" />
+                        <HyperlinkButton
+                            x:Name="MoreTransfers"
+                            Margin="-11,-4,0,-4"
+                            Click="OnMoreTransfers"
+                            Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
             <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
 
             <!-- Pulled out by the buttons' own padding so their icons line up with the content edges. -->

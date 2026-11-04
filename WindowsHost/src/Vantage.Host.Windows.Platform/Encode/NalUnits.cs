@@ -1,8 +1,12 @@
+using Vantage.Protocol.Messages;
+using Vantage.Protocol.Video;
+
 namespace Vantage.Host.Windows.Encode;
 
 /// <summary>
-/// Small H.264 Annex-B helpers for the encoder and the <c>--dump-h264</c> writer. The protocol
-/// library does the real AVCC conversion; these only look at NAL types. Pure; unit-tested on macOS.
+/// Small H.264 / HEVC Annex-B helpers for the encoder and the <c>--dump-h264</c> writer. The
+/// protocol library does the real AVCC conversion; these only look at NAL types. The overloads
+/// without a codec are H.264. Pure; unit-tested on macOS.
 /// </summary>
 public static class NalUnits
 {
@@ -43,21 +47,35 @@ public static class NalUnits
         return units;
     }
 
-    /// <summary>The <c>nal_unit_type</c> of each unit, in order.</summary>
-    public static List<int> Types(ReadOnlySpan<byte> annexB)
+    /// <summary>The H.264 <c>nal_unit_type</c> of each unit, in order.</summary>
+    public static List<int> Types(ReadOnlySpan<byte> annexB) => Types(annexB, VideoCodec.H264);
+
+    /// <summary>The <c>nal_unit_type</c> of each unit of <paramref name="codec"/>, in order (HEVC: bits 1–6 of the first header byte).</summary>
+    public static List<int> Types(ReadOnlySpan<byte> annexB, VideoCodec codec)
     {
         var types = new List<int>();
         foreach (var (offset, length) in Split(annexB))
-            if (length > 0) types.Add(annexB[offset] & 0x1F);
+            if (length > 0) types.Add(NalType.Of(annexB.Slice(offset, length), codec));
         return types;
     }
 
-    /// <summary>Whether the buffer holds a unit of <paramref name="type"/>.</summary>
+    /// <summary>Whether the buffer holds an H.264 unit of <paramref name="type"/>.</summary>
     public static bool Contains(ReadOnlySpan<byte> annexB, int type) => Types(annexB).Contains(type);
+
+    /// <summary>Whether the buffer holds a unit of <paramref name="type"/> for <paramref name="codec"/>.</summary>
+    public static bool Contains(ReadOnlySpan<byte> annexB, int type, VideoCodec codec) => Types(annexB, codec).Contains(type);
+
+    /// <summary>The SPS type for <paramref name="codec"/> (7, or HEVC's 33).</summary>
+    public static int SpsType(VideoCodec codec) => codec == VideoCodec.Hevc ? HevcNalType.Sps : Sps;
+
+    /// <summary>Whether the buffer holds a picture a decoder can start at: an H.264 IDR, or an HEVC IRAP (IDR, CRA, BLA).</summary>
+    public static bool HasKeyframe(ReadOnlySpan<byte> annexB, VideoCodec codec) => codec == VideoCodec.Hevc
+        ? Types(annexB, codec).Exists(HevcNalType.IsRandomAccess)
+        : Contains(annexB, Idr);
 
     /// <summary>
     /// Converts length-prefixed (AVCC, 4-byte big-endian) NAL units to Annex-B with 4-byte start
-    /// codes, putting <paramref name="parameterSets"/> (raw SPS/PPS) first when given.
+    /// codes, putting <paramref name="parameterSets"/> (raw SPS/PPS, or VPS/SPS/PPS) first when given.
     /// </summary>
     public static byte[] AvccToAnnexB(ReadOnlySpan<byte> avcc, IReadOnlyList<byte[]>? parameterSets = null)
     {

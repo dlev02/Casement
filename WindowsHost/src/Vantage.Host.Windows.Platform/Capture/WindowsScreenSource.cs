@@ -18,10 +18,23 @@ public sealed class WindowsScreenSource : IScreenSource
 {
     private readonly ILogger _log;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
+    private readonly DirtyRegionSource _dirtyRegions;
     private bool? _borderless;
 
     /// <param name="logging">Loggers (category <c>Vantage.Capture</c>).</param>
-    public WindowsScreenSource(ILoggerFactory logging) => _log = logging.CreateLogger("Vantage.Capture");
+    /// <param name="dirtyRegions">Where dirty ratios come from (<c>--dirty-regions</c>).</param>
+    public WindowsScreenSource(ILoggerFactory logging, DirtyRegionSource dirtyRegions = DirtyRegionSource.Native)
+    {
+        _log = logging.CreateLogger("Vantage.Capture");
+        _dirtyRegions = dirtyRegions;
+        DirtyRegions = FrameChange.Resolve(dirtyRegions, FrameChange.NativeAvailable);
+    }
+
+    /// <summary>
+    /// Where the dirty ratio comes from: what was asked for, resolved for this Windows, then what the
+    /// last capture actually got (the compare can fall back to none if its shader won't build).
+    /// </summary>
+    public DirtyRegionSource DirtyRegions { get; private set; }
 
     /// <inheritdoc />
     public bool IsCaptureSupported
@@ -80,7 +93,9 @@ public sealed class WindowsScreenSource : IScreenSource
 
         try
         {
-            return WgcCaptureStream.Start(monitor, gpu, request.Fps, request.IncludesCursor, borderless, onFrame, onStopped, _log);
+            var stream = WgcCaptureStream.Start(monitor, gpu, request.Fps, request.IncludesCursor, borderless, _dirtyRegions, onFrame, onStopped, _log);
+            DirtyRegions = stream.DirtyRegions;
+            return stream;
         }
         catch (CaptureUnavailableException)
         {

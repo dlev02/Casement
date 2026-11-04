@@ -2,19 +2,22 @@ using Vantage.Protocol.Messages;
 
 namespace Vantage.Protocol.Host;
 
-/// <summary>Makes an encoder for one capture stream (Windows: the Media Foundation H.264 MFT on the capture's GPU).</summary>
+/// <summary>Makes an encoder for one capture stream (Windows: the Media Foundation HEVC or H.264 MFT on the capture's GPU).</summary>
 public interface IVideoEncoderFactory
 {
     /// <summary>
-    /// Codecs this host can encode, best first. Windows v1: <c>[H264]</c> only, whatever the client
-    /// prefers; it is what <c>HostCapabilities.codecs</c> advertises.
+    /// Codecs this host can encode, best first, as the Mac lists them: <c>[Hevc, H264]</c> when the
+    /// PC has a hardware HEVC encoder, else <c>[H264]</c>. It is what <c>HostCapabilities.codecs</c>
+    /// advertises, and the session streams the client's <c>preferredCodec</c> only when it is here
+    /// (<see cref="HostSessionCore.ChooseCodec"/>).
     /// </summary>
     IReadOnlyList<VideoCodec> SupportedCodecs { get; }
 
     /// <summary>
     /// Creates (but doesn't start) an encoder for frames from <paramref name="source"/>. Called at
     /// every capture (re)start; the previous encoder is disposed first. Throw
-    /// <see cref="CaptureUnavailableException"/> if no encoder can be made right now.
+    /// <see cref="CaptureUnavailableException"/> if no encoder can be made right now (for HEVC the
+    /// session then tries H.264).
     /// </summary>
     /// <param name="source">The capture whose frames will be encoded (share its GPU device).</param>
     /// <param name="settings">Initial settings. The output must be exactly <see cref="VideoEncoderSettings.Width"/> × <see cref="VideoEncoderSettings.Height"/>.</param>
@@ -22,7 +25,7 @@ public interface IVideoEncoderFactory
 }
 
 /// <summary>Initial encoder settings.</summary>
-/// <param name="Codec">Always <see cref="VideoCodec.H264"/> on Windows v1.</param>
+/// <param name="Codec">One of <see cref="IVideoEncoderFactory.SupportedCodecs"/>; the output must be this codec.</param>
 /// <param name="Width">
 /// Encoded width: even, and within the client's <c>maxDecodeWidth</c> × <c>maxDecodeHeight</c>
 /// (the core computes it with <see cref="VideoGeometry.EncodedSize"/>; a larger capture is
@@ -35,8 +38,8 @@ public interface IVideoEncoderFactory
 public sealed record VideoEncoderSettings(VideoCodec Codec, int Width, int Height, int Fps, int BitrateKbps, int MaxQP);
 
 /// <summary>
-/// A hardware or software H.264 encoder (spec §7.3): progressive 4:2:0 8-bit, High (or Main)
-/// profile, no B-frames or reordering, low-latency rate control, no periodic IDRs, VUI BT.709
+/// A hardware or software H.264 or HEVC encoder (spec §7.3): progressive 4:2:0 8-bit, H.264 High
+/// (or Main) or HEVC Main profile, no B-frames or reordering, low-latency rate control, no periodic IDRs, VUI BT.709
 /// primaries / sRGB (or BT.709) transfer / BT.709 matrix / video range.
 /// </summary>
 /// <remarks>
@@ -55,7 +58,7 @@ public interface IVideoEncoder : IAsyncDisposable
     /// frame after that or keep it to re-encode later.
     /// </summary>
     /// <param name="frame">A frame from the capture stream this encoder was created for.</param>
-    /// <param name="forceKeyframe">The output must be an IDR carrying SPS and PPS (stream start, <c>requestKeyframe</c>, after dropped frames).</param>
+    /// <param name="forceKeyframe">The output must be an IDR carrying its parameter sets (SPS and PPS; HEVC also VPS) (stream start, <c>requestKeyframe</c>, after dropped frames).</param>
     /// <param name="cancellationToken">Cancels waiting for the encoder to take the frame.</param>
     ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken);
 
@@ -100,8 +103,9 @@ public enum NalFormat
 public sealed class EncodedFrame
 {
     /// <summary>
-    /// The access unit. For <see cref="NalFormat.AnnexB"/> it may include SPS/PPS/AUD/SEI: the core
-    /// pulls SPS and PPS out for <c>videoConfig</c>, drops AUD, and sends the slices as AVCC.
+    /// The access unit. For <see cref="NalFormat.AnnexB"/> it may include (VPS/)SPS/PPS/AUD/SEI: the
+    /// core pulls the parameter sets out for <c>videoConfig</c>, drops AUD and SEI, and sends the
+    /// slices as AVCC (HEVC's HVCC framing is the same 4-byte lengths).
     /// </summary>
     public required ReadOnlyMemory<byte> Data { get; init; }
 
@@ -109,12 +113,12 @@ public sealed class EncodedFrame
     public required NalFormat Format { get; init; }
 
     /// <summary>
-    /// SPS and PPS as raw NAL units (no start code or length) when they aren't inside
+    /// SPS and PPS (HEVC: VPS, SPS and PPS) as raw NAL units (no start code or length) when they aren't inside
     /// <see cref="Data"/>; needed on every IDR when <see cref="Format"/> is <see cref="NalFormat.Avcc"/>.
     /// </summary>
     public IReadOnlyList<byte[]>? ParameterSets { get; init; }
 
-    /// <summary>A hint; the core decides from the NAL types (an IDR slice, type 5).</summary>
+    /// <summary>A hint; the core decides from the NAL types (H.264: an IDR slice, type 5; HEVC: an IRAP slice, 16–21).</summary>
     public bool IsKeyframe { get; init; }
 
     /// <summary>The source frame's <see cref="ICapturedFrame.TimestampNanos"/>.</summary>

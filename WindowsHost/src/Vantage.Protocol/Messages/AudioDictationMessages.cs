@@ -2,9 +2,10 @@ using System.Text.Json.Serialization;
 
 namespace Vantage.Protocol.Messages;
 
-// Mac-only features (AudioMessages.swift, DictationMessages.swift). A Windows v1 host never
-// advertises `audio` or `dictationEngines`, so these never arrive; they're here so the codec
-// knows every kind and the golden vectors cover them.
+// AudioMessages.swift, DictationMessages.swift. The Windows host streams the PC's sound
+// (`audioRequest` → `audioConfig`/`audioPacket`, see Audio/) once it advertises `audio`; it never
+// advertises `dictationEngines`, so the dictation kinds never arrive and are here so the codec
+// knows every kind.
 
 public sealed record AudioRequest : IMessage
 {
@@ -15,6 +16,9 @@ public sealed record AudioRequest : IMessage
 
 public sealed record AudioConfig : IMessage
 {
+    /// <summary><c>AudioConfig.opus</c>: the only codec today.</summary>
+    public const string Opus = "opus";
+
     MessageKind IMessage.Kind => MessageKind.AudioConfig;
     [JsonPropertyName("codec")] public required string Codec { get; init; }
     [JsonPropertyName("sampleRate")] public required int SampleRate { get; init; }
@@ -22,6 +26,19 @@ public sealed record AudioConfig : IMessage
     [JsonPropertyName("framesPerPacket")] public required int FramesPerPacket { get; init; }
     [JsonPropertyName("bitrate")] public required int Bitrate { get; init; }
     [JsonPropertyName("unavailable")] public string? Unavailable { get; init; }
+
+    /// <summary>The stream every host sends (Swift's defaults): Opus, 48 kHz stereo, 480-frame packets.</summary>
+    public static AudioConfig Streaming(int bitrate = 128_000) => new()
+    {
+        Codec = Opus,
+        SampleRate = 48_000,
+        Channels = 2,
+        FramesPerPacket = 480,
+        Bitrate = bitrate,
+    };
+
+    /// <summary>Audio didn't start or stopped (Swift <c>AudioConfig.unavailable(_:)</c>), with the reason to show.</summary>
+    public static AudioConfig UnavailableBecause(string reason) => Streaming() with { Unavailable = reason };
 }
 
 [JsonConverter(typeof(StrictStringEnumConverter<DictationAction>))]

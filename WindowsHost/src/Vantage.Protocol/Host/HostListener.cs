@@ -26,6 +26,8 @@ public sealed class HostListener : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, string> _resumeFolders = new();
     private readonly Lock _interruptedLock = new();
     private readonly List<InterruptedSend> _interrupted = [];
+    private readonly ConcurrentDictionary<Guid, byte> _sendsSettledHere = new();
+    private readonly ConcurrentDictionary<Guid, PausedReceive> _pausedReceives = new();
     private readonly CancellationTokenSource _stopping = new();
     private Socket? _socket;
     private Task? _acceptLoop;
@@ -38,6 +40,7 @@ public sealed class HostListener : IAsyncDisposable
         _log = environment.Logging.CreateLogger("Vantage.Listener");
         Pairing = new PairingCodes(environment.Time, options.FixedPairingCode);
         AttachTokens = new AttachTokenRegistry<HostSessionCore>(environment.Time);
+        Paster = new ClipboardPaster(environment.Clipboard, environment.Time, options.PasteRestoreDelay, environment.Logging.CreateLogger("Vantage.Input"));
         if (options.FixedPairingCode is not null && options.RearmFixedPairingCodeAfter is { } rearm)
         {
             Pairing.Cleared += () => _ = Task.Delay(rearm, environment.Time, _stopping.Token).ContinueWith(
@@ -48,6 +51,9 @@ public sealed class HostListener : IAsyncDisposable
     internal HostEnvironment Environment { get; }
     internal HostListenerOptions Options { get; }
     internal AttachTokenRegistry<HostSessionCore> AttachTokens { get; }
+
+    /// <summary>Long <c>textInput</c> goes through the clipboard (one per listener: the clipboard is the PC's).</summary>
+    internal ClipboardPaster Paster { get; }
 
     /// <summary>The pairing code (Show Pairing Code → <see cref="PairingCodes.NewCode"/>; hide it on <see cref="PairingCodes.Cleared"/>).</summary>
     public PairingCodes Pairing { get; }
@@ -67,8 +73,27 @@ public sealed class HostListener : IAsyncDisposable
     /// <summary>Raised when <see cref="Sessions"/> or <see cref="FileChannels"/> change (connect, disconnect, stream start, attach).</summary>
     public event Action? Changed;
 
-    /// <summary>Every file engine's events, tagged with the channel they came from (UI progress, notifications).</summary>
+    /// <summary>
+    /// Every file engine's events, tagged with the channel they came from (UI progress, notifications).
+    /// A send's <see cref="FileTransferEvent.Finished"/> comes from the listener once the outcome is
+    /// settled (the engine's own is lost when the connection closes under it), and a transfer the
+    /// connection cut off raises <see cref="FileTransferPaused"/> instead of a failure.
+    /// </summary>
     public event Action<Guid, FileTransferEvent>? FileTransfer;
+
+    /// <summary>
+    /// A send was queued on a channel (<see cref="SendFileAsync"/>): it waits its turn before the
+    /// engine's <see cref="FileTransferEvent.Started"/>, so the UI can list it straight away.
+    /// </summary>
+    public event Action<Guid, FileTransferItem>? FileSendQueued;
+
+    /// <summary>
+    /// A transfer the connection cut off mid-file. It isn't a failure: a send is re-offered under the
+    /// same id when the same device attaches again, a receive resumes when the device re-offers it;
+    /// either way the next <see cref="FileTransferEvent.Started"/> with that id carries on. One that
+    /// hasn't come back by <see cref="FileTransferPause.ResumesBefore"/> has failed.
+    /// </summary>
+    public event Action<FileTransferPause>? FileTransferPaused;
 
     /// <summary>A client paired successfully (fingerprint, device name). The pairing code is gone by now.</summary>
     public event Action<string, string>? Paired;
@@ -132,6 +157,16 @@ public sealed class HostListener : IAsyncDisposable
         _socket?.Dispose();
         foreach (var session in _sessions.Values) session.Abort();
         foreach (var channel in _fileChannels.Values) channel.Engine.Close();
+        try
+        {
+            // Sessions put their display modes back as they tear down; a quitting host may not wait for that.
+            Environment.DisplayFitter?.RestoreAll();
+        }
+        catch (Exception error)
+        {
+            _log.LogError("restoring display modes failed: {Error}", error.Message);
+        }
+        Paster.RestoreNow(); // quitting within a paste's restore delay still gives the clipboard back
         if (_acceptLoop is not null)
         {
             try
@@ -160,7 +195,21 @@ public sealed class HostListener : IAsyncDisposable
     {
         if (!_fileChannels.TryGetValue(fileChannelId, out var channel))
             return Task.FromResult<FileTransferOutcome>(new FileTransferOutcome.Failed("That device isn't connected any more."));
-        return SendTrackedAsync(channel, path, Guid.NewGuid()).WaitAsync(cancellationToken);
+        var id = Guid.NewGuid();
+        FileSendQueued?.Invoke(channel.Id, new FileTransferItem(id, Path.GetFileName(path), SizeOf(path), FileDirection.Sending));
+        return SendTrackedAsync(channel, path, id).WaitAsync(cancellationToken);
+    }
+
+    private static ulong SizeOf(string path)
+    {
+        try
+        {
+            return (ulong)new FileInfo(path).Length;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return 0; // The engine says why when its turn comes.
+        }
     }
 
     /// <summary>
@@ -170,11 +219,21 @@ public sealed class HostListener : IAsyncDisposable
     /// </summary>
     private async Task<FileTransferOutcome> SendTrackedAsync(FileChannel channel, string path, Guid id)
     {
+        // The engine's own Finished for this id is dropped (AttachAsync): only here is it known
+        // whether a failure was the connection, so this reports the settled outcome.
+        _sendsSettledHere[id] = 0;
         var outcome = await channel.Engine.SendAsync(path, id: id).ConfigureAwait(false);
         if (outcome is FileTransferOutcome.Failed && channel.Engine.HasClosed)
         {
-            lock (_interruptedLock) _interrupted.Add(new InterruptedSend(channel.Session.Fingerprint, id, path, Environment.Time.GetUtcNow()));
+            var now = Environment.Time.GetUtcNow();
+            lock (_interruptedLock) _interrupted.Add(new InterruptedSend(channel.Session.Fingerprint, id, path, now, channel.Id));
             _log.LogInformation("a send to {Client} was cut off; it resumes when the device reconnects", channel.ClientName);
+            FileTransferPaused?.Invoke(new FileTransferPause(channel.Id, id, FileDirection.Sending, channel.ClientName, channel.Session.Fingerprint,
+                                                             now + Options.InterruptedSendResumeWindow));
+        }
+        else
+        {
+            FileTransfer?.Invoke(channel.Id, new FileTransferEvent.Finished(id, outcome));
         }
         return outcome;
     }
@@ -184,6 +243,7 @@ public sealed class HostListener : IAsyncDisposable
         var cutoff = Environment.Time.GetUtcNow() - Options.InterruptedSendResumeWindow;
         lock (_interruptedLock)
         {
+            foreach (var expired in _interrupted.Where(send => send.At < cutoff)) _sendsSettledHere.TryRemove(expired.Id, out _);
             _interrupted.RemoveAll(send => send.At < cutoff);
             var mine = _interrupted.FindAll(send => send.Fingerprint == fingerprint);
             _interrupted.RemoveAll(send => send.Fingerprint == fingerprint);
@@ -191,9 +251,43 @@ public sealed class HostListener : IAsyncDisposable
         }
     }
 
-    /// <summary>Cancels one transfer on a file channel (sends <c>fileCancel</c>; an incoming partial is deleted).</summary>
+    /// <summary>
+    /// Cancels one transfer on a file channel (sends <c>fileCancel</c>; an incoming partial is deleted).
+    /// A paused one (<see cref="FileTransferPaused"/>) is forgotten instead, whichever channel it was
+    /// on: a send isn't re-offered, a receive's partial is deleted. Either way <see cref="FileTransfer"/>
+    /// reports it <see cref="FileTransferOutcome.Cancelled"/>.
+    /// </summary>
     public void CancelTransfer(Guid fileChannelId, Guid transferId)
     {
+        InterruptedSend? send;
+        lock (_interruptedLock)
+        {
+            send = _interrupted.Find(s => s.Id == transferId);
+            if (send is not null) _interrupted.Remove(send);
+        }
+        if (send is not null)
+        {
+            _sendsSettledHere.TryRemove(transferId, out _);
+            _log.LogInformation("a paused send was cancelled");
+            FileTransfer?.Invoke(send.ChannelId, new FileTransferEvent.Finished(transferId, new FileTransferOutcome.Cancelled(false)));
+            return;
+        }
+        if (_pausedReceives.TryRemove(transferId, out var receive))
+        {
+            // Nobody has it open: the engine that wrote it is closed and no re-offer has claimed it.
+            try
+            {
+                File.Delete(Path.Combine(receive.Folder, FileTransferEngine.PartialName(transferId)));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                _log.LogInformation("couldn't delete a cancelled partial (the stale-partial sweep will): {Error}", error.Message);
+            }
+            _resumeFolders.TryRemove(transferId, out _);
+            _log.LogInformation("a paused receive was cancelled");
+            FileTransfer?.Invoke(receive.ChannelId, new FileTransferEvent.Finished(transferId, new FileTransferOutcome.Cancelled(false)));
+            return;
+        }
         if (_fileChannels.TryGetValue(fileChannelId, out var channel)) channel.Engine.Cancel(transferId);
     }
 
@@ -317,7 +411,18 @@ public sealed class HostListener : IAsyncDisposable
             {
                 case FileTransferEvent.Started { Item.Direction: FileDirection.Receiving } started:
                     _resumeFolders.TryAdd(started.Item.Id, channel.ReceiveDirectory);
+                    _pausedReceives.TryRemove(started.Item.Id, out _);
                     break;
+                case FileTransferEvent.Finished finished when _sendsSettledHere.TryRemove(finished.Id, out _):
+                    return; // SendTrackedAsync reports it.
+                case FileTransferEvent.Finished { Outcome: FileTransferOutcome.Failed } failed
+                    when engine.HasClosed && _resumeFolders.TryGetValue(failed.Id, out var folder):
+                    // Cut off mid-file: the partial stays for the device to resume.
+                    _pausedReceives[failed.Id] = new PausedReceive(channel.Id, folder);
+                    FileTransferPaused?.Invoke(new FileTransferPause(channel.Id, failed.Id, FileDirection.Receiving, channel.ClientName,
+                                                                     session.Fingerprint,
+                                                                     Environment.Time.GetUtcNow() + Options.InterruptedSendResumeWindow));
+                    return;
                 case FileTransferEvent.Finished { Outcome: not FileTransferOutcome.Failed } finished:
                     _resumeFolders.TryRemove(finished.Id, out _);
                     break;
@@ -392,7 +497,9 @@ public sealed class HostListener : IAsyncDisposable
         Changed?.Invoke();
     }
 
-    private sealed record InterruptedSend(string Fingerprint, Guid Id, string Path, DateTimeOffset At);
+    private sealed record InterruptedSend(string Fingerprint, Guid Id, string Path, DateTimeOffset At, Guid ChannelId);
+
+    private sealed record PausedReceive(Guid ChannelId, string Folder);
 
     private sealed class FileChannel(Guid id, HostSessionCore session, FileTransferEngine engine, string clientName, string receiveDirectory)
     {
@@ -426,6 +533,16 @@ public enum HostListenerState
 /// <param name="Display">The display being streamed, once a stream started.</param>
 public sealed record SessionSnapshot(Guid Id, string ClientName, string Fingerprint, IPAddress Peer, bool IsFilesOnly,
                                      DateTimeOffset ConnectedAt, DisplayInfo? Display);
+
+/// <summary>A transfer the connection cut off, waiting for its device (<see cref="HostListener.FileTransferPaused"/>).</summary>
+/// <param name="FileChannelId">The channel it was on (closed by now).</param>
+/// <param name="TransferId">The transfer id; the same when it resumes.</param>
+/// <param name="Direction">Which way it was going.</param>
+/// <param name="ClientName">The device it resumes with ("Drew's iPad").</param>
+/// <param name="Fingerprint">That device's key fingerprint.</param>
+/// <param name="ResumesBefore">After this it won't resume: count it as failed.</param>
+public sealed record FileTransferPause(Guid FileChannelId, Guid TransferId, FileDirection Direction, string ClientName, string Fingerprint,
+                                       DateTimeOffset ResumesBefore);
 
 /// <summary>An attached file channel, for the UI.</summary>
 /// <param name="Id">Stable for the channel; pass to <see cref="HostListener.SendFileAsync"/>.</param>
