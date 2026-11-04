@@ -35,6 +35,9 @@ public sealed record HostSettings
 
     /// <summary>Start through the elevated task (<c>AdminLaunch</c>) so input reaches administrator apps.</summary>
     public bool ControlAdminApps { get; init; }
+
+    /// <summary>The "still running in the system tray" notification was shown (once, the first time the window is closed).</summary>
+    public bool TrayHintShown { get; init; }
 }
 
 /// <summary>Loads and saves <see cref="HostSettings"/>; thread-safe.</summary>

@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Vantage.Host.Windows.Startup;
+using Vantage.Host.Windows.Tray;
 using DataPackage = global::Windows.ApplicationModel.DataTransfer.DataPackage;
 using WindowsClipboard = global::Windows.ApplicationModel.DataTransfer.Clipboard;
 
@@ -79,6 +80,12 @@ public sealed partial class GeneralPage : Page
 
         ShowCodeButton.IsEnabled = _controller.IsListening;
         StartAtLoginSwitch.IsOn = StartAtLogin.IsEnabled(AppController.ExecutablePath);
+        var iconShown = TrayIconVisibility.Shown(AppController.ExecutablePath);
+        TrayIconSwitch.IsEnabled = iconShown is not null;
+        TrayIconSwitch.IsOn = iconShown == true;
+        TrayIconHint.Text = iconShown is null
+            ? "Windows lists the icon once it has appeared. Until then, find it behind the ^ next to the clock."
+            : "Otherwise Windows keeps it behind the ^ next to the clock.";
         if (!_adminBusy)
         {
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
@@ -102,7 +109,7 @@ public sealed partial class GeneralPage : Page
         {
             var left = expires - DateTimeOffset.Now;
             CodeExpiry.Text = left > TimeSpan.Zero
-                ? string.Create(CultureInfo.CurrentCulture, $"Works for {Math.Ceiling(left.TotalMinutes):0} more minute{(left.TotalMinutes > 1 ? "s" : "")}, once.")
+                ? string.Create(CultureInfo.CurrentCulture, $"Works once, for {Math.Ceiling(left.TotalMinutes):0} more minute{(left.TotalMinutes > 1 ? "s" : "")}.")
                 : "This code has expired.";
         }
         else
@@ -135,8 +142,21 @@ public sealed partial class GeneralPage : Page
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
+            _updating = true;
             StartAtLoginSwitch.IsOn = !StartAtLoginSwitch.IsOn;
+            _updating = false;
+            StartAtLoginHint.Text = $"Windows wouldn't change the startup entry: {ex.Message}";
         }
+    }
+
+    private void OnTrayIconToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        if (TrayIconVisibility.SetShown(AppController.ExecutablePath, TrayIconSwitch.IsOn)) return;
+        _updating = true;
+        TrayIconSwitch.IsOn = !TrayIconSwitch.IsOn;
+        _updating = false;
+        TrayIconHint.Text = "Windows wouldn't change it here. Drag the icon onto the taskbar, or choose it under Settings › Personalization › Taskbar › Other system tray icons.";
     }
 
     private async void OnAdminToggled(object sender, RoutedEventArgs e)

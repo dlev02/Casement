@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
         if (_closingForQuit) return;
         args.Cancel = true;
         sender.Hide();
+        _controller.OnWindowHidden();
     }
 
     private void Select(string tag)

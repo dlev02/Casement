@@ -147,6 +147,7 @@ public sealed class AppController
         if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
         _log.LogInformation("running {Mode}", ElevatedWindows.ThisProcessIsElevated ? "as administrator" : "without administrator rights");
         if (!options.Synthetic) TurnOnStartAtLoginOnce();
+        if (!options.Synthetic && !DebugBuild) EnsureStartMenuShortcut();
 
         try
         {
@@ -389,6 +390,39 @@ public sealed class AppController
             _log.LogWarning("couldn't turn on start at login: {Message}", ex.Message);
         }
         settings.Update(s => s with { StartAtLoginSettled = true });
+    }
+
+    /// <summary>
+    /// A Start menu entry, so Start › "Casement" brings the host back after its window was closed
+    /// (the zip has no installer to add one). Rewritten when the folder moved.
+    /// </summary>
+    private void EnsureStartMenuShortcut()
+    {
+        try
+        {
+            if (StartMenuShortcut.Ensure(ExecutablePath)) _log.LogInformation("added the Start menu shortcut");
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
+        {
+            _log.LogWarning("couldn't add the Start menu shortcut: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The settings window was closed (hidden). The first time, says where the host went: Windows 11
+    /// keeps a new tray icon behind the ^, so someone who closes the window may think it quit.
+    /// </summary>
+    public void OnWindowHidden()
+    {
+        if (Runtime is null || _quitting || Runtime.Settings.Current.TrayHintShown) return;
+        Runtime.Settings.Update(s => s with { TrayHintShown = true });
+        var shown = TrayIconVisibility.Shown(ExecutablePath) == true;
+        Notify(new AppNotificationBuilder()
+            .AddText("Casement Host is still running")
+            .AddText(shown
+                ? "Its icon is in the system tray, next to the clock. Right-click it to quit."
+                : "Its icon is in the system tray, behind the ^ next to the clock. Drag it onto the taskbar to keep it in view.")
+            .AddArgument("action", "general"));
     }
 
     private string OpenOnLaunchFile => Path.Combine(Runtime!.Paths.Root, "open-on-launch");
