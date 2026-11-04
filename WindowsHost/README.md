@@ -51,7 +51,11 @@ straight away.
 - **General**: the PC's tailnet address, Show Pairing Code, **Start Casement Host when I sign
   in** (on from the first launch; Windows' Settings › Apps › Startup lists it too), **Show the
   icon next to the clock** (the same choice as Settings › Personalization › Taskbar › Other
-  system tray icons), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
+  system tray icons), **Ask before restarting while a device is connected** (on by default:
+  while a device is connected, signing out, restarting or shutting down the PC, Windows Update's
+  restarts included, stops on Windows' restart screen, which names Casement Host and the device,
+  so someone at the PC can cancel or go ahead; a forced restart can't be stopped, and when the
+  PC does go, the device reconnects by itself once Casement Host is back after sign-in), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
   an app running as administrator, and Task Manager always runs that way, so turn this on to use
   those apps from Casement. Windows asks for permission once, and only at the PC itself; after
   that Casement Host starts as administrator through a Task Scheduler task named Casement Host,

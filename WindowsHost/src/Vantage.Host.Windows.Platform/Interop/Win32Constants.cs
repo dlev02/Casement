@@ -6,6 +6,8 @@ internal static class Win32Constants
     public const uint WM_NULL = 0x0000;
     public const uint WM_DESTROY = 0x0002;
     public const uint WM_CLOSE = 0x0010;
+    public const uint WM_QUERYENDSESSION = 0x0011;
+    public const uint WM_ENDSESSION = 0x0016;
     public const uint WM_SETTINGCHANGE = 0x001A;
     public const uint WM_CONTEXTMENU = 0x007B;
     public const uint WM_DISPLAYCHANGE = 0x007E;
@@ -25,6 +27,14 @@ internal static class Win32Constants
     public const uint NIN_KEYSELECT = WM_USER + 1;
     public const uint NIN_POPUPOPEN = WM_USER + 6;
     public const uint NIN_POPUPCLOSE = WM_USER + 7;
+
+    // WM_QUERYENDSESSION / WM_ENDSESSION lParam
+    public const uint ENDSESSION_CLOSEAPP = 0x00000001;
+    public const uint ENDSESSION_CRITICAL = 0x40000000;
+    public const uint ENDSESSION_LOGOFF = 0x80000000;
+
+    // SetProcessShutdownParameters: the highest level an ordinary app may use (default 0x280)
+    public const uint SHUTDOWN_LEVEL_FIRST_APP = 0x3FF;
 
     // WM_SYSCOMMAND
     public const nuint SC_MONITORPOWER = 0xF170;

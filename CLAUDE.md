@@ -1066,6 +1066,23 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the clock reads and writes that value (`TrayIconVisibility`; undocumented, so no entry means the
   switch is disabled, never an error). The app's version in logs and About is
   `WindowsHostRuntime.AppVersion` (the informational version), not the protocol's `HostVersion`.
+- **Restart guard** (the Mac's `RestartGuard`; `Desktop/RestartGuard.cs`, pure `RestartGuardPolicy`):
+  Windows has no veto, so while a screen session is up the guard registers a block reason
+  (`ShutdownBlockReasonCreate` on `MessageWindow`, a hidden top-level window: message-only ones
+  never get `WM_QUERYENDSESSION`) naming the device ("Drew's iPad is connected through Casement
+  Host. …", or "2 devices …") and answers `WM_QUERYENDSESSION` FALSE, so an interactive sign-out,
+  restart or shutdown (Windows Update's too) stops on Windows' "This app is preventing restart"
+  screen, where the person at the PC cancels or goes ahead. `ENDSESSION_CRITICAL` (`shutdown /f`)
+  and `ENDSESSION_CLOSEAPP` (an installer) are never held. `SetProcessShutdownParameters(0x3FF)` asks
+  the host first. On `WM_ENDSESSION` TRUE the runtime logs the kind (restart, sign-out
+  for `ENDSESSION_LOGOFF`, close-app), stops the listener (waiting ≤ 4 s of Windows' ~5) and the
+  app quits. Never send `disconnect` there: connections just drop, as on the Mac, so the iPad keeps
+  retrying and reconnects once the host is back after sign-in. The runtime wires it (`Listener.Changed` →
+  `Update`), so the console host has it too; synthetic runs never make one. General › Ask before
+  restarting while a device is connected (`HostSettings.AskBeforeRestart`, on by default). Settings
+  with a non-false default (`AskBeforeRestart`, `NotifyOnArrival`, `AfterArrival`) are `set`, not
+  `init`: the source-generated reader gives an `init` property the file lacks `default`. Tests:
+  `RestartGuardTests` (incl. `SettingsMissingFromTheFileKeepTheirDefaults`). The real messages and the restart screen still need a check on the PC.
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
@@ -1101,7 +1118,8 @@ Mac-audio UI test fails there by design (no audio on Windows). Use ports ≥ 478
 - **Restart guard**: `RestartGuard` (host) inspects the quit Apple event's `kAEQuitReason`; while a
   device is connected, a restart/shutdown/logout (including Software Update's) gets a confirmation
   alert and `.terminateCancel` aborts it. `sudo reboot` and panics can't be caught. Toggle in host
-  Settings → Reboot.
+  Settings → Reboot. The Windows host can only hold a restart on Windows' own
+  restart screen (see Windows host › Restart guard); a forced one goes ahead.
 - **FileVault** is on for this Mac and auto-login is off, so a cold boot waits at the pre-boot unlock
   screen. Tailscale (the standalone System Extension variant here) only starts after login; nothing
   user-space can pass pre-boot. macOS 26+ can unlock over SSH (`man apple_ssh_and_filevault`), which
