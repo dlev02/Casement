@@ -241,12 +241,15 @@ private struct MacDeviceDetail: View {
 
             if device.platform == .windows {
                 Section {
+                    Toggle("Play PC Audio", isOn: Binding(get: { device.playMacAudio ?? false },
+                                                         set: { store.setPlayMacAudio($0, for: device.id) }))
                     LabeledContent("⌘ Acts as Ctrl", value: device.keyRemap.swapsCommandAndControl ? "On" : "Off")
+                    LabeledContent("Fit Display", value: device.useVirtualDisplay == true ? "On" : "Off")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                 } header: {
                     Text("Session")
                 } footer: {
-                    Text("Change these with Edit.")
+                    Text("Play PC Audio brings \(device.name)'s sound to this Mac while you're connected. Change the rest with Edit.")
                 }
             } else {
                 Section {

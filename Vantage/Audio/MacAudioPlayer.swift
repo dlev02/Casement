@@ -124,7 +124,7 @@ final class MacAudioPlayer {
             }
             guard pipeline.configure(config) else {
                 stopOutput()
-                status = .unavailable("This version of Casement can't play the Mac's audio (\(config.codec)). Update Casement.")
+                status = .unavailable("This version of Casement can't play the computer's audio (\(config.codec)). Update Casement.")
                 return
             }
             log.info("Mac audio: \(config.codec, privacy: .public) \(config.sampleRate, privacy: .public) Hz, \(config.channels, privacy: .public) ch, \(config.framesPerPacket, privacy: .public) frames/packet, \(config.bitrate / 1000, privacy: .public) kbps")
@@ -173,7 +173,7 @@ final class MacAudioPlayer {
             nullOutput = NullAudioOutput(buffer: pipeline.buffer)
             status = .playing
             #else
-            status = .unavailable("This \(LocalDevice.noun) couldn't start playing the Mac's sound.")
+            status = .unavailable("This \(LocalDevice.noun) couldn't start playing the computer's sound.")
             #endif
         }
     }
