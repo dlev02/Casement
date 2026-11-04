@@ -1005,6 +1005,27 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
+- **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
+  `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
+  `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the
+  foreground one for a key; its process's `TokenElevation`) and raises `ElevatedWindowBlocked`, which
+  the app turns into a notification while a screen session is up. General › Control apps running
+  as administrator (`HostSettings.ControlAdminApps`) registers a trigger-less Task Scheduler task,
+  "Casement Host", with `HighestAvailable` (`AdminLaunch`; one UAC prompt, which only someone at the
+  PC can answer), and every non-elevated launch with the setting on runs that task and exits
+  (`Program.ShouldRelaunchElevated`). Start at login (the Run value) is turned on once at the first
+  launch of a Release build (`StartAtLoginSettled`).
+- **Finding the host again** (the zip has no installer): a Release launch writes `Casement Host.lnk`
+  into the user's Start menu Programs folder (`StartMenuShortcut`, `IShellLinkW` through built-in
+  COM interop; rewritten when the folder moved, so Start › "Casement" opens the running copy's
+  window through the single-instance redirect). The first time the settings window is closed, a
+  notification says the host is still running and where its icon is (`AppController.OnWindowHidden`,
+  `HostSettings.TrayHintShown`). Windows 11 hides a new tray icon behind the ^ and offers no API
+  to promote it; Explorer keeps that choice per executable in `HKCU\Control Panel\NotifyIconSettings\<id>`
+  (`ExecutablePath`, `IsPromoted`) and applies a change at once, so General › Show the icon next to
+  the clock reads and writes that value (`TrayIconVisibility`; undocumented, so no entry means the
+  switch is disabled, never an error). The app's version in logs and About is
+  `WindowsHostRuntime.AppVersion` (the informational version), not the protocol's `HostVersion`.
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end

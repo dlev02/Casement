@@ -16,9 +16,11 @@ namespace Vantage.Host.Windows.Input;
 /// <remarks>
 /// Needs a per-monitor-v2 DPI aware process (the host's manifest) so pixels are physical. Events
 /// are tagged with <see cref="ExtraInfoTag"/> in <c>dwExtraInfo</c>, which tools/InputProbe shows.
-/// UIPI blocks injection into elevated windows unless the host runs elevated, and nothing reaches
-/// the secure desktop; <c>SendInput</c> then sends fewer events than asked, which is logged (at most
-/// once a second).
+/// UIPI blocks injection into elevated windows unless the host runs elevated, without saying so:
+/// <c>SendInput</c> still reports every event sent. So a press aimed at an elevated window (the one
+/// under a click, or the foreground one for a key) raises <see cref="ElevatedWindowBlocked"/> and is
+/// logged. Nothing reaches the secure desktop; <c>SendInput</c> then sends fewer events than asked,
+/// which is logged (at most once a second).
 /// </remarks>
 public sealed class SendInputInjector(ILogger logger) : IInputInjector
 {
@@ -26,11 +28,20 @@ public sealed class SendInputInjector(ILogger logger) : IInputInjector
     public const nuint ExtraInfoTag = 0x56414E54;
 
     private long _lastBlockedLog;
+    private nint _lastElevatedWindow;
+    private long _lastElevatedReport;
+
+    /// <summary>
+    /// Raised on the input thread when a click or key press went to a window of an elevated process
+    /// while this host isn't elevated (so Windows dropped it); at most once a minute per window.
+    /// </summary>
+    public event Action<ElevatedWindow>? ElevatedWindowBlocked;
 
     /// <inheritdoc />
     public unsafe void Send(ReadOnlySpan<InputAction> actions)
     {
         if (actions.IsEmpty) return;
+        if (!ElevatedWindows.ThisProcessIsElevated) CheckElevatedTarget(actions);
         var left = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN);
         var top = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN);
         var width = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN);
@@ -51,6 +62,27 @@ public sealed class SendInputInjector(ILogger logger) : IInputInjector
                                   sent, inputs.Length, Marshal.GetLastPInvokeError());
             }
         }
+    }
+
+    private void CheckElevatedTarget(ReadOnlySpan<InputAction> actions)
+    {
+        ElevatedWindow? target = null;
+        foreach (var action in actions)
+        {
+            if (!action.IsDown) continue;
+            if (action.Type == InputActionType.MouseButton) target = ElevatedWindows.At(action.X, action.Y);
+            else if (action.Type is InputActionType.Key or InputActionType.Unicode) target = ElevatedWindows.Foreground();
+            else continue;
+            break;
+        }
+        if (target is null) return;
+
+        var now = Environment.TickCount64;
+        if (target.Handle == _lastElevatedWindow && now - _lastElevatedReport < 60_000) return;
+        _lastElevatedWindow = target.Handle;
+        _lastElevatedReport = now;
+        logger.LogWarning("input to {Window} was dropped: it runs as administrator and Casement Host doesn't", target.Name);
+        ElevatedWindowBlocked?.Invoke(target);
     }
 
     /// <summary>A 1-pixel relative move right and back (wakes a sleeping display; the pointer ends where it was).</summary>

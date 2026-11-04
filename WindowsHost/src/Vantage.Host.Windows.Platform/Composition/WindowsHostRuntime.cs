@@ -48,7 +48,16 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         var storage = new DpapiProtectedStorage(Paths.SecretsDirectory);
         var ed25519 = new NSecEd25519();
         var inputLog = logging.CreateLogger("Vantage.Input");
-        IInputInjector injector = options.Synthetic ? new LoggingInputInjector(inputLog) : new SendInputInjector(inputLog);
+        IInputInjector injector;
+        if (options.Synthetic)
+        {
+            injector = new LoggingInputInjector(inputLog);
+        }
+        else
+        {
+            Input = new SendInputInjector(inputLog);
+            injector = Input;
+        }
 
         IHostStatusSource status;
         IPowerControl power;
@@ -115,6 +124,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
     /// <summary>User settings.</summary>
     public HostSettingsStore Settings { get; }
 
+    /// <summary>The real input injector (null for synthetic runs).</summary>
+    public SendInputInjector? Input { get; }
+
     /// <summary>The hidden Win32 window (tray, clipboard, notifications).</summary>
     public MessageWindow Window { get; }
 
@@ -136,11 +148,25 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
     /// <summary>The listener.</summary>
     public HostListener Listener { get; }
 
+    /// <summary>The running executable's version, "1.2 (abc1234)" (the About page and the log).</summary>
+    public static string AppVersion { get; } = ReadAppVersion();
+
+    private static string ReadAppVersion()
+    {
+        var assembly = System.Reflection.Assembly.GetEntryAssembly();
+        var version = System.Reflection.CustomAttributeExtensions
+                          .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly!)?.InformationalVersion
+                      ?? assembly?.GetName().Version?.ToString() ?? "?";
+        // "1.0.1+<40-character commit>" reads better as "1.0.1 (04efdd0)".
+        if (version.Split('+') is [var number, { Length: >= 7 } commit]) version = $"{number} ({commit[..7]})";
+        return version;
+    }
+
     /// <summary>Starts listening.</summary>
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        _log.LogInformation("Vantage Host {Version} on {Host} ({Platform}), port {Port}, data in {Root}{Synthetic}",
-                            Protocol.VantageProtocol.HostVersion, Environment.HostName, Environment.Platform, ListenerOptions.Port,
+        _log.LogInformation("Casement Host {Version} (protocol {Protocol}) on {Host} ({Platform}), port {Port}, data in {Root}{Synthetic}",
+                            AppVersion, Protocol.VantageProtocol.HostVersion, Environment.HostName, Environment.Platform, ListenerOptions.Port,
                             Paths.Root, Options.Synthetic ? " (synthetic)" : "");
         if (!Environment.Screen.IsCaptureSupported) _log.LogWarning("screen capture isn't supported here: {Why}", Environment.Screen.CaptureUnsupportedMessage);
         await Listener.StartAsync(cancellationToken).ConfigureAwait(false);

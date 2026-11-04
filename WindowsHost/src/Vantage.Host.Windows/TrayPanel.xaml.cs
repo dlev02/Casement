@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -203,6 +204,7 @@ public sealed partial class TrayPanel : Window
         grid.Children.Add(text);
 
         var disconnect = new Button { Content = "Disconnect", VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetName(disconnect, $"Disconnect {name}");
         disconnect.Click += async (_, _) =>
         {
             disconnect.IsEnabled = false;

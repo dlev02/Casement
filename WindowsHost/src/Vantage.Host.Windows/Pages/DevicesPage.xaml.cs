@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 
@@ -40,6 +41,7 @@ public sealed partial class DevicesPage : Page
         {
             var detail = session.IsFilesOnly ? "Moving files" : session.Display is { } display ? $"Viewing {display.Name}" : "Connected";
             var button = new Button { Content = "Disconnect" };
+            AutomationProperties.SetName(button, $"Disconnect {session.ClientName}");
             var id = session.Id;
             button.Click += async (_, _) =>
             {
@@ -54,6 +56,7 @@ public sealed partial class DevicesPage : Page
         foreach (var client in runtime.Environment.Trust.List())
         {
             var button = new Button { Content = "Remove" };
+            AutomationProperties.SetName(button, $"Remove {client.Name}");
             var fingerprint = client.Fingerprint;
             var name = client.Name;
             button.Click += async (_, _) =>

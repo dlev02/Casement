@@ -62,10 +62,44 @@
             </Border>
 
             <Border Style="{StaticResource CardStyle}">
-                <ToggleSwitch
-                    x:Name="StartAtLoginSwitch"
-                    Header="Start Casement Host when I sign in"
-                    Toggled="OnStartAtLoginToggled" />
+                <StackPanel Spacing="4">
+                    <ToggleSwitch
+                        x:Name="StartAtLoginSwitch"
+                        Header="Start Casement Host when I sign in"
+                        Toggled="OnStartAtLoginToggled" />
+                    <TextBlock
+                        x:Name="StartAtLoginHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Casement Host keeps running in the system tray when you close this window. Find it there, or in the Start menu."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
+                    <ToggleSwitch
+                        x:Name="TrayIconSwitch"
+                        Header="Show the icon next to the clock"
+                        Toggled="OnTrayIconToggled" />
+                    <TextBlock
+                        x:Name="TrayIconHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
+                    <ToggleSwitch
+                        x:Name="AdminSwitch"
+                        Header="Control apps running as administrator"
+                        Toggled="OnAdminToggled" />
+                    <TextBlock
+                        x:Name="AdminHint"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Task Manager and other administrator apps. Windows asks for permission once, on this PC."
+                        TextWrapping="Wrap" />
+                </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>
