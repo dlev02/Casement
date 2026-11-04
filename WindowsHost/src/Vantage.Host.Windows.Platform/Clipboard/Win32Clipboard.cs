@@ -35,6 +35,7 @@ public sealed class Win32Clipboard : IClipboard
     private readonly ILogger _log;
     private readonly uint _rtfFormat;
     private readonly uint _pngFormat;
+    private readonly uint[] _privacyFormats;
     private readonly Lock _lock = new();
     private readonly List<Action<ClipboardPayload>> _watchers = [];
     private IDisposable? _hook;
@@ -50,6 +51,14 @@ public sealed class Win32Clipboard : IClipboard
         _log = logging.CreateLogger("Vantage.Clipboard");
         _rtfFormat = PInvoke.RegisterClipboardFormat("Rich Text Format");
         _pngFormat = PInvoke.RegisterClipboardFormat("PNG");
+        // Windows' markers for "don't keep this": clipboard history (Win+V), the cloud clipboard and
+        // clipboard managers leave a paste's text out, as the Mac's nspasteboard.org markers do.
+        _privacyFormats =
+        [
+            PInvoke.RegisterClipboardFormat("ExcludeClipboardContentFromMonitorProcessing"),
+            PInvoke.RegisterClipboardFormat("CanIncludeInClipboardHistory"),
+            PInvoke.RegisterClipboardFormat("CanUploadToCloudClipboard"),
+        ];
     }
 
     /// <inheritdoc />
@@ -99,6 +108,54 @@ public sealed class Win32Clipboard : IClipboard
         _log.LogInformation("clipboard set from the iPad (text {Text}, rtf {Rtf}, image {Image})",
                             payload.Text is not null, payload.Rtf is not null, payload.ImagePNG is not null);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Saves every memory-block format (<see cref="ClipboardFormats.CanSave"/>), not just text, RTF and
+    /// PNG, so files copied in Explorer or cells copied in Excel come back whole. The paste's text is
+    /// marked private (clipboard history, cloud clipboard, clipboard managers). Echo suppression is
+    /// <see cref="Apply"/>'s: this window owns the clipboard after the write, and the sequence number it
+    /// left is recorded on the window's thread before any <c>WM_CLIPBOARDUPDATE</c> can be handled.
+    /// </remarks>
+    public PasteWrite? WriteForPaste(string text, PasteWrite? earlier) => _window.Invoke(() =>
+    {
+        if (!OpenWithRetry()) return null;
+        object? former;
+        bool written;
+        try
+        {
+            // Still holding the earlier paste: what was there before that one is what comes back.
+            former = earlier is not null && PInvoke.GetClipboardSequenceNumber() == earlier.Mark ? earlier.Former : Snapshot();
+            if (!PInvoke.EmptyClipboard()) return null; // nothing changed
+            written = SetUnicodeText(ClipboardText.ToWindows(text));
+            if (written) SetPrivacyMarkers(except: null);
+            else Put(former as SavedClipboard); // out of memory: give the clipboard back, and type instead
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+        _appliedSequence = PInvoke.GetClipboardSequenceNumber();
+        return written ? new PasteWrite(former, _appliedSequence) : null;
+    });
+
+    /// <inheritdoc />
+    public bool RestoreAfterPaste(PasteWrite write) => _window.Invoke(() =>
+    {
+        if (PInvoke.GetClipboardSequenceNumber() != write.Mark) return false; // copied since: that wins
+        if (!OpenWithRetry()) return false;
+        try
+        {
+            PInvoke.EmptyClipboard();
+            Put(write.Former as SavedClipboard);
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+        _appliedSequence = PInvoke.GetClipboardSequenceNumber();
+        return true;
+    });
 
     /// <inheritdoc />
     public IDisposable Watch(Action<ClipboardPayload> onChanged)
@@ -151,6 +208,9 @@ public sealed class Win32Clipboard : IClipboard
         Action<ClipboardPayload>[] watchers;
         lock (_lock) watchers = [.. _watchers];
         if (watchers.Length == 0) return;
+        // A change debounced just before a write of ours (a paste, its restore, the iPad's clipboard)
+        // would read our write: that one isn't the user's to send.
+        if (_window.Invoke(() => PInvoke.GetClipboardOwner() == _window.Hwnd)) return;
         ClipboardPayload? payload;
         try
         {
@@ -219,6 +279,57 @@ public sealed class Win32Clipboard : IClipboard
         return payload.IsEmpty ? null : payload;
     }
 
+    /// <summary>Window thread, clipboard open: every format that can be put back, or null when it's empty.</summary>
+    private unsafe SavedClipboard? Snapshot()
+    {
+        var hasUnicode = PInvoke.IsClipboardFormatAvailable(CF_UNICODETEXT);
+        var formats = new List<SavedFormat>();
+        long total = 0;
+        Span<char> nameBuffer = stackalloc char[256];
+        for (var format = PInvoke.EnumClipboardFormats(0); format != 0; format = PInvoke.EnumClipboardFormats(format))
+        {
+            string? name = null;
+            if (format >= 0xC000)
+            {
+                int length;
+                fixed (char* buffer = nameBuffer) length = PInvoke.GetClipboardFormatName(format, buffer, nameBuffer.Length);
+                name = length > 0 ? new string(nameBuffer[..length]) : null;
+            }
+            if (!ClipboardFormats.CanSave(format, name, hasUnicode)) continue;
+            var data = GetBytes(format);
+            if (data is null) continue;
+            if (total + data.Length > ClipboardFormats.MaxSavedBytes)
+            {
+                _log.LogInformation("clipboard format {Format} ({Bytes} bytes) is too big to keep through a paste; it won't come back",
+                                    name ?? format.ToString(global::System.Globalization.CultureInfo.InvariantCulture), data.Length);
+                continue;
+            }
+            total += data.Length;
+            formats.Add(new SavedFormat(format, data));
+        }
+        return formats.Count == 0 ? null : new SavedClipboard(formats);
+    }
+
+    /// <summary>Window thread, clipboard open and emptied: writes saved formats back (null leaves it empty).</summary>
+    private void Put(SavedClipboard? saved)
+    {
+        if (saved is null) return;
+        foreach (var format in saved.Formats) SetBytes(format.Format, format.Data, addNul: false);
+        // Marked like the paste, so the restore isn't a new Win+V entry or a fresh copy to clipboard
+        // managers; markers the copy carried itself (a password manager's) came back with it.
+        SetPrivacyMarkers(except: saved);
+    }
+
+    private void SetPrivacyMarkers(SavedClipboard? except)
+    {
+        ReadOnlySpan<byte> no = [0, 0, 0, 0]; // DWORD 0; the exclude marker only has to be there
+        foreach (var marker in _privacyFormats)
+        {
+            if (marker == 0 || except?.Formats.Any(f => f.Format == marker) == true) continue;
+            SetBytes(marker, no, addNul: false);
+        }
+    }
+
     private bool OpenWithRetry()
     {
         for (var attempt = 0; attempt < 10; attempt++)
@@ -248,14 +359,15 @@ public sealed class Win32Clipboard : IClipboard
         }
     }
 
-    private static void SetUnicodeText(string text)
+    private static bool SetUnicodeText(string text)
     {
         var bytes = new byte[(text.Length + 1) * 2];
         global::System.Text.Encoding.Unicode.GetBytes(text, bytes);
-        SetBytes(CF_UNICODETEXT, bytes, addNul: false);
+        return SetBytes(CF_UNICODETEXT, bytes, addNul: false);
     }
 
-    private static unsafe void SetBytes(uint format, ReadOnlySpan<byte> data, bool addNul)
+    /// <summary>Clipboard open: puts one format. False when the system refused it (the block is freed).</summary>
+    private static unsafe bool SetBytes(uint format, ReadOnlySpan<byte> data, bool addNul)
     {
         var size = (nuint)(data.Length + (addNul ? 1 : 0));
         var global = PInvoke.GlobalAlloc(GLOBAL_ALLOC_FLAGS.GMEM_MOVEABLE, size);
@@ -274,7 +386,9 @@ public sealed class Win32Clipboard : IClipboard
         if (PInvoke.SetClipboardData(format, (HANDLE)global.Value).IsNull)
         {
             PInvoke.GlobalFree(global); // ownership passes to the system only on success
+            return false;
         }
+        return true;
     }
 
     private static BgraImage DecodePng(byte[] png)
@@ -311,16 +425,51 @@ public sealed class Win32Clipboard : IClipboard
 /// <summary>An in-memory <see cref="IClipboard"/> (synthetic runs): Apply stores, Read returns it, never watches.</summary>
 public sealed class InMemoryClipboard : IClipboard
 {
+    private readonly Lock _lock = new();
     private ClipboardPayload? _current;
+    private ulong _mark;
 
     /// <inheritdoc />
-    public ClipboardPayload? Read() => Volatile.Read(ref _current);
+    public ClipboardPayload? Read()
+    {
+        lock (_lock) return _current;
+    }
 
     /// <inheritdoc />
-    public void Apply(ClipboardPayload payload) => Volatile.Write(ref _current, payload);
+    public void Apply(ClipboardPayload payload)
+    {
+        lock (_lock)
+        {
+            _current = payload;
+            _mark++;
+        }
+    }
 
     /// <inheritdoc />
     public IDisposable Watch(Action<ClipboardPayload> onChanged) => new NoWatch();
+
+    /// <inheritdoc />
+    public PasteWrite? WriteForPaste(string text, PasteWrite? earlier)
+    {
+        lock (_lock)
+        {
+            var former = earlier is not null && _mark == earlier.Mark ? earlier.Former : _current;
+            _current = new ClipboardPayload { Text = text };
+            return new PasteWrite(former, ++_mark);
+        }
+    }
+
+    /// <inheritdoc />
+    public bool RestoreAfterPaste(PasteWrite write)
+    {
+        lock (_lock)
+        {
+            if (_mark != write.Mark) return false;
+            _current = write.Former as ClipboardPayload;
+            _mark++;
+            return true;
+        }
+    }
 
     private sealed class NoWatch : IDisposable
     {

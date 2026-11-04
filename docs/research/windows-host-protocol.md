@@ -536,10 +536,23 @@ modifier keys are held. On Windows, press the missing modifier keys around the c
 - Caps Lock and Fn are never pressed implicitly. Fn has no Windows key: drop it.
 
 **`textInput`:**
-- Type Unicode text. The Mac chunks 16 UTF-16 units per event.
-- Windows: `KEYEVENTF_UNICODE` down and up per UTF-16 unit (surrogates in order).
-- Map `\n` (and `\r\n`) to a VK_RETURN press and `\t` to VK_TAB. Unicode 0x0A isn't Enter in most
-  Windows apps.
+- Up to 16 UTF-16 units (a typed character, a short burst from the software keyboard): type it.
+  Windows: `KEYEVENTF_UNICODE` down and up per UTF-16 unit (surrogates in order). Map `\n` (and
+  `\r\n`) to a VK_RETURN press and `\t` to VK_TAB. Unicode 0x0A isn't Enter in most Windows apps.
+- More than 16 units (a dictation, a paste from the iPad): paste it, as the Mac host does. Chromium
+  and Electron apps (Slack, VS Code, Discord) and some games drop keys from a fast burst of typed
+  text; a paste arrives whole. In one clipboard open, save what the clipboard holds (Windows: every
+  format whose data is a memory block, so files copied in Explorer come back too; not GDI handles,
+  metafiles, or OLE's `DataObject`/`Ole Private Data`), empty it, and write the text as
+  `CF_UNICODETEXT` (LF → CRLF) marked private (`ExcludeClipboardContentFromMonitorProcessing`,
+  `CanIncludeInClipboardHistory` = 0, `CanUploadToCloudClipboard` = 0). Then press Ctrl+V as keys
+  (Ctrl down, V down, V up, Ctrl up, set-1 scan codes 1D and 2F: Ctrl, not ⌘, which is the Windows
+  key), and 1.5 s later (the Mac's `pasteRestoreDelay`: an app that hasn't read the clipboard by
+  the restore pastes the old one) put the saved formats back, only if the clipboard's sequence
+  number is still the one the paste left: a copy made in between wins. Pastes in a row keep the
+  clipboard from before the first. Neither write is sent to the client: both are own-writes (this
+  host's window owns the clipboard after them). If another app holds the clipboard, type the text
+  instead, so nothing is lost.
 
 **`releaseAllInput`, disconnect, and session end:** release every held button, every held key, then
 every held modifier.

@@ -21,7 +21,7 @@ internal sealed class TestHost : IAsyncDisposable
     public readonly RecordingFileStore Files;
 
     public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
-                    IPeerDirectory? peers = null)
+                    IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null)
     {
         Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
@@ -48,6 +48,7 @@ internal sealed class TestHost : IAsyncDisposable
             AllowLoopback = true,
             FixedPairingCode = pairingCode,
             CaptureFailsFor = captureFailsFor,
+            PasteRestoreDelay = pasteRestoreDelay ?? ClipboardPaster.DefaultRestoreDelay,
         });
         Listener.StartAsync().GetAwaiter().GetResult();
     }
@@ -311,6 +312,58 @@ public class HostListenerTests
         connection.Close();
         for (var i = 0; i < 50 && host.Input.Releases == 0; i++) await Task.Delay(20);
         Assert.True(host.Input.Releases > 0, "everything is released when the session ends");
+    }
+
+    /// <summary>
+    /// A dictation-length <c>textInput</c> is pasted (clipboard, Ctrl+V, the old clipboard back) on the
+    /// real session; short text is still typed; the client hears neither clipboard write, and still
+    /// hears the PC's next real copy.
+    /// </summary>
+    [Fact]
+    public async Task LongTextIsPastedAndTheClipboardComesBackUnheard()
+    {
+        await using var host = new TestHost(clipboardText: "from the PC", pasteRestoreDelay: TimeSpan.FromSeconds(1));
+        var client = new TestClient();
+        var (connection, _, _) = await client.ConnectAsync(host.Port, "246810");
+        var heard = new List<string?>();
+        async Task<T> Next<T>() where T : class, IMessage
+        {
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (await connection.ReceiveAsync(limit.Token) is { } message)
+            {
+                if (message is ClipboardPayload payload) heard.Add(payload.Text);
+                if (message is T wanted) return wanted;
+            }
+            throw new IOException($"closed before a {typeof(T).Name}");
+        }
+        await connection.SendAsync(new SelectDisplay { Selection = new DisplaySelection.Display(1), TargetFPS = 30, Quality = QualityPreset.Auto });
+        await Next<VideoFrame>();
+
+        const string dictation = "A dictation of more than sixteen units, pasted whole.";
+        await connection.SendAsync(new TextInput { Text = "short typed text" }); // exactly 16
+        await connection.SendAsync(new TextInput { Text = dictation });
+        await connection.SendAsync(new Ping { SentAtNanos = 7 });
+        while ((await Next<Pong>()).EchoNanos != 7)
+        {
+        }
+
+        Assert.Equal(["short typed text"], host.Input.Texts);
+        lock (host.Input.Events)
+        {
+            Assert.Equal(
+                [(ClipboardPaster.VKeyCode, true, KeyModifiers.Control), (ClipboardPaster.VKeyCode, false, KeyModifiers.Control)],
+                host.Input.Events.OfType<KeyEvent>().Select(k => (k.KeyCode, k.IsDown, k.Modifiers)));
+        }
+        Assert.Equal(dictation, host.Clipboard.Read()?.Text);
+        for (var i = 0; i < 150 && host.Clipboard.Read()?.Text != "from the PC"; i++) await Task.Delay(20);
+        Assert.Equal("from the PC", host.Clipboard.Read()?.Text);
+
+        host.Clipboard.Copy(new ClipboardPayload { Text = "copied on the PC" });
+        while ((await Next<ClipboardPayload>()).Text != "copied on the PC")
+        {
+        }
+        Assert.Equal(["from the PC", "copied on the PC"], heard); // the stream's start, then the real copy only
+        connection.Close();
     }
 
     [Fact]

@@ -90,6 +90,8 @@ IsClipboardFormatAvailable
 RegisterClipboardFormatW
 GetClipboardSequenceNumber
 GetClipboardOwner
+EnumClipboardFormats
+GetClipboardFormatNameW
 GlobalAlloc
 GlobalFree
 GlobalLock

@@ -102,6 +102,9 @@ public sealed record HostListenerOptions
     /// <summary>A file channel whose session ended closes after this long with nothing moving.</summary>
     public TimeSpan DetachedFileChannelIdleLimit { get; init; } = TimeSpan.FromSeconds(120);
 
+    /// <summary>How long text pasted for a long <c>textInput</c> stays on the clipboard (<see cref="ClipboardPaster.DefaultRestoreDelay"/>).</summary>
+    public TimeSpan PasteRestoreDelay { get; init; } = ClipboardPaster.DefaultRestoreDelay;
+
     /// <summary>How often detached file channels are checked for idleness.</summary>
     public TimeSpan DetachedFileChannelCheckInterval { get; init; } = TimeSpan.FromSeconds(15);
 }
