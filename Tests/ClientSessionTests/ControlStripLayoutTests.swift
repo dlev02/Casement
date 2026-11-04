@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import VantageCore
 @testable import VantageClientLogic
 
 @MainActor struct ControlStripLayoutTests {
@@ -55,6 +56,20 @@ import Testing
         #expect(StripItem.macAudio.label == "Mac Audio" && StripItem.macAudio.category == .actions)
         #expect(StripItem.sendFile.label == "Send File" && StripItem.sendFile.symbol == "arrow.up.doc")
         #expect(StripItem.sendFile.category == .actions)
+    }
+
+    /// A PC sends its sound too, so its strip keeps the audio toggle (named for the PC); a host
+    /// without audio dims it from `HostCapabilities.audio` instead. Type Password stays Mac-only.
+    @Test func audioIsOfferedForEveryHost() {
+        #expect(!StripItem.unavailable(on: .windows).contains(.macAudio))
+        #expect(!StripItem.unavailable(on: .macOS).contains(.macAudio))
+        #expect(StripItem.unavailable(on: .windows).contains(.typePassword))
+        #expect(ControlStripLayout.standard.visibleItems(excluding: StripItem.unavailable(on: .windows)).contains(.macAudio))
+        #expect(StripItem.macAudio.label(for: .windows) == "PC Audio")
+        #expect(StripItem.macAudio.label(for: .macOS) == "Mac Audio")
+        #expect(StripItem.macAudio.detail(for: .windows).hasPrefix("Hear the PC's sound on "))
+        #expect(StripItem.macAudio.detail(for: .macOS).hasPrefix("Hear the Mac's sound on "))
+        #expect(!StripItem.macAudio.detail.contains("Macs only"))
     }
 
     @Test func addAppendsOnceAndRemoveHides() {

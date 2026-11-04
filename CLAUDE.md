@@ -93,7 +93,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `ControlStrip`, Liquid Glass throughout.
 - **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual screen sized to
   the iPad viewport (behind a protocol so `CGVirtualDisplay` can replace it later). It is opt-in
-  per saved device (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`). The
+  per saved device (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`; a PC
+  gets the same toggle as "Fit the PC's display to this screen", and its host switches display
+  mode instead). The
   default path streams the main display immediately; never put BetterDisplay's CLI back on the
   connect path unconditionally — on Drew's Mac it answers "Failed." to everything and the old
   15 s poll made every connect take 16 s. When the toggle is on, a connected non-built-in display
@@ -259,13 +261,19 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `symbol(for:)` name an item per host (nil = any host, for the default editor);
   `keycapText(for:)` draws a PC's modifiers as "ctrl"/"alt"/"win"; strip modifiers are always sent
   as labelled. `StripItem.unavailable(on:)` joins `unavailableHere` with what the host can't use
-  (a Mac: Start, Task Manager; a PC: Mac Audio, Type Password) for the strip and the per-device
+  (a Mac: Start, Task Manager; a PC: Type Password) for the strip and the per-device
   editor; the default editor shows everything. Both standards gained Start and Task Manager
-  (`standardHistory`, `macStandardHistory`). **Mac-only features** a PC hides: Mac Audio (strip,
-  session menu; the Mac menu bar dims it), Type Password and saved passwords, Log In with Screen
-  Sharing (`ScreenSharingPassword.canLogIn`), home address, virtual display, codec choice; dictation
-  on the PC falls back to this device since a PC advertises no `dictationEngines`. Sleep Display
-  and Lock stay. **⌘ acts as Ctrl** (`SavedDevice.commandSendsControl`, nil = on; Edit sheet toggle
+  (`standardHistory`, `macStandardHistory`). **Audio and display fitting** are gated on what the
+  host advertises, not its platform: a PC (Casement Host 1.3+) sends `HostCapabilities.audio` and
+  answers `audioRequest` like a Mac, so the strip item, session menu and Mac menu bar show "PC
+  Audio" (`label(for:)`; dimmed with `MacAudioToggle.unavailableReason` on a host without audio),
+  and the Mac client's detail pane has Play PC Audio (`SavedDevice.playMacAudio`). The Edit sheet's
+  `useVirtualDisplay` toggle shows for a PC as "Fit the PC's display to this screen": the same
+  `SelectDisplay.useVirtualDisplay` + `fitViewport`, which the Windows host answers by switching the
+  display mode (`canManageVirtualDisplay`) and restoring it afterwards. **Mac-only features** a PC
+  hides: Type Password and saved passwords, Log In with Screen Sharing
+  (`ScreenSharingPassword.canLogIn`), home address, codec choice; dictation on the PC falls back to
+  this device since a PC advertises no `dictationEngines`. Sleep Display and Lock stay. **⌘ acts as Ctrl** (`SavedDevice.commandSendsControl`, nil = on; Edit sheet toggle
   for a PC): `KeyRemap` swaps 0x37↔0x3B, 0x36↔0x3E and the ⌘/⌃ bits for keyboard keys only (the
   iPad's hardware keyboard in `InputController.key(hidUsage:)` + `RemoteInteractionView.heldModifiers`,
   the Mac client through `KeyTranslator`, where a PC uses its own setting instead of Settings' Swap ⌘
@@ -404,7 +412,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   reaches the player through it, so the 100–200 ms start queued the Mac's first audio into a
   burst that landed just after playback began and was cut back with an audible skip. A stop
   during a start, and the mic taking over, wait for that queue, so the session never changes
-  under the mic. Per Mac: `SavedDevice.playMacAudio`
+  under the mic. A Windows host (1.3+) sends the same kinds; the client names the toggle after the
+  host ("PC Audio") and gates it on `HostCapabilities.audio` only. Per Mac or PC: `SavedDevice.playMacAudio`
   (`DeviceStore.setPlayMacAudio`); strip item `macAudio` + session-menu toggle; a failure shows
   `MacAudioNotice` and the toggle retries. `ControlStripLayout.upgradeSavedLayouts` moves layouts
   saved as an older standard (the editor saves the full list even on Reset) to the new one once;
@@ -1205,8 +1214,8 @@ host with `--send-file-on-connect` named by `VANTAGE_INTEROP_FILES_HOST` and
 device reattaches). The unchanged `LiveHostFilesTests` and `SessionUITests` (hosts via
 `TEST_RUNNER_VANTAGE_TEST_HOST` with `--send-file-on-connect`, `…_SYNTHETIC_HOST` with
 `--display-asleep`, `…_UNAVAILABLE_HOST` with `--capture-fails-for 6`) also run against it; the
-Mac-audio UI test runs against it only with `--platform macos` (the client still hides Mac Audio for
-a PC, `StripItem.unavailable(on:)`; unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
+Mac-audio UI test runs against it with either `--platform` (the toggle reads "PC Audio" for a PC;
+unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
 
 ## Reboot, lock screen, and login window (what is and isn't possible)
 

@@ -34,6 +34,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
             case .control: return "Ctrl"
             case .option: return "Alt"
             case .command: return "Windows Key"
+            case .macAudio: return "PC Audio"
             default: if let shortcut = HostShortcut.forItem(self, on: .windows) { return shortcut.label }
             }
         }
@@ -129,7 +130,8 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case (.applicationWindows, nil): return "⌃ ↓. Switch Apps (Alt Tab) on a PC"
         case (.showDesktop, nil): return "F11. Win D on a PC"
         case (.typePassword, nil): return "Types the Mac's saved password. Macs only"
-        case (.macAudio, nil): return "Hear the Mac's sound on \(LocalDevice.this). Macs only"
+        case (.macAudio, nil): return "Hear the computer's sound on \(LocalDevice.this)"
+        case (.macAudio, _): return "Hear \(host)'s sound on \(LocalDevice.this)"
         case (.sendClipboard, _): return "Sends your clipboard to \(host)"
         case (.sendFile, _): return "Sends a file from \(LocalDevice.this) to \(host)"
         default: return macDetail
@@ -184,12 +186,13 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
     }
 
     /// `unavailableHere` plus what the host can't use: Start and Task Manager are for a PC, and a
-    /// PC has no Mac Audio or saved-password typing. Nil (the default layout's editor, before
-    /// any host is known) leaves them all in.
+    /// PC has no saved-password typing. Audio isn't decided here: a host that doesn't advertise
+    /// it (`HostCapabilities.audio`) keeps the button, dimmed with the reason. Nil (the default
+    /// layout's editor, before any host is known) leaves them all in.
     static func unavailable(on platform: HostPlatform?) -> Set<StripItem> {
         switch platform {
         case nil: unavailableHere
-        case .windows?: unavailableHere.union([.macAudio, .typePassword])
+        case .windows?: unavailableHere.union([.typePassword])
         default: unavailableHere.union([.startMenu, .taskManager])
         }
     }
@@ -218,7 +221,7 @@ nonisolated struct ControlStripLayout: Hashable, Sendable {
     static let defaultsKey = "vantage.controlStrip"
 
     /// What the strip shows until someone customizes it.
-    /// Start and Task Manager only show for a PC, Type Password and Mac Audio only for a Mac.
+    /// Start and Task Manager only show for a PC, Type Password only for a Mac.
     static let standard = ControlStripLayout(items: [
         .control, .option, .command, .shift,
         .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow,

@@ -4,8 +4,9 @@ import VantageCore
 /// Adds or edits a device by MagicDNS name or Tailscale IP. No credentials required for v1.
 ///
 /// A PC (known once its host has answered) gets "⌘ Acts as Ctrl" instead of the Mac-only
-/// settings: the codec (its host sends H.264), the BetterDisplay virtual display, and the saved
-/// password, which types through macOS Screen Sharing.
+/// settings: the codec (its host sends H.264) and the saved password, which types through macOS
+/// Screen Sharing. Both get the display toggle (`useVirtualDisplay`): a BetterDisplay virtual
+/// screen on a Mac, a matching display mode on a PC.
 struct AddDeviceSheet: View {
     @Environment(DeviceStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -70,6 +71,12 @@ struct AddDeviceSheet: View {
                 }
 
                 if isPC {
+                    Section {
+                        Toggle("Fit the PC's display to this screen", isOn: $useVirtualDisplay)
+                    } footer: {
+                        Text("Casement Host switches the PC's display mode to match this screen while you're connected and puts it back afterwards.")
+                    }
+
                     Section {
                         Toggle("⌘ Acts as Ctrl", isOn: $commandSendsControl)
                     } header: {

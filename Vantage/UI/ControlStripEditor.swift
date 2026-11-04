@@ -191,7 +191,7 @@ struct ControlStripEditor: View {
             Text("Shown")
         } footer: {
             Text(mac == nil
-                 ? "The menu and the collapse button are always at the end. Macs and PCs you've customized keep their own controls. Start and Task Manager show only for a PC, Type Password and Mac Audio only for a Mac."
+                 ? "The menu and the collapse button are always at the end. Macs and PCs you've customized keep their own controls. Start and Task Manager show only for a PC, Type Password only for a Mac."
                  : "The menu and the collapse button are always at the end.")
                 .wrapsInFooter()
         }
