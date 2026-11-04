@@ -21,16 +21,18 @@ internal sealed class TestHost : IAsyncDisposable
     public readonly RecordingFileStore Files;
 
     public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
-                    IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null)
+                    IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null, bool captureUnsupported = false)
     {
         Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
         Clipboard = new MemoryClipboard(clipboardText, new EventLog(null, false, NullLogger.Instance));
         var storage = new FileProtectedStorage(Path.Combine(Root, "state"));
+        IScreenSource screen = new ClipScreenSource(Display, NullLogger.Instance);
+        if (captureUnsupported) screen = new UnsupportedScreenSource(screen);
         var environment = new HostEnvironment
         {
             HostName = "Test PC",
-            Screen = new ClipScreenSource(Display, NullLogger.Instance),
+            Screen = screen,
             Encoders = new ClipEncoderFactory(new Clip(VideoTests.ClipPath())),
             CreateInputSink = () => Input,
             Clipboard = Clipboard,
@@ -60,6 +62,16 @@ internal sealed class TestHost : IAsyncDisposable
         await Listener.StopAsync();
         Directory.Delete(Root, recursive: true);
     }
+}
+
+/// <summary>A PC where capture isn't available (no Windows.Graphics.Capture, or a service session).</summary>
+internal sealed class UnsupportedScreenSource(IScreenSource inner) : IScreenSource
+{
+    public bool IsCaptureSupported => false;
+    public string CaptureUnsupportedMessage => "Screen capture isn't available in this session.";
+    public Task<IReadOnlyList<DisplayInfo>> GetDisplaysAsync(CancellationToken cancellationToken) => inner.GetDisplaysAsync(cancellationToken);
+    public Task<ICaptureStream> StartAsync(CaptureRequest request, Action<ICapturedFrame> onFrame, Action<string> onStopped, CancellationToken cancellationToken) =>
+        throw new CaptureUnavailableException(CaptureUnsupportedMessage);
 }
 
 /// <summary>The synthetic store, remembering who each saved file came from.</summary>
@@ -209,6 +221,25 @@ public class HostListenerTests
         var (_, _, result) = await client.ConnectAsync(host.Port, "246810");
         Assert.Equal(AuthStatus.BadPairingCode, result.Status);
         Assert.Contains("expired", result.Message);
+    }
+
+    [Fact]
+    public async Task ProbeSaysWhenCaptureIsUnsupported()
+    {
+        // The client's device list reads the probe; "ready" followed by a denied stream request
+        // would look like a broken connection instead of a PC that can't share its screen.
+        await using var host = new TestHost(captureUnsupported: true);
+        var client = new TestClient();
+        (await client.ConnectAsync(host.Port, "246810")).Connection.Close();
+
+        var (_, _, probe) = await client.ConnectAsync(host.Port, probe: true);
+        Assert.Equal(AuthStatus.Ok, probe.Status);
+        Assert.False(probe.Readiness!.ScreenRecordingGranted);
+        Assert.True(probe.Readiness.AccessibilityGranted);
+
+        var (_, _, stream) = await client.ConnectAsync(host.Port);
+        Assert.Equal(AuthStatus.Denied, stream.Status);
+        Assert.Contains("capture", stream.Message);
     }
 
     [Fact]

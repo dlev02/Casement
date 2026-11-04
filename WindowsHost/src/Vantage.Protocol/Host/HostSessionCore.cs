@@ -254,11 +254,14 @@ public sealed class HostSessionCore
 
         if (hello.IsReadinessProbe == true)
         {
-            // Never enumerate displays, start capture, or touch the clipboard for a probe.
+            // Never enumerate displays, start capture, or touch the clipboard for a probe. Windows has no
+            // grants to report, but capture can still be unsupported (no Windows.Graphics.Capture, a
+            // service session): say so here, where the client's device list reads it, instead of
+            // answering "ready" and denying the stream request a moment later.
             await _connection.SendAsync(new AuthResult
             {
                 Status = AuthStatus.Ok,
-                Readiness = new HostReadiness { ScreenRecordingGranted = true, AccessibilityGranted = true },
+                Readiness = new HostReadiness { ScreenRecordingGranted = _env.Screen.IsCaptureSupported, AccessibilityGranted = true },
             }).ConfigureAwait(false);
             return false;
         }
