@@ -417,7 +417,13 @@ public sealed class HostSessionCore
                 if (AdmitsInput(!key.IsDown)) _input?.Key(key);
                 break;
             case TextInput text:
-                if (AdmitsInput(false)) _input?.Text(text.Text);
+                if (AdmitsInput(false) && _input is { } input)
+                {
+                    // More than one key event's worth (a dictation, a paste from the iPad) is pasted:
+                    // Chromium and Electron apps drop keys from a fast burst of typed text. A
+                    // clipboard another app is holding falls back to typing, so nothing is lost.
+                    if (!ClipboardPaster.ShouldPaste(text.Text) || !_listener.Paster.Paste(text.Text, input)) input.Text(text.Text);
+                }
                 break;
             case ClipboardPayload clipboard:
                 if (!clipboard.IsEmpty) _env.Clipboard.Apply(clipboard);

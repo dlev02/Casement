@@ -185,3 +185,38 @@ public class PngWriterTests
         return chunks;
     }
 }
+
+/// <summary>Which formats a paste saves and puts back.</summary>
+public class ClipboardFormatsTests
+{
+    [Theory]
+    [InlineData(13u, null, true)] // CF_UNICODETEXT
+    [InlineData(8u, null, true)] // CF_DIB
+    [InlineData(17u, null, true)] // CF_DIBV5
+    [InlineData(15u, null, true)] // CF_HDROP: files copied in Explorer
+    [InlineData(16u, null, true)] // CF_LOCALE
+    [InlineData(0xC123u, "HTML Format", true)]
+    [InlineData(0xC124u, "Rich Text Format", true)]
+    [InlineData(0xC125u, "Preferred DropEffect", true)]
+    [InlineData(2u, null, false)] // CF_BITMAP: a GDI handle (comes back synthesized from the DIB)
+    [InlineData(3u, null, false)] // CF_METAFILEPICT
+    [InlineData(9u, null, false)] // CF_PALETTE
+    [InlineData(14u, null, false)] // CF_ENHMETAFILE
+    [InlineData(0x80u, null, false)] // CF_OWNERDISPLAY
+    [InlineData(0x8Eu, null, false)] // CF_DSPENHMETAFILE
+    [InlineData(0x200u, null, false)] // private range
+    [InlineData(0x3FFu, null, false)] // GDI object range
+    [InlineData(0xC126u, "DataObject", false)] // OLE's pointer to an object emptying releases
+    [InlineData(0xC127u, "Ole Private Data", false)]
+    [InlineData(0xC128u, "Embed Source", false)]
+    public void SavesMemoryBlocksOnly(uint format, string? name, bool saved) =>
+        Assert.Equal(saved, ClipboardFormats.CanSave(format, name, hasUnicodeText: true));
+
+    [Fact]
+    public void AnsiTextIsSavedOnlyWithoutUnicodeText()
+    {
+        Assert.False(ClipboardFormats.CanSave(1, null, hasUnicodeText: true)); // CF_TEXT, synthesized
+        Assert.False(ClipboardFormats.CanSave(7, null, hasUnicodeText: true)); // CF_OEMTEXT
+        Assert.True(ClipboardFormats.CanSave(1, null, hasUnicodeText: false));
+    }
+}

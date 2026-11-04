@@ -38,6 +38,7 @@ public sealed class HostListener : IAsyncDisposable
         _log = environment.Logging.CreateLogger("Vantage.Listener");
         Pairing = new PairingCodes(environment.Time, options.FixedPairingCode);
         AttachTokens = new AttachTokenRegistry<HostSessionCore>(environment.Time);
+        Paster = new ClipboardPaster(environment.Clipboard, environment.Time, options.PasteRestoreDelay, environment.Logging.CreateLogger("Vantage.Input"));
         if (options.FixedPairingCode is not null && options.RearmFixedPairingCodeAfter is { } rearm)
         {
             Pairing.Cleared += () => _ = Task.Delay(rearm, environment.Time, _stopping.Token).ContinueWith(
@@ -48,6 +49,9 @@ public sealed class HostListener : IAsyncDisposable
     internal HostEnvironment Environment { get; }
     internal HostListenerOptions Options { get; }
     internal AttachTokenRegistry<HostSessionCore> AttachTokens { get; }
+
+    /// <summary>Long <c>textInput</c> goes through the clipboard (one per listener: the clipboard is the PC's).</summary>
+    internal ClipboardPaster Paster { get; }
 
     /// <summary>The pairing code (Show Pairing Code → <see cref="PairingCodes.NewCode"/>; hide it on <see cref="PairingCodes.Cleared"/>).</summary>
     public PairingCodes Pairing { get; }
@@ -132,6 +136,7 @@ public sealed class HostListener : IAsyncDisposable
         _socket?.Dispose();
         foreach (var session in _sessions.Values) session.Abort();
         foreach (var channel in _fileChannels.Values) channel.Engine.Close();
+        Paster.RestoreNow(); // quitting within a paste's restore delay still gives the clipboard back
         if (_acceptLoop is not null)
         {
             try

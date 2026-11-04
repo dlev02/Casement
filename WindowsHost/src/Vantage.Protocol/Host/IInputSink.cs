@@ -58,6 +58,9 @@ public interface IInputSink : IDisposable
     /// <summary>
     /// Types Unicode text (<c>textInput</c>): each UTF-16 unit down and up (surrogates in order),
     /// except <c>\n</c> or <c>\r\n</c> (a Return press) and <c>\t</c> (a Tab press).
+    /// Only text of up to <see cref="ClipboardPaster.TypedTextLimit"/> units gets here, or longer text
+    /// while another app holds the clipboard: <see cref="ClipboardPaster"/> puts longer text on the
+    /// clipboard and sends a Ctrl+V chord through <see cref="Key"/>.
     /// </summary>
     void Text(string text);
 

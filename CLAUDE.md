@@ -1011,6 +1011,20 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the clock, so Windows' 15.6 ms timer doesn't slow it). The next scroll, a button press,
   `releaseAll` and teardown end it. The synthetic host's input log shows the frames (`momentum`).
   Tests: `ScrollMomentumTests`, `HostListenerTests.FlickGlidesUntilTheSessionEnds`.
+- **Long text is pasted**: a `textInput` over 16 UTF-16 units (dictation, a paste from the iPad)
+  goes through the clipboard as on the Mac, since Electron/Chromium apps and some games drop
+  `KEYEVENTF_UNICODE` bursts; 16 or fewer are typed. `ClipboardPaster` (one per listener) calls
+  `IClipboard.WriteForPaste` (one clipboard open: save every memory-block format,
+  `ClipboardFormats.CanSave`, then the text marked out of Win+V history, cloud clipboard and
+  clipboard managers), sends `PasteChord` (V with Control: Ctrl 1D, V 2F through the translator),
+  and after 1.5 s (the Mac's `pasteRestoreDelay`, on the session's `TimeProvider`) calls
+  `RestoreAfterPaste`, which puts the saved formats back only while the sequence number is still
+  the paste's (a copy made meanwhile wins). Pastes in a row keep the first one's saved clipboard;
+  stopping the listener restores at once. Neither write reaches the client (the window owns the
+  clipboard after both; never a "skip the next change" flag). A clipboard another app holds falls
+  back to typing, logged once. The synthetic host's input log shows `pasteWrite`, the chord's two
+  `key` entries (`key 1D down`, `key 2F down`, …) and `pasteRestore`. Tests: `ClipboardPasteTests`,
+  `ClipboardFormatsTests`, `HostListenerTests.LongTextIsPastedAndTheClipboardComesBackUnheard`.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,

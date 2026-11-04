@@ -122,11 +122,18 @@ internal sealed class LoggingInputSink : IInputSink
     }
 }
 
-/// <summary>An in-memory clipboard: <c>--clipboard-text</c> seeds it (sent at stream start); what the client sends is logged.</summary>
+/// <summary>
+/// An in-memory clipboard: <c>--clipboard-text</c> seeds it (sent at stream start); what the client sends
+/// is logged, and so are a long <c>textInput</c>'s paste write and the restore after it
+/// (<c>pasteWrite</c>, <c>pasteRestore</c>), which never reach the client. Nothing on a synthetic
+/// host copies; tests stand in for the user with <see cref="Copy"/>, which watchers do hear.
+/// </summary>
 internal sealed class MemoryClipboard(string? initialText, EventLog log) : IClipboard
 {
     private readonly Lock _lock = new();
+    private readonly List<Action<ClipboardPayload>> _watchers = [];
     private ClipboardPayload? _current = initialText is null ? null : new ClipboardPayload { Text = initialText };
+    private ulong _mark;
 
     public ClipboardPayload? Read()
     {
@@ -135,7 +142,11 @@ internal sealed class MemoryClipboard(string? initialText, EventLog log) : IClip
 
     public void Apply(ClipboardPayload payload)
     {
-        lock (_lock) _current = payload;
+        lock (_lock)
+        {
+            _current = payload;
+            _mark++;
+        }
         log.Write(new JsonObject
         {
             ["type"] = "clipboard",
@@ -145,13 +156,56 @@ internal sealed class MemoryClipboard(string? initialText, EventLog log) : IClip
         });
     }
 
-    /// <summary>Nothing changes it locally.</summary>
-    public IDisposable Watch(Action<ClipboardPayload> onChanged) => new Nothing();
+    public IDisposable Watch(Action<ClipboardPayload> onChanged)
+    {
+        lock (_lock) _watchers.Add(onChanged);
+        return new Unwatch(this, onChanged);
+    }
 
-    private sealed class Nothing : IDisposable
+    public PasteWrite? WriteForPaste(string text, PasteWrite? earlier)
+    {
+        PasteWrite write;
+        lock (_lock)
+        {
+            var former = earlier is not null && _mark == earlier.Mark ? earlier.Former : _current;
+            _current = new ClipboardPayload { Text = text };
+            write = new PasteWrite(former, ++_mark);
+        }
+        log.Write(new JsonObject { ["type"] = "pasteWrite", ["text"] = text });
+        return write;
+    }
+
+    public bool RestoreAfterPaste(PasteWrite write)
+    {
+        ClipboardPayload? restored;
+        lock (_lock)
+        {
+            if (_mark != write.Mark) return false;
+            restored = _current = write.Former as ClipboardPayload;
+            _mark++;
+        }
+        log.Write(new JsonObject { ["type"] = "pasteRestore", ["text"] = restored?.Text });
+        return true;
+    }
+
+    /// <summary>A copy made on the "PC" (tests): replaces the clipboard and tells the watchers.</summary>
+    public void Copy(ClipboardPayload payload)
+    {
+        Action<ClipboardPayload>[] watchers;
+        lock (_lock)
+        {
+            _current = payload;
+            _mark++;
+            watchers = [.. _watchers];
+        }
+        foreach (var watcher in watchers) watcher(payload);
+    }
+
+    private sealed class Unwatch(MemoryClipboard owner, Action<ClipboardPayload> watcher) : IDisposable
     {
         public void Dispose()
         {
+            lock (owner._lock) owner._watchers.Remove(watcher);
         }
     }
 }
