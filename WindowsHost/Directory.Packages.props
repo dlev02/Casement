@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
+    <!-- Opus for the PC's sound: a pure C# port of libopus (BSD-3-Clause), so it builds and runs on macOS too. -->
+    <PackageVersion Include="Concentus" Version="2.2.2" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

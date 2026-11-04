@@ -9,7 +9,8 @@ namespace Vantage.SyntheticHost;
 /// <c>--capture-fails-for</c>, <c>--send-file-on-connect</c>, <c>--receive-folder</c>,
 /// <c>--log-input-events</c>, plus <c>--platform windows|macos</c>, <c>--input-log</c>,
 /// <c>--clipboard-text</c>, <c>--clip</c>, <c>--state-dir</c>, <c>--host-name</c>, <c>--pairing-code-rearm</c>,
-/// <c>--cursor-shapes</c> (offer clients a pointer to draw themselves).
+/// <c>--cursor-shapes</c> (offer clients a pointer to draw themselves), <c>--no-audio</c> (don't
+/// offer the chime that stands in for the PC's sound).
 /// </summary>
 internal sealed record SyntheticOptions
 {
@@ -29,6 +30,8 @@ internal sealed record SyntheticOptions
     public string StateDirectory { get; init; } = Path.Combine(Path.GetTempPath(), "VantageSynthetic", "WindowsHostState");
     public string? HostName { get; init; }
     public bool CursorShapes { get; init; }
+    /// <summary>Offer sound (a chime, like the Mac's synthetic host); <c>--no-audio</c> turns it off.</summary>
+    public bool Audio { get; init; } = true;
 
     public static SyntheticOptions Parse(string[] args)
     {
@@ -55,6 +58,7 @@ internal sealed record SyntheticOptions
                 "--state-dir" => options with { StateDirectory = Next() },
                 "--host-name" => options with { HostName = Next() },
                 "--cursor-shapes" => options with { CursorShapes = true },
+                "--no-audio" => options with { Audio = false },
                 "--synthetic-capture" => options, // accepted for symmetry with the Mac host; always synthetic
                 _ => throw new ArgumentException($"Unknown option {args[i]}."),
             };

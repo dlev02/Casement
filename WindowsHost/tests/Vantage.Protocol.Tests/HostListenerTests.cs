@@ -22,7 +22,7 @@ internal sealed class TestHost : IAsyncDisposable
 
     public TestHost(string? pairingCode = "246810", bool displayAsleep = false, string? clipboardText = null, TimeSpan? captureFailsFor = null,
                     IPeerDirectory? peers = null, TimeSpan? pasteRestoreDelay = null, bool captureUnsupported = false,
-                    IVideoEncoderFactory? encoders = null)
+                    IVideoEncoderFactory? encoders = null, IAudioSource? audio = null)
     {
         Files = new RecordingFileStore(Directory.CreateDirectory(Path.Combine(Root, "received")).FullName);
         Display = new FakeDisplay(displayAsleep, displayAsleep, NullLogger.Instance);
@@ -35,6 +35,7 @@ internal sealed class TestHost : IAsyncDisposable
             HostName = "Test PC",
             Screen = screen,
             Encoders = encoders ?? new ClipEncoderFactory(new Clip(VideoTests.ClipPath())),
+            Audio = audio,
             CreateInputSink = () => Input,
             Clipboard = Clipboard,
             Status = Display,
@@ -146,7 +147,8 @@ internal sealed class TestClient
     public byte[] PublicKey => s_ed25519.PublicKeyFromSeed(Seed);
 
     public async Task<(FramedConnection Connection, Challenge Challenge, AuthResult Result)> ConnectAsync(
-        int port, string? code = null, bool probe = false, bool filesOnly = false, bool files = true, ushort version = 2, string host = "127.0.0.1")
+        int port, string? code = null, bool probe = false, bool filesOnly = false, bool files = true, ushort version = 2, string host = "127.0.0.1",
+        bool macAudio = false)
     {
         var connection = await FramedConnection.ConnectAsync(host, port);
         await connection.SendAsync(new Hello
@@ -161,7 +163,7 @@ internal sealed class TestClient
             MaxDecodeHeight = probe || filesOnly ? 0 : 2304,
             Viewport = probe || filesOnly ? null : new Viewport { WidthPoints = 1210, HeightPoints = 834, Scale = 2 },
             IsReadinessProbe = probe ? true : null,
-            Features = new ClientFeatures { FileTransfer = files, FilesOnly = filesOnly ? true : null },
+            Features = new ClientFeatures { FileTransfer = files, FilesOnly = filesOnly ? true : null, MacAudio = macAudio ? true : null },
         });
         var first = await connection.ReceiveAsync();
         if (first is AuthResult early) return (connection, null!, early);

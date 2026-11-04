@@ -98,17 +98,17 @@ C→H means client to host; H→C means host to client. "Windows v1" is what the
 | 60 | attachMedia | JSON | C→H | first message on a file channel |
 | 61 | textInput | JSON | C→H | handle |
 | 62 | modifierState | JSON | C→H | never sent by current clients; ignore |
-| 63 | audioRequest | JSON | C→H | never arrives unless `audio` is advertised; don't advertise |
+| 63 | audioRequest | JSON | C→H | handle from a client with `features.macAudio` when `audio` is advertised (§9.5) |
 | 64 | dictationControl | JSON | C→H | gated by `dictationEngines`; don't advertise |
 | 70 | cursorShape | JSON | H→C | only to a client with `features.localCursor`, when the host advertises `cursorShapes` |
 | 71 | videoConfig | JSON | H→C | send |
 | 72 | hostStatus | JSON | H→C | send |
-| 73 | audioConfig | JSON | H→C | never send |
+| 73 | audioConfig | JSON | H→C | send in answer to `audioRequest` (§9.5) |
 | 74 | dictationResult | JSON | H→C | never send |
 | 80–84 | fileOffer/Accept/Complete/Result/Cancel | JSON | both, file channel only | handle and send |
 | 100 | videoFrame | bin | H→C | send |
 | 101 | cursorPosition | bin | H→C | same rule; the client uses `isVisible` |
-| 102 | audioPacket | bin | H→C | never send |
+| 102 | audioPacket | bin | H→C | send while audio is on (§9.5) |
 | 103 | fileChunkToClient | bin | H→C, file channel | send |
 | 120 | pointerEvent | bin | C→H | handle |
 | 121 | scrollEvent | bin | C→H | handle |
@@ -279,8 +279,13 @@ JSON; not used in v1.
 
 **File messages (80–84)**: see §10.
 
-**Not used by a Windows v1 host:** AudioRequest (63), AudioConfig (73), DictationControl (64),
-DictationResult (74). Their schemas are in `AudioMessages.swift` and `DictationMessages.swift`.
+**AudioRequest (63)**: `enabled` Bool, `muteMacOutput?` Bool (ignored by every host).
+**AudioConfig (73)**: `codec` ("opus"), `sampleRate` (48000), `channels` (2), `framesPerPacket`
+(480), `bitrate` (128000), `unavailable?` String (a user-facing reason; the other keys keep the
+defaults). Schemas in `AudioMessages.swift`.
+
+**Not used by a Windows host:** DictationControl (64), DictationResult (74)
+(`DictationMessages.swift`).
 
 ## 6. Binary layouts (byte offsets inside the payload)
 
@@ -347,7 +352,9 @@ delta is the translation divided by 10 points per line. See §7.4 for the Window
 | 3 | u32 | modifiers |
 | 7 | u8 | isRepeat |
 
-**audioPacket (102)**: `seq u64 | captureNanos u64 | frameCount u16 | opus…` (18-byte header). Not used.
+**audioPacket (102)**: `seq u64 | captureNanos u64 | frameCount u16 | opus…` (18-byte header):
+one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and continuous across pauses,
+`captureNanos` the host's monotonic time of its first frame (§9.5).
 
 **micAudio (123)**: `dictationID 16B | seq u32 | format u8 | pcm…` (21-byte header). Not used.
 
@@ -415,7 +422,8 @@ delta is the translation divided by 10 points per line. See §7.4 for the Window
    - Send `authResult{status:"ok", sessionToken?, displays:[…], capabilities}`.
    - **Windows v1 capabilities:** `{codecs:["hevc","h264"] (["h264"] on a PC without an HEVC encoder), canManageVirtualDisplay:false, clipboard:true, maxFPS:60, fileTransfer:true, filesOnlySessions:true, platform:"windows"}`,
      `fileTransfer`/`filesOnlySessions` only when the client said `fileTransfer`. Omit
-     `dictationEngines` and `audio` (nil means the client never sends those kinds).
+     `dictationEngines` (nil means the client never sends those kinds). Add `audio:true` while the
+     PC can capture its sound (§9.5).
 10. The client then immediately sends
     `selectDisplay{selection:{"fitViewport":{"_0":viewport}}, targetFPS:60, quality:"auto", preferredCodec: <saved preference, may be "hevc">, useVirtualDisplay:false}`.
     From here the receive loop (§7.2) runs.
@@ -478,7 +486,7 @@ stream as normal and never reconnects because of missing video.
 - `ping`: send `pong{echoNanos: ping.sentAtNanos}` at once. The client sends a ping and a
   `qualityFeedback` **every 250 ms** while connected; the host never pings.
 - `disconnect`: end the session.
-- `audioRequest`: ignore unless audio was advertised.
+- `audioRequest`: §9.5; ignore from a client without `features.macAudio`.
 - Anything else: ignore.
 
 **Teardown:** revoke the session's attach token; release every held key and button; stop capture,
@@ -733,8 +741,41 @@ sleepDisplay still turns the monitor off.
 
 ### 9.5 Audio and dictation
 
-Not in Windows v1. Don't advertise `audio` or `dictationEngines`. The client then hides or disables
-those features and never sends kinds 63, 64 or 123.
+**Dictation**: not on Windows. Don't advertise `dictationEngines`; the client then dictates on the
+device and never sends kinds 64 or 123.
+
+**Sound** (the Mac's `HostSession.startAudio`, `AudioCapture`, `AudioRepacketizer`, `AudioEncoder`):
+
+- Advertise `capabilities.audio: true` (to every screen session, as the Mac does) only while a
+  loopback capture can be opened; Windows probes once at startup and again at most every 30 s
+  after a failure. The client sends `audioRequest` only to a host that advertised it, and audio is
+  off until it asks.
+- Answer only a client whose `hello.features.macAudio` is true; never send kinds 73 or 102 to
+  anyone else (an older client closes the connection on them).
+- `audioRequest{enabled:true}` while off: send `audioConfig` (the format above), then start capture;
+  if capture can't start, follow it with `audioConfig{unavailable:"…"}` ("This PC has no sound
+  output device.", "Windows Audio isn't running on this PC.", "Windows refused loopback capture:
+  …"). `enabled:false`, the session ending, or capture failing for good stops it (the last sends
+  `unavailable` with the reason). A later `enabled:true` starts a new stream, `seq` from 0.
+- Packets: 48 kHz stereo cut into 480-frame (10 ms) blocks whatever size the capture delivers,
+  each block's `captureNanos` from the sample count since the start of its timeline; a capture
+  timestamp more than 15 ms off that, or a flagged discontinuity, finishes the partial block with
+  silence and starts a new timeline. Opus `OPUS_APPLICATION_AUDIO`, 128 kbps VBR, one packet per
+  block (~160 bytes). The client treats a `captureNanos` jump of 30 ms or more as the host pausing
+  (it re-buffers without counting a late packet) and a `seq` gap as loss (it resets its decoder).
+- Silence: ScreenCaptureKit and endpoint loopback deliver nothing while nothing plays, which the
+  client sees as a pause. Process loopback delivers digital silence instead, so Windows holds back
+  blocks after 500 ms below −90 dBFS and resumes with the first block with sound (its
+  `captureNanos` has jumped). `seq` counts packets sent, so it stays continuous.
+- Windows capture: process loopback (`ActivateAudioInterfaceAsync("VAD\Process_Loopback")`,
+  `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE` for the host's process, shared mode,
+  `LOOPBACK | EVENTCALLBACK | AUTOCONVERTPCM`, 48 kHz float asked for) leaves the host's own sounds
+  out like the Mac's `excludesCurrentProcessAudio`; where it can't be activated, the default render
+  endpoint's loopback (48 kHz float through `AUTOCONVERTPCM`, else the mix format converted by the
+  host: channels folded down at −3 dB, linear resampling). `captureNanos` = `qpcPosition` × 100 (the
+  same QPC clock as video frames). A new default output device or an invalidated one reopens the
+  stream on a new timeline. Packets go on the control lane, never behind video or file chunks, and
+  a stalled socket drops them past 50 queued rather than delaying sound.
 
 ### 9.6 disconnect
 

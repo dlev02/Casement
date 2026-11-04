@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vantage.Host.Windows.Audio;
 using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Clipboard;
 using Vantage.Host.Windows.Desktop;
@@ -7,6 +8,7 @@ using Vantage.Host.Windows.Files;
 using Vantage.Host.Windows.Input;
 using Vantage.Host.Windows.Storage;
 using Vantage.Host.Windows.Tailscale;
+using Vantage.Protocol.Audio;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Host;
 using Vantage.Protocol.Input;
@@ -76,12 +78,18 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             clipboard = new Win32Clipboard(Window, logging);
         }
 
+        // Synthetic runs play the chime the synthetic hosts use, never the PC's real sound.
+        Audio = options.Synthetic ? new SyntheticAudioSource()
+              : options.Audio == AudioLoopback.Off ? null
+              : new WasapiAudioSource(logging, options.Audio);
+
         Environment = new HostEnvironment
         {
             HostName = HostName(),
             Platform = options.Platform,
             Screen = Screen,
             Cursor = new Cursor.WindowsCursorSource(logging),
+            Audio = Audio,
             Encoders = encoders,
             CreateInputSink = () => new WindowsInputTranslator(injector, inputLog),
             Clipboard = clipboard,
@@ -122,6 +130,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
     /// <param name="debugBuild">Whether this is a debug build (loopback peers and the debug flags).</param>
     public static WindowsHostRuntime Create(HostCommandLine options, ILoggerFactory logging, bool debugBuild) =>
         new(options, logging, debugBuild);
+
+    /// <summary>The PC's sound (WASAPI loopback; a chime when synthetic); null with <c>--audio off</c>.</summary>
+    public IAudioSource? Audio { get; }
 
     /// <summary>The flags this runtime was built from.</summary>
     public HostCommandLine Options { get; }
@@ -192,6 +203,8 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
                             AppVersion, Protocol.VantageProtocol.HostVersion, Environment.HostName, Environment.Platform, ListenerOptions.Port,
                             Paths.Root, Options.Synthetic ? " (synthetic)" : "");
         if (!Environment.Screen.IsCaptureSupported) _log.LogWarning("screen capture isn't supported here: {Why}", Environment.Screen.CaptureUnsupportedMessage);
+        // Probe sound now (it logs the result), so the first connection's handshake doesn't wait for it.
+        if (Audio is { } audio) _ = Task.Run(() => audio.UnavailableReason, cancellationToken);
         await Listener.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 

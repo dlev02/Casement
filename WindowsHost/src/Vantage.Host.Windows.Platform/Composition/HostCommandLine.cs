@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vantage.Host.Windows.Audio;
 using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Encode;
 using Vantage.Protocol;
@@ -55,6 +56,13 @@ public sealed record HostCommandLine
     /// </summary>
     public DirtyRegionSource DirtyRegions { get; init; } = DirtyRegionSource.Native;
 
+    /// <summary>
+    /// <c>--audio auto|process|endpoint|off</c>: how the PC's sound is captured. Auto (the default)
+    /// is process loopback without the host's own sounds, falling back to the output device's
+    /// loopback; the other two force one, to test them; off never offers sound.
+    /// </summary>
+    public AudioLoopback Audio { get; init; } = AudioLoopback.Auto;
+
     /// <summary><c>--send-file-on-connect PATH</c> (debug).</summary>
     public string? SendFileOnConnect { get; init; }
 
@@ -82,6 +90,9 @@ public sealed record HostCommandLine
           --dirty-regions native|compare|none
                                       what tells the encoder the screen changed (default native: Windows 11 24H2's own,
                                       else the GPU compares each frame with the last)
+          --audio auto|process|endpoint|off
+                                      how the PC's sound is captured (default auto: every app but this host,
+                                      else everything the output device plays)
           --send-file-on-connect PATH send a file to each client that attaches (debug builds)
           --capture-fails-for SECONDS make capture fail at first (debug builds)
           --background                start in the tray (used at sign-in)
@@ -179,6 +190,19 @@ public sealed record HostCommandLine
                     result = result with
                     {
                         DirtyRegions = FrameChange.Parse(Value()) ?? throw new ArgumentException("--dirty-regions is native, compare or none."),
+                    };
+                    break;
+                case "--audio":
+                    result = result with
+                    {
+                        Audio = Value().ToLowerInvariant() switch
+                        {
+                            "auto" => AudioLoopback.Auto,
+                            "process" => AudioLoopback.Process,
+                            "endpoint" or "device" => AudioLoopback.Endpoint,
+                            "off" or "none" => AudioLoopback.Off,
+                            _ => throw new ArgumentException("--audio is auto, process, endpoint or off."),
+                        },
                     };
                     break;
                 case "--send-file-on-connect":

@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using Vantage.Protocol.Adaptive;
+using Vantage.Protocol.Audio;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Files;
 using Vantage.Protocol.Input;
@@ -29,7 +30,8 @@ public enum SessionState
 /// probe, files-only), then either the files-only loop or the screen session: display choice,
 /// capture → encode → <c>videoConfig</c>/<c>videoFrame</c> with idle suppression, forced IDRs and
 /// P-frame dropping under backpressure, the capture watchdog and <c>HostStatus</c>, input (with the
-/// display-sleep rule), clipboard, host commands, adaptive bitrate, and pings. Teardown revokes its
+/// display-sleep rule), clipboard, host commands, adaptive bitrate, the PC's sound for clients that
+/// ask (<c>audioRequest</c> → <c>audioConfig</c>/<c>audioPacket</c>), and pings. Teardown revokes its
 /// attach token and releases all input; an attached file channel carries on.
 /// </summary>
 /// <remarks>
@@ -100,6 +102,12 @@ public sealed class HostSessionCore
     private IDisposable? _statusWatch;
     private IDisposable? _keepAwake;
     private HostStatus? _lastStatus;
+
+    // Audio (queue only, except the encoder, which sends packets from its own loop).
+    private bool _clientTakesAudio;
+    private IAudioCapture? _audioCapture;
+    private AudioStreamEncoder? _audioEncoder;
+    private long _audioDropped;
 
     internal HostSessionCore(HostListener listener, FramedConnection connection)
     {
@@ -308,6 +316,7 @@ public sealed class HostSessionCore
         if (_env.Status.Current.IsDisplayAsleep) await WakeDisplayForStreamingAsync().ConfigureAwait(false);
         var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
         _clientTakesFiles = hello.Features?.FileTransfer == true;
+        _clientTakesAudio = hello.Features?.MacAudio == true;
         var sessionToken = _clientTakesFiles ? _listener.AttachTokens.Issue(this, Peer) : null;
         State = SessionState.Streaming;
         ConnectedAt = _env.Time.GetUtcNow();
@@ -326,6 +335,8 @@ public sealed class HostSessionCore
                 FilesOnlySessions = _clientTakesFiles ? true : null,
                 Platform = _env.Platform,
                 CursorShapes = _env.Cursor is not null ? true : null,
+                // Like the Mac, offered to every client; only one that said macAudio is answered.
+                Audio = _env.Audio is { UnavailableReason: null } ? true : null,
             },
         }).ConfigureAwait(false);
         _log.LogInformation("client authenticated: {Client}", hello.ClientName);
@@ -444,8 +455,13 @@ public sealed class HostSessionCore
             case HostCommandMessage command:
                 await HandleCommandAsync(command.Command).ConfigureAwait(false);
                 break;
+            case AudioRequest request:
+                if (!_clientTakesAudio) break; // never send audio kinds to a client that didn't ask for them
+                if (request.Enabled) await StartAudioAsync().ConfigureAwait(false);
+                else await StopAudioAsync().ConfigureAwait(false);
+                break;
             default:
-                break; // audioRequest, dictation, modifierState, …: never advertised, ignored
+                break; // dictation, modifierState, …: never advertised, ignored
         }
     }
 
@@ -1119,6 +1135,73 @@ public sealed class HostSessionCore
         return engine;
     }
 
+    // MARK: Audio
+
+    /// <summary>
+    /// Starts the PC's sound (Mac <c>HostSession.startAudio</c>): <c>audioConfig</c> first, then
+    /// capture feeding the encoder, whose packets go straight onto the control lane from its own
+    /// loop (never through this queue, so input and video never wait on sound, nor sound on them).
+    /// Any failure answers <c>audioConfig.unavailable</c> instead.
+    /// </summary>
+    private async Task StartAudioAsync()
+    {
+        if (_audioCapture is not null || State != SessionState.Streaming) return;
+        if (_env.Audio is not { } source)
+        {
+            _connection.Post(AudioConfig.UnavailableBecause($"This {HostNoun} can't capture its sound."));
+            return;
+        }
+        var began = _env.Time.GetTimestamp();
+        var connection = _connection;
+        var encoder = new AudioStreamEncoder(packet =>
+        {
+            if (!connection.PostAudio(packet)) Interlocked.Increment(ref _audioDropped);
+        }, _env.Logging.CreateLogger("Vantage.Audio"));
+        IAudioCapture capture;
+        try
+        {
+            // Queued before capture starts: the control lane is in order, so it precedes every packet.
+            _connection.Post(encoder.Config);
+            capture = await source.StartAsync(block => encoder.Enqueue(block),
+                                              reason => _queue.Post(() => AudioStoppedAsync(encoder, reason)),
+                                              _ended.Token).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            await encoder.DisposeAsync().ConfigureAwait(false);
+            if (error is OperationCanceledException) return; // the session ended meanwhile
+            if (error is not AudioUnavailableException) throw;
+            _log.LogError("audio didn't start: {Reason}", error.Message);
+            _connection.Post(AudioConfig.UnavailableBecause(error.Message));
+            return;
+        }
+        _audioCapture = capture;
+        _audioEncoder = encoder;
+        _audioDropped = 0;
+        _log.LogInformation("audio started ({Source}) in {Ms:0} ms", capture.Description, _env.Time.GetElapsedTime(began).TotalMilliseconds);
+    }
+
+    private async Task StopAudioAsync()
+    {
+        if (_audioCapture is not { } capture || _audioEncoder is not { } encoder) return;
+        _audioCapture = null;
+        _audioEncoder = null;
+        await capture.DisposeAsync().ConfigureAwait(false);
+        await encoder.DisposeAsync().ConfigureAwait(false);
+        var dropped = Interlocked.Read(ref _audioDropped);
+        _log.LogInformation("audio stopped after {Packets} packets{Dropped}", encoder.PacketsSent,
+                            dropped > 0 ? $" ({dropped} dropped behind a stalled connection)" : "");
+    }
+
+    /// <summary>Capture stopped on its own and couldn't restart: tell the client why.</summary>
+    private async Task AudioStoppedAsync(AudioStreamEncoder encoder, string reason)
+    {
+        if (!ReferenceEquals(encoder, _audioEncoder)) return;
+        _log.LogError("audio stopped: {Reason}", reason);
+        await StopAudioAsync().ConfigureAwait(false);
+        if (State == SessionState.Streaming) _connection.Post(AudioConfig.UnavailableBecause(reason));
+    }
+
     // MARK: Teardown
 
     private async Task TeardownAsync()
@@ -1133,6 +1216,7 @@ public sealed class HostSessionCore
             _recovery = null;
             if (wasStreaming)
             {
+                await StopAudioAsync().ConfigureAwait(false);
                 await StopCaptureAsync().ConfigureAwait(false);
                 if (_input is not null)
                 {

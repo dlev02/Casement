@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="NSec.Cryptography" />
+    <PackageReference Include="Concentus" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
