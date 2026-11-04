@@ -1100,6 +1100,27 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   level 5.1 (NVIDIA ignores the ICodecAPI profile and B-frame keys, as for H.264; the media type
   sets them). Tests: `HevcVideoTests`, `HevcSessionTests`, `NalUnitsTests`, `EncoderNameTests`. An
   iPad decoding the PC's HEVC still needs a device check.
+- **Dirty regions before 24H2** (the Mac's SCK dirty rects): WGC reports dirty rectangles only
+  from Windows 11 24H2 (build 26100, `DirtyRegionMode.ReportOnly`); older Windows used to say 1.0
+  for every frame, so `AdaptiveController` never chose text mode and idle frames were never skipped.
+  There `WgcCaptureStream` runs `FrameComparer` instead: a compute shader (`Gpu/FrameCompare.hlsl`,
+  embedded, compiled once at runtime with Vortice.D3DCompiler, `cs_5_0`) compares each delivered
+  frame with the last in 32 × 32 blocks, writes the changed pixels into its own R32_UINT copy of
+  the previous frame (no extra full-frame copy) and one byte per block (8 KB at 4K) to a ring of 8
+  staging textures. The capture thread only queues it and flushes; `CapturedTexture.DirtyRatio`
+  reads the map when the core first asks (`DO_NOT_WAIT` polls for 4 ms, then waits; 1 if the slot
+  was reused). Pure rules in `FrameChange`: no changed block = exactly 0 (the core skips it), else
+  the changed share but at least 0.0005 (a caret blink at 4K–8K stays above `IdleDirtyRatio`);
+  alpha is ignored; the first frame is 1. Every sequence on the shared context holds
+  `GpuDevice.LockContext()`. `--dirty-regions native|compare|none` (default native, which falls
+  back to compare; `run-dev.ps1 -DirtyRegions`); the log says `dirty regions compare`, then
+  `dirty compare on …` every 10 s, and the session logs each `video mode text|motion` change; the
+  Display page shows the source. Checked on the RTX 5070 Ti at 3840 × 2160 with compare forced: a
+  window repainting the same pixels at 10 Hz sent no frames (76 identical frames skipped; `none`
+  sent all of them), a 10 Hz counter went to text mode at ~18 KB/s with ratios 0.0005–0.003,
+  readback 0.2 ms mean; WGC here sends nothing at all for a truly still screen. Tests:
+  `FrameChangeTests`, `FrameComparerGpuTests` (skipped without a D3D11 device; prints the 4K cost,
+  ~0.65 ms per frame with a synchronous readback). A real 22H2/23H2 or Windows 10 PC is unchecked.
 
 ```
 cd WindowsHost && dotnet test --solution Vantage.Windows.slnx     # 150+ tests, incl. listener end to end
