@@ -18,6 +18,7 @@
     <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
     <PackageReference Include="Vortice.Direct3D11" />
     <PackageReference Include="Vortice.DXGI" />
+    <PackageReference Include="Vortice.D3DCompiler" />
     <PackageReference Include="Vortice.MediaFoundation" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
@@ -26,6 +27,8 @@
   <ItemGroup>
     <!-- Tray glyphs drawn by scripts/make-icons.py. -->
     <EmbeddedResource Include="Tray\Icons\*.ico" LogicalName="Vantage.Host.Windows.Tray.Icons.%(Filename)%(Extension)" />
+    <!-- The frame-compare compute shader, compiled at runtime (Gpu/FrameComparer.cs). -->
+    <EmbeddedResource Include="Gpu\FrameCompare.hlsl" LogicalName="Vantage.Host.Windows.Gpu.FrameCompare.hlsl" />
   </ItemGroup>
 
   <ItemGroup>

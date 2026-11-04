@@ -40,6 +40,10 @@ public interface IInputSink : IDisposable
     /// A scroll. Positive <see cref="ScrollEvent.DeltaY"/> means content moves down (a positive
     /// Windows wheel delta). Discrete: <c>round(deltaY × 120)</c>. Continuous: <c>deltaY × 120 / 48</c>
     /// per point, fractional remainder carried. Horizontal uses <c>−deltaX</c> with the same scale.
+    /// The session wraps the sink in <see cref="Input.MomentumInputSink"/>, so the glide after an iPad
+    /// flick arrives here too, as continuous scrolls with phase none and a momentum phase; they
+    /// convert the same way, so a glide is a stream of small wheel events with the remainder carried
+    /// on from the gesture.
     /// </summary>
     void Scroll(ScrollEvent scrollEvent);
 
@@ -54,6 +58,9 @@ public interface IInputSink : IDisposable
     /// <summary>
     /// Types Unicode text (<c>textInput</c>): each UTF-16 unit down and up (surrogates in order),
     /// except <c>\n</c> or <c>\r\n</c> (a Return press) and <c>\t</c> (a Tab press).
+    /// Only text of up to <see cref="ClipboardPaster.TypedTextLimit"/> units gets here, or longer text
+    /// while another app holds the clipboard: <see cref="ClipboardPaster"/> puts longer text on the
+    /// clipboard and sends a Ctrl+V chord through <see cref="Key"/>.
     /// </summary>
     void Text(string text);
 

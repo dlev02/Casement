@@ -2,8 +2,9 @@
 
   <!-- Tests for the pure parts of the Windows platform library (coordinates, dirty regions, DPI
        maths, clipboard text/DIB/PNG, tray menu, Tailscale JSON, NAL units, command line, receive
-       folder). They run on macOS too: build with -p:EnableWindowsTargeting=true there. Nothing here
-       calls a Windows API. -->
+       folder, frame-compare bookkeeping). They run on macOS too: build with
+       -p:EnableWindowsTargeting=true there. Only FrameComparerGpuTests calls a Windows API (Direct3D 11);
+       it skips itself where no device can be made. -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>

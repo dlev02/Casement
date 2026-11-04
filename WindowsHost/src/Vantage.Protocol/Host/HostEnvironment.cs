@@ -24,6 +24,20 @@ public sealed class HostEnvironment
     /// </summary>
     public ICursorSource? Cursor { get; init; }
 
+    /// <summary>
+    /// The PC's sound for clients that ask (<c>Hello.features.macAudio</c>, then
+    /// <c>audioRequest</c>); null when the platform has none (no <c>audio</c> capability is
+    /// advertised).
+    /// </summary>
+    public IAudioSource? Audio { get; init; }
+
+    /// <summary>
+    /// Switches the shared display's mode to fit a device's screen (<c>fitViewport</c> with
+    /// <c>useVirtualDisplay</c>); null when the platform can't (the synthetic host), and then
+    /// <c>canManageVirtualDisplay</c> is false.
+    /// </summary>
+    public IDisplayFitter? DisplayFitter { get; init; }
+
     /// <summary>Encoders for captured frames.</summary>
     public required IVideoEncoderFactory Encoders { get; init; }
 
@@ -61,7 +75,7 @@ public sealed class HostEnvironment
     /// <summary>Clock for timeouts, expiry, and backoff (tests substitute a fake).</summary>
     public TimeProvider Time { get; init; } = TimeProvider.System;
 
-    /// <summary>Loggers. Categories: <c>Vantage.Listener</c>, <c>Vantage.Session</c>, <c>Vantage.Files</c>, <c>Vantage.Input</c>.</summary>
+    /// <summary>Loggers. Categories: <c>Vantage.Listener</c>, <c>Vantage.Session</c>, <c>Vantage.Files</c>, <c>Vantage.Input</c>, <c>Vantage.Audio</c>.</summary>
     public required ILoggerFactory Logging { get; init; }
 }
 
@@ -101,6 +115,9 @@ public sealed record HostListenerOptions
 
     /// <summary>A file channel whose session ended closes after this long with nothing moving.</summary>
     public TimeSpan DetachedFileChannelIdleLimit { get; init; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>How long text pasted for a long <c>textInput</c> stays on the clipboard (<see cref="ClipboardPaster.DefaultRestoreDelay"/>).</summary>
+    public TimeSpan PasteRestoreDelay { get; init; } = ClipboardPaster.DefaultRestoreDelay;
 
     /// <summary>How often detached file channels are checked for idleness.</summary>
     public TimeSpan DetachedFileChannelCheckInterval { get; init; } = TimeSpan.FromSeconds(15);

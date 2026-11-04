@@ -25,6 +25,9 @@ internal static unsafe class MediaFoundationRuntime
     /// <summary><c>MFSampleExtension_CleanPoint</c> (UINT32): the sample is a keyframe.</summary>
     public static readonly Guid MFSampleExtension_CleanPoint = new("9cdf01d8-a0f0-43ba-b077-eaa06cbd728a");
 
+    /// <summary><c>MFVideoFormat_HEVC</c> (FOURCC 'HEVC'), which Vortice doesn't define.</summary>
+    public static readonly Guid MFVideoFormat_HEVC = new("43564548-0000-0010-8000-00aa00389b71");
+
     /// <summary><c>CLSID_MSH264EncoderMFT</c>, Microsoft's software H.264 encoder.</summary>
     public static readonly Guid CLSID_MSH264EncoderMFT = new("6ca50344-051a-4ded-9779-a43305165e35");
 

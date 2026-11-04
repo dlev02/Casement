@@ -18,7 +18,9 @@ namespace Vantage.Host.Windows.Capture;
 /// One Windows.Graphics.Capture session on one monitor (spec §7.2; plan §1 "Capture"): a
 /// free-threaded frame pool of 3 buffers on the monitor's GPU, cursor in the frames (unless the client draws it), no yellow
 /// border when borderless access was granted, <c>MinUpdateInterval</c> (24H2+) plus a throttle,
-/// and <c>DirtyRegionMode.ReportOnly</c> (24H2+) for the dirty ratio. Each frame is copied into a
+/// and <c>DirtyRegionMode.ReportOnly</c> (24H2+) for the dirty ratio; where Windows has no dirty
+/// regions (or with <c>--dirty-regions compare</c>) a <see cref="FrameComparer"/> estimates it on
+/// the GPU. Each frame is copied into a
 /// pooled texture so WGC's buffer is returned at once. The item closing (display unplugged or
 /// asleep, exclusive fullscreen, mode change), a size change or a lost device end the stream
 /// through <c>onStopped</c>; the core restarts capture.
@@ -38,7 +40,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
     private readonly TexturePool _textures;
     private readonly SizeInt32 _size;
     private readonly bool _hasMinUpdateInterval;
-    private readonly bool _reportsDirtyRegions;
+    private readonly FrameComparer? _comparer;
     private long _minIntervalTicks;
     private long _lastDeliveredTicks = long.MinValue;
     private bool _stopped;
@@ -46,7 +48,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
     private int _framesSinceLog;
 
     private WgcCaptureStream(MonitorEntry monitor, GpuDevice gpu, GraphicsCaptureItem item, int fps, bool includesCursor, bool borderless,
-                             Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
+                             DirtyRegionSource dirtyRegions, Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
     {
         Gpu = gpu;
         Display = monitor.Info;
@@ -68,14 +70,28 @@ internal sealed class WgcCaptureStream : ICaptureStream
             try { _session.IsBorderRequired = false; }
             catch (Exception ex) { log.LogDebug("IsBorderRequired = false refused: {Message}", ex.Message); }
         }
+        DirtyRegions = FrameChange.Resolve(dirtyRegions, FrameChange.NativeAvailable);
+        if (DirtyRegions == DirtyRegionSource.Native && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100))
+        {
+            try { _session.DirtyRegionMode = GraphicsCaptureDirtyRegionMode.ReportOnly; }
+            catch (Exception ex)
+            {
+                log.LogDebug("DirtyRegionMode unavailable: {Message}", ex.Message);
+                DirtyRegions = DirtyRegionSource.Compare;
+            }
+        }
+        if (DirtyRegions == DirtyRegionSource.Compare)
+        {
+            try { _comparer = new FrameComparer(gpu, _size.Width, _size.Height, monitor.Info.Name, log); }
+            catch (Exception ex)
+            {
+                // Without it every frame counts as changed, as before: never worse than no estimate.
+                log.LogWarning("the frame compare couldn't start, so every frame counts as changed: {Message}", ex.Message);
+                DirtyRegions = DirtyRegionSource.None;
+            }
+        }
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100))
         {
-            try
-            {
-                _session.DirtyRegionMode = GraphicsCaptureDirtyRegionMode.ReportOnly;
-                _reportsDirtyRegions = true;
-            }
-            catch (Exception ex) { log.LogDebug("DirtyRegionMode unavailable: {Message}", ex.Message); }
             try
             {
                 _session.MinUpdateInterval = TimeSpan.FromTicks(_minIntervalTicks);
@@ -96,16 +112,19 @@ internal sealed class WgcCaptureStream : ICaptureStream
 
     public int FrameHeight { get; }
 
+    /// <summary>Where this capture's dirty ratio comes from, after any fallback.</summary>
+    public DirtyRegionSource DirtyRegions { get; }
+
     /// <summary>Creates the item for <paramref name="monitor"/> and starts capturing.</summary>
     public static WgcCaptureStream Start(MonitorEntry monitor, GpuDevice gpu, int fps, bool includesCursor, bool borderless,
-                                         Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
+                                         DirtyRegionSource dirtyRegions, Action<ICapturedFrame> onFrame, Action<string> onStopped, ILogger log)
     {
         var item = CreateItemForMonitor(monitor.Monitor);
-        var stream = new WgcCaptureStream(monitor, gpu, item, fps, includesCursor, borderless, onFrame, onStopped, log);
+        var stream = new WgcCaptureStream(monitor, gpu, item, fps, includesCursor, borderless, dirtyRegions, onFrame, onStopped, log);
         stream._session.StartCapture();
         log.LogInformation("capturing {Name} ({Gdi}) at {Width}×{Height} on {Adapter}; dirty regions {Dirty}, min interval {Min}",
                            monitor.Info.Name, monitor.GdiName, stream.FrameWidth, stream.FrameHeight, gpu.AdapterName,
-                           stream._reportsDirtyRegions, stream._hasMinUpdateInterval);
+                           FrameChange.Name(stream.DirtyRegions), stream._hasMinUpdateInterval);
         return stream;
     }
 
@@ -183,7 +202,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
                 if (_lastDeliveredTicks != long.MinValue && time - _lastDeliveredTicks < interval - s_throttleSlackTicks) return;
 
                 var dirty = 1.0;
-                if (_reportsDirtyRegions && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100)
+                if (DirtyRegions == DirtyRegionSource.Native && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100)
                     && frame.DirtyRegionMode == GraphicsCaptureDirtyRegionMode.ReportOnly)
                 {
                     var regions = frame.DirtyRegions;
@@ -197,10 +216,13 @@ internal sealed class WgcCaptureStream : ICaptureStream
                 }
 
                 var target = _textures.Rent();
+                FrameEstimate? estimate;
                 try
                 {
                     using var source = GpuDevice.TextureFromSurface(frame.Surface);
                     Gpu.Context.CopyResource(target, source);
+                    // Queued behind the copy on the same context; read when the core asks.
+                    estimate = _comparer?.Compare(target);
                 }
                 catch
                 {
@@ -208,7 +230,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
                     throw;
                 }
                 _lastDeliveredTicks = time;
-                var captured = new CapturedTexture(Gpu, target, _textures, (ulong)time * 100, dirty);
+                var captured = new CapturedTexture(Gpu, target, _textures, (ulong)time * 100, dirty, estimate);
                 if (++_framesSinceLog == 1) _log.LogDebug("first frame from {Name}", Display.Name);
                 _onFrame(captured);
             }
@@ -252,6 +274,7 @@ internal sealed class WgcCaptureStream : ICaptureStream
         {
             _log.LogDebug("capture teardown: {Message}", ex.Message);
         }
+        _comparer?.Dispose();
         _textures.Dispose();
         Gpu.Dispose();
     }

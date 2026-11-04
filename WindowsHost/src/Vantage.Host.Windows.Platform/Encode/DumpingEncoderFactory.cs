@@ -6,9 +6,10 @@ namespace Vantage.Host.Windows.Encode;
 
 /// <summary>
 /// <c>--dump-h264 PATH</c>: wraps an encoder factory and appends every encoded access unit, as
-/// Annex-B, to one file, so the raw stream can be copied to the Mac and checked with
+/// Annex-B, to one file (H.264 or HEVC, whichever the session streams; the name predates HEVC), so the raw stream can be copied to the Mac and checked with
 /// <c>ffprobe -show_frames</c> / <c>ffplay</c> / a VideoToolbox decode. Each capture restart appends
-/// (the stream restarts with an IDR carrying SPS/PPS, so the file stays decodable).
+/// (the stream restarts with an IDR carrying its parameter sets, so the file stays decodable; a
+/// restart that changes codec makes a file no single decoder reads, so force one with <c>--codec</c>).
 /// </summary>
 public sealed class DumpingEncoderFactory(IVideoEncoderFactory inner, string path, ILogger log) : IVideoEncoderFactory
 {
@@ -20,7 +21,7 @@ public sealed class DumpingEncoderFactory(IVideoEncoderFactory inner, string pat
     /// <inheritdoc />
     public IVideoEncoder Create(ICaptureStream source, VideoEncoderSettings settings)
     {
-        log.LogInformation("dumping the H.264 stream to {Path}", path);
+        log.LogInformation("dumping the {Codec} stream to {Path}", MfVideoEncoder.CodecName(settings.Codec), path);
         return new DumpingEncoder(inner.Create(source, settings), this);
     }
 

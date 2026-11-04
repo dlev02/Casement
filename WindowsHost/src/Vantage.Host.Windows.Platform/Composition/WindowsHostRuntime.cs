@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vantage.Host.Windows.Audio;
 using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Clipboard;
 using Vantage.Host.Windows.Desktop;
@@ -7,6 +8,7 @@ using Vantage.Host.Windows.Files;
 using Vantage.Host.Windows.Input;
 using Vantage.Host.Windows.Storage;
 using Vantage.Host.Windows.Tailscale;
+using Vantage.Protocol.Audio;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Host;
 using Vantage.Protocol.Input;
@@ -40,7 +42,8 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         Tailscale = new TailscaleCli(logging);
         Files = new WindowsFileStore(options.Synthetic && options.ReceiveFolder is null ? null : Settings,
                                      options.ReceiveFolder ?? (options.Synthetic ? SyntheticReceiveFolder() : null), logging);
-        Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl));
+        Screen = new WindowsScreenSource(logging, options.DirtyRegions);
+        Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl, Codec: options.Codec));
         IVideoEncoderFactory encoders = options.DumpH264 is { } dump
             ? new DumpingEncoderFactory(Encoders, dump, logging.CreateLogger("Vantage.Encode"))
             : Encoders;
@@ -75,12 +78,22 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             clipboard = new Win32Clipboard(Window, logging);
         }
 
+        // Synthetic runs play the chime the synthetic hosts use, never the PC's real sound.
+        Audio = options.Synthetic ? new SyntheticAudioSource()
+              : options.Audio == AudioLoopback.Off ? null
+              : new WasapiAudioSource(logging, options.Audio);
+
+        // Synthetic runs share the PC with a real host and never touch its display modes.
+        DisplayFitter = options.Synthetic ? null : Own(new DisplayFitter(() => Settings.Current.AllowDisplayFitting, logging));
+
         Environment = new HostEnvironment
         {
             HostName = HostName(),
             Platform = options.Platform,
-            Screen = new WindowsScreenSource(logging),
+            Screen = Screen,
+            DisplayFitter = DisplayFitter,
             Cursor = new Cursor.WindowsCursorSource(logging),
+            Audio = Audio,
             Encoders = encoders,
             CreateInputSink = () => new WindowsInputTranslator(injector, inputLog),
             Clipboard = clipboard,
@@ -103,6 +116,16 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             CaptureFailsFor = debugBuild ? options.CaptureFailsFor : null,
         };
         Listener = new HostListener(Environment, ListenerOptions);
+
+        // Synthetic runs share the PC with a real host and never hold its restarts.
+        if (!options.Synthetic)
+        {
+            var guard = Own(new RestartGuard(Window, Settings.Current.AskBeforeRestart, logging));
+            RestartGuard = guard;
+            Settings.Changed += settings => guard.Enabled = settings.AskBeforeRestart;
+            Listener.Changed += () => guard.Update(ConnectedDeviceNames());
+            guard.EndingSession += EndEverySessionAsync;
+        }
     }
 
     /// <summary>Builds everything; nothing listens until <see cref="StartAsync"/>.</summary>
@@ -111,6 +134,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
     /// <param name="debugBuild">Whether this is a debug build (loopback peers and the debug flags).</param>
     public static WindowsHostRuntime Create(HostCommandLine options, ILoggerFactory logging, bool debugBuild) =>
         new(options, logging, debugBuild);
+
+    /// <summary>The PC's sound (WASAPI loopback; a chime when synthetic); null with <c>--audio off</c>.</summary>
+    public IAudioSource? Audio { get; }
 
     /// <summary>The flags this runtime was built from.</summary>
     public HostCommandLine Options { get; }
@@ -130,11 +156,26 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
     /// <summary>The hidden Win32 window (tray, clipboard, notifications).</summary>
     public MessageWindow Window { get; }
 
+    /// <summary>Holds sign-outs and restarts while a device is connected (null for synthetic runs).</summary>
+    public RestartGuard? RestartGuard { get; }
+
+    /// <summary>
+    /// Raised (from the guard's wait on the message window's thread) once Windows is really
+    /// signing out or restarting and the listener has stopped; the app quits on it.
+    /// </summary>
+    public event Action<SessionEnding>? WindowsSessionEnded;
+
     /// <summary>The Tailscale CLI.</summary>
     public TailscaleCli Tailscale { get; }
 
     /// <summary>The receive folder and file marking; raises <see cref="WindowsFileStore.Saved"/>.</summary>
     public WindowsFileStore Files { get; }
+
+    /// <summary>The screen source (its <see cref="WindowsScreenSource.DirtyRegions"/> is shown on the Display page).</summary>
+    public WindowsScreenSource Screen { get; }
+
+    /// <summary>Switches the display's mode to fit a device's screen (null for synthetic runs).</summary>
+    public DisplayFitter? DisplayFitter { get; }
 
     /// <summary>The encoder factory (its <see cref="MediaFoundationEncoderFactory.CurrentEncoderName"/> is shown in About).</summary>
     public MediaFoundationEncoderFactory Encoders { get; }
@@ -169,6 +210,8 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
                             AppVersion, Protocol.VantageProtocol.HostVersion, Environment.HostName, Environment.Platform, ListenerOptions.Port,
                             Paths.Root, Options.Synthetic ? " (synthetic)" : "");
         if (!Environment.Screen.IsCaptureSupported) _log.LogWarning("screen capture isn't supported here: {Why}", Environment.Screen.CaptureUnsupportedMessage);
+        // Probe sound now (it logs the result), so the first connection's handshake doesn't wait for it.
+        if (Audio is { } audio) _ = Task.Run(() => audio.UnavailableReason, cancellationToken);
         await Listener.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -188,6 +231,39 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             try { _owned[i].Dispose(); }
             catch (Exception ex) { _log.LogDebug("dispose: {Message}", ex.Message); }
         }
+    }
+
+    /// <summary>One name per device with a screen session (what the restart screen names).</summary>
+    private List<string> ConnectedDeviceNames()
+    {
+        try
+        {
+            return [.. Listener.Sessions.Where(s => !s.IsFilesOnly).DistinctBy(s => s.Fingerprint).Select(s => s.ClientName)];
+        }
+        catch (Exception ex) when (ex is NotImplementedException or ObjectDisposedException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Windows is signing out or restarting: the listener stops, so every connection just drops
+    /// without a <c>disconnect</c> (as on the Mac) and the iPad keeps retrying until the host is
+    /// back after sign-in; files pause and resume then.
+    /// </summary>
+    private async Task EndEverySessionAsync(SessionEnding kind)
+    {
+        try
+        {
+            var count = Listener.Sessions.Count(s => !s.IsFilesOnly);
+            _log.LogInformation("{Kind}: stopping with {Count} screen session(s) connected", RestartGuardPolicy.LogName(kind), count);
+            await Listener.StopAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is NotImplementedException or ObjectDisposedException or InvalidOperationException or IOException)
+        {
+            _log.LogDebug("stopping for the session end: {Message}", ex.Message);
+        }
+        WindowsSessionEnded?.Invoke(kind);
     }
 
     private T Own<T>(T disposable) where T : IDisposable

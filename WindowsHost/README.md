@@ -31,9 +31,15 @@ in Settings › General. Closing its window doesn't quit it (the first time, a n
 so), and opening Casement Host from the Start menu brings the window back.
 
 - **Click** the icon for a panel with the PC's status, **Show Pairing Code**, your connected and
-  paired devices, Settings…, and Quit.
+  paired devices, the files moving right now (each with a progress bar and a Cancel button, and
+  Show in folder once it has arrived), Settings…, and Quit.
 - **Right-click** it for a menu with Show Pairing Code…, Settings…, and Quit, plus Send File and
-  Disconnect for each connected device.
+  Disconnect for each connected device, and a Files section: each file's progress, Cancel or
+  Show in folder, and Open Receive Folder.
+- While files move, the icon turns into a ring that fills as they go, with an arrow pointing down
+  (arriving) or up (going to your device); hover over it to read "Receiving Report.pdf, 45%". A
+  file cut off by a dropped connection says "Paused at 45% · resumes when Drew's iPad
+  reconnects" and carries on from there when that device is back within an hour.
 
 To pair a device, add the PC in Casement (**Add from Tailscale…**, or **Add Manually…** with the
 PC's Tailscale name or address), choose **Show Pairing Code** in the panel, and type the six
@@ -45,7 +51,11 @@ straight away.
 - **General**: the PC's tailnet address, Show Pairing Code, **Start Casement Host when I sign
   in** (on from the first launch; Windows' Settings › Apps › Startup lists it too), **Show the
   icon next to the clock** (the same choice as Settings › Personalization › Taskbar › Other
-  system tray icons), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
+  system tray icons), **Ask before restarting while a device is connected** (on by default:
+  while a device is connected, signing out, restarting or shutting down the PC, Windows Update's
+  restarts included, stops on Windows' restart screen, which names Casement Host and the device,
+  so someone at the PC can cancel or go ahead; a forced restart can't be stopped, and when the
+  PC does go, the device reconnects by itself once Casement Host is back after sign-in), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
   an app running as administrator, and Task Manager always runs that way, so turn this on to use
   those apps from Casement. Windows asks for permission once, and only at the PC itself; after
   that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
@@ -53,18 +63,26 @@ straight away.
   lands on such an app.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
-- **Display**: which display is shared (the main one) and the video encoder in use.
-- **Files**: where files from your devices are saved (Downloads unless you choose another folder),
+- **Display**: which display is shared (the main one), whether devices may change its resolution
+  to fit their screen (on unless you turn it off), and the video encoder in use.
+- **Files**: every file moving now, and for a minute after it's done (Show in folder for one that
+  arrived, **Cancel All** when several are moving),
+  where files from your devices are saved (Downloads unless you choose another folder),
   and whether to show a notification when they arrive. Received files are marked as downloaded
   from the internet, so Windows checks them like any download.
 - **About**: the version, Open Logs Folder (handy for bug reports), and Quit.
 
 Closing the window keeps Casement Host running in the notification area; use **Quit** to stop it.
 
-On a PC, Casement can't play the computer's sound, type a saved password, or make a virtual
-display yet, and dictation runs on your device. Start, Task View, Task Manager, and the other
-Windows shortcuts are in Casement's control strip, and ⌘ acts as Ctrl unless you turn that off
-for the PC in Casement.
+Casement Host can send the PC's sound: everything the PC plays except Casement Host's own sounds
+(or, where Windows won't leave those out, everything its output device plays), only after Casement
+asks for it, and nothing while the PC is quiet. The Casement app doesn't offer it for a PC yet. On
+a PC, Casement can't type a saved password, and dictation runs on your device. Windows can't add a
+virtual display the way a Mac can, so a device set to match its screen switches the PC's main display
+to the resolution closest to its own shape instead (a 13" iPad gets 2560 × 1600 on a 4K monitor);
+the PC's screen goes back to its own resolution when the device disconnects, and on its own if
+Casement Host stops. Start, Task View, Task Manager, and the other Windows shortcuts are in Casement's
+control strip, and ⌘ acts as Ctrl unless you turn that off for the PC in Casement.
 
 ### Update or remove
 
@@ -109,6 +127,10 @@ the Swift code disagree, the Swift code in `Packages/VantageCore` and `VantageHo
   an `IInputInjector` (`SendInput`) underneath.
 - `IClipboard`, `IHostStatusSource` (`HostConditions`), `IPowerControl`, `IPeerDirectory` (whois),
   `IFileStore` (receive folder, Hidden attribute, Zone.Identifier).
+- `IAudioSource` (optional): 10 ms blocks of 48 kHz stereo float with capture timestamps. The core
+  gates silence, encodes Opus (Concentus) and sends `audioConfig`/`audioPacket`. On Windows,
+  `Audio/WasapiAudioSource` (process loopback, else endpoint loopback); `--audio
+  auto|process|endpoint|off` picks one.
 - `IProtectedStorage` (DPAPI on Windows) under the library's `ProtectedIdentityStore` and
   `ProtectedTrustStore`; `IEd25519` (NSec by default).
 
@@ -133,7 +155,7 @@ tests and the simulator can talk to it:
 dotnet src/Vantage.SyntheticHost/bin/Debug/net10.0/Vantage.SyntheticHost.dll --port 47862 --pairing-code 246810 \
   [--pairing-code-rearm 3] [--display-asleep] [--capture-fails-for 6] [--send-file-on-connect PATH] \
   [--receive-folder PATH] [--input-log PATH.jsonl] [--clipboard-text TEXT] [--platform windows|macos] \
-  [--state-dir PATH] [--exit-after S] [--log-input-events]
+  [--state-dir PATH] [--exit-after S] [--log-input-events] [--no-audio]
 xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47862 -VantagePairingCode 246810
 ```
 
@@ -183,7 +205,7 @@ so the peer is loopback (a DEBUG host accepts it):
 
 | Project | Output | What |
 | --- | --- | --- |
-| `src/Vantage.Host.Windows.Platform/` | library | WGC capture on the monitor's GPU, D3D11 BGRA→NV12, Media Foundation H.264 (hardware MFT by adapter LUID, software fallback), `SendInput`, Win32 clipboard, WTS/secure-desktop/display-power status, keep-awake, DPAPI storage, receive folder + Mark of the Web, Tailscale CLI, tray icon, start at login, and `WindowsHostRuntime` (the composition root). |
+| `src/Vantage.Host.Windows.Platform/` | library | WGC capture on the monitor's GPU, D3D11 BGRA→NV12, Media Foundation HEVC and H.264 (hardware MFT by adapter LUID; H.264 falls back to software, HEVC to H.264), `SendInput`, Win32 clipboard, WTS/secure-desktop/display-power status, keep-awake, DPAPI storage, receive folder + Mark of the Web, Tailscale CLI, tray icon, start at login, and `WindowsHostRuntime` (the composition root). |
 | `src/Vantage.Host.Windows.Cli/` | `VantageHostCli.exe` | The real pipeline with console logging and no UI (bring-up, SSH). Keys: P new pairing code, Q quit. |
 | `src/Vantage.Host.Windows/` | `VantageHost.exe` | The WinUI 3 tray app (Windows App SDK 2.5, unpackaged, self-contained). Same flags as the CLI. |
 | `tools/InputProbe/` | `InputProbe.exe` | Logs mouse/keyboard events with `injected` and `vantage` marks (the Windows `click-target.swift`). |
@@ -195,10 +217,16 @@ runs the Windows tests too. Export `DOTNET_CLI_TELEMETRY_OPTOUT=1 TESTINGPLATFOR
 first; the scripts do. XAML compiles only on Windows: build the app from `Vantage.Windows.PC.slnx`.
 
 Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
-`--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream),
+`--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream,
+H.264 or HEVC: whichever the session streams),
 `--platform windows|macos`, `--synthetic` (separate `Vantage Host (Synthetic)` data folder, input
 logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
-auto|hardware|software`, `--rate-control cbr|lowdelayvbr`, `--send-file-on-connect PATH` and
+auto|hardware|software`, `--codec h264|hevc` (offer and stream only that codec, whatever the client
+prefers; default HEVC when the PC has an HEVC encoder, then H.264; `run-dev.ps1 -Codec`),
+`--rate-control cbr|lowdelayvbr`, `--dirty-regions native|compare|none` (what tells the core the
+screen changed: Windows 11 24H2's dirty regions by default, else a GPU compare of each frame with the
+last; `compare` forces the fallback on a newer PC and `none` turns it off; `run-dev.ps1
+-DirtyRegions`), `--send-file-on-connect PATH` and
 `--capture-fails-for S` (Debug), `--background`, `--verbose`. Logs default to
 `%LOCALAPPDATA%\Vantage Host\logs\host.log`; `run-dev.ps1` uses `dev.log`.
 
@@ -226,9 +254,14 @@ ffplay /tmp/vantage.h264
 ```
 
 What the log should show, on a PC with an NVIDIA card and an AMD iGPU: `GPU: NVIDIA GeForce …` (the
-monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions True, min interval True` (24H2+),
-`encoder: NVIDIA H.264 Encoder MFT (hardware, async) …`, then `…: first frame N bytes, NAL types
-[7,8,5]` (SPS, PPS, IDR; a 9 or 6 in front is an AUD/SEI the core drops). If the NVIDIA MFT
+monitor's adapter, not the iGPU), `capturing … on NVIDIA …; dirty regions native, min interval True` (24H2+; `compare` before 24H2 or
+with `-DirtyRegions compare`, which then logs `dirty compare on …: N frames in 10 s, M unchanged, …`
+every 10 s, and the session logs `video mode text …` once the screen goes still),
+`HEVC encoder found (hardware)`, `encoder: NVIDIA HEVC Encoder MFT (HEVC, hardware, async) …`, then
+`…: first frame N bytes, NAL types [35,32,33,34,19,19]` (AUD, VPS, SPS, PPS, two IDR_W_RADL slices).
+With `-Codec h264` (or a client that prefers H.264): `encoder: NVIDIA H.264 Encoder MFT (H.264,
+hardware, async) …` and `NAL types [9,7,8,5]` (AUD, SPS, PPS, IDR; the core drops the AUD and any SEI).
+Pass `-Codec` with `-DumpH264` so the file holds one codec (`ffprobe` reads either). If the NVIDIA MFT
 misbehaves, rerun with `-Encoder software` to separate encoder problems from pipeline ones.
 `ffprobe` should report High profile, `has_b_frames=0`, `color_primaries=bt709`,
 `color_transfer=iec61966-2-1` (or `bt709`) and `color_range=tv`.
