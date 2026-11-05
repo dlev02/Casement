@@ -69,7 +69,11 @@ final class HostController {
     var fingerprint: String { identity.fingerprint }
     /// A screen session is up (files-only sessions live in `fileSessions` and never count): the
     /// restart guard and "is this Mac being watched" (`FileArrivals.isViewedRemotely`) go by it.
-    var hasConnectedClients: Bool { !sessions.isEmpty }
+    var hasConnectedClients: Bool { !connectedDevices.isEmpty }
+    /// Sessions that said hello and haven't finished signing in. Each has `HostSession.handshakeLimit`
+    /// to do so; past this many at once, new ones are turned away rather than buffered.
+    private var pendingHandshakes: Set<ObjectIdentifier> = []
+    static let maxPendingHandshakes = 8
 
     init() {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
@@ -281,23 +285,35 @@ final class HostController {
     }
 
     private func startSession(hello: Hello, channel: MessageChannel, peer: String, peerHost: String) {
+        guard pendingHandshakes.count < Self.maxPendingHandshakes else {
+            log.error("refusing a session from \(peer, privacy: .public): \(self.pendingHandshakes.count) connections are still signing in")
+            Task { await channel.close() }
+            return
+        }
         let session = HostSession(channel: channel, identity: identity, trust: trust, peerDescription: peer, peerHost: peerHost,
                                   attachTokens: attachTokens,
                                   onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
                                   onStreaming: { [weak self] session, name, model, key in
                                       Task { @MainActor in
-                                          self?.connectedDevices.append(ConnectedDevice(session: session, name: name, model: model, fingerprint: key))
+                                          guard let self else { return }
+                                          self.connectedDevices.append(ConnectedDevice(session: session, name: name, model: model, fingerprint: key))
+                                          self.status = .connected(clientCount: self.connectedDevices.count)
                                       }
                                   },
+                                  onAuthenticated: { [weak self] session in
+                                      Task { @MainActor in self?.pendingHandshakes.remove(ObjectIdentifier(session)) }
+                                  },
                                   onEnded: { [weak self] ended in Task { @MainActor in self?.remove(ended) } })
+        pendingHandshakes.insert(ObjectIdentifier(session))
         // A files-only session isn't a connected screen: it stays out of the status and the
         // restart guard, and shows up only as its transfers.
         if hello.features?.filesOnly == true {
             fileSessions.append(session)
             log.info("files-only session created for \(peer, privacy: .public)")
         } else {
+            // Not connected yet: the status, the restart guard and "is this Mac being watched"
+            // only count a session once it has signed in and started streaming.
             sessions.append(session)
-            status = .connected(clientCount: sessions.count)
             log.info("session created for \(peer, privacy: .public)")
         }
         Task { await session.run(hello: hello) }
@@ -307,12 +323,13 @@ final class HostController {
         sessions.removeAll { $0 === session }
         fileSessions.removeAll { $0 === session }
         connectedDevices.removeAll { $0.session === session }
+        pendingHandshakes.remove(ObjectIdentifier(session))
         // Its file channel carries on until the iPad closes it.
         for index in fileChannels.indices where fileChannels[index].session === session {
             fileChannels[index].sessionEnded = true
             watchDetached(fileChannels[index].engine)
         }
-        status = sessions.isEmpty ? .listening : .connected(clientCount: sessions.count)
+        status = connectedDevices.isEmpty ? .listening : .connected(clientCount: connectedDevices.count)
     }
 
     // MARK: File transfer
@@ -544,7 +561,7 @@ final class HostController {
                 self.listener.stop()
                 try? self.listener.start()
             }
-        case .ready: if sessions.isEmpty { status = .listening }
+        case .ready: if connectedDevices.isEmpty { status = .listening }
         default: break
         }
     }

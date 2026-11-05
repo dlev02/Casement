@@ -374,8 +374,10 @@ one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and contin
    - `peerTailnetName` = whois result, only for ordinary sessions (not probes or files-only). The Mac
      runs `tailscale whois --json <peerIP>` with a 2 s timeout, caches per IP, and uses
      `UserProfile.LoginName`, else `DisplayName`. This is optional.
-4. Read `authenticate`. Anything else: close. (The Mac has no timeout at this step; Windows keeps
-   one 15 s limit for the whole handshake.)
+4. Read `authenticate`. Anything else: close. Both hosts keep one 15 s limit for the whole
+   handshake (`HostSession.handshakeLimit`), and the Mac turns away new sessions while 8 are still
+   signing in (`HostController.maxPendingHandshakes`). A session counts as connected (status, restart
+   guard) only once it has signed in and started streaming.
 5. **Verify the signature** before anything else. The signed transcript is:
    `transcript = UTF8("vantage-auth-v1") ‖ nonce(32) ‖ hostPublicKey(32) ‖ clientPublicKey(32)`
    That's 15 + 96 = **111 bytes**, a plain concatenation with no lengths. The signature is Ed25519
