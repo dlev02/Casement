@@ -2,119 +2,92 @@
 <Page
     x:Class="Vantage.Host.Windows.App.Pages.GeneralPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
-            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="General" />
+    <local:PageShell Title="General">
+        <StackPanel Spacing="4">
+            <InfoBar
+                x:Name="ProblemBar"
+                Title="Casement Host can't accept connections"
+                IsClosable="False"
+                Severity="Error" />
 
-            <Border Style="{StaticResource CardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <FontIcon x:Name="StatusIcon" FontSize="24" Glyph="&#xE7F4;" />
-                    <StackPanel Grid.Column="1" Spacing="2">
-                        <TextBlock x:Name="StatusText" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
-                        <TextBlock x:Name="ConnectedText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Grid>
-            </Border>
+            <tk:SettingsCard x:Name="StatusCard">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon x:Name="StatusIcon" Glyph="&#xEC61;" />
+                </tk:SettingsCard.HeaderIcon>
+                <Button
+                    x:Name="PairButton"
+                    Click="OnPair"
+                    Content="Pair a device"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Visibility="Collapsed" />
+            </tk:SettingsCard>
 
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Tailnet address" />
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Connection" />
+            <tk:SettingsCard x:Name="AddressCard" Header="Tailscale address">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE774;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.Description>
                     <TextBlock x:Name="AddressText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                    <TextBlock x:Name="AddressHint" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
+                </tk:SettingsCard.Description>
+                <Button
+                    x:Name="CopyAddressButton"
+                    MinWidth="72"
+                    AutomationProperties.Name="Copy this PC's Tailscale address"
+                    Click="OnCopyAddress"
+                    Content="Copy" />
+            </tk:SettingsCard>
 
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="12">
-                    <StackPanel Spacing="2">
-                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Pair an iPad" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Add this PC in Casement on your iPad, then type the code shown here. A code works once, for 10 minutes."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                    <Button
-                        x:Name="ShowCodeButton"
-                        Click="OnShowCode"
-                        Content="Show Pairing Code"
-                        Style="{StaticResource AccentButtonStyle}" />
-                    <StackPanel x:Name="CodePanel" Spacing="8" Visibility="Collapsed">
-                        <TextBlock
-                            x:Name="CodeText"
-                            AutomationProperties.Name="Pairing code"
-                            CharacterSpacing="300"
-                            FontSize="56"
-                            FontWeight="SemiBold"
-                            IsTextSelectionEnabled="True" />
-                        <TextBlock x:Name="CodeExpiry" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Click="OnCopyCode" Content="Copy" />
-                            <Button Click="OnNewCode" Content="New Code" />
-                        </StackPanel>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Startup and system tray" />
+            <tk:SettingsCard
+                x:Name="StartAtLoginCard"
+                Description="Keeps running in the system tray when you close this window."
+                Header="Start when I sign in">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7E8;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch
+                    x:Name="StartAtLoginSwitch"
+                    AutomationProperties.Name="Start when I sign in"
+                    Toggled="OnStartAtLoginToggled" />
+            </tk:SettingsCard>
+            <tk:SettingsCard x:Name="TrayIconCard" Header="Show the icon next to the clock">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE75B;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch
+                    x:Name="TrayIconSwitch"
+                    AutomationProperties.Name="Show the icon next to the clock"
+                    Toggled="OnTrayIconToggled" />
+            </tk:SettingsCard>
 
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <ToggleSwitch
-                        x:Name="StartAtLoginSwitch"
-                        Header="Start Casement Host when I sign in"
-                        Toggled="OnStartAtLoginToggled" />
-                    <TextBlock
-                        x:Name="StartAtLoginHint"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Casement Host keeps running in the system tray when you close this window. Find it there, or in the Start menu."
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <ToggleSwitch
-                        x:Name="RestartGuardSwitch"
-                        Header="Ask before restarting while a device is connected"
-                        Toggled="OnRestartGuardToggled" />
-                    <TextBlock
-                        x:Name="RestartGuardHint"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Windows stops on its restart screen and names Casement Host there, so someone at the PC can cancel or go ahead. A forced restart can't be stopped."
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <ToggleSwitch
-                        x:Name="TrayIconSwitch"
-                        Header="Show the icon next to the clock"
-                        Toggled="OnTrayIconToggled" />
-                    <TextBlock
-                        x:Name="TrayIconHint"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <ToggleSwitch
-                        x:Name="AdminSwitch"
-                        Header="Control apps running as administrator"
-                        Toggled="OnAdminToggled" />
-                    <TextBlock
-                        x:Name="AdminHint"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Task Manager and other administrator apps. Windows asks for permission once, on this PC."
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="While a device is connected" />
+            <tk:SettingsCard
+                Description="Windows stops on its restart screen so someone at the PC can cancel. A forced restart can't be stopped."
+                Header="Ask before restarting">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE777;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch
+                    x:Name="RestartGuardSwitch"
+                    AutomationProperties.Name="Ask before restarting while a device is connected"
+                    Toggled="OnRestartGuardToggled" />
+            </tk:SettingsCard>
+            <tk:SettingsCard
+                Description="Includes Task Manager. Windows asks for permission once, on this PC."
+                Header="Control apps running as administrator">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7EF;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch
+                    x:Name="AdminSwitch"
+                    AutomationProperties.Name="Control apps running as administrator"
+                    Toggled="OnAdminToggled" />
+            </tk:SettingsCard>
         </StackPanel>
-    </ScrollViewer>
+    </local:PageShell>
 </Page>

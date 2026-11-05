@@ -27,14 +27,18 @@
             </TitleBar.IconSource>
         </TitleBar>
 
+        <!-- Names beside icons from 900 wide, icons alone from 640, the pane over the page below that. -->
         <NavigationView
             x:Name="NavView"
             Grid.Row="1"
+            CompactModeThresholdWidth="640"
+            ExpandedModeThresholdWidth="900"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
-            PaneDisplayMode="Left"
-            OpenPaneLength="220"
+            IsTitleBarAutoPaddingEnabled="False"
+            OpenPaneLength="240"
+            PaneDisplayMode="Auto"
             SelectionChanged="OnSelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="General" Tag="general">

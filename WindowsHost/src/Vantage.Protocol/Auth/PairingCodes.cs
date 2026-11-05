@@ -81,6 +81,18 @@ public sealed class PairingCodes
         }
     }
 
+    /// <summary>Takes the showing code away (Done, or it ran out while showing); the next pairing needs a new one.</summary>
+    public void Withdraw()
+    {
+        bool cleared;
+        lock (_lock)
+        {
+            cleared = _active is not null;
+            ClearLocked();
+        }
+        if (cleared) Cleared?.Invoke();
+    }
+
     /// <summary>Checks a code a client sent. Expiry is checked here.</summary>
     public PairingCheck Consume(string code)
     {

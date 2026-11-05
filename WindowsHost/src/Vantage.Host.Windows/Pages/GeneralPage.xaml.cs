@@ -1,19 +1,15 @@
-using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Tray;
-using DataPackage = global::Windows.ApplicationModel.DataTransfer.DataPackage;
-using WindowsClipboard = global::Windows.ApplicationModel.DataTransfer.Clipboard;
 
 namespace Vantage.Host.Windows.App.Pages;
 
-/// <summary>Status, tailnet address, the pairing code, start at login, and asking before a restart.</summary>
+/// <summary>The host's status, its Tailscale address, start at login and the tray icon, and what happens while a device is connected.</summary>
 public sealed partial class GeneralPage : Page
 {
     private AppController? _controller;
-    private DispatcherTimer? _countdown;
     private bool _updating;
     private bool _adminBusy;
 
@@ -24,15 +20,11 @@ public sealed partial class GeneralPage : Page
         Loaded += (_, _) =>
         {
             if (_controller is not null) _controller.StateChanged += Update;
-            _countdown = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _countdown.Tick += (_, _) => UpdateCode();
-            _countdown.Start();
             Update();
         };
         Unloaded += (_, _) =>
         {
             if (_controller is not null) _controller.StateChanged -= Update;
-            _countdown?.Stop();
         };
     }
 
@@ -47,43 +39,34 @@ public sealed partial class GeneralPage : Page
     {
         if (_controller is null) return;
         _updating = true;
-        var runtime = _controller.Runtime;
-        var port = runtime?.ListenerOptions.Port ?? Protocol.VantageProtocol.DefaultPort;
-        StatusText.Text = _controller.Problem
-            ?? (_controller.IsListening ? $"Ready: iPads can connect to {runtime?.Environment.HostName} on port {port}" : "Starting…");
-        StatusIcon.Glyph = _controller.Problem is null ? "" : "";
 
+        // Visibility too: a closed InfoBar still takes the StackPanel's spacing.
+        ProblemBar.IsOpen = _controller.Problem is not null;
+        ProblemBar.Visibility = _controller.Problem is null ? Visibility.Collapsed : Visibility.Visible;
+        ProblemBar.Message = _controller.Problem ?? "";
+        StatusCard.Visibility = _controller.Problem is null ? Visibility.Visible : Visibility.Collapsed;
+
+        var hostName = _controller.Runtime?.Environment.HostName;
         var screens = _controller.Sessions.Where(s => !s.IsFilesOnly).ToList();
-        ConnectedText.Text = screens.Count switch
+        StatusCard.Header = screens.Count switch
         {
-            0 => "No iPad is connected.",
-            1 => $"{screens[0].ClientName} is connected.",
-            _ => $"{string.Join(", ", screens.Select(s => s.ClientName))} are connected.",
+            _ when !_controller.IsListening => "Starting…",
+            0 => "Ready to connect",
+            1 => $"Connected to {screens[0].ClientName}",
+            _ => $"{screens.Count} devices connected",
         };
+        StatusCard.Description = _controller.IsListening ? $"Your devices can connect to {hostName}." : "";
+        StatusIcon.Glyph = _controller.IsListening ? "" : ""; // CompletedSolid, Stopwatch
+        StatusIcon.Foreground = UiHelpers.StatusBrush(_controller.Status);
+        PairButton.Visibility = _controller.IsListening && _controller.PairedDevices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        var tailnet = _controller.Tailnet;
-        if (tailnet is { IsRunning: true, PrimaryAddress: { } address })
-        {
-            AddressText.Text = tailnet.DnsName is { } dns ? $"{address}  ·  {dns}" : address;
-            AddressHint.Text = "Use this address when you add the PC in Casement.";
-        }
-        else if (tailnet is not null)
-        {
-            AddressText.Text = $"Tailscale is {tailnet.BackendState.ToLowerInvariant()}";
-            AddressHint.Text = "Casement only accepts connections over Tailscale. Open Tailscale and sign in.";
-        }
-        else
-        {
-            AddressText.Text = "Tailscale wasn't found";
-            AddressHint.Text = "Install Tailscale on this PC and sign in with the same account as your iPad.";
-        }
+        UpdateAddress();
 
-        ShowCodeButton.IsEnabled = _controller.IsListening;
         StartAtLoginSwitch.IsOn = StartAtLogin.IsEnabled(AppController.ExecutablePath);
         var iconShown = TrayIconVisibility.Shown(AppController.ExecutablePath);
         TrayIconSwitch.IsEnabled = iconShown is not null;
         TrayIconSwitch.IsOn = iconShown == true;
-        TrayIconHint.Text = iconShown is null
+        TrayIconCard.Description = iconShown is null
             ? "Windows lists the icon once it has appeared. Until then, find it behind the ^ next to the clock."
             : "Otherwise Windows keeps it behind the ^ next to the clock.";
         var asks = _controller.AsksBeforeRestart;
@@ -94,45 +77,33 @@ public sealed partial class GeneralPage : Page
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
             AdminSwitch.IsEnabled = _controller.Runtime is not null;
         }
-        UpdateCode();
         _updating = false;
     }
 
-    private void UpdateCode()
+    private void UpdateAddress()
     {
-        var code = _controller?.PairingCode;
-        if (code is null)
+        var port = _controller?.Runtime?.ListenerOptions.Port ?? Protocol.VantageProtocol.DefaultPort;
+        var tailnet = _controller?.Tailnet;
+        if (tailnet is { IsRunning: true, PrimaryAddress: { } address })
         {
-            CodePanel.Visibility = Visibility.Collapsed;
-            ShowCodeButton.Visibility = Visibility.Visible;
-            return;
-        }
-        CodeText.Text = code.Length == 6 ? $"{code[..3]} {code[3..]}" : code;
-        if (_controller!.PairingCodeExpires is { } expires)
-        {
-            var left = expires - DateTimeOffset.Now;
-            CodeExpiry.Text = left > TimeSpan.Zero
-                ? string.Create(CultureInfo.CurrentCulture, $"Works once, for {Math.Ceiling(left.TotalMinutes):0} more minute{(left.TotalMinutes > 1 ? "s" : "")}.")
-                : "This code has expired.";
+            AddressText.Text = tailnet.DnsName is { } dns ? $"{dns} · {address} · port {port}" : $"{address} · port {port}";
+            CopyAddressButton.Visibility = Visibility.Visible;
         }
         else
         {
-            CodeExpiry.Text = "A test code that doesn't expire.";
+            AddressText.Text = tailnet is not null
+                ? $"Tailscale is {tailnet.BackendState.ToLowerInvariant()}. Casement only connects over Tailscale, so open it and sign in."
+                : "Tailscale wasn't found. Install it on this PC and sign in with the same account as your devices.";
+            CopyAddressButton.Visibility = Visibility.Collapsed;
         }
-        CodePanel.Visibility = Visibility.Visible;
-        ShowCodeButton.Visibility = Visibility.Collapsed;
     }
 
-    private void OnShowCode(object sender, RoutedEventArgs e) => _controller?.ShowPairingCode();
+    private void OnPair(object sender, RoutedEventArgs e) => _controller?.ShowPairingCode();
 
-    private void OnNewCode(object sender, RoutedEventArgs e) => _controller?.ShowPairingCode();
-
-    private void OnCopyCode(object sender, RoutedEventArgs e)
+    private void OnCopyAddress(object sender, RoutedEventArgs e)
     {
-        if (_controller?.PairingCode is not { } code) return;
-        var package = new DataPackage();
-        package.SetText(code);
-        WindowsClipboard.SetContent(package);
+        if (_controller?.Tailnet is { } tailnet && (tailnet.DnsName ?? tailnet.PrimaryAddress) is { } address)
+            UiHelpers.Copy(address, CopyAddressButton);
     }
 
     private void OnStartAtLoginToggled(object sender, RoutedEventArgs e)
@@ -148,7 +119,7 @@ public sealed partial class GeneralPage : Page
             _updating = true;
             StartAtLoginSwitch.IsOn = !StartAtLoginSwitch.IsOn;
             _updating = false;
-            StartAtLoginHint.Text = $"Windows wouldn't change the startup entry: {ex.Message}";
+            StartAtLoginCard.Description = $"Windows wouldn't change the startup entry: {ex.Message}";
         }
     }
 
@@ -159,7 +130,7 @@ public sealed partial class GeneralPage : Page
         _updating = true;
         TrayIconSwitch.IsOn = !TrayIconSwitch.IsOn;
         _updating = false;
-        TrayIconHint.Text = "Windows wouldn't change it here. Drag the icon onto the taskbar, or choose it under Settings › Personalization › Taskbar › Other system tray icons.";
+        TrayIconCard.Description = "Windows wouldn't change it here. Drag the icon onto the taskbar, or choose it under Settings › Personalization › Taskbar › Other system tray icons.";
     }
 
     private void OnRestartGuardToggled(object sender, RoutedEventArgs e)

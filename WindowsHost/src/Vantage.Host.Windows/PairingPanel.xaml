@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Vantage.Host.Windows.App.PairingPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="12">
+        <StackPanel Spacing="2">
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Enter this code in Casement" />
+            <TextBlock
+                x:Name="CodeText"
+                CharacterSpacing="120"
+                FontFamily="Segoe UI Variable Display"
+                FontSize="40"
+                FontWeight="SemiBold"
+                IsTextSelectionEnabled="True" />
+            <TextBlock
+                x:Name="ExpiryText"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="CopyButton" MinWidth="88" Click="OnCopy" Content="Copy code" />
+            <Button Click="OnNewCode" Content="New code" />
+            <Button Click="OnDone" Content="Done" />
+        </StackPanel>
+
+        <!-- A device without a Tailscale key can't list the tailnet, so it adds the PC by name. -->
+        <StackPanel x:Name="AddressPanel" Spacing="2">
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Device can't find this PC? Add it by this name:"
+                TextWrapping="Wrap" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="AddressText"
+                    VerticalAlignment="Center"
+                    IsTextSelectionEnabled="True"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Name="CopyAddressButton"
+                    Grid.Column="1"
+                    Margin="0,0,-11,0"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Copy this PC's name"
+                    Click="OnCopyAddress"
+                    Content="Copy"
+                    Style="{StaticResource PanelButtonStyle}" />
+            </Grid>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

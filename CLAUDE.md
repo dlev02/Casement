@@ -872,7 +872,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
   also let Drew ship their work through app stores, which is what keeps the App Store build
   possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
-  CC BY 4.0, NSec/Vortice MIT, Concentus BSD-3-Clause); check any new one.
+  CC BY 4.0, NSec/Vortice/Windows Community Toolkit MIT, Concentus BSD-3-Clause); check any new one.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
@@ -1056,6 +1056,30 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   every 250 ms. Tests: `HostTransferListTests`, `TrayGlyphTests`, `TrayMenuModelTests`,
   `HostListenerTests.ACutOffSendIsPausedNotFailed…`, `CancellingAPausedSendForgetsIt`.
 - The Windows platform, CLI and WinUI app (`src/Vantage.Host.Windows*`) are built on the PC.
+- **Host UI on Windows** (`src/Vantage.Host.Windows`): one design language, Windows 11 Settings' and
+  Quick Settings', never a Mac app ported over. **Settings window**: Mica across the whole window
+  (NavigationView's rounded content panel is made transparent in `App.xaml`: a card on a panel on a
+  window was the box in a box); `PageShell` is every page's frame (a title that stays put above a
+  scrolling column, left-aligned, ≤ 1000 wide); rows are `SettingsCard`/`SettingsExpander`
+  (CommunityToolkit, MIT), label and description on the left, control on the trailing edge, 4
+  between cards, 24 above a section heading, and `CardStyle` only for free-form content (the code,
+  transfer rows). The pane is adaptive (names from 900 wide, icons from 640, overlay below; minimum
+  window 560 × 480). Buttons use sentence case; the remote device is "device", never "iPad"; no
+  settings search (about ten settings on four pages don't need it). **Tray panel**: one surface,
+  flat on the acrylic, with an edge-to-edge footer band; no cards. Show pairing code is the accent
+  button only while nothing is paired, then a plain row beside Paired devices; `Fit` measures the
+  client area (the window's border isn't part of it) and caps at the screen, with the body
+  scrolling above the footer. **Pairing** lives on Devices, with the tray as the fast path;
+  `PairingPanel` is shared by both and carries the name to add the PC by; a code that runs out or
+  is dismissed with Done is withdrawn (`PairingCodes.Withdraw`), so a dead code never shows. Lists
+  are rebuilt only when what they show changes, since `StateChanged` fires several times a second
+  while files move and a new row would drop keyboard focus. **Looking at it**: a composed WinUI
+  window copies off this PC's screen as black (PrintWindow too, and the build before this one), so
+  DEBUG flags render the XAML in-process (no backdrop, frame or flyouts): `--synthetic --capture
+  out.png --open-settings general|devices|files|display|about` or `--open-panel`, plus
+  `--preview-state empty|one|many|transfers|pairing|problem`, `--window-size WxH`, `--pane-closed`,
+  `--expand`, `--theme light|dark` (`PreviewFixtures.cs`: made-up devices and a made-up tailnet).
+  `--synthetic` copies register under their own instance key, so they run beside the installed host.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
   `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the

@@ -16,7 +16,7 @@ public static class StartMenuShortcut
     public const string FileName = "Casement Host.lnk";
 
     /// <summary>The shortcut's tooltip.</summary>
-    public const string Description = "Casement Host: control this PC from your iPad";
+    public const string Description = "Casement Host: control this PC from your iPhone, iPad, Mac or Vision Pro";
 
     /// <summary>The user's Start menu Programs folder.</summary>
     public static string DefaultDirectory => Environment.GetFolderPath(Environment.SpecialFolder.Programs);
