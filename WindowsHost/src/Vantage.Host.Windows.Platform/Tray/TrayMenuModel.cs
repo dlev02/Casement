@@ -114,7 +114,7 @@ public static class TrayMenuModel
         if (state.Clients.Count > 0)
             items.Add(new TrayMenuItem("Connected: " + string.Join(", ", state.Clients.Select(c => c.Name)), default, false));
         items.Add(TrayMenuItem.Separator);
-        items.Add(new TrayMenuItem("Show Pairing Code…", new TrayCommand(TrayCommandKind.ShowPairingCode), state.IsListening));
+        items.Add(new TrayMenuItem("Show pairing code…", new TrayCommand(TrayCommandKind.ShowPairingCode), state.IsListening));
         foreach (var target in state.FileTargets)
             items.Add(new TrayMenuItem($"Send File to {target.Name}…", new TrayCommand(TrayCommandKind.SendFile, target.ChannelId), true));
         foreach (var client in state.Clients)
@@ -136,7 +136,7 @@ public static class TrayMenuModel
             var more = state.Transfers.Count - MaxTransfers;
             items.Add(new TrayMenuItem(more == 1 ? "1 more file…" : $"{more} more files…", new TrayCommand(TrayCommandKind.ShowTransfers), true));
         }
-        items.Add(new TrayMenuItem("Open Receive Folder", new TrayCommand(TrayCommandKind.OpenReceiveFolder), true));
+        items.Add(new TrayMenuItem("Open receive folder", new TrayCommand(TrayCommandKind.OpenReceiveFolder), true));
         items.Add(TrayMenuItem.Separator);
         items.Add(new TrayMenuItem("Settings…", new TrayCommand(TrayCommandKind.Settings), true));
         items.Add(new TrayMenuItem("Quit Casement Host", new TrayCommand(TrayCommandKind.Quit), true));

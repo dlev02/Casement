@@ -13,6 +13,11 @@ namespace Vantage.Host.Windows.App;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private const int DefaultWidth = 1000;
+    private const int DefaultHeight = 720;
+    private const int MinimumWidth = 560;
+    private const int MinimumHeight = 480;
+
     private readonly AppController _controller;
     private bool _closingForQuit;
 
@@ -29,9 +34,27 @@ public sealed partial class MainWindow : Window
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
 
         var scale = GetDpiForWindow(WindowNative.GetWindowHandle(this)) / 96.0;
-        AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(960 * scale), (int)(680 * scale)));
+        AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(DefaultWidth * scale), (int)(DefaultHeight * scale)));
+        // Below this a row's text and its control no longer fit side by side, even stacked.
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.PreferredMinimumWidth = (int)(MinimumWidth * scale);
+            presenter.PreferredMinimumHeight = (int)(MinimumHeight * scale);
+        }
         AppWindow.Closing += OnClosing;
     }
+
+#if DEBUG
+    /// <summary><c>--window-size</c>: a size in DIPs, to check narrow layouts.</summary>
+    public void ResizeForPreview(int width, int height)
+    {
+        var scale = GetDpiForWindow(WindowNative.GetWindowHandle(this)) / 96.0;
+        AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(width * scale), (int)(height * scale)));
+    }
+
+    /// <summary><c>--pane-closed</c>: the title bar's menu button, pressed.</summary>
+    public void ClosePaneForPreview() => NavView.IsPaneOpen = false;
+#endif
 
     /// <summary>Shows the window (bringing it to the front) on <paramref name="page"/>, or where it was.</summary>
     public void ShowAndActivate(string? page)
