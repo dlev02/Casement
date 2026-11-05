@@ -28,6 +28,19 @@ import VantageCore
 ///   pattern, and its pretend display takes the picture's size at 2x (README screenshots).
 /// - `--platform windows|macos`: the platform the host tells clients it runs (`HostPlatform`), so
 ///   the client can be tried against a pretend Windows PC. Any other value is sent as given.
+///
+/// Updates (none of this exists in a release build, and a Debug or synthetic host doesn't update
+/// at all without a feed). Sparkle reads its public key only from Info.plist, so a test key is a
+/// build setting (`CASEMENT_UPDATE_PUBLIC_KEY=…` on the xcodebuild line), not a flag.
+/// - `--update-feed URL`: run the updater for real against this appcast.
+/// - `--update-soon`: skip the waits (first check, five quiet minutes), not what they wait for.
+/// - `--update-check-now`: check at launch as if Check for Updates had been pressed.
+/// - `--update-restart-when-ready`: press Restart to Update as soon as it appears.
+/// - `--preview-update uptodate|checking|downloading|preparing|ready|installing|manual|failed|off|none`:
+///   show that state, with no updater running (screenshots). `none` is a copy that doesn't update.
+///
+/// A relaunch after an update loses the command line, so a DEBUG host also reads one argument per
+/// line from `casement-host-test-arguments` beside its bundle, if that file exists.
 nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
@@ -62,10 +75,24 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let platform: HostPlatform
     /// A still picture a synthetic host streams instead of its test pattern (DEBUG only).
     let syntheticImage: String?
+    /// The appcast to update from instead of the release feed (DEBUG only).
+    let updateFeed: String?
+    /// Skip the updater's waits (DEBUG only).
+    let updateSoon: Bool
+    /// Check for updates at launch as if asked (DEBUG only).
+    let updateCheckNow: Bool
+    /// Press Restart to Update when it appears (DEBUG only).
+    let updateRestartWhenReady: Bool
+    /// The Updates state to show, with no updater running (DEBUG only).
+    let previewUpdate: String?
 
     private init() {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
+        var args = ProcessInfo.processInfo.arguments
+        let survivesRelaunch = Bundle.main.bundleURL.deletingLastPathComponent().appending(path: "casement-host-test-arguments")
+        if let extra = try? String(contentsOf: survivesRelaunch, encoding: .utf8) {
+            args += extra.split(whereSeparator: \.isNewline).map(String.init)
+        }
         syntheticCapture = args.contains("--synthetic-capture")
         if let index = args.firstIndex(of: "--port"), index + 1 < args.count,
            let value = UInt16(args[index + 1]), value > 0 { port = value }
@@ -127,6 +154,19 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             syntheticImage = nil
         }
+        if let index = args.firstIndex(of: "--update-feed"), index + 1 < args.count {
+            updateFeed = args[index + 1]
+        } else {
+            updateFeed = nil
+        }
+        updateSoon = args.contains("--update-soon")
+        updateCheckNow = args.contains("--update-check-now")
+        updateRestartWhenReady = args.contains("--update-restart-when-ready")
+        if let index = args.firstIndex(of: "--preview-update"), index + 1 < args.count {
+            previewUpdate = args[index + 1]
+        } else {
+            previewUpdate = nil
+        }
         #else
         syntheticCapture = false
         fixedPairingCode = nil
@@ -145,6 +185,11 @@ nonisolated final class HostOptions: @unchecked Sendable {
         captureFailsForSeconds = nil
         platform = .macOS
         syntheticImage = nil
+        updateFeed = nil
+        updateSoon = false
+        updateCheckNow = false
+        updateRestartWhenReady = false
+        previewUpdate = nil
         #endif
     }
 }

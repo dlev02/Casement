@@ -564,7 +564,7 @@ struct HelpScreen: View {
             FAQEntry("Does my screen go through a server?",
                      "No. There is no Casement account and no relay. Video and input travel directly between your own devices inside Tailscale's encrypted tunnel. Casement has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Does Casement Host connect to anything else?",
-                     "On a PC, Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face."),
+                     "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face."),
             FAQEntry("Can someone else connect to my Mac?",
                      "Only a device on your tailnet that you've paired, using a key the Mac has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Casement store on this device?",

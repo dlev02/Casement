@@ -13,7 +13,7 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 - The Casement apps and Casement Host for Mac and Windows, built from this repository or downloaded from its releases or the App Store.
 - The wire protocol, pairing, and device authentication (`Packages/VantageCore`, `WindowsHost/src/Vantage.Protocol`).
 - How secrets are stored: device identity keys, Tailscale keys, and saved Mac passwords.
-- Casement Host's self-updater (`WindowsHost/src/Vantage.Host.Windows.Platform/Updates`).
+- Casement Host's self-updaters (`VantageHost/Updates` and how it uses Sparkle on a Mac, `WindowsHost/src/Vantage.Host.Windows.Platform/Updates` on Windows).
 
 ## How Casement is meant to be secure
 
@@ -23,7 +23,7 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 - **Pairing.** A new device needs the six-digit code shown on the host. A code expires after 10 minutes and is destroyed after 5 wrong guesses, and each wrong guess costs the peer a second.
 - **Revocation.** Removing a device in Casement Host revokes its key and closes its open connections.
 - **Secrets.** Tailscale keys and Mac passwords live in the Keychain, readable only while the device is unlocked, and are never logged.
-- **Updates.** Casement Host installs an update only if it's signed with the release key, whose public half is built into the app. The signature covers the version and the download's SHA-256, and only a newer version is accepted, so whoever controls the download can't substitute a file or roll a copy back to an older version. The private key isn't in this repository.
+- **Updates.** Casement Host installs an update only if it's signed with a release key, whose public half is built into the app. On Windows the signature covers the version and the download's SHA-256. On a Mac, Sparkle needs an EdDSA signature on both the update feed, which names the version, and the download, and checks the download's before unpacking it; the new app's Developer ID signature must be valid too. Only a newer version is accepted, so whoever controls the download can't substitute a file or roll a copy back to an older version. A feed that fails its signature is refused however long that goes on. Sparkle does let a download code-signed by the same Developer ID team stand in for the download's own EdDSA signature, as its way through a key change, but only a feed signed with the release key can offer one. The private keys aren't in this repository.
 
 ## Known limits
 
