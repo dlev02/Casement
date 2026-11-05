@@ -60,7 +60,8 @@ straight away.
   those apps from Casement. Windows asks for permission once, and only at the PC itself; after
   that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
   without asking again. While it's off, Casement Host shows a notification on the PC when a click
-  lands on such an app.
+  lands on such an app. Any program running as you could use that task to get administrator rights without
+  a prompt, so turn this on only if you need it.
 - **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
   it needs a new code to come back.
 - **Display**: which display is shared (the main one), whether devices may change its resolution
