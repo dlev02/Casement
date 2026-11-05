@@ -79,7 +79,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   host without a signature (older Casement Host) is refused with "Update Casement Host". Any change
   here updates the Swift and C# sides and the golden vectors (`helloProbe`, `challengeSigned`).
   First connection needs a 6-digit pairing code shown on the Mac; after
-  that the key is trusted. iOS names every device "iPad"/"iPhone", so a paired device still
+  that the key is trusted. The Mac keeps trusted keys in the Keychain (`TrustStore`, moved once from
+  `vantage.trustedClients` in defaults), since any program this user runs can rewrite defaults;
+  synthetic hosts keep theirs in a defaults suite of their own. iOS names every device "iPad"/"iPhone", so a paired device still
   called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
   Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
   and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
