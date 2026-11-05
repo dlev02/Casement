@@ -186,6 +186,25 @@ final class DeviceStore {
         save()
     }
 
+    /// Remembers the host's verified key from a device's first connection. A different key is
+    /// never written over a remembered one here: the session that saw it refused to sign in, and
+    /// only the person can decide to forget the old one (`forgetHostKey`).
+    func recordHostKey(_ key: Data, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].hostPublicKey == nil else { return }
+        devices[index].hostPublicKey = key
+        devices[index].updatedAt = Date()
+        save()
+    }
+
+    /// Forgets the host's key, so the next connection trusts whatever key it meets (after
+    /// Casement Host was reinstalled there, say).
+    func forgetHostKey(for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].hostPublicKey != nil else { return }
+        devices[index].hostPublicKey = nil
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     /// `recordPlatform` for every device an availability check heard from.
     func recordPlatforms(_ platforms: [UUID: HostPlatform]) {
         for (id, platform) in platforms { recordPlatform(platform, for: id) }

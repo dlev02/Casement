@@ -24,31 +24,47 @@ enum ScreenSharingPassword {
             && DeviceSecrets.password(for: device) != nil && DeviceSecrets.username(for: device) != nil
     }
 
-    /// Types the password at the Mac's login or lock screen without a Vantage session. Tries the
-    /// Tailscale address first, then the home-network address, which is the only one that answers
-    /// while the Mac sits at the login window (its Tailscale starts only after someone logs in).
-    static func logIn(to device: SavedDevice) async throws {
+    /// The Mac didn't answer at its Tailscale address, and it has a home-network address to try.
+    /// Thrown instead of trying it: the home address is a plain LAN address, so away from home
+    /// whatever answers there would receive the password. The person decides.
+    struct HomeAddressAvailable: Error {
+        let address: String
+    }
+
+    /// Types the password at the Mac's login or lock screen without a Vantage session, at its
+    /// Tailscale address. While the Mac sits at the login window its Tailscale isn't running yet,
+    /// so only the home-network address answers (through a Tailscale subnet router): when that
+    /// address is saved, an unreachable Mac throws `HomeAddressAvailable`, and the caller asks
+    /// before calling again with `atHomeAddress: true`.
+    static func logIn(to device: SavedDevice, atHomeAddress: Bool = false) async throws {
         guard let password = DeviceSecrets.password(for: device),
               let username = DeviceSecrets.username(for: device)
         else { throw ScreenSharingTyper.TypeError.authenticationFailed("missing credentials") }
-        let home = device.homeAddress?.trimmingCharacters(in: .whitespaces) ?? ""
-        let addresses = [device.host] + (home.isEmpty || home == device.host ? [] : [home])
-        var lastError: any Error = ScreenSharingTyper.TypeError.unreachable("no address")
-        for address in addresses {
-            do {
-                try await ScreenSharingTyper.type(password, pressReturn: true, host: address,
-                                                  username: username, password: password, timeout: .seconds(10))
-                return
-            } catch let error as ScreenSharingTyper.TypeError {
-                lastError = error
-                // Only an unreachable address is worth retrying elsewhere; a rejected password isn't.
-                switch error {
-                case .unreachable, .timedOut, .notScreenSharing: continue
-                default: throw error
-                }
+        let home = homeAddress(of: device)
+        if atHomeAddress {
+            guard let home else { throw ScreenSharingTyper.TypeError.unreachable("no home address") }
+            try await ScreenSharingTyper.type(password, pressReturn: true, host: home,
+                                              username: username, password: password, timeout: .seconds(10))
+            return
+        }
+        do {
+            try await ScreenSharingTyper.type(password, pressReturn: true, host: device.host,
+                                              username: username, password: password, timeout: .seconds(10))
+        } catch let error as ScreenSharingTyper.TypeError {
+            // Only an unreachable Mac is worth trying elsewhere; a rejected password isn't.
+            switch error {
+            case .unreachable, .timedOut, .notScreenSharing:
+                if let home { throw HomeAddressAvailable(address: home) }
+                throw error
+            default: throw error
             }
         }
-        throw lastError
+    }
+
+    /// The saved home-network address, when it's one worth trying besides the Tailscale address.
+    static func homeAddress(of device: SavedDevice) -> String? {
+        let home = device.homeAddress?.trimmingCharacters(in: .whitespaces) ?? ""
+        return home.isEmpty || home == device.host ? nil : home
     }
 
     static func message(for error: any Error) -> String {

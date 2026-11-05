@@ -125,8 +125,13 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
         }
     }
 
+    /// More parameter sets than any H.264 or HEVC stream needs; a host sending more is refused
+    /// rather than walked (`withContiguousParameterSets` nests one closure per set).
+    static let maxParameterSets = 16
+
     static func makeFormatDescription(_ config: VideoConfig) -> CMFormatDescription? {
-        guard !config.parameterSets.isEmpty else { return nil }
+        guard !config.parameterSets.isEmpty, config.parameterSets.count <= maxParameterSets,
+              config.parameterSets.allSatisfy({ !$0.isEmpty }) else { return nil }
         var format: CMFormatDescription?
         return config.parameterSets.withContiguousParameterSets { ptrs, szs in
             let status: OSStatus
@@ -172,7 +177,9 @@ nonisolated private extension Array where Element == Data {
         func recurse(_ index: Int, _ ptrs: [UnsafePointer<UInt8>], _ szs: [Int]) -> R {
             if index == count { return body(ptrs, szs) }
             return self[index].withUnsafeBytes { raw in
-                recurse(index + 1, ptrs + [raw.bindMemory(to: UInt8.self).baseAddress!], szs + [self[index].count])
+                // An empty Data has no base address; the caller filters those out.
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return body(ptrs, szs) }
+                return recurse(index + 1, ptrs + [base], szs + [self[index].count])
             }
         }
         return recurse(0, [], [])

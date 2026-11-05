@@ -42,6 +42,7 @@ struct MacRootView: View {
         .task {
             // Runs before the window root's onAppear hands the router its openWindow.
             MacWindowRouter.shared.attach(openWindow)
+            FileTransferCenter.shared.onHostKeyVerified = { id, key in DeviceStore.shared.recordHostKey(key, for: id) }
             if let host = ClientOptions.takeAutoConnectHost(), let device = store.devices.first(where: { $0.host == host }) {
                 selectionID = device.id.uuidString
                 MacWindowRouter.shared.connect(to: device)

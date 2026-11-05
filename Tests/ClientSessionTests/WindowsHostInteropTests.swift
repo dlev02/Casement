@@ -85,11 +85,17 @@ struct WindowsHostInteropTests {
     @Test func probesAndVersionMismatches() async throws {
         let identity = try await Self.pairedIdentity()
         let probe = try await Self.open()
+        let clientNonce = AuthTranscript.randomNonce()
         try await probe.send(.hello(Hello(clientName: "Interop", deviceModel: "test", appVersion: "1.0", clientPublicKey: identity.publicKeyData,
-                                          supportedCodecs: [], maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true)))
+                                          supportedCodecs: [], maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true,
+                                          clientNonce: clientNonce)))
         guard case .challenge(let challenge)? = try await probe.receive() else { Issue.record("no challenge"); return }
         #expect(challenge.hostPlatform == .windows)
-        try await probe.send(.authenticate(Authenticate(signature: try Self.sign(identity, challenge))))
+        // The PC proves it holds the key it names, over this connection's nonce.
+        #expect(throws: Never.self) {
+            try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData, expected: nil)
+        }
+        try await probe.send(.authenticate(Authenticate(signature: try Self.sign(identity, challenge, clientNonce: clientNonce, purpose: .probe))))
         guard case .authResult(let result)? = try await probe.receive() else { Issue.record("no result"); return }
         #expect(result.status == .ok)
         #expect(result.readiness?.screenRecordingGranted == true && result.readiness?.accessibilityGranted == true)
@@ -348,20 +354,24 @@ struct WindowsHostInteropTests {
         return channel
     }
 
-    static func sign(_ identity: DeviceIdentity, _ challenge: Challenge) throws -> Data {
-        try identity.sign(AuthTranscript.bytes(nonce: challenge.nonce, hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData))
+    static func sign(_ identity: DeviceIdentity, _ challenge: Challenge, clientNonce: Data, purpose: AuthPurpose) throws -> Data {
+        try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce, hostPublicKey: challenge.hostPublicKey,
+                                                     clientPublicKey: identity.publicKeyData, purpose: purpose))
     }
 
     /// Hello → challenge → authenticate (with the code if unpaired) → the result, on a raw channel.
     static func handshake(_ identity: DeviceIdentity, code: String? = nil, filesOnly: Bool = false,
                           host: String = host, port: UInt16 = port) async throws -> (MessageChannel, AuthResult?) {
         let channel = try await open(host: host, port: port)
+        let clientNonce = AuthTranscript.randomNonce()
         try await channel.send(.hello(Hello(clientName: "Interop", deviceModel: "test", appVersion: "1.0", clientPublicKey: identity.publicKeyData,
                                             supportedCodecs: filesOnly ? [] : [.hevc, .h264], maxDecodeWidth: filesOnly ? 0 : 4096,
                                             maxDecodeHeight: filesOnly ? 0 : 2304, viewport: filesOnly ? nil : viewport,
-                                            features: ClientFeatures(fileTransfer: true, filesOnly: filesOnly ? true : nil))))
+                                            features: ClientFeatures(fileTransfer: true, filesOnly: filesOnly ? true : nil), clientNonce: clientNonce)))
         guard case .challenge(let challenge)? = try await channel.receive() else { return (channel, nil) }
-        try await channel.send(.authenticate(Authenticate(signature: try sign(identity, challenge), pairingCode: challenge.isPaired ? nil : (code ?? Self.code))))
+        _ = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData, expected: nil)
+        try await channel.send(.authenticate(Authenticate(signature: try sign(identity, challenge, clientNonce: clientNonce, purpose: filesOnly ? .files : .screen),
+                                                          pairingCode: challenge.isPaired ? nil : (code ?? Self.code))))
         guard case .authResult(let result)? = try await channel.receive() else { return (channel, nil) }
         return (channel, result)
     }

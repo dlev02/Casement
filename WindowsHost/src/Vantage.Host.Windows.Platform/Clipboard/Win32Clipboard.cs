@@ -238,6 +238,7 @@ public sealed class Win32Clipboard : IClipboard
         if (!OpenWithRetry()) return null;
         try
         {
+            if (IsMarkedPrivate()) return null;
             string? text = null;
             if (PInvoke.IsClipboardFormatAvailable(CF_UNICODETEXT))
             {
@@ -264,6 +265,14 @@ public sealed class Win32Clipboard : IClipboard
         {
             PInvoke.CloseClipboard();
         }
+    }
+
+    /// <summary>Window thread, clipboard open.</summary>
+    private bool IsMarkedPrivate()
+    {
+        byte[]? Marker(uint format) => format != 0 && PInvoke.IsClipboardFormatAvailable(format) ? GetBytes(format) : null;
+        return ClipboardFormats.IsPrivate(_privacyFormats[0] != 0 && PInvoke.IsClipboardFormatAvailable(_privacyFormats[0]),
+                                          Marker(_privacyFormats[1]), Marker(_privacyFormats[2]));
     }
 
     private ClipboardPayload? ToPayload(RawClipboard raw)

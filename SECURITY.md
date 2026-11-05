@@ -17,7 +17,8 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 ## How Casement is meant to be secure
 
 - **Network boundary.** Casement Host accepts connections only from Tailscale's address ranges (100.64.0.0/10 and fd7a:115c:a1e0::/48). Release builds refuse everything else, including loopback. Transport encryption comes from Tailscale's WireGuard tunnel; the Casement stream itself isn't separately encrypted.
-- **Device identity.** Every client has an Ed25519 key kept in the Keychain (DPAPI on Windows). The host challenges each connection with a fresh nonce, and the client signs a domain-separated transcript.
+- **Device identity.** Every client and every host has an Ed25519 key kept in the Keychain (DPAPI on Windows). The client opens each connection with a fresh nonce, the host signs it back to prove it holds the key it names, and the client refuses a host whose key isn't the one it saw on the device's first connection (Edit Device shows the fingerprint). Only then does the client sign the host's challenge, in a transcript tied to that host and to what the connection is for, so a signature can't be carried to another host or reused to open a screen session.
+- **Paired devices.** A Mac keeps its list of paired devices in the Keychain, where other programs can't read it, rather than in preferences, which any program you run can rewrite.
 - **Pairing.** A new device needs the six-digit code shown on the host. A code expires after 10 minutes and is destroyed after 5 wrong guesses, and each wrong guess costs the peer a second.
 - **Revocation.** Removing a device in Casement Host revokes its key and closes its open connections.
 - **Secrets.** Tailscale keys and Mac passwords live in the Keychain, readable only while the device is unlocked, and are never logged.
@@ -28,4 +29,21 @@ These are deliberate, documented trade-offs, not vulnerabilities:
 
 - Anyone who can use an already paired, unlocked device can control the computers it's paired with. Turn on the app lock (Face ID, Touch ID, or Optic ID) in Settings › Privacy & Security.
 - Type Password and Log In with Screen Sharing use the Mac's built-in Screen Sharing (Apple Remote Desktop authentication), which is only as strong as that protocol. It's used only over your tailnet or, at the login window, your home network.
+- Every device on your tailnet can reach Casement Host's port unless your access rules say otherwise. Without a pairing code it can't get in, but it can use up a code that's showing with 5 wrong guesses; choose New Code on the host if one disappears. [Limit who can reach it](#limit-who-can-reach-casement-host) to stop this.
+- **Control apps running as administrator** (Windows, off by default) starts Casement Host as administrator without asking. Any program running as you could use that to get administrator rights without a prompt, so turn it on only if you need to control such apps, and turn it off when you don't.
 - Casement hasn't had an independent security audit.
+
+## Limit who can reach Casement Host
+
+If other people have devices on your tailnet, a new tailnet's default rule lets them reach every port on your computers, including Casement Host's (TCP 47820). In the [Tailscale access controls](https://login.tailscale.com/admin/acls/file), replace the rule that allows everything with these, using your own login name, and leave the rest of the file as it is:
+
+```jsonc
+"grants": [
+  // My devices reach everything.
+  { "src": ["you@example.com"], "dst": ["*"], "ip": ["*"] },
+  // Everyone else reaches their own devices.
+  { "src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"] },
+  // Everyone can still use exit nodes.
+  { "src": ["autogroup:member"], "dst": ["autogroup:internet"], "ip": ["*"] },
+],
+```

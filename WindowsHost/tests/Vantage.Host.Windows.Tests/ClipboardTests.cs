@@ -189,6 +189,17 @@ public class PngWriterTests
 /// <summary>Which formats a paste saves and puts back.</summary>
 public class ClipboardFormatsTests
 {
+    [Fact]
+    public void WhatAPasswordManagerMarksStaysOnThePc()
+    {
+        byte[] no = [0, 0, 0, 0], yes = [1, 0, 0, 0];
+        Assert.True(ClipboardFormats.IsPrivate(true, null, null));
+        Assert.True(ClipboardFormats.IsPrivate(false, no, null));
+        Assert.True(ClipboardFormats.IsPrivate(false, null, no));
+        Assert.False(ClipboardFormats.IsPrivate(false, yes, yes));
+        Assert.False(ClipboardFormats.IsPrivate(false, null, null));
+    }
+
     [Theory]
     [InlineData(13u, null, true)] // CF_UNICODETEXT
     [InlineData(8u, null, true)] // CF_DIB

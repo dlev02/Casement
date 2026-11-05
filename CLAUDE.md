@@ -64,9 +64,24 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   through Network.framework's `ne_filter`, which silently dropped stream chunks whenever a receive
   waited for ≥ 16 KB (4K keyframes from a PC arrived with holes, then `badMagic`). Loopback and
   BSD sockets never showed it, so loopback tests can't catch it.
-- **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
-  domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
-  that the key is trusted. iOS names every device "iPad"/"iPhone", so a paired device still
+- **Auth**: Ed25519 device identities in Keychain, both ways. The client's `hello` carries a
+  nonce; the host answers a challenge with its own nonce and `hostSignature` over both nonces and
+  both keys (`AuthTranscript.hostBytes`), and the client checks it before signing anything or
+  sending a pairing code (`HostIdentityCheck`): the host must prove it holds the key it names, and
+  that key must be the one remembered for the saved device from its first connection
+  (`SavedDevice.hostPublicKey`, recorded by the session screen and files-only sessions through
+  `DeviceStore.recordHostKey`; Edit Device shows the fingerprint and offers Forget Identity after a
+  reinstall, and the list shows "Identity changed"). The client then signs
+  `AuthTranscript.clientBytes`, which also binds the connection's purpose (screen, probe, files), so
+  a signature made for an availability check can't open a screen and one made for one host is
+  useless at another; the host derives the purpose from the hello (`AuthPurpose`). A client without
+  a nonce (older builds) still signs the older `vantage-auth-v1` transcript, which hosts accept; a
+  host without a signature (older Casement Host) is refused with "Update Casement Host". Any change
+  here updates the Swift and C# sides and the golden vectors (`helloProbe`, `challengeSigned`).
+  First connection needs a 6-digit pairing code shown on the Mac; after
+  that the key is trusted. The Mac keeps trusted keys in the Keychain (`TrustStore`, moved once from
+  `vantage.trustedClients` in defaults), since any program this user runs can rewrite defaults;
+  synthetic hosts keep theirs in a defaults suite of their own. iOS names every device "iPad"/"iPhone", so a paired device still
   called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
   Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
   and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
@@ -821,7 +836,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   it outlived the write and swallowed the user's next copy. `apply` returns only once the write is
   done and `HostSession` awaits it before reading the next message: ⌘V paste-through sends the
   clipboard and then the key on one stream, and a key posted before a large clipboard was written
-  pasted the old one. Tests: `HostClipboardTests` (`applyReturnsOnlyOnceTheClipboardIsWritten`).
+  pasted the old one. Tests: `HostClipboardTests` (`applyReturnsOnlyOnceTheClipboardIsWritten`). Both hosts keep what a password manager marks as private on the computer
+  (`ClipboardBridge.privateMarkers`, `ClipboardFormats.IsPrivate`): it never reaches a client.
 - **Audio and dictation**: the host's `AudioCapture` always leaves the client app
   (`AudioCapture.clientBundleIDs`, the new and the old bundle ID) out of the audio filter, so a Mac connected to itself doesn't
   echo. `MacAudioPlayer` on macOS has no audio session: the engine plays straight to the device,
@@ -940,6 +956,13 @@ The host needs two TCC grants the first time: Screen Recording and Accessibility
 menu-bar UI surfaces both with buttons. Tailscale must be running on both devices. Unattended access
 (login-window capture, FileVault reboot recovery) is deliberately out of scope for v1 — see the
 research notes.
+
+**Keychain experiments**: use a throwaway item in the login Keychain, never change an item's access
+rules (`kSecAttrAccess` in an update raises a system dialog even with interaction off), and never
+kill a process stuck on a prompt: that crashed `securityd`, and its restart locked the login Keychain
+until the password was entered again. Results from a keychain made with `security create-keychain`
+don't carry over: there another program's overwrite was readable by the owner, while in the login
+Keychain it wasn't.
 
 ## Research
 

@@ -27,6 +27,31 @@ public class AuthTests
     }
 
     [Fact]
+    public void HostAndClientTranscriptsBindBothNoncesAndThePurpose()
+    {
+        var clientSeed = _ed25519.GenerateSeed();
+        var clientKey = _ed25519.PublicKeyFromSeed(clientSeed);
+        var hostSeed = _ed25519.GenerateSeed();
+        var hostKey = _ed25519.PublicKeyFromSeed(hostSeed);
+        var clientNonce = AuthTranscript.RandomNonce();
+        var hostNonce = AuthTranscript.RandomNonce();
+
+        Assert.Equal(148, AuthTranscript.HostBytes(clientNonce, hostNonce, hostKey, clientKey).Length);
+        var hostSignature = _ed25519.Sign(hostSeed, AuthTranscript.HostBytes(clientNonce, hostNonce, hostKey, clientKey));
+        Assert.True(AuthTranscript.VerifyHost(_ed25519, hostSignature, clientNonce, hostNonce, hostKey, clientKey));
+        Assert.False(AuthTranscript.VerifyHost(_ed25519, hostSignature, AuthTranscript.RandomNonce(), hostNonce, hostKey, clientKey), "another client's nonce");
+        Assert.False(AuthTranscript.VerifyHost(_ed25519, hostSignature, clientNonce, hostNonce, clientKey, clientKey), "another key");
+
+        Assert.Equal(144, AuthTranscript.ClientBytes(clientNonce, hostNonce, hostKey, clientKey, AuthPurpose.Screen).Length);
+        var signature = _ed25519.Sign(clientSeed, AuthTranscript.ClientBytes(clientNonce, hostNonce, hostKey, clientKey, AuthPurpose.Probe));
+        Assert.True(AuthTranscript.VerifyClient(_ed25519, signature, clientNonce, hostNonce, hostKey, clientKey, AuthPurpose.Probe));
+        Assert.False(AuthTranscript.VerifyClient(_ed25519, signature, clientNonce, hostNonce, hostKey, clientKey, AuthPurpose.Screen), "a probe's signature opens no screen");
+        Assert.False(AuthTranscript.VerifyClient(_ed25519, signature, clientNonce, hostNonce, AuthTranscript.RandomNonce(), clientKey, AuthPurpose.Probe), "another host's key");
+        Assert.False(AuthTranscript.VerifyClient(_ed25519, signature, clientNonce[..16], hostNonce, hostKey, clientKey, AuthPurpose.Probe), "a short nonce");
+        Assert.False(AuthTranscript.Verify(_ed25519, signature, hostNonce, hostKey, clientKey), "not valid as the older transcript either");
+    }
+
+    [Fact]
     public void Rfc8032TestVectorOne()
     {
         var seed = Convert.FromHexString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");

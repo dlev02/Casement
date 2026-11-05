@@ -35,6 +35,10 @@ final class ClientSession {
     /// What the host runs: from the challenge as soon as it arrives, then from its capabilities.
     /// Nil from older hosts, which are all Macs.
     private(set) var hostPlatform: HostPlatform?
+    /// The host's verified Ed25519 public key, once its challenge checked out. The session
+    /// screen remembers it on the saved device (`DeviceStore.recordHostKey`), and every later
+    /// connection must present the same one.
+    private(set) var hostPublicKey: Data?
     private(set) var lastRTTMillis: Double = 0
     private(set) var hostStatus: HostStatus?
 
@@ -326,10 +330,12 @@ final class ClientSession {
 
     /// Returns whether the session is authenticated, and the host's file channel token if it gave one.
     private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> (Bool, Data?) {
+        let clientNonce = AuthTranscript.randomNonce()
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true))
+                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true),
+                          clientNonce: clientNonce)
         try await channel.send(.hello(hello))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -339,7 +345,18 @@ final class ClientSession {
         hostPlatform = challenge.hostPlatform
         state = .authenticating
 
-        let signature = try identity.sign(AuthTranscript.bytes(nonce: challenge.nonce, hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData))
+        // The host proves it holds the key it names, and that key must be the one this device was
+        // first connected to. Only then is anything signed or a pairing code sent.
+        do {
+            hostPublicKey = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
+                                                         expected: device?.hostPublicKey)
+        } catch let failure as HostIdentityCheck.Failure {
+            throw ProtocolErrorMessage(code: "hostIdentity", message: failure.message(deviceName: device?.name ?? challenge.hostName,
+                                                                                      host: HostNoun(challenge.hostPlatform ?? .macOS)))
+        }
+        let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
+                                                                     hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData,
+                                                                     purpose: .screen))
         let auth = Authenticate(signature: signature, pairingCode: challenge.isPaired ? nil : pairingCode)
         try await channel.send(.authenticate(auth))
 
@@ -446,4 +463,18 @@ nonisolated enum MacComputer {
 
 enum ClientHandshakeError: Error {
     case badHandshake
+}
+
+extension HostIdentityCheck.Failure {
+    /// What to tell the person, and what to do about it.
+    func message(deviceName: String, host: HostNoun) -> String {
+        switch self {
+        case .unsigned:
+            "Update Casement Host on \(deviceName). This version of Casement connects only to a host that proves its identity."
+        case .badSignature:
+            "\(deviceName) couldn't prove its identity, so Casement didn't sign in. Check that this is the right \(host.name) and try again."
+        case .changed:
+            "\(deviceName)'s identity has changed since Casement last connected to it. If Casement Host was reinstalled there, edit \(deviceName) in Casement and choose Forget Identity. Otherwise, don't connect."
+        }
+    }
 }

@@ -149,9 +149,10 @@ internal sealed class TestClient
 
     public async Task<(FramedConnection Connection, Challenge Challenge, AuthResult Result)> ConnectAsync(
         int port, string? code = null, bool probe = false, bool filesOnly = false, bool files = true, ushort version = 2, string host = "127.0.0.1",
-        bool macAudio = false)
+        bool macAudio = false, bool legacyTranscript = false, AuthPurpose? signedPurpose = null)
     {
         var connection = await FramedConnection.ConnectAsync(host, port);
+        var clientNonce = legacyTranscript ? null : AuthTranscript.RandomNonce();
         await connection.SendAsync(new Hello
         {
             ProtocolVersion = version,
@@ -165,11 +166,26 @@ internal sealed class TestClient
             Viewport = probe || filesOnly ? null : new Viewport { WidthPoints = 1210, HeightPoints = 834, Scale = 2 },
             IsReadinessProbe = probe ? true : null,
             Features = new ClientFeatures { FileTransfer = files, FilesOnly = filesOnly ? true : null, MacAudio = macAudio ? true : null },
+            ClientNonce = clientNonce,
         });
         var first = await connection.ReceiveAsync();
         if (first is AuthResult early) return (connection, null!, early);
         var challenge = Assert.IsType<Challenge>(first);
-        var signature = s_ed25519.Sign(Seed, AuthTranscript.Bytes(challenge.Nonce, challenge.HostPublicKey, PublicKey));
+        byte[] signature;
+        if (clientNonce is null)
+        {
+            Assert.Null(challenge.HostSignature);
+            signature = s_ed25519.Sign(Seed, AuthTranscript.Bytes(challenge.Nonce, challenge.HostPublicKey, PublicKey));
+        }
+        else
+        {
+            // What the real client does before signing anything: the host must prove its key.
+            Assert.NotNull(challenge.HostSignature);
+            Assert.True(AuthTranscript.VerifyHost(s_ed25519, challenge.HostSignature, clientNonce, challenge.Nonce, challenge.HostPublicKey, PublicKey),
+                        "the host's signature over the client's nonce must verify");
+            var purpose = signedPurpose ?? (probe ? AuthPurpose.Probe : filesOnly ? AuthPurpose.Files : AuthPurpose.Screen);
+            signature = s_ed25519.Sign(Seed, AuthTranscript.ClientBytes(clientNonce, challenge.Nonce, challenge.HostPublicKey, PublicKey, purpose));
+        }
         await connection.SendAsync(new Authenticate { Signature = signature, PairingCode = challenge.IsPaired ? null : code });
         var result = await Loopback.Next<AuthResult>(connection);
         return (connection, challenge, result);
@@ -212,6 +228,27 @@ public class HostListenerTests
         (connection, challenge, result) = await client.ConnectAsync(host.Port);
         Assert.True(challenge.IsPaired);
         Assert.Equal(AuthStatus.Ok, result.Status);
+        connection.Close();
+    }
+
+    [Fact]
+    public async Task AnOlderClientWithoutANonceStillSignsIn()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var (connection, challenge, result) = await client.ConnectAsync(host.Port, "246810", legacyTranscript: true);
+        Assert.Null(challenge.HostSignature);
+        Assert.Equal(AuthStatus.Ok, result.Status);
+        connection.Close();
+    }
+
+    [Fact]
+    public async Task ASignatureMadeForAProbeCannotOpenAScreenSession()
+    {
+        await using var host = new TestHost();
+        var client = new TestClient();
+        var (connection, _, result) = await client.ConnectAsync(host.Port, "246810", signedPurpose: AuthPurpose.Probe);
+        Assert.Equal(AuthStatus.BadSignature, result.Status);
         connection.Close();
     }
 
