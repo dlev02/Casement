@@ -1,14 +1,19 @@
+using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using Vantage.Protocol.Host;
 
 namespace Vantage.Host.Windows.App.Pages;
 
-/// <summary>Connected iPads (with Disconnect) and paired iPads (with Remove).</summary>
+/// <summary>Pairing a device (the code shows right here), connected devices (Send file, Disconnect) and paired devices (Remove).</summary>
 public sealed partial class DevicesPage : Page
 {
     private AppController? _controller;
+    private string? _connectedShown;
+    private string? _pairedShown;
+    private bool _codeWasShowing;
 
     /// <summary>Creates the page.</summary>
     public DevicesPage()
@@ -29,73 +34,130 @@ public sealed partial class DevicesPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _controller = e.Parameter as AppController;
+        if (_controller is not null) Pairing.Attach(_controller);
         base.OnNavigatedTo(e);
     }
 
+    /// <summary>
+    /// The lists are rebuilt only when what they show changes: this runs several times a second
+    /// while files move, and a new row would take keyboard focus away from its button.
+    /// </summary>
     private void Update()
     {
-        if (_controller?.Runtime is not { } runtime) return;
+        if (_controller is null) return;
 
-        ConnectedList.Children.Clear();
-        foreach (var session in _controller.Sessions)
+        var showingCode = _controller.PairingCode is not null;
+        PairCard.Visibility = showingCode ? Visibility.Collapsed : Visibility.Visible;
+        CodeCard.Visibility = showingCode ? Visibility.Visible : Visibility.Collapsed;
+        ShowCodeButton.IsEnabled = _controller.IsListening;
+        if (showingCode) Pairing.Update();
+        // The button that was focused has just gone: hand focus on, so Tab keeps its place.
+        if (IsLoaded && showingCode != _codeWasShowing)
         {
-            var detail = session.IsFilesOnly ? "Moving files" : session.Display is { } display ? $"Viewing {display.Name}" : "Connected";
-            var button = new Button { Content = "Disconnect" };
-            AutomationProperties.SetName(button, $"Disconnect {session.ClientName}");
-            var id = session.Id;
-            button.Click += async (_, _) =>
-            {
-                button.IsEnabled = false;
-                await _controller.DisconnectAsync(id);
-            };
-            ConnectedList.Children.Add(Row(session.ClientName, $"{detail} · {session.Peer}", button));
+            if (showingCode) Pairing.FocusCopy();
+            else ShowCodeButton.Focus(FocusState.Programmatic);
         }
-        NoneConnected.Visibility = ConnectedList.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _codeWasShowing = showingCode;
 
-        TrustedList.Children.Clear();
-        foreach (var client in runtime.Environment.Trust.List())
+        var sessions = _controller.Sessions;
+        var channels = _controller.FileChannels;
+        var connected = string.Join('\n', sessions.Select(s => $"{s.Id}|{s.ClientName}|{Detail(s)}|{channels.Any(c => c.SessionId == s.Id)}"));
+        if (connected != _connectedShown)
         {
-            var button = new Button { Content = "Remove" };
-            AutomationProperties.SetName(button, $"Remove {client.Name}");
-            var fingerprint = client.Fingerprint;
-            var name = client.Name;
-            button.Click += async (_, _) =>
-            {
-                var confirm = new ContentDialog
-                {
-                    XamlRoot = XamlRoot,
-                    Title = $"Remove {name}?",
-                    Content = "It will be disconnected and will need a new pairing code to connect again.",
-                    PrimaryButtonText = "Remove",
-                    CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Close,
-                };
-                if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
-                button.IsEnabled = false;
-                await _controller.RevokeAsync(fingerprint);
-            };
-            TrustedList.Children.Add(Row(client.Name, $"Paired {client.AddedAt.LocalDateTime:d} · key {client.Fingerprint}", button));
+            _connectedShown = connected;
+            ConnectedList.Children.Clear();
+            foreach (var session in sessions)
+                ConnectedList.Children.Add(ConnectedRow(session, channels.FirstOrDefault(c => c.SessionId == session.Id)));
+            NoneConnected.Visibility = sessions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
-        NonePaired.Visibility = TrustedList.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var trusted = _controller.PairedDevices;
+        var paired = string.Join('\n', trusted.Select(c => $"{c.Fingerprint}|{c.DisplayName}"));
+        if (paired != _pairedShown)
+        {
+            _pairedShown = paired;
+            TrustedList.Children.Clear();
+            foreach (var client in trusted) TrustedList.Children.Add(PairedRow(client));
+            PairedHeader.Text = trusted.Count == 0 ? "Paired" : $"Paired ({trusted.Count})";
+            NonePaired.Visibility = trusted.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            PairedNote.Visibility = trusted.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
     }
 
-    private static Border Row(string title, string detail, Button action)
+    private static string Detail(SessionSnapshot session) =>
+        session.IsFilesOnly ? "Moving files" : session.Display is { } display ? $"Viewing {display.Name}" : "Connected";
+
+    private SettingsCard ConnectedRow(SessionSnapshot session, FileChannelSnapshot? channel)
     {
-        var grid = new Grid { ColumnSpacing = 16 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var text = new StackPanel { Spacing = 2 };
-        text.Children.Add(new TextBlock { Text = title, Style = Resource<Style>("BodyStrongTextBlockStyle") });
-        var detailText = new TextBlock { Text = detail, TextWrapping = TextWrapping.Wrap };
-        if (Resource<Microsoft.UI.Xaml.Media.Brush>("TextFillColorSecondaryBrush") is { } secondary) detailText.Foreground = secondary;
-        text.Children.Add(detailText);
-        grid.Children.Add(text);
-        action.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(action, 1);
-        grid.Children.Add(action);
-        return new Border { Style = Resource<Style>("CardStyle"), Child = grid };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (channel is not null)
+        {
+            var send = new Button { Content = "Send file…" };
+            AutomationProperties.SetName(send, $"Send a file to {session.ClientName}");
+            var channelId = channel.Id;
+            send.Click += (_, _) => _ = _controller!.SendFilesAsync(channelId);
+            actions.Children.Add(send);
+        }
+        var disconnect = new Button { Content = "Disconnect" };
+        AutomationProperties.SetName(disconnect, $"Disconnect {session.ClientName}");
+        var id = session.Id;
+        disconnect.Click += async (_, _) =>
+        {
+            disconnect.IsEnabled = false;
+            await _controller!.DisconnectAsync(id);
+        };
+        actions.Children.Add(disconnect);
+        return new SettingsCard
+        {
+            Header = session.ClientName,
+            Description = $"{Detail(session)} · {session.Peer}",
+            HeaderIcon = UiHelpers.Glyph(UiHelpers.DeviceGlyph(session.ClientName), 20),
+            Content = actions,
+        };
     }
 
-    private static T? Resource<T>(string key) where T : class =>
-        Application.Current.Resources.TryGetValue(key, out var value) ? value as T : null;
+    private SettingsCard PairedRow(TrustedClient client)
+    {
+        var name = client.DisplayName;
+        var remove = new MenuFlyoutItem { Text = "Remove device", Icon = UiHelpers.Glyph("") };
+        var fingerprint = client.Fingerprint;
+        remove.Click += async (_, _) =>
+        {
+            var confirm = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = $"Remove {name}?",
+                Content = "It will be disconnected and will need a new pairing code to connect again.",
+                PrimaryButtonText = "Remove",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+            await _controller!.RevokeAsync(fingerprint);
+        };
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(remove);
+
+        var more = new Button
+        {
+            Content = UiHelpers.Glyph(""), // More
+            Padding = new Thickness(8),
+            Flyout = flyout,
+            Style = UiHelpers.Resource<Style>("PanelButtonStyle"),
+        };
+        var label = $"More options for {name}";
+        AutomationProperties.SetName(more, label);
+        ToolTipService.SetToolTip(more, "More options");
+
+        // Two devices can share a name ("iPad"): the date and the key tell them apart.
+        return new SettingsCard
+        {
+            Header = name,
+            Description = $"Paired {client.AddedAt.LocalDateTime:MMMM d, yyyy} · Key {client.Fingerprint}",
+            HeaderIcon = UiHelpers.Glyph(UiHelpers.DeviceGlyph(name), 20),
+            Content = more,
+        };
+    }
+
+    private void OnShowCode(object sender, RoutedEventArgs e) => _controller?.ShowPairingCode(openWindow: false);
 }

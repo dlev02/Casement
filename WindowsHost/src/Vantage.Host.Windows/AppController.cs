@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
@@ -49,10 +50,18 @@ public sealed class AppController
     private DispatcherQueueTimer? _progressRefresh;
     private DispatcherQueueTimer? _transferTick;
 
+#if DEBUG
+    private readonly PreviewOptions _previewOptions;
+    private PreviewFixture? _preview;
+#endif
+
     /// <param name="args">Command-line flags.</param>
     /// <param name="ui">The UI thread's dispatcher.</param>
     public AppController(string[] args, DispatcherQueue ui)
     {
+#if DEBUG
+        _previewOptions = PreviewOptions.Take(ref args);
+#endif
         _args = args;
         _ui = ui;
     }
@@ -81,11 +90,32 @@ public sealed class AppController
     /// <summary>The app's executable (for start at login).</summary>
     public static string ExecutablePath => Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "VantageHost.exe");
 
+#if DEBUG
+    /// <summary>Sessions now (empty before the listener is up).</summary>
+    public IReadOnlyList<SessionSnapshot> Sessions => _preview?.Sessions ?? Safe(() => Runtime?.Listener.Sessions) ?? [];
+
+    /// <summary>File channels now.</summary>
+    public IReadOnlyList<FileChannelSnapshot> FileChannels => _preview?.FileChannels ?? Safe(() => Runtime?.Listener.FileChannels) ?? [];
+
+    /// <summary>The devices that may connect without a code.</summary>
+    public IReadOnlyList<TrustedClient> PairedDevices => _preview?.Paired ?? Runtime?.Environment.Trust.List() ?? [];
+#else
     /// <summary>Sessions now (empty before the listener is up).</summary>
     public IReadOnlyList<SessionSnapshot> Sessions => Safe(() => Runtime?.Listener.Sessions) ?? [];
 
     /// <summary>File channels now.</summary>
     public IReadOnlyList<FileChannelSnapshot> FileChannels => Safe(() => Runtime?.Listener.FileChannels) ?? [];
+
+    /// <summary>The devices that may connect without a code.</summary>
+    public IReadOnlyList<TrustedClient> PairedDevices => Runtime?.Environment.Trust.List() ?? [];
+#endif
+
+    /// <summary>What the status dot and the General page's status row show.</summary>
+    internal HostStatus Status =>
+        Problem is not null ? HostStatus.Problem
+        : !IsListening ? HostStatus.Starting
+        : Transfers.Summary is not null || Sessions.Any(s => !s.IsFilesOnly) ? HostStatus.Busy
+        : HostStatus.Ready;
 
     /// <summary>Files moving, paused, and finished in the last minute (the tray, the panel and Settings › Files show them).</summary>
     public HostTransferList Transfers { get; } = new();
@@ -181,11 +211,16 @@ public sealed class AppController
         {
             await Runtime.StartAsync();
             IsListening = true;
-            if (Problem is null && !options.Background && Runtime.Environment.Trust.List().Count == 0) ShowWindow();
+#if DEBUG
+            var hideWindow = _previewOptions.Capture is not null;
+#else
+            const bool hideWindow = false;
+#endif
+            if (Problem is null && !options.Background && !hideWindow && Runtime.Environment.Trust.List().Count == 0) ShowWindow();
         }
         catch (SocketException ex)
         {
-            Problem = $"Port {options.Port} is in use by another app ({ex.SocketErrorCode})";
+            Problem = $"Port {options.Port} is in use by another app. Quit that app, then open Casement Host again.";
             _log.LogError("can't listen: {Message}", ex.Message);
             ShowWindow();
         }
@@ -199,7 +234,65 @@ public sealed class AppController
         if (TakeOpenOnLaunch() is { } page) ShowWindow(page);
         Tailnet = await Runtime.Tailscale.GetSelfAsync();
         Refresh();
+#if DEBUG
+        ApplyPreview();
+#endif
     }
+
+#if DEBUG
+    /// <summary>Puts on the state the preview flags asked for and opens what they name.</summary>
+    private void ApplyPreview()
+    {
+        var options = _previewOptions;
+        if (options.State is { } state)
+        {
+            _preview = PreviewFixture.For(state);
+            Problem = _preview.Problem;
+            Tailnet = _preview.Tailnet;
+            _preview.FillTransfers(Transfers);
+            if (_preview.ShowCode) ShowPairingCode(openWindow: false);
+        }
+        Refresh();
+        if (options.Settings is { } settingsPage)
+        {
+            ShowWindow(settingsPage);
+            if (options.Width is { } width && options.Height is { } height) _window!.ResizeForPreview(width, height);
+        }
+        if (options.Panel)
+        {
+            var work = DisplayArea.Primary.WorkArea;
+            _panel ??= new TrayPanel(this);
+            _panel.KeepOpen = true;
+            _panel.Toggle(new ScreenRect(work.X + work.Width - 200, work.Y + work.Height, work.X + work.Width - 170, work.Y + work.Height + 30));
+        }
+        if (options.Capture is { } path) _ = CapturePreviewAsync(path, options);
+    }
+
+    private async Task CapturePreviewAsync(string path, PreviewOptions options)
+    {
+        await Task.Delay(1500);
+        try
+        {
+            if (options.PaneClosed)
+            {
+                _window!.ClosePaneForPreview();
+                await Task.Delay(700);
+            }
+            if (options.ExpandAll && _window?.Content is { } content)
+            {
+                PreviewCapture.Expand(content);
+                await Task.Delay(700);
+            }
+            var root = options.Panel ? _panel!.Content : _window!.Content;
+            await PreviewCapture.SaveAsync(root, path, options.Panel);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "capture failed");
+        }
+        await QuitAsync();
+    }
+#endif
 
     /// <summary>Runs <paramref name="action"/> on the UI thread.</summary>
     public void RunOnUi(Action action)
@@ -224,25 +317,28 @@ public sealed class AppController
         _panel.Toggle(icon);
     }
 
-    /// <summary>Makes a new pairing code and shows it on the General page (or only where it was asked for).</summary>
-    /// <param name="openWindow">Also open the settings window on General.</param>
+    /// <summary>Makes a new pairing code and shows it on the Devices page (or only where it was asked for).</summary>
+    /// <param name="openWindow">Also open the settings window on Devices.</param>
     public string? ShowPairingCode(bool openWindow = true)
     {
         if (Runtime is null || !IsListening) return null;
         var code = Runtime.Listener.Pairing.NewCode();
         PairingCodeExpires = DateTimeOffset.Now + PairingCodes.Lifetime;
         _log.LogInformation("showing a pairing code");
-        if (openWindow) ShowWindow("general");
+        if (openWindow) ShowWindow("devices");
         Refresh();
         return code;
     }
 
-    /// <summary>Picks files and sends them to the iPad on <paramref name="channelId"/>.</summary>
+    /// <summary>Takes the showing pairing code away (Done, or it ran out); <see cref="PairingCodes.Cleared"/> refreshes the UI.</summary>
+    public void CancelPairingCode() => Runtime?.Listener.Pairing.Withdraw();
+
+    /// <summary>Picks files and sends them to the device on <paramref name="channelId"/>.</summary>
     public async Task SendFilesAsync(Guid channelId)
     {
         if (Runtime is null) return;
         ShowWindow();
-        var picker = new FileOpenPicker(_window!.AppWindow.Id) { Title = "Send to iPad" };
+        var picker = new FileOpenPicker(_window!.AppWindow.Id) { Title = "Send to device" };
         picker.FileTypeFilter.Add("*");
         var files = await picker.PickMultipleFilesAsync();
         foreach (var file in files)

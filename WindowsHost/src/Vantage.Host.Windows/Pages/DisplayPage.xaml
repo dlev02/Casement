@@ -2,52 +2,44 @@
 <Page
     x:Class="Vantage.Host.Windows.App.Pages.DisplayPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
-            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="Display" />
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Shared display" />
-                    <TextBlock x:Name="DisplayName" TextWrapping="Wrap" />
-                    <TextBlock x:Name="DisplayDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <ToggleSwitch
-                        x:Name="FitSwitch"
-                        Header="Let devices change this PC's display mode to fit their screen"
-                        Toggled="OnFitToggled" />
-                    <TextBlock
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="This PC's own screen switches resolution while that device is connected, and goes back when it disconnects."
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Capture" />
-                    <TextBlock x:Name="CaptureText" TextWrapping="Wrap" />
-                    <TextBlock x:Name="CaptureDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Video encoder" />
-                    <TextBlock x:Name="EncoderText" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
+    <local:PageShell Title="Display">
+        <StackPanel Spacing="4">
+            <tk:SettingsCard x:Name="SharedCard">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7F4;" />
+                </tk:SettingsCard.HeaderIcon>
+            </tk:SettingsCard>
+            <tk:SettingsCard
+                Description="This PC's own screen switches resolution while that device is connected, and goes back when it disconnects."
+                Header="Let devices fit this PC's resolution to their screen">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE740;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch
+                    x:Name="FitSwitch"
+                    AutomationProperties.Name="Let devices fit this PC's resolution to their screen"
+                    Toggled="OnFitToggled" />
+            </tk:SettingsCard>
             <TextBlock
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Casement shares the main display unless your device picks another one. A device set to match its screen switches the main display to the resolution closest to its own shape, since Windows can't add a virtual display the way a Mac can."
-                TextWrapping="Wrap" />
+                Style="{StaticResource SectionFootnoteStyle}"
+                Text="Casement shares the main display unless your device picks another one. Windows can't add a virtual display the way a Mac can, so fitting picks the resolution closest to the device's shape." />
+
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Advanced" />
+            <tk:SettingsExpander Description="How the picture is captured and encoded" Header="Streaming details">
+                <tk:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE9D9;" />
+                </tk:SettingsExpander.HeaderIcon>
+                <tk:SettingsExpander.Items>
+                    <tk:SettingsCard x:Name="DeviceSizeCard" Header="Size on your device" />
+                    <tk:SettingsCard x:Name="CaptureCard" Header="Capture" />
+                    <tk:SettingsCard x:Name="ChangeCard" Header="Finding what changed" />
+                    <tk:SettingsCard x:Name="EncoderCard" Header="Video encoder" />
+                </tk:SettingsExpander.Items>
+            </tk:SettingsExpander>
         </StackPanel>
-    </ScrollViewer>
+    </local:PageShell>
 </Page>

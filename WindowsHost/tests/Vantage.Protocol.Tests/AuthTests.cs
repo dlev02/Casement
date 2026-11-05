@@ -67,6 +67,23 @@ public class AuthTests
     }
 
     [Fact]
+    public void WithdrawnCodeStopsWorkingAndSaysSoOnce()
+    {
+        var codes = new PairingCodes(new ManualTime());
+        var cleared = 0;
+        codes.Cleared += () => cleared++;
+
+        codes.Withdraw(); // nothing showing: nothing to say
+        Assert.Equal(0, cleared);
+
+        var code = codes.NewCode();
+        codes.Withdraw();
+        Assert.Null(codes.Current);
+        Assert.Equal(1, cleared);
+        Assert.Equal(PairingCheck.Unavailable, codes.Consume(code));
+    }
+
+    [Fact]
     public void FixedCodeNeverExpires()
     {
         var time = new ManualTime();

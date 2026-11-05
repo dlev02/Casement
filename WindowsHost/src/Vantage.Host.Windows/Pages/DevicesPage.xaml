@@ -2,29 +2,49 @@
 <Page
     x:Class="Vantage.Host.Windows.App.Pages.DevicesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
-            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="Devices" />
+    <local:PageShell Title="Devices">
+        <StackPanel Spacing="4">
+            <tk:SettingsCard
+                x:Name="PairCard"
+                Description="Add this PC in Casement on your iPhone, iPad, Mac or Vision Pro, then type the code."
+                Header="Pair a device">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE8D7;" />
+                </tk:SettingsCard.HeaderIcon>
+                <Button
+                    x:Name="ShowCodeButton"
+                    Click="OnShowCode"
+                    Content="Show pairing code"
+                    Style="{StaticResource AccentButtonStyle}" />
+            </tk:SettingsCard>
+            <Border x:Name="CodeCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <local:PairingPanel x:Name="Pairing" />
+            </Border>
 
-            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Connected now" />
-            <StackPanel x:Name="ConnectedList" Spacing="4" />
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Connected" />
             <TextBlock
                 x:Name="NoneConnected"
+                Margin="1,0,0,0"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="No iPad is connected." />
+                Text="No devices are connected." />
+            <StackPanel x:Name="ConnectedList" Spacing="4" />
 
-            <TextBlock Margin="0,16,0,0" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Paired iPads" />
+            <TextBlock x:Name="PairedHeader" Style="{StaticResource SectionHeaderStyle}" Text="Paired" />
             <TextBlock
+                x:Name="NonePaired"
+                Margin="1,0,0,0"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="These can connect without a pairing code. Removing one disconnects it; it needs a new code to come back."
+                Text="Nothing is paired yet."
                 TextWrapping="Wrap" />
             <StackPanel x:Name="TrustedList" Spacing="4" />
             <TextBlock
-                x:Name="NonePaired"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Nothing is paired yet. Show a pairing code on the General page." />
+                x:Name="PairedNote"
+                Style="{StaticResource SectionFootnoteStyle}"
+                Text="Paired devices connect without a code. Removing one disconnects it, and it needs a new code to come back." />
         </StackPanel>
-    </ScrollViewer>
+    </local:PageShell>
 </Page>

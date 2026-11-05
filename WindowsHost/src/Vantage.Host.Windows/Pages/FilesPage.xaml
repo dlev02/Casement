@@ -2,71 +2,84 @@
 <Page
     x:Class="Vantage.Host.Windows.App.Pages.FilesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
-            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="Files" />
-
+    <local:PageShell Title="Files">
+        <StackPanel Spacing="4">
             <!-- Files moving either way, paused, or finished in the last minute; hidden when there are none. -->
-            <Border x:Name="TransfersCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
-                <StackPanel Spacing="12">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Transfers" />
-                        <Button
-                            x:Name="CancelAllButton"
-                            Grid.Column="1"
-                            Click="OnCancelAll"
-                            Content="Cancel All"
-                            Visibility="Collapsed" />
-                    </Grid>
-                    <StackPanel x:Name="TransferList" Spacing="12" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="8">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Save files from the iPad in" />
-                    <TextBlock x:Name="FolderText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+            <StackPanel x:Name="TransfersSection" Margin="0,0,0,24" Spacing="8" Visibility="Collapsed">
+                <Grid MinHeight="32" ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <TextBlock
-                        x:Name="FolderHint"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap"
+                        Margin="1,0,0,0"
+                        VerticalAlignment="Center"
+                        AutomationProperties.HeadingLevel="Level2"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="Transfers" />
+                    <Button
+                        x:Name="CancelAllButton"
+                        Grid.Column="1"
+                        Click="OnCancelAll"
+                        Content="Cancel all"
                         Visibility="Collapsed" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Click="OnChooseFolder" Content="Change…" />
-                        <Button x:Name="ResetButton" Click="OnResetFolder" Content="Use Downloads" />
-                        <Button Click="OnOpenFolder" Content="Open Folder" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
+                </Grid>
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel x:Name="TransferList" Spacing="12" />
+                </Border>
+            </StackPanel>
 
-            <Border Style="{StaticResource CardStyle}">
-                <RadioButtons
+            <TextBlock Style="{StaticResource FirstSectionHeaderStyle}" Text="Receiving files" />
+            <tk:SettingsCard Header="Save files in">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE8B7;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.Description>
+                    <StackPanel Spacing="2">
+                        <TextBlock x:Name="FolderText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="FolderHint"
+                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                    </StackPanel>
+                </tk:SettingsCard.Description>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="ResetButton" Click="OnResetFolder" Content="Use Downloads" />
+                    <Button Click="OnChooseFolder" Content="Change…" />
+                    <Button Click="OnOpenFolder" Content="Open" AutomationProperties.Name="Open the folder" />
+                </StackPanel>
+            </tk:SettingsCard>
+            <tk:SettingsCard Description="Only documents, pictures and media open by themselves; anything else is shown in File Explorer." Header="When files arrive">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE8E5;" />
+                </tk:SettingsCard.HeaderIcon>
+                <ComboBox
                     x:Name="AfterArrivalChoice"
-                    Header="When files arrive"
+                    MinWidth="200"
+                    AutomationProperties.Name="When files arrive"
                     SelectionChanged="OnAfterArrivalChanged">
                     <x:String>Do nothing</x:String>
-                    <x:String>Show them in File Explorer</x:String>
-                    <x:String>Open them (documents, pictures and media only)</x:String>
-                </RadioButtons>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
+                    <x:String>Show in File Explorer</x:String>
+                    <x:String>Open them</x:String>
+                </ComboBox>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="Show a notification when files arrive">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xEA8F;" />
+                </tk:SettingsCard.HeaderIcon>
                 <ToggleSwitch
                     x:Name="NotifySwitch"
-                    Header="Show a notification when files arrive"
+                    AutomationProperties.Name="Show a notification when files arrive"
                     Toggled="OnNotifyToggled" />
-            </Border>
-
+            </tk:SettingsCard>
             <TextBlock
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Received files are marked as downloaded from the internet, so Windows checks them like any download. A new folder applies from the next connection."
-                TextWrapping="Wrap" />
+                Style="{StaticResource SectionFootnoteStyle}"
+                Text="Received files are marked as downloaded from the internet, so Windows checks them like any download. A new folder applies from the next connection." />
         </StackPanel>
-    </ScrollViewer>
+    </local:PageShell>
 </Page>

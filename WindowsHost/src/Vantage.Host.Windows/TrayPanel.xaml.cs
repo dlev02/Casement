@@ -1,33 +1,29 @@
-using System.Globalization;
 using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Vantage.Host.Windows.Tray;
 using Windows.Foundation;
 using Windows.Graphics;
 using WinRT.Interop;
-using DataPackage = global::Windows.ApplicationModel.DataTransfer.DataPackage;
-using WindowsClipboard = global::Windows.ApplicationModel.DataTransfer.Clipboard;
 
 namespace Vantage.Host.Windows.App;
 
 /// <summary>
 /// What a left click on the tray icon opens, like the Mac host's menu-bar popover: a small acrylic
-/// panel beside the taskbar with the listener's state, Show Pairing Code (the code shows right here),
-/// connected and paired devices, files moving (with Cancel, and Show in folder once received),
-/// Settings… and Quit. A borderless, always-on-top window placed by
-/// <see cref="TrayPanelPlacement"/> from the icon's rectangle; it hides when it loses focus or on Esc,
-/// and a click on the icon while it's open closes it. Right click keeps the native menu.
+/// panel beside the taskbar with the host's state, the pairing code right here, who is connected
+/// (Send file, Disconnect), files moving (Cancel, and Show in folder once received), the paired
+/// devices a click away, and a footer with Settings and Quit. A borderless, always-on-top window
+/// placed by <see cref="TrayPanelPlacement"/> from the icon's rectangle, never taller than the
+/// screen (the body scrolls and the footer stays); it hides when it loses focus or on Esc, and a
+/// click on the icon while it's open closes it. Right click keeps the native menu.
 /// </summary>
 public sealed partial class TrayPanel : Window
 {
     /// <summary>Width in DIPs.</summary>
-    private const double PanelWidth = 340;
+    private const double PanelWidth = 360;
 
     /// <summary>Gap to the taskbar and screen edges in DIPs (Windows 11's flyouts use 12).</summary>
     private const double Margin = 12;
@@ -37,11 +33,12 @@ public sealed partial class TrayPanel : Window
 
     private readonly AppController _controller;
     private readonly TransferRows _transferRows;
-    private readonly DispatcherTimer _countdown = new() { Interval = TimeSpan.FromSeconds(1) };
     private ScreenRect _icon;
     private long _hiddenAt;
     private bool _visible;
     private bool _closingForQuit;
+    private string? _connectedShown;
+    private bool _codeWasShowing;
 
     /// <param name="controller">The app.</param>
     public TrayPanel(AppController controller)
@@ -49,6 +46,7 @@ public sealed partial class TrayPanel : Window
         _controller = controller;
         InitializeComponent();
         _transferRows = new TransferRows(TransferList, controller);
+        Pairing.Attach(controller);
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsResizable = false;
@@ -73,7 +71,6 @@ public sealed partial class TrayPanel : Window
             args.Cancel = true;
             Dismiss();
         };
-        _countdown.Tick += (_, _) => UpdateCode();
         _controller.StateChanged += () =>
         {
             if (!_visible) return;
@@ -81,6 +78,11 @@ public sealed partial class TrayPanel : Window
             Fit();
         };
     }
+
+#if DEBUG
+    /// <summary><c>--open-panel</c>: stays open without focus, for screenshots.</summary>
+    public bool KeepOpen { get; set; }
+#endif
 
     /// <summary>Opens the panel next to the tray icon at <paramref name="icon"/>, or closes it if it's open.</summary>
     public void Toggle(ScreenRect icon)
@@ -98,16 +100,18 @@ public sealed partial class TrayPanel : Window
         AppWindow.Show(true);
         Activate();
         SetForegroundWindow(WindowNative.GetWindowHandle(this));
-        ShowCodeButton.Focus(FocusState.Programmatic);
         _visible = true;
-        _countdown.Start();
+        // The first thing there is to do; a Tab from here reaches the rest.
+        Control first = FirstPair.Visibility == Visibility.Visible ? ShowCodeButton
+                      : ShowCodeRow.IsEnabled && DeviceCommands.Visibility == Visibility.Visible ? ShowCodeRow
+                      : SettingsButton;
+        first.Focus(FocusState.Programmatic);
     }
 
     /// <summary>Closes the panel for good (Quit).</summary>
     public void CloseForQuit()
     {
         _closingForQuit = true;
-        _countdown.Stop();
         Close();
     }
 
@@ -115,9 +119,11 @@ public sealed partial class TrayPanel : Window
     public void Dismiss()
     {
         if (!_visible) return;
+#if DEBUG
+        if (KeepOpen) return;
+#endif
         _visible = false;
         _hiddenAt = Environment.TickCount64;
-        _countdown.Stop();
         AppWindow.Hide();
     }
 
@@ -132,70 +138,97 @@ public sealed partial class TrayPanel : Window
         Dismiss();
     }
 
-    /// <summary>Sizes the panel to its content and places it beside the icon, on the icon's monitor.</summary>
+    /// <summary>Sizes the panel to its content, up to the screen's height, and places it beside the icon on the icon's monitor.</summary>
     private void Fit()
     {
         var area = DisplayArea.GetFromPoint(new PointInt32(_icon.Left + _icon.Width / 2, _icon.Top + _icon.Height / 2), DisplayAreaFallback.Nearest);
         var work = area.WorkArea;
         var scale = MonitorScale(work);
+        // The window's size includes its border; what's measured here has to be the client area
+        // inside it, or text wraps differently from the measure and the last row slips under the footer.
+        var borderWidth = AppWindow.Size.Width - AppWindow.ClientSize.Width;
+        var borderHeight = AppWindow.Size.Height - AppWindow.ClientSize.Height;
         Body.Measure(new Size(PanelWidth, double.PositiveInfinity));
-        var width = (int)Math.Ceiling(PanelWidth * scale);
-        var height = (int)Math.Ceiling(Body.DesiredSize.Height * scale);
+        Footer.Measure(new Size(PanelWidth, double.PositiveInfinity));
+        var margin = (int)Math.Round(Margin * scale);
+        var width = (int)Math.Ceiling(PanelWidth * scale) + borderWidth;
+        var height = (int)Math.Ceiling((Body.DesiredSize.Height + Footer.DesiredSize.Height) * scale) + borderHeight;
+        height = Math.Min(height, work.Height - 2 * margin);
         var (x, y) = TrayPanelPlacement.Place(_icon, new ScreenRect(work.X, work.Y, work.X + work.Width, work.Y + work.Height),
-                                              width, height, (int)Math.Round(Margin * scale));
+                                              width, height, margin);
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
     }
 
     private void Update()
     {
-        var runtime = _controller.Runtime;
-        var listening = _controller.IsListening;
+        var hostName = _controller.Runtime?.Environment.HostName;
+        var screens = _controller.Sessions.Where(s => !s.IsFilesOnly).ToList();
         // Files moving say so here, as the tooltip does ("Receiving Report.pdf, 45%").
         var moving = _controller.Problem is null ? _controller.Transfers.Summary : null;
         StatusText.Text = _controller.Problem
             ?? moving
-            ?? (listening ? $"Listening on {runtime?.Environment.HostName}" : "Starting…");
-        StatusDot.Fill = ThemeBrush(_controller.Problem is not null ? "SystemFillColorCriticalBrush"
-                               : moving is not null ? "AccentFillColorDefaultBrush"
-                               : listening ? "SystemFillColorSuccessBrush" : "SystemFillColorCautionBrush");
+            ?? screens.Count switch
+            {
+                _ when !_controller.IsListening => "Starting…",
+                0 => $"Ready on {hostName}",
+                1 => $"Connected to {screens[0].ClientName}",
+                _ => $"{screens.Count} devices connected",
+            };
+        StatusDot.Fill = UiHelpers.StatusBrush(_controller.Status);
         UpdateTransfers();
-        ShowCodeButton.IsEnabled = listening;
 
-        ConnectedList.Children.Clear();
-        foreach (var session in _controller.Sessions)
+        var paired = _controller.PairedDevices;
+        var showingCode = _controller.PairingCode is not null;
+        Pairing.Visibility = showingCode ? Visibility.Visible : Visibility.Collapsed;
+        if (showingCode) Pairing.Update();
+        FirstPair.Visibility = !showingCode && paired.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowCodeButton.IsEnabled = _controller.IsListening;
+        ShowCodeRow.IsEnabled = _controller.IsListening;
+        ShowCodeRow.Visibility = showingCode ? Visibility.Collapsed : Visibility.Visible;
+        DeviceCommands.Visibility = paired.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // The button that was focused has just gone: hand focus on, so Tab and Esc keep working.
+        if (_visible && showingCode != _codeWasShowing)
         {
-            var detail = session.IsFilesOnly ? "Moving files" : session.Display is { } display ? $"Viewing {display.Name}" : "Connected";
-            ConnectedList.Children.Add(DeviceRow(session.Id, session.ClientName, detail));
+            if (showingCode) Pairing.FocusCopy();
+            else if (paired.Count > 0) ShowCodeRow.Focus(FocusState.Programmatic);
+            else ShowCodeButton.Focus(FocusState.Programmatic);
         }
-        foreach (var channel in _controller.FileChannels)
-        {
-            var button = new Button
-            {
-                Content = $"Send File to {channel.ClientName}…",
-                Style = (Style)Root.Resources["PanelButtonStyle"],
-                Margin = new Thickness(-11, 0, 0, 0),
-            };
-            var id = channel.Id;
-            button.Click += (_, _) =>
-            {
-                Dismiss();
-                _ = _controller.SendFilesAsync(id);
-            };
-            ConnectedList.Children.Add(button);
-        }
-        NoneConnected.Visibility = ConnectedList.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _codeWasShowing = showingCode;
+        PairedCount.Text = paired.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        AutomationProperties.SetName(PairedRow, paired.Count == 1 ? "1 paired device. Open in Settings" : $"{paired.Count} paired devices. Open in Settings");
 
-        var paired = runtime?.Environment.Trust.List() ?? [];
-        PairedText.Text = paired.Count switch
-        {
-            0 => "Nothing is paired yet.",
-            1 => $"Paired: {paired[0].Name}",
-            _ => $"Paired: {string.Join(", ", paired.Select(p => p.Name))}",
-        };
-        UpdateCode();
+        UpdateConnected();
     }
 
-    /// <summary>The newest files (the Files page lists them all); the card hides when there are none.</summary>
+    /// <summary>
+    /// The connected rows, rebuilt only when they change: this runs several times a second while
+    /// files move, and a new row would take keyboard focus away from its button.
+    /// </summary>
+    private void UpdateConnected()
+    {
+        var sessions = _controller.Sessions;
+        var channels = _controller.FileChannels;
+        var shown = string.Join('\n', sessions.Select(s => $"{s.Id}|{s.ClientName}|{SessionDetail(s)}")
+                                              .Concat(channels.Select(c => $"{c.Id}|{c.SessionId}|{c.ClientName}")));
+        if (shown == _connectedShown) return;
+        _connectedShown = shown;
+
+        ConnectedList.Children.Clear();
+        foreach (var session in sessions)
+        {
+            var channel = channels.FirstOrDefault(c => c.SessionId == session.Id);
+            ConnectedList.Children.Add(DeviceRow(session.ClientName, SessionDetail(session), channel?.Id, session.Id));
+        }
+        // A file channel outlives its session (files keep moving after the screen disconnects).
+        foreach (var channel in channels.Where(c => sessions.All(s => s.Id != c.SessionId)))
+            ConnectedList.Children.Add(DeviceRow(channel.ClientName, "Moving files", channel.Id, sessionId: null));
+        ConnectedSection.Visibility = ConnectedList.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static string SessionDetail(Vantage.Protocol.Host.SessionSnapshot session) =>
+        session.IsFilesOnly ? "Moving files" : session.Display is { } display ? $"Viewing {display.Name}" : "Connected";
+
+    /// <summary>The newest files (the Files page lists them all); the section hides when there are none.</summary>
     private void UpdateTransfers()
     {
         var all = _controller.Transfers.Items;
@@ -213,57 +246,68 @@ public sealed partial class TrayPanel : Window
         _controller.ShowWindow("files");
     }
 
-    private Grid DeviceRow(Guid sessionId, string name, string detail)
+    private void OnPairedDevices(object sender, RoutedEventArgs e)
     {
-        var grid = new Grid { ColumnSpacing = 8 };
+        Dismiss();
+        _controller.ShowWindow("devices");
+    }
+
+    private Grid DeviceRow(string name, string detail, Guid? channelId, Guid? sessionId)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(new FontIcon { Glyph = "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
+        var glyph = UiHelpers.Glyph(UiHelpers.DeviceGlyph(name));
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(glyph);
 
-        var text = new StackPanel();
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis });
+        ToolTipService.SetToolTip(text, name); // the row may have had to shorten it
         text.Children.Add(new TextBlock
         {
             Text = detail,
-            Style = Resource<Style>("CaptionTextBlockStyle"),
-            Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
+            Style = UiHelpers.Resource<Style>("CaptionTextBlockStyle"),
+            Foreground = UiHelpers.Resource<Microsoft.UI.Xaml.Media.Brush>("TextFillColorSecondaryBrush"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
         });
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
 
-        var disconnect = new Button { Content = "Disconnect", VerticalAlignment = VerticalAlignment.Center };
-        AutomationProperties.SetName(disconnect, $"Disconnect {name}");
-        disconnect.Click += async (_, _) =>
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        if (channelId is { } channel)
         {
-            disconnect.IsEnabled = false;
-            await _controller.DisconnectAsync(sessionId);
-        };
-        Grid.SetColumn(disconnect, 2);
-        grid.Children.Add(disconnect);
+            var send = new Button
+            {
+                Content = UiHelpers.Glyph("", 14), // Upload
+                Padding = new Thickness(8),
+                Style = UiHelpers.Resource<Style>("PanelButtonStyle"),
+            };
+            var label = $"Send a file to {name}";
+            AutomationProperties.SetName(send, label);
+            ToolTipService.SetToolTip(send, label);
+            send.Click += (_, _) =>
+            {
+                Dismiss();
+                _ = _controller.SendFilesAsync(channel);
+            };
+            actions.Children.Add(send);
+        }
+        if (sessionId is { } session)
+        {
+            var disconnect = new Button { Content = "Disconnect" };
+            AutomationProperties.SetName(disconnect, $"Disconnect {name}");
+            disconnect.Click += async (_, _) =>
+            {
+                disconnect.IsEnabled = false;
+                await _controller.DisconnectAsync(session);
+            };
+            actions.Children.Add(disconnect);
+        }
+        Grid.SetColumn(actions, 2);
+        grid.Children.Add(actions);
         return grid;
-    }
-
-    private void UpdateCode()
-    {
-        var code = _controller.PairingCode;
-        var showing = code is not null;
-        CodePanel.Visibility = showing ? Visibility.Visible : Visibility.Collapsed;
-        ShowCodeButton.Visibility = showing ? Visibility.Collapsed : Visibility.Visible;
-        PairHint.Visibility = showing ? Visibility.Collapsed : Visibility.Visible;
-        if (code is null) return;
-        CodeText.Text = code.Length == 6 ? $"{code[..3]} {code[3..]}" : code;
-        if (_controller.PairingCodeExpires is { } expires)
-        {
-            var left = expires - DateTimeOffset.Now;
-            CodeExpiry.Text = left > TimeSpan.Zero
-                ? string.Create(CultureInfo.CurrentCulture, $"Works once, for {Math.Ceiling(left.TotalMinutes):0} more minute{(left.TotalMinutes > 1 ? "s" : "")}.")
-                : "This code has expired.";
-        }
-        else
-        {
-            CodeExpiry.Text = "A test code that doesn't expire.";
-        }
     }
 
     private void OnShowCode(object sender, RoutedEventArgs e)
@@ -271,14 +315,6 @@ public sealed partial class TrayPanel : Window
         _controller.ShowPairingCode(openWindow: false);
         Update();
         Fit();
-    }
-
-    private void OnCopyCode(object sender, RoutedEventArgs e)
-    {
-        if (_controller.PairingCode is not { } code) return;
-        var package = new DataPackage();
-        package.SetText(code);
-        WindowsClipboard.SetContent(package);
     }
 
     private void OnSettings(object sender, RoutedEventArgs e)
@@ -298,11 +334,6 @@ public sealed partial class TrayPanel : Window
         var monitor = MonitorFromPoint(new NativePoint { X = work.X + work.Width / 2, Y = work.Y + work.Height / 2 }, MONITOR_DEFAULTTONEAREST);
         return GetDpiForMonitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, out var dpi, out _) == 0 && dpi > 0 ? dpi / 96.0 : 1.0;
     }
-
-    private static Brush? ThemeBrush(string key) => Resource<Brush>(key);
-
-    private static T? Resource<T>(string key) where T : class =>
-        Application.Current.Resources.TryGetValue(key, out var value) ? value as T : null;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;

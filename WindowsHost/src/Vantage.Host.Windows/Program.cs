@@ -24,7 +24,8 @@ public static class Program
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
         var current = AppInstance.GetCurrent();
-        var main = AppInstance.FindOrRegisterForKey(InstanceKey);
+        // A synthetic copy from a checkout runs beside the installed host instead of handing off to it.
+        var main = AppInstance.FindOrRegisterForKey(args.Contains("--synthetic") ? InstanceKey + ".Synthetic" : InstanceKey);
         if (!main.IsCurrent)
         {
             var activation = current.GetActivatedEventArgs();
