@@ -40,6 +40,9 @@ let package = Package(
                 exclude: ["FileArrivals.swift", "HostFileStore.swift", "HostNotifications.swift", "HostTransfer.swift"],
                 sources: ["FileArrival.swift"], swiftSettings: [.defaultIsolation(MainActor.self)]),
         .testTarget(name: "HostFileArrivalTests", dependencies: ["VantageHostFiles"], path: "Tests/HostFileArrivalTests"),
+        // When the host checks for and installs updates, and how the Updates row words each state.
+        .target(name: "VantageHostUpdates", path: "VantageHost/Updates", sources: ["UpdatePolicy.swift", "UpdateRow.swift"]),
+        .testTarget(name: "HostUpdateTests", dependencies: ["VantageHostUpdates"], path: "Tests/HostUpdateTests"),
         // The host's pasteboard bridge (change polling, applying the client's clipboard).
         .target(name: "VantageHostClipboard", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/System", sources: ["ClipboardBridge.swift"]),

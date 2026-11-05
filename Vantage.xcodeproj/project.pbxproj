@@ -33,6 +33,7 @@
 		A100000000000000000000B1 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D1 /* VantageCore */; };
 		A100000000000000000000B2 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D2 /* VantageCore */; };
 		A100000000000000000000B3 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D3 /* FluidAudio */; };
+		A100000000000000000000B4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D4 /* Sparkle */; };
 		C10000000000000000000011 /* VantageWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* VantageWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -44,7 +45,7 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A100000000000000000000C1 /* Vantage */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C10000000000000000000015 /* Exceptions for "Vantage" folder in "Vantage" target */, ); path = Vantage; sourceTree = "<group>"; };
-		A100000000000000000000C2 /* VantageHost */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VantageHost; sourceTree = "<group>"; };
+		A100000000000000000000C2 /* VantageHost */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C10000000000000000000017 /* Exceptions for "VantageHost" folder in "VantageHost" target */, ); path = VantageHost; sourceTree = "<group>"; };
 		C10000000000000000000002 /* VantageWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C10000000000000000000016 /* Exceptions for "VantageWidgets" folder in "VantageWidgets" target */, ); path = VantageWidgets; sourceTree = "<group>"; };
 		C10000000000000000000003 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -64,6 +65,13 @@
 			);
 			target = C10000000000000000000007 /* VantageWidgets */;
 		};
+		C10000000000000000000017 /* Exceptions for "VantageHost" folder in "VantageHost" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000052 /* VantageHost */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +89,7 @@
 			files = (
 				A100000000000000000000B2 /* VantageCore in Frameworks */,
 				A100000000000000000000B3 /* FluidAudio in Frameworks */,
+				A100000000000000000000B4 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -167,6 +176,7 @@
 			packageProductDependencies = (
 				A100000000000000000000D2 /* VantageCore */,
 				A100000000000000000000D3 /* FluidAudio */,
+				A100000000000000000000D4 /* Sparkle */,
 			);
 			productName = VantageHost;
 			productReference = A100000000000000000000A2 /* Casement Host.app */;
@@ -226,6 +236,7 @@
 			packageReferences = (
 				A100000000000000000000E9 /* XCLocalSwiftPackageReference "Packages/VantageCore" */,
 				A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				A100000000000000000000EB /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A100000000000000000000E1 /* Products */;
@@ -552,6 +563,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = CasementHost;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CASEMENT_UPDATE_PUBLIC_KEY = "Nd+cDJ7WVT84ATpQfB8Bq/H66bHe1rb+/mwOV/E3AXQ=";
 				CODE_SIGN_ENTITLEMENTS = VantageHost/VantageHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -559,6 +571,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VantageHost/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Casement Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -584,6 +597,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = CasementHost;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CASEMENT_UPDATE_PUBLIC_KEY = "Nd+cDJ7WVT84ATpQfB8Bq/H66bHe1rb+/mwOV/E3AXQ=";
 				CODE_SIGN_ENTITLEMENTS = VantageHost/VantageHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -591,6 +605,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VantageHost/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Casement Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -727,6 +742,14 @@
 				minimumVersion = 0.16.1;
 			};
 		};
+		A100000000000000000000EB /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -742,6 +765,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
+		};
+		A100000000000000000000D4 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000EB /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
