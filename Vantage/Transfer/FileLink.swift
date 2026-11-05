@@ -52,6 +52,10 @@ final class FileLink {
     private var linkTask: Task<Void, Never>?
     private var primary: MessageChannel?
 
+    /// A files-only session verified the host's key: the saved device should remember it
+    /// (`DeviceStore.recordHostKey`), as the session screen does for a screen session.
+    var onHostKeyVerified: ((SavedDevice, Data) -> Void)?
+
     init(files: FileTransferController, identity: DeviceIdentity, clientName: String, clientModel: String) {
         self.files = files
         self.identity = identity
@@ -192,6 +196,7 @@ final class FileLink {
                     return
                 }
                 macKeepsFiles = true
+                onHostKeyVerified?(device, session.hostPublicKey)
                 primary = session.primary
                 let opened = ContinuousClock.now
                 await runChannel(token: token, host: session.host, port: session.port)
@@ -276,6 +281,8 @@ enum FilesOnlySession {
         let capabilities: HostCapabilities?
         let host: String
         let port: NWEndpoint.Port
+        /// The host's verified key, for the saved device to remember.
+        let hostPublicKey: Data
     }
 
     enum Failure: Error, Equatable {
@@ -307,20 +314,32 @@ enum FilesOnlySession {
         defer { timer.cancel() }
         do {
             try await channel.start()
+            let clientNonce = AuthTranscript.randomNonce()
             try await channel.send(.hello(Hello(clientName: clientName, deviceModel: clientModel, appVersion: "1.0",
                                                 clientPublicKey: identity.publicKeyData, supportedCodecs: [],
                                                 maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil,
-                                                features: ClientFeatures(fileTransfer: true, filesOnly: true))))
+                                                features: ClientFeatures(fileTransfer: true, filesOnly: true), clientNonce: clientNonce)))
             let first = try await channel.receive()
             if case .authResult(let result)? = first, result.status == .versionMismatch { throw Failure.incompatible }
             guard case .challenge(let challenge)? = first else { throw ClientHandshakeError.badHandshake }
-            let signature = try identity.sign(AuthTranscript.bytes(nonce: challenge.nonce, hostPublicKey: challenge.hostPublicKey,
-                                                                   clientPublicKey: identity.publicKeyData))
+            let hostKey: Data
+            do {
+                hostKey = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
+                                                       expected: device.hostPublicKey)
+            } catch HostIdentityCheck.Failure.unsigned {
+                throw Failure.incompatible
+            } catch let failure as HostIdentityCheck.Failure {
+                throw Failure.refused(failure.message(deviceName: device.name, host: device.hostNoun))
+            }
+            let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
+                                                                         hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData,
+                                                                         purpose: .files))
             try await channel.send(.authenticate(Authenticate(signature: signature)))
             guard case .authResult(let result)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
             switch result.status {
             case .ok:
-                return Opened(primary: channel, token: result.sessionToken, capabilities: result.capabilities, host: address.host, port: port)
+                return Opened(primary: channel, token: result.sessionToken, capabilities: result.capabilities, host: address.host, port: port,
+                              hostPublicKey: hostKey)
             case .pairingRequired, .badPairingCode:
                 throw Failure.pairingRequired
             case .versionMismatch:

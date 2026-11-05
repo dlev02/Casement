@@ -342,6 +342,7 @@ struct RemoteSessionScreen: View {
                 store.markConnected(device)
                 // Hosts before the platform field are all Macs.
                 store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
+                if let key = session.hostPublicKey { store.recordHostKey(key, for: device.id) }
                 #if os(macOS)
                 checkForThisMac()
                 #endif

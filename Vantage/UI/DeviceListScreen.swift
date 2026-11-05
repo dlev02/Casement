@@ -602,12 +602,13 @@ extension HostAvailability {
         switch self {
         case .ready, .online: .green
         case .pairingRequired, .needsPermission, .incompatible: .orange
+        case .identityChanged: .red
         case .checking, .unavailable: .secondary
         }
     }
     var isWarning: Bool {
         switch self {
-        case .pairingRequired, .needsPermission, .incompatible: true
+        case .pairingRequired, .needsPermission, .incompatible, .identityChanged: true
         default: false
         }
     }

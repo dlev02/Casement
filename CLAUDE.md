@@ -64,8 +64,21 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   through Network.framework's `ne_filter`, which silently dropped stream chunks whenever a receive
   waited for ≥ 16 KB (4K keyframes from a PC arrived with holes, then `badMagic`). Loopback and
   BSD sockets never showed it, so loopback tests can't catch it.
-- **Auth**: Ed25519 device identities in Keychain. Host challenges with a nonce; client signs a
-  domain-separated transcript. First connection needs a 6-digit pairing code shown on the Mac; after
+- **Auth**: Ed25519 device identities in Keychain, both ways. The client's `hello` carries a
+  nonce; the host answers a challenge with its own nonce and `hostSignature` over both nonces and
+  both keys (`AuthTranscript.hostBytes`), and the client checks it before signing anything or
+  sending a pairing code (`HostIdentityCheck`): the host must prove it holds the key it names, and
+  that key must be the one remembered for the saved device from its first connection
+  (`SavedDevice.hostPublicKey`, recorded by the session screen and files-only sessions through
+  `DeviceStore.recordHostKey`; Edit Device shows the fingerprint and offers Forget Identity after a
+  reinstall, and the list shows "Identity changed"). The client then signs
+  `AuthTranscript.clientBytes`, which also binds the connection's purpose (screen, probe, files), so
+  a signature made for an availability check can't open a screen and one made for one host is
+  useless at another; the host derives the purpose from the hello (`AuthPurpose`). A client without
+  a nonce (older builds) still signs the older `vantage-auth-v1` transcript, which hosts accept; a
+  host without a signature (older Casement Host) is refused with "Update Casement Host". Any change
+  here updates the Swift and C# sides and the golden vectors (`helloProbe`, `challengeSigned`).
+  First connection needs a 6-digit pairing code shown on the Mac; after
   that the key is trusted. iOS names every device "iPad"/"iPhone", so a paired device still
   called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
   Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),

@@ -223,6 +223,10 @@ public sealed class HostSessionCore
         var lightweight = hello.IsReadinessProbe == true || hello.Features?.FilesOnly == true;
         if (!lightweight) await LookUpPeerAsync(deadline).ConfigureAwait(false);
         var tailnetName = _peer?.TailnetName;
+        // A client that sent a nonce wants proof this challenge comes from the holder of the host
+        // key, and signs the transcript that binds both nonces and the connection's purpose. One
+        // that didn't (an older Casement) signs the older transcript; the host still takes that.
+        var clientNonce = hello.ClientNonce is { Length: AuthTranscript.NonceLength } sent ? sent : null;
         await _connection.SendAsync(new Challenge
         {
             HostName = _env.HostName,
@@ -232,6 +236,8 @@ public sealed class HostSessionCore
             IsPaired = isPaired,
             PeerTailnetName = tailnetName,
             HostPlatform = _env.Platform,
+            HostSignature = clientNonce is null ? null
+                : _env.Ed25519.Sign(identity.Seed, AuthTranscript.HostBytes(clientNonce, nonce, identity.PublicKey, hello.ClientPublicKey)),
         }).ConfigureAwait(false);
 
         if (await _connection.ReceiveAsync(deadline).ConfigureAwait(false) is not Authenticate auth)
@@ -239,7 +245,11 @@ public sealed class HostSessionCore
             _log.LogInformation("handshake ended before authenticate");
             return false;
         }
-        if (!AuthTranscript.Verify(_env.Ed25519, auth.Signature, nonce, identity.PublicKey, hello.ClientPublicKey))
+        var signatureValid = clientNonce is null
+            ? AuthTranscript.Verify(_env.Ed25519, auth.Signature, nonce, identity.PublicKey, hello.ClientPublicKey)
+            : AuthTranscript.VerifyClient(_env.Ed25519, auth.Signature, clientNonce, nonce, identity.PublicKey, hello.ClientPublicKey,
+                                          AuthTranscript.Purpose(hello));
+        if (!signatureValid)
         {
             await _connection.SendAsync(new AuthResult { Status = AuthStatus.BadSignature }).ConfigureAwait(false);
             return false;
