@@ -78,7 +78,7 @@
                     Toggled="OnRestartGuardToggled" />
             </tk:SettingsCard>
             <tk:SettingsCard
-                Description="Includes Task Manager. Windows asks for permission once, on this PC."
+                Description="Includes Task Manager. Windows asks once, then any program you run could use this to get administrator rights without asking, so turn it on only if you need it."
                 Header="Control apps running as administrator">
                 <tk:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE7EF;" />
