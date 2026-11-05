@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Tray;
+using Vantage.Host.Windows.Updates;
 
 namespace Vantage.Host.Windows.App.Pages;
 
@@ -77,7 +78,84 @@ public sealed partial class GeneralPage : Page
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
             AdminSwitch.IsEnabled = _controller.Runtime is not null;
         }
+        UpdateUpdates();
         _updating = false;
+    }
+
+    private void UpdateUpdates()
+    {
+        if (_controller?.Updater is not { } updater)
+        {
+            UpdatesSection.Visibility = Visibility.Collapsed;
+            return;
+        }
+        UpdatesSection.Visibility = Visibility.Visible;
+        var status = updater.Status;
+        var automatic = _controller.InstallsUpdatesAutomatically;
+        var row = UpdateRow.For(status, automatic, _controller.Runtime?.Settings.Current.LastUpdateCheck, DateTimeOffset.Now);
+        UpdateCard.Header = $"Casement Host {AppController.VersionNumber}";
+        UpdateCard.Description = row.Description;
+        AutoUpdateSwitch.IsOn = automatic;
+
+        var downloading = status.Stage == UpdateStage.Downloading;
+        var working = downloading || status.Stage == UpdateStage.Checking;
+        UpdateProgress.Visibility = working ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgress.IsActive = working;
+        UpdateProgress.IsIndeterminate = !downloading;
+        UpdateProgress.Value = status.Fraction * 100;
+
+        WhatsNewLink.Visibility = status.NotesUrl is not null && status.Stage is UpdateStage.Ready or UpdateStage.ManualOnly
+            ? Visibility.Visible : Visibility.Collapsed;
+        UpdateButton.Visibility = row.Action == UpdateRowAction.None ? Visibility.Collapsed : Visibility.Visible;
+        UpdateButton.Content = row.ActionLabel;
+        // One prominent thing on the page at a time: only a restart that's waiting earns the accent.
+        UpdateButton.Style = UiHelpers.Resource<Style>(row.Action == UpdateRowAction.Restart ? "AccentButtonStyle" : "DefaultButtonStyle");
+    }
+
+    private async void OnUpdateButton(object sender, RoutedEventArgs e)
+    {
+        if (_controller?.Updater is not { } updater) return;
+        var row = UpdateRow.For(updater.Status, _controller.InstallsUpdatesAutomatically, null, DateTimeOffset.Now);
+        switch (row.Action)
+        {
+            case UpdateRowAction.Check or UpdateRowAction.TryAgain:
+                await _controller.CheckForUpdatesAsync();
+                break;
+            case UpdateRowAction.Download:
+                OnWhatsNew(sender, e);
+                break;
+            case UpdateRowAction.Restart:
+                var connected = _controller.Sessions.Count;
+                var moving = _controller.Transfers.Items.Count(t => t.IsActive);
+                if (connected > 0 || moving > 0)
+                {
+                    var confirm = new ContentDialog
+                    {
+                        XamlRoot = XamlRoot,
+                        Title = "Restart to update?",
+                        Content = moving > 0
+                            ? "Connected devices will drop until Casement Host is back, and files still moving will pause."
+                            : "Connected devices will drop until Casement Host is back, which takes a few seconds.",
+                        PrimaryButtonText = "Restart",
+                        CloseButtonText = "Not now",
+                        DefaultButton = ContentDialogButton.Close,
+                    };
+                    if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                }
+                await _controller.InstallUpdateNowAsync();
+                break;
+        }
+    }
+
+    private async void OnWhatsNew(object sender, RoutedEventArgs e)
+    {
+        if (_controller?.Updater?.Status.NotesUrl is { } url) await global::Windows.System.Launcher.LaunchUriAsync(new Uri(url));
+    }
+
+    private void OnAutoUpdateToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        _controller?.SetInstallsUpdatesAutomatically(AutoUpdateSwitch.IsOn);
     }
 
     private void UpdateAddress()

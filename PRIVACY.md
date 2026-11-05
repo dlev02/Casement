@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective September 30, 2026**
+**Effective November 5, 2026**
 
 This policy covers the Casement apps for iPhone, iPad, Apple Vision Pro, and Mac, and Casement Host for Mac and Windows (together, "Casement"). Casement is made by Drew Levinson.
 
@@ -29,7 +29,7 @@ Removing a device in Casement deletes the secrets saved for it. Deleting the app
 
 ## What goes over the network
 
-Casement connects only to the places below, and only when you use the matching feature.
+Casement connects only to the places below, and only when you use the matching feature. Turn off **Install updates automatically** in Casement Host for Windows's settings and it won't contact GitHub unless you ask it to.
 
 | Where | When | What is sent |
 | --- | --- | --- |
@@ -37,6 +37,7 @@ Casement connects only to the places below, and only when you use the matching f
 | Your Mac's built-in Screen Sharing (port 5900) | Only when you use Type Password or Log In with Screen Sharing | Your saved Mac account name and password, to type them at the Mac |
 | `api.tailscale.com` | Only if you add a Tailscale key, to list your tailnet's devices | Your Tailscale key. Tailscale returns your device list, which stays on your device |
 | Hugging Face | Only if you turn on the built-in Parakeet dictation model in Casement Host | A download request for the model files (about 490 MB) |
+| GitHub | Casement Host for Windows, about once a day, while **Install updates automatically** is on (it is by default), or when you choose **Check for updates** | A download request for the latest release's update information and, when there's a newer version, the update itself. GitHub sees your computer's IP address and Casement Host's version, as with any download. Nothing about you or your devices is sent, and the developer can't see these requests |
 
 Casement doesn't add its own encryption layer. It relies on Tailscale's encrypted WireGuard tunnel between your devices, and on the pairing step, where each device proves its identity with a signing key. Casement Host refuses connections from outside Tailscale's address ranges. Tailscale's handling of your data is covered by [Tailscale's privacy policy](https://tailscale.com/privacy-policy).
 

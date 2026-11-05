@@ -84,6 +84,19 @@
                         Visibility="Collapsed" />
                 </StackPanel>
 
+                <!-- A new version is staged and waiting (usually because a device is connected). -->
+                <Button
+                    x:Name="UpdateRow"
+                    Margin="-11,-4,-11,-12"
+                    Click="OnUpdateRow"
+                    Style="{StaticResource PanelRowButtonStyle}"
+                    Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE896;" />
+                        <TextBlock x:Name="UpdateRowText" />
+                    </StackPanel>
+                </Button>
+
                 <!-- Once something is paired: a code when asked, and the list a click away. -->
                 <StackPanel x:Name="DeviceCommands" Margin="0,-4,0,0" Visibility="Collapsed">
                     <Button x:Name="ShowCodeRow" Click="OnShowCode" Style="{StaticResource PanelRowButtonStyle}">
