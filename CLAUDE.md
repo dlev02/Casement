@@ -892,7 +892,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
-  user's own hosts, Screen Sharing on 5900, `api.tailscale.com`, Hugging Face for Parakeet): a new
+  user's own hosts, Screen Sharing on 5900, `api.tailscale.com`, Hugging Face for Parakeet, GitHub
+  for host updates): a new
   destination or a new stored secret means updating `PRIVACY.md` and the FAQ's Privacy answers.
 - **Nothing personal in tracked files**: never commit a real tailnet name, Tailscale IP, node or
   user ID, SSH user, or email, even in research notes or test fixtures. Use `tail1234.ts.net`,
@@ -919,7 +920,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   listing, review notes, privacy answers, screenshot sets and the `asc` metadata files are in
   `docs/app-store/` (`README.md` is the index; `python3 -I docs/app-store/check-lengths.py`
   counts every limited field). Casement Host ships on GitHub Releases tagged `host-x.y`
-  (notarized Mac DMG and zip plus the Windows zips, with SHA-256 checksums; `v1.0` was the first).
+  (notarized Mac DMG and zip plus the Windows zips, with SHA-256 checksums; `v1.0` was the first). From
+  1.4 a Windows release also needs its signed `windows-update.json` and `.sig` (see Windows host › Updates).
   Device delivery logs go in `docs/testing/<date>.md`. `.github/workflows/claude-issue-fix.yml`
   hands each new bug report (or an issue labelled `claude-fix`) to Drew's "Bug report to draft
   PR" routine, which may open a draft PR from `claude/issue-<n>`; nothing there merges.
@@ -1103,6 +1105,31 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--preview-state empty|one|many|transfers|pairing|problem`, `--window-size WxH`, `--pane-closed`,
   `--expand`, `--theme light|dark` (`PreviewFixtures.cs`: made-up devices and a made-up tailnet).
   `--synthetic` copies register under their own instance key, so they run beside the installed host.
+- **Updates** (`Platform/Updates`, `Protocol/Updates`; our own, not Velopack, because the install
+  folder must keep its path: the Run value, administrator task, firewall rule, shortcut and tray
+  choice all name it). `HostUpdater` fetches `windows-update.json` and `.sig` from
+  `releases/latest/download/` (`ReleaseFeed`). A manifest counts only with an Ed25519 signature
+  (`UpdateSignature`, domain-separated) from `ReleasePublicKeyHex`, a zip only with the signed SHA-256
+  and size, and a staged copy only if its exe says it's the version on offer; only a strictly newer
+  version is offered (`UpdateVersion.IsNewer`), and a release without a manifest means nothing's on
+  offer. **The private key** is `%USERPROFILE%\.casement\update-signing-key` on the PC, outside the
+  repo; lose it and every installed copy needs a manual download. The zip unpacks to `<install>.update`,
+  and `UpdateInstaller` swaps: the host starts the staged exe with `--finish-update <pid>` and waits for
+  its `swapper-running` file before quitting (`StartSwapAsync`), so a release too broken to run
+  leaves the host up; a running exe can't replace itself, so the swapper renames the install to
+  `.old`, copies itself in, starts it, and waits ≤ 120 s for the new host to delete `pending`
+  (`MarkHealthy`, once it got as far as listening). No word: back to `.old`, and `skip-version` skips
+  that version until Try again. The target folder comes from where the swapper is (it must sit in a
+  `.update` folder), never from the command line. `UpdatePolicy`: first check 2 min after launch, then
+  every 24 h, none while `InstallUpdatesAutomatically` is off; an unattended install needs no
+  sessions, file channels, active transfers, pairing code or open window for 5 min (a device that just
+  dropped is usually reconnecting). Debug builds don't update unless given a feed. UI: General ›
+  Updates (`UpdateRow` has every state's wording) and a Restart row in the tray panel, which sends
+  anyone connected to Settings to confirm. Release files: `scripts/make-release.ps1 -Version x.y`
+  (zips, checksums, signed manifest; bump the csproj first), uploaded to `host-x.y`; a draft is
+  invisible to `releases/latest`. Debug: `--preview-update
+  uptodate|checking|downloading|ready|manual|failed|rolledback`; `--update-feed URL --update-key HEX
+  --update-soon` runs it for real against a test feed. Tests: `UpdateManifestTests`, `HostUpdaterTests`.
 - **Administrator apps**: UIPI drops input a non-elevated process sends to an elevated window, and
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
   `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the

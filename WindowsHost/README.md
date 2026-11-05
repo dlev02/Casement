@@ -23,6 +23,24 @@ the PC and on the device you'll connect from.
 
 Each release lists SHA-256 checksums for its downloads.
 
+### Updates
+
+From version 1.4, Casement Host keeps itself up to date. About once a day it asks GitHub whether
+there's a newer version and downloads it in the background. It installs only when no device has been
+connected for five minutes, no files are moving and its window is closed, then starts again by
+itself, so a session is never cut off. To install sooner, choose **Restart to update** in the panel
+or under Settings › General › Updates.
+
+Every update is signed, and Casement Host refuses anything without that signature. If a new version
+doesn't start, the old one comes back by itself and that version is skipped until you choose **Try
+again**. Turn off **Install updates automatically** and it won't contact GitHub unless you choose
+**Check for updates**. A copy kept somewhere it can't change, such as Program Files, tells you when
+there's a new version for you to download instead.
+
+Versions before 1.4 can't update themselves, so download 1.4 once by hand. Quit Casement Host, then
+replace the files in the folder you unzipped it to, so your settings, the startup entry and the
+firewall rule carry over.
+
 ## Use it
 
 Casement Host lives in the system tray. Windows 11 keeps a new icon behind the **^** next to the
@@ -63,6 +81,8 @@ straight away.
   without asking again. While it's off, Casement Host shows a notification on the PC when a click
   lands on such an app. Any program running as you could use that task to get administrator rights without
   a prompt, so turn this on only if you need it.
+  **Updates** shows the version and **Check for updates**, with **Install updates automatically**
+  beside it (on by default).
 - **Devices**: **Show pairing code**, who's connected now, and the devices you've paired. Removing
   one (under its **…** button) disconnects it, and it needs a new code to come back.
 - **Display**: which display is shared (the main one), whether devices may change its resolution

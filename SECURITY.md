@@ -13,6 +13,7 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 - The Casement apps and Casement Host for Mac and Windows, built from this repository or downloaded from its releases or the App Store.
 - The wire protocol, pairing, and device authentication (`Packages/VantageCore`, `WindowsHost/src/Vantage.Protocol`).
 - How secrets are stored: device identity keys, Tailscale keys, and saved Mac passwords.
+- Casement Host's self-updater (`WindowsHost/src/Vantage.Host.Windows.Platform/Updates`).
 
 ## How Casement is meant to be secure
 
@@ -22,6 +23,7 @@ You'll get a reply as soon as I can, usually within a week. Once a fix ships, I'
 - **Pairing.** A new device needs the six-digit code shown on the host. A code expires after 10 minutes and is destroyed after 5 wrong guesses, and each wrong guess costs the peer a second.
 - **Revocation.** Removing a device in Casement Host revokes its key and closes its open connections.
 - **Secrets.** Tailscale keys and Mac passwords live in the Keychain, readable only while the device is unlocked, and are never logged.
+- **Updates.** Casement Host installs an update only if it's signed with the release key, whose public half is built into the app. The signature covers the version and the download's SHA-256, and only a newer version is accepted, so whoever controls the download can't substitute a file or roll a copy back to an older version. The private key isn't in this repository.
 
 ## Known limits
 
@@ -30,6 +32,7 @@ These are deliberate, documented trade-offs, not vulnerabilities:
 - Anyone who can use an already paired, unlocked device can control the computers it's paired with. Turn on the app lock (Face ID, Touch ID, or Optic ID) in Settings › Privacy & Security.
 - Type Password and Log In with Screen Sharing use the Mac's built-in Screen Sharing (Apple Remote Desktop authentication), which is only as strong as that protocol. It's used only over your tailnet or, at the login window, your home network.
 - Every device on your tailnet can reach Casement Host's port unless your access rules say otherwise. Without a pairing code it can't get in, but it can use up a code that's showing with 5 wrong guesses; choose New Code on the host if one disappears. [Limit who can reach it](#limit-who-can-reach-casement-host) to stop this.
+- The update signature protects the download, not a computer that's already compromised: Casement Host for Windows lives in a folder your user account can write to, so a program already running as you could change it, with or without updates.
 - **Control apps running as administrator** (Windows, off by default) starts Casement Host as administrator without asking. Any program running as you could use that to get administrator rights without a prompt, so turn it on only if you need to control such apps, and turn it off when you don't.
 - Casement hasn't had an independent security audit.
 

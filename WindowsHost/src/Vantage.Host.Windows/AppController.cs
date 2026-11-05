@@ -16,9 +16,11 @@ using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Storage;
 using Vantage.Host.Windows.Tailscale;
 using Vantage.Host.Windows.Tray;
+using Vantage.Host.Windows.Updates;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Files;
 using Vantage.Protocol.Host;
+using Vantage.Protocol.Updates;
 
 namespace Vantage.Host.Windows.App;
 
@@ -49,9 +51,14 @@ public sealed class AppController
     private bool _quitting;
     private DispatcherQueueTimer? _progressRefresh;
     private DispatcherQueueTimer? _transferTick;
+    private DispatcherQueueTimer? _updateTick;
+    private DateTimeOffset _updatesStartedAt;
+    private DateTimeOffset _lastBusyAt;
+    private DateTimeOffset _nextBackgroundCheck;
 
 #if DEBUG
     private readonly PreviewOptions _previewOptions;
+    private readonly string[] _launchArguments;
     private PreviewFixture? _preview;
 #endif
 
@@ -60,6 +67,7 @@ public sealed class AppController
     public AppController(string[] args, DispatcherQueue ui)
     {
 #if DEBUG
+        _launchArguments = args;
         _previewOptions = PreviewOptions.Take(ref args);
 #endif
         _args = args;
@@ -125,6 +133,138 @@ public sealed class AppController
     /// redrawn at most this often. Starts, ends and pauses refresh at once.
     /// </summary>
     private static readonly TimeSpan ProgressRefreshInterval = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Finds and installs new versions; null on debug runs without a test feed.</summary>
+    public HostUpdater? Updater { get; private set; }
+
+    /// <summary>"Install updates automatically".</summary>
+    public bool InstallsUpdatesAutomatically => Runtime?.Settings.Current.InstallUpdatesAutomatically ?? false;
+
+    /// <summary>Turns "Install updates automatically" on or off.</summary>
+    public void SetInstallsUpdatesAutomatically(bool on)
+    {
+        Runtime?.Settings.Update(s => s with { InstallUpdatesAutomatically = on });
+        Refresh();
+    }
+
+    /// <summary>This version, for reading ("1.4").</summary>
+    public static string VersionNumber => UpdateVersion.Display(WindowsHostRuntime.AppVersion);
+
+    /// <summary>Checks now, because someone asked (Settings › General › Check for updates).</summary>
+    public Task CheckForUpdatesAsync() => CheckForUpdatesAsync(userAsked: true);
+
+    private async Task CheckForUpdatesAsync(bool userAsked)
+    {
+        if (Updater is not { } updater || Runtime is not { } runtime) return;
+        // A stalled download can't hold up every later check.
+        using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+        await updater.CheckAsync(userAsked, limit.Token);
+        if (updater.Status.Stage == UpdateStage.Failed)
+        {
+            _nextBackgroundCheck = DateTimeOffset.Now.AddHours(1);
+        }
+        else
+        {
+            runtime.Settings.Update(s => s with { LastUpdateCheck = DateTimeOffset.Now });
+        }
+        Refresh();
+    }
+
+    /// <summary>
+    /// Starts the staged version's swapper, then quits for it. If Windows won't run that copy the host
+    /// just keeps going. Asked for, or at a quiet moment; the caller has warned anyone connected.
+    /// </summary>
+    public async Task InstallUpdateNowAsync()
+    {
+        if (Updater is not { IsReady: true } updater || Runtime is not { } runtime || _quitting) return;
+        var install = Path.GetDirectoryName(ExecutablePath)!;
+#if DEBUG
+        IEnumerable<string> passThrough = _launchArguments;
+#else
+        IEnumerable<string> passThrough = [];
+#endif
+        _log.LogInformation("restarting into update {Version}", updater.Status.Version);
+        if (!await UpdateInstaller.StartSwapAsync(install, runtime.Paths.UpdatesDirectory, Environment.ProcessId, passThrough))
+        {
+            _log.LogWarning("Windows wouldn't start the staged update");
+            updater.ReportSwapFailed();
+            Refresh();
+            return;
+        }
+        await QuitAsync();
+    }
+
+    private void StartUpdates(HostCommandLine options)
+    {
+        var runtime = Runtime!;
+        var install = Path.GetDirectoryName(ExecutablePath)!;
+        // This copy got as far as listening: a swapper waiting on it can stop watching.
+        UpdateInstaller.MarkHealthy(runtime.Paths.UpdatesDirectory);
+
+#if DEBUG
+        if (_previewOptions.UpdateFeed is null && _previewOptions.UpdatePreview is null) return;
+        var feed = _previewOptions.UpdateFeed ?? "http://127.0.0.1:9/";
+        var key = _previewOptions.UpdateKey ?? HostUpdater.ReleasePublicKeyHex;
+#else
+        const string feed = HostUpdater.ReleaseFeed;
+        const string key = HostUpdater.ReleasePublicKeyHex;
+#endif
+        _ = options;
+        // What the swapper leaves can only go once it has exited.
+        var cleanUp = _ui.CreateTimer();
+        cleanUp.Interval = TimeSpan.FromSeconds(20);
+        cleanUp.IsRepeating = false;
+        cleanUp.Tick += (_, _) => UpdateInstaller.CleanUp(install, runtime.Paths.UpdatesDirectory);
+        cleanUp.Start();
+
+        var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"CasementHost/{VersionNumber}");
+        Updater = new HostUpdater(http,
+                                  new HostUpdaterOptions(feed, Convert.FromHexString(key), WindowsHostRuntime.AppVersion, install, runtime.Paths.UpdatesDirectory),
+                                  new Protocol.Auth.NSecEd25519(), _logging!.CreateLogger("Vantage.Updates"));
+        Updater.Changed += () => StateChanged?.Invoke();
+
+        _updatesStartedAt = DateTimeOffset.Now;
+        _lastBusyAt = _updatesStartedAt;
+        _updateTick = _ui.CreateTimer();
+        _updateTick.Interval = TimeSpan.FromSeconds(30);
+        _updateTick.Tick += (_, _) => OnUpdateTick();
+        _updateTick.Start();
+    }
+
+    private void OnUpdateTick()
+    {
+        if (Updater is not { } updater || Runtime is not { } runtime || _quitting) return;
+        var now = DateTimeOffset.Now;
+        var settings = runtime.Settings.Current;
+        var automatic = settings.InstallUpdatesAutomatically;
+        var activity = CurrentActivity(now);
+#if DEBUG
+        // --update-soon: no waiting, for the end-to-end run.
+        var sinceLaunch = _previewOptions.UpdateSoon ? UpdatePolicy.FirstCheckDelay : now - _updatesStartedAt;
+        if (_previewOptions.UpdateSoon) activity = activity with { QuietFor = UpdatePolicy.QuietBeforeInstall };
+#else
+        var sinceLaunch = now - _updatesStartedAt;
+#endif
+        if (now >= _nextBackgroundCheck && UpdatePolicy.ShouldCheck(automatic, sinceLaunch, settings.LastUpdateCheck, now))
+        {
+            _nextBackgroundCheck = now.AddMinutes(1);
+            _ = CheckForUpdatesAsync(userAsked: false);
+        }
+        if (updater.IsReady && UpdatePolicy.MayInstallUnattended(automatic, activity)) _ = InstallUpdateNowAsync();
+    }
+
+    private UpdateActivity CurrentActivity(DateTimeOffset now)
+    {
+        var activity = new UpdateActivity(
+            Sessions.Count + FileChannels.Count,
+            Transfers.Items.Count(t => t.IsActive),
+            PairingCode is not null,
+            (_window?.AppWindow.IsVisible ?? false) || (_panel?.AppWindow.IsVisible ?? false),
+            now - _lastBusyAt);
+        if (!activity.IsClear) _lastBusyAt = now;
+        return activity with { QuietFor = now - _lastBusyAt };
+    }
 
     /// <summary>Starts the host, the tray and notifications.</summary>
     public async Task StartAsync()
@@ -230,6 +370,7 @@ public sealed class AppController
             _log.LogError(ex, "can't listen");
             ShowWindow();
         }
+        StartUpdates(options);
         Refresh();
         if (TakeOpenOnLaunch() is { } page) ShowWindow(page);
         Tailnet = await Runtime.Tailscale.GetSelfAsync();
@@ -244,6 +385,7 @@ public sealed class AppController
     private void ApplyPreview()
     {
         var options = _previewOptions;
+        if (options.UpdatePreview is { } updateState) Updater?.SetForPreview(PreviewFixture.UpdateStatusFor(updateState));
         if (options.State is { } state)
         {
             _preview = PreviewFixture.For(state);
@@ -410,6 +552,7 @@ public sealed class AppController
         _panel?.CloseForQuit();
         _progressRefresh?.Stop();
         _transferTick?.Stop();
+        _updateTick?.Stop();
         _tray?.Dispose();
         _arrivals?.Dispose();
         if (_notificationsRegistered)

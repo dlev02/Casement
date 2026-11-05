@@ -51,7 +51,7 @@ Casement is free and open source. Version 1.0 is **in App Review** for iPhone, i
 | Computer | Download | Install |
 | --- | --- | --- |
 | Mac (macOS 26 or later) | `Casement-Host-…-mac.dmg` | Open the DMG and drag Casement Host to Applications, then open it. A setup window walks you through Screen Recording, Accessibility, starting at login, and pairing. Signed and notarized by Apple. |
-| Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder once. From then on it starts when you sign in and is in the Start menu. |
+| Windows PC (Intel or AMD) | `Casement-Host-…-windows-x64.zip` | Unzip anywhere and run `VantageHost.exe` in the Casement Host folder once. From then on it starts when you sign in, is in the Start menu, and updates itself (from version 1.4). |
 | Windows PC (ARM) | `Casement-Host-…-windows-arm64.zip` | The same; not yet tested on ARM hardware. |
 
 The Windows app isn't code-signed yet, so Windows may say the publisher is unknown: choose **More info › Run anyway**. Allow it through Windows Firewall when asked. Each release lists SHA-256 checksums.
@@ -216,4 +216,4 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Casement is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
 
-It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks) and [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [Concentus](https://github.com/lostromb/concentus) (BSD 3-Clause, a C# port of Opus). Casement isn't affiliated with Apple, Microsoft, or Tailscale.
+It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, and, in the Windows host, [NSec](https://nsec.rocks), [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) and the [Windows Community Toolkit](https://github.com/CommunityToolkit/Windows) (MIT) and [Concentus](https://github.com/lostromb/concentus) (BSD 3-Clause, a C# port of Opus). Casement isn't affiliated with Apple, Microsoft, or Tailscale.
