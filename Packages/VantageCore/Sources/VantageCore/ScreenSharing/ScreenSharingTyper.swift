@@ -215,7 +215,7 @@ private final class RFBConnection: @unchecked Sendable {
 
         let typeCount = Int(try await receive(1)[0])
         guard typeCount > 0 else {
-            let reason = String(decoding: try await receive(try await receiveU32()), as: UTF8.self)
+            let reason = String(decoding: try await receive(try receiveLength(try await receiveU32())), as: UTF8.self)
             throw ScreenSharingTyper.TypeError.protocolError(reason)
         }
         let types = try await receive(typeCount)
@@ -239,7 +239,14 @@ private final class RFBConnection: @unchecked Sendable {
 
         try await send(Data([1])) // ClientInit, shared: don't disconnect other viewers
         _ = try await receive(20)  // ServerInit: width, height, pixel format
-        _ = try await receive(try await receiveU32()) // desktop name
+        _ = try await receive(try receiveLength(try await receiveU32())) // desktop name
+    }
+
+    /// A string length the server announced. RFB strings here (a refusal reason, the desktop name)
+    /// are a few dozen bytes; a server naming gigabytes is broken or hostile and isn't read.
+    private func receiveLength(_ length: Int) throws -> Int {
+        guard length <= 4096 else { throw ScreenSharingTyper.TypeError.protocolError("string length \(length)") }
+        return length
     }
 }
 

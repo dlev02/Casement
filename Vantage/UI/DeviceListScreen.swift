@@ -160,6 +160,8 @@ final class DeviceActions {
     var deviceToDelete: SavedDevice?
     var deviceToLogIn: SavedDevice?
     var logInStatus: LogInStatus?
+    /// A Mac that didn't answer over Tailscale, waiting for a yes before its home address is tried.
+    var deviceToLogInAtHome: SavedDevice?
     var transfersDevice: SavedDevice?
     /// Send Files… picks files for this Mac without opening its screen.
     var sendFilesDevice: SavedDevice?
@@ -172,13 +174,18 @@ final class DeviceActions {
         showSendFiles = true
     }
 
-    func logIn(to device: SavedDevice) {
+    func logIn(to device: SavedDevice, atHomeAddress: Bool = false) {
         logInStatus = .typing(device.name)
         Task {
             do {
-                try await ScreenSharingPassword.logIn(to: device)
+                try await ScreenSharingPassword.logIn(to: device, atHomeAddress: atHomeAddress)
                 logInStatus = .sent(device.name)
                 try? await Task.sleep(for: .seconds(3))
+            } catch is ScreenSharingPassword.HomeAddressAvailable {
+                // The Mac didn't answer over Tailscale; ask before typing the password anywhere else.
+                logInStatus = nil
+                deviceToLogInAtHome = device
+                return
             } catch {
                 logInStatus = .failed(ScreenSharingPassword.message(for: error))
                 try? await Task.sleep(for: .seconds(6))
@@ -246,6 +253,17 @@ private struct DeviceActionPresentations: ViewModifier {
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
                 Text("Casement signs in to the Mac's Screen Sharing and types your saved password and Return. Use this when the Mac is at its login or lock screen, for example after a restart.")
+            }
+            .confirmationDialog(
+                actions.deviceToLogInAtHome.map { "Type the password at \(ScreenSharingPassword.homeAddress(of: $0) ?? "its home address")?" } ?? "",
+                isPresented: Binding(get: { actions.deviceToLogInAtHome != nil }, set: { if !$0 { actions.deviceToLogInAtHome = nil } }),
+                titleVisibility: .visible,
+                presenting: actions.deviceToLogInAtHome
+            ) { device in
+                Button("Type Password") { actions.logIn(to: device, atHomeAddress: true) }
+                Button("Cancel", role: .cancel) {}
+            } message: { device in
+                Text("“\(device.name)” didn't answer over Tailscale. Its home network address is a plain local address: away from home, whatever answers there would receive the password. Continue only on your home network or through your Tailscale subnet router.")
             }
             .overlay(alignment: .bottom) {
                 if let logInStatus = actions.logInStatus {
