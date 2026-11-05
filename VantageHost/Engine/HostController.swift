@@ -59,6 +59,9 @@ final class HostController {
     private var trustLoaded = false
     /// Who is watching right now: screen sessions that got past authentication, oldest first.
     private(set) var connectedDevices: [ConnectedDevice] = []
+    /// When a device last went away (a screen, a files-only session, a file channel), for the
+    /// updater's quiet period: availability checks don't count.
+    private(set) var lastConnectionEndedAt: Date?
     /// A FileVault unlock key is waiting for the next restart, so don't ask again.
     private(set) var safeRestartStaged = false
 
@@ -70,14 +73,20 @@ final class HostController {
     /// A screen session is up (files-only sessions live in `fileSessions` and never count): the
     /// restart guard and "is this Mac being watched" (`FileArrivals.isViewedRemotely`) go by it.
     var hasConnectedClients: Bool { !connectedDevices.isEmpty }
+    /// What an unattended update waits for: sessions of any kind, file channels, moving or paused
+    /// files, and a pairing code on show. Whether a window is open is the updater's to add.
+    var updateActivity: UpdateActivity {
+        UpdateActivity(connections: sessions.count + fileSessions.count + fileChannels.count,
+                       activeTransfers: transfers.filter(\.isActive).count,
+                       showingPairingCode: pairingCode != nil)
+    }
     /// Sessions that said hello and haven't finished signing in. Each has `HostSession.handshakeLimit`
     /// to do so; past this many at once, new ones are turned away rather than buffered.
     private var pendingHandshakes: Set<ObjectIdentifier> = []
     static let maxPendingHandshakes = 8
 
     init() {
-        let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
-        self.identity = (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
+        self.identity = Self.loadIdentity()
         trust.onChange = { [weak self] in
             Task { @MainActor in self?.refreshTrusted() }
         }
@@ -90,6 +99,15 @@ final class HostController {
         refreshPermissions()
         refreshTailscale()
         refreshReadiness()
+    }
+
+    private static func loadIdentity() -> DeviceIdentity {
+        #if DEBUG
+        // An update test host is signed for the test and replaces itself: it stays out of the Keychain.
+        if HostOptions.shared.syntheticCapture, HostOptions.shared.updateFeed != nil { return DeviceIdentity() }
+        #endif
+        let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
+        return (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
     }
 
     func start() {
@@ -320,6 +338,9 @@ final class HostController {
     }
 
     private func remove(_ session: HostSession) {
+        if connectedDevices.contains(where: { $0.session === session }) || fileSessions.contains(where: { $0 === session }) {
+            lastConnectionEndedAt = .now
+        }
         sessions.removeAll { $0 === session }
         fileSessions.removeAll { $0 === session }
         connectedDevices.removeAll { $0.session === session }
@@ -358,6 +379,7 @@ final class HostController {
                 handle(event, on: fileChannel)
             }
             fileChannels.removeAll { $0.engine === engine }
+            lastConnectionEndedAt = .now
         }
         resumeInterruptedSends(on: fileChannel)
         #if DEBUG

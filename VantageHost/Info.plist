@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/dlev02/Casement/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>$(CASEMENT_UPDATE_PUBLIC_KEY)</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<!-- 0: a feed that fails its signature is refused however long that lasts. Sparkle's default
+	     starts trusting it after 20 days, as a way out of a lost key; losing the key here means
+	     every copy needs a download by hand instead, as on Windows. -->
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<real>0</real>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+</dict>
+</plist>

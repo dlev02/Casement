@@ -23,6 +23,7 @@ struct HostMenuView: View {
             devicesSection
             if !isFirstPairing, controller.pairingCode != nil { pairing }
             HostFilesSection(controller: controller)
+            UpdateMenuSection(updater: HostUpdater.shared)
             footer
         }
         .padding(.horizontal, 14)

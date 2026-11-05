@@ -38,7 +38,7 @@ groups). Read this before working here.
 
 Inside them: the client is `Vantage/{Model, UI, Input, Video, Audio, Dictation, Transfer, Net,
 Intents, Mac}` (`Mac/` is the macOS-only shell); the host `VantageHost/{Engine, Input, System, UI,
-Net, Transfer, Dictation, Parakeet}` (`Engine/` is capture, encode, audio and adaptive bitrate,
+Net, Transfer, Dictation, Parakeet, Updates}` (`Engine/` is capture, encode, audio and adaptive bitrate,
 `System/` power, lock, restart and virtual display); VantageCore
 `Sources/VantageCore/{Wire, Messages, Transport, Identity, ScreenSharing, Transfer}`.
 
@@ -664,6 +664,37 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   the trailing edge, and a button names what it does in the current state (Allow…, Turn On…,
   Show Them…, Settings…; Screen Recording/Accessibility say Allowed or offer Allow…; Remote
   Login/Screen Sharing say On or offer Turn On…). Removing a paired device asks first.
+- **Host updates** (`VantageHost/Updates`; Sparkle 2, linked into the host target only, never the client):
+  the Windows host's rules on Sparkle's machinery. `UpdatePolicy` (pure, `HostUpdateTests`): first check 2 min
+  after launch, then every 24 h, an hour after a failure, none at all while Install Updates Automatically
+  (`updates.installAutomatically`, on by default) is off; an unattended install needs no sessions, file
+  channels, active transfers, pairing code or open window (menu, Settings, setup), all clear for 5 min,
+  counted from when a device last went away too (`HostController.lastConnectionEndedAt`; availability checks
+  don't count). `UpdateRow` has every state's wording. `HostUpdater` is Sparkle's `SPUUserDriver` and
+  delegate, so Sparkle never shows a window, and the schedule is ours (`SUEnableAutomaticChecks` false, then
+  `checkForUpdatesInBackground`): a background update ends in
+  `updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`, whose block waits for the policy, an
+  asked-for one in `showReady(toInstallAndRelaunch:)`. Quitting with a background update staged installs it
+  without relaunching. A copy that can't replace itself (translocated, read-only volume, unwritable folder:
+  `canReplaceItself`) only reads the feed (`checkForUpdateInformation`), so it never asks for a password, and
+  offers Download…. A latest release with no `appcast.xml` (a 404) counts as up to date. **Keys**: the public
+  half is `SUPublicEDKey` in `VantageHost/Info.plist`, from the build setting `CASEMENT_UPDATE_PUBLIC_KEY`; the
+  private half is in Drew's login Keychain (service `https://sparkle-project.org`, account `ed25519`), read by
+  `generate_appcast`, and is never printed or copied into the repo. Sparkle can't take a key at run time, so a
+  test key goes on the xcodebuild line. `SURequireSignedFeed` and `SUVerifyUpdateBeforeExtraction` sign the feed
+  and check the download before unpacking it; `SUSignedFeedFailureExpirationInterval` 0 removes Sparkle's 20-day
+  way out of a bad feed signature, so a lost key means every copy needs a download by hand, as on Windows.
+  Sparkle compares `CFBundleVersion`, so every release raises `CURRENT_PROJECT_VERSION`; hosts before 1.4 have
+  no updater and need one download by hand. UI: General › Updates, and an Update section in the menu when one
+  is waiting; restarting with a device connected or files moving asks first (`UpdateRow.restartWarning`).
+  Debug: nothing runs on a Debug or synthetic host without `--update-feed URL`; `--update-soon` skips the waits,
+  `--update-check-now` checks as if asked, `--update-restart-when-ready` presses the button, `--preview-update
+  uptodate|checking|downloading|preparing|ready|installing|manual|failed|off|none` shows a state with no
+  updater behind it. A relaunch loses the command line, so a DEBUG host also reads arguments from
+  `casement-host-test-arguments` beside its bundle; without it a relaunched test copy would come up as a real
+  host on 47820. Sparkle writes `SU*` keys to the host's real defaults domain even from a test copy (same bundle
+  id), so remove them after a test. An update test host (`--synthetic-capture` + `--update-feed`) uses a
+  throwaway identity and stays out of the Keychain.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display
@@ -888,7 +919,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
   also let Drew ship their work through app stores, which is what keeps the App Store build
   possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
-  CC BY 4.0, NSec/Vortice/Windows Community Toolkit MIT, Concentus BSD-3-Clause); check any new one.
+  CC BY 4.0, Sparkle MIT, NSec/Vortice/Windows Community Toolkit MIT, Concentus BSD-3-Clause); check any new one.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
@@ -921,7 +952,10 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `docs/app-store/` (`README.md` is the index; `python3 -I docs/app-store/check-lengths.py`
   counts every limited field). Casement Host ships on GitHub Releases tagged `host-x.y`
   (notarized Mac DMG and zip plus the Windows zips, with SHA-256 checksums; `v1.0` was the first). From
-  1.4 a Windows release also needs its signed `windows-update.json` and `.sig` (see Windows host › Updates).
+  1.4 a Windows release also needs its signed `windows-update.json` and `.sig` (see Windows host › Updates)
+  and a Mac release its signed `appcast.xml`, which `scripts/make-mac-release.sh <version>` makes along with
+  the DMG, zip and checksums (see Host updates). It notarizes with the App Store Connect API key in
+  `ASC_PRIVATE_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID` (`--throwaway` makes a test run of any version).
   Device delivery logs go in `docs/testing/<date>.md`. `.github/workflows/claude-issue-fix.yml`
   hands each new bug report (or an issue labelled `claude-fix`) to Drew's "Bug report to draft
   PR" routine, which may open a draft PR from `claude/issue-<n>`; nothing there merges.

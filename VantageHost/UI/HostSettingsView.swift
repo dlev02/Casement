@@ -32,7 +32,7 @@ struct HostSettingsView: View {
                 .tabItem { Label("Dictation", systemImage: "waveform") }
                 .tag("dictation")
         }
-        .frame(width: 500, height: 500)
+        .frame(width: 500, height: 570)
     }
 
     // Every tab follows System Settings: a row says what it is (and at most one short line under
@@ -166,6 +166,7 @@ struct HostSettingsView: View {
                     Footer(HostPermission.staleEntryHelp)
                 }
             }
+            UpdatesSection(updater: HostUpdater.shared)
         }
         .formStyle(.grouped)
         .task {
