@@ -957,6 +957,13 @@ menu-bar UI surfaces both with buttons. Tailscale must be running on both device
 (login-window capture, FileVault reboot recovery) is deliberately out of scope for v1 — see the
 research notes.
 
+**Keychain experiments**: use a throwaway item in the login Keychain, never change an item's access
+rules (`kSecAttrAccess` in an update raises a system dialog even with interaction off), and never
+kill a process stuck on a prompt: that crashed `securityd`, and its restart locked the login Keychain
+until the password was entered again. Results from a keychain made with `security create-keychain`
+don't carry over: there another program's overwrite was readable by the owner, while in the login
+Keychain it wasn't.
+
 ## Research
 
 `docs/research/` holds the verified engineering reports that back these decisions (media pipeline,
