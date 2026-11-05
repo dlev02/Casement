@@ -34,6 +34,9 @@ public sealed class HostPaths
     /// <summary>Log folder.</summary>
     public string LogsDirectory => Path.Combine(Root, "logs");
 
+    /// <summary>Updates in progress: the download while it's fetched, and the swap's markers.</summary>
+    public string UpdatesDirectory => Path.Combine(Root, "updates");
+
     /// <summary>The default log file (<c>logs\host.log</c>).</summary>
     public string DefaultLogFile => Path.Combine(LogsDirectory, "host.log");
 }

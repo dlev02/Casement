@@ -88,6 +88,40 @@
                     AutomationProperties.Name="Control apps running as administrator"
                     Toggled="OnAdminToggled" />
             </tk:SettingsCard>
+
+            <StackPanel x:Name="UpdatesSection" Spacing="4" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Updates" />
+                <tk:SettingsCard x:Name="UpdateCard">
+                    <tk:SettingsCard.HeaderIcon>
+                        <FontIcon Glyph="&#xE895;" />
+                    </tk:SettingsCard.HeaderIcon>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ProgressRing
+                            x:Name="UpdateProgress"
+                            Width="20"
+                            Height="20"
+                            AutomationProperties.Name="Update progress"
+                            Visibility="Collapsed" />
+                        <HyperlinkButton
+                            x:Name="WhatsNewLink"
+                            Click="OnWhatsNew"
+                            Content="What's new"
+                            Visibility="Collapsed" />
+                        <Button x:Name="UpdateButton" Click="OnUpdateButton" />
+                    </StackPanel>
+                </tk:SettingsCard>
+                <tk:SettingsCard
+                    Description="Checks GitHub once a day, and installs only while no device is connected."
+                    Header="Install updates automatically">
+                    <tk:SettingsCard.HeaderIcon>
+                        <FontIcon Glyph="&#xE896;" />
+                    </tk:SettingsCard.HeaderIcon>
+                    <ToggleSwitch
+                        x:Name="AutoUpdateSwitch"
+                        AutomationProperties.Name="Install updates automatically"
+                        Toggled="OnAutoUpdateToggled" />
+                </tk:SettingsCard>
+            </StackPanel>
         </StackPanel>
     </local:PageShell>
 </Page>

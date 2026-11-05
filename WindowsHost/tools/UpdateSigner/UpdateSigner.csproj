@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Makes the release signing key and signs windows-update.json for a release (scripts/make-release.ps1
+       runs it). Cross-platform, so a release can be signed on the Mac as well as the PC. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Vantage.Tools.UpdateSigner</RootNamespace>
+    <AssemblyName>UpdateSigner</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Vantage.Protocol\Vantage.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

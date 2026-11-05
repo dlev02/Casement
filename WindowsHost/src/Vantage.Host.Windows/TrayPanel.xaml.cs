@@ -194,6 +194,9 @@ public sealed partial class TrayPanel : Window
             else ShowCodeButton.Focus(FocusState.Programmatic);
         }
         _codeWasShowing = showingCode;
+        var update = _controller.Updater?.Status;
+        UpdateRow.Visibility = update?.Stage == Updates.UpdateStage.Ready ? Visibility.Visible : Visibility.Collapsed;
+        UpdateRowText.Text = $"Restart to update to {update?.Version}";
         PairedCount.Text = paired.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         AutomationProperties.SetName(PairedRow, paired.Count == 1 ? "1 paired device. Open in Settings" : $"{paired.Count} paired devices. Open in Settings");
 
@@ -308,6 +311,14 @@ public sealed partial class TrayPanel : Window
         Grid.SetColumn(actions, 2);
         grid.Children.Add(actions);
         return grid;
+    }
+
+    /// <summary>With nobody connected it just restarts; otherwise Settings asks first, since a dialog doesn't fit here.</summary>
+    private async void OnUpdateRow(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        if (_controller.Sessions.Count == 0 && !_controller.Transfers.Items.Any(t => t.IsActive)) await _controller.InstallUpdateNowAsync();
+        else _controller.ShowWindow("general");
     }
 
     private void OnShowCode(object sender, RoutedEventArgs e)

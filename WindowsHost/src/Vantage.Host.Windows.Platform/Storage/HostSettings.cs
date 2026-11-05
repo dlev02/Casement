@@ -55,6 +55,15 @@ public sealed record HostSettings
 
     /// <summary>The "still running in the system tray" notification was shown (once, the first time the window is closed).</summary>
     public bool TrayHintShown { get; init; }
+
+    /// <summary>
+    /// Check GitHub once a day and install updates at a quiet moment. Off, nothing touches the network
+    /// until someone presses Check for updates. On by default.
+    /// </summary>
+    public bool InstallUpdatesAutomatically { get; set; } = true;
+
+    /// <summary>When a check last got an answer.</summary>
+    public DateTimeOffset? LastUpdateCheck { get; init; }
 }
 
 /// <summary>Loads and saves <see cref="HostSettings"/>; thread-safe.</summary>
