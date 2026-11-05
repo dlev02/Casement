@@ -46,7 +46,7 @@ public sealed partial class FilesPage : Page
         if (_controller is null || _transferRows is null) return;
         var transfers = _controller.Transfers.Items;
         _transferRows.Sync(transfers);
-        TransfersCard.Visibility = transfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TransfersSection.Visibility = transfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         // One file has its own Cancel; Cancel All is for a batch.
         CancelAllButton.Visibility = transfers.Count(t => t.IsActive) >= 2 ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -61,8 +61,8 @@ public sealed partial class FilesPage : Page
             XamlRoot = XamlRoot,
             Title = $"Cancel {active} transfers?",
             Content = "Files on their way to your devices stop, and files still arriving here are deleted.",
-            PrimaryButtonText = "Cancel All",
-            CloseButtonText = "Keep Going",
+            PrimaryButtonText = "Cancel all",
+            CloseButtonText = "Keep going",
             DefaultButton = ContentDialogButton.Close,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
@@ -81,7 +81,7 @@ public sealed partial class FilesPage : Page
         var chosenButUnusable = settings.ReceiveFolder is { } chosen && !string.Equals(chosen, folder, StringComparison.OrdinalIgnoreCase);
         FolderHint.Text = chosenButUnusable ? $"{settings.ReceiveFolder} can't be used right now (missing or read-only), so files go to the folder above." : "";
         FolderHint.Visibility = chosenButUnusable ? Visibility.Visible : Visibility.Collapsed;
-        ResetButton.IsEnabled = settings.ReceiveFolder is not null;
+        ResetButton.Visibility = settings.ReceiveFolder is not null ? Visibility.Visible : Visibility.Collapsed;
         AfterArrivalChoice.SelectedIndex = settings.AfterArrival switch
         {
             AfterArrival.DoNothing => 0,
@@ -97,7 +97,7 @@ public sealed partial class FilesPage : Page
         if (Settings is not { } settings || XamlRoot?.ContentIslandEnvironment is not { } island) return;
         var picker = new FolderPicker(island.AppWindowId)
         {
-            Title = "Save files from the iPad in",
+            Title = "Save files from your devices in",
             SuggestedStartLocation = PickerLocationId.Downloads,
         };
         var result = await picker.PickSingleFolderAsync();

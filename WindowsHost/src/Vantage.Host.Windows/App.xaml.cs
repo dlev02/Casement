@@ -19,6 +19,10 @@ public partial class App : Application
     public App(string[] args)
     {
         _args = args;
+#if DEBUG
+        // Only here, before the first window, can the app's theme be set.
+        if (PreviewOptions.Theme(args) is { } theme) RequestedTheme = theme;
+#endif
         InitializeComponent();
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
         UnhandledException += (_, e) =>

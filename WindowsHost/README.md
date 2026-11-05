@@ -30,28 +30,29 @@ clock: drag it onto the taskbar to keep it in view, or turn on **Show the icon n
 in Settings › General. Closing its window doesn't quit it (the first time, a notification says
 so), and opening Casement Host from the Start menu brings the window back.
 
-- **Click** the icon for a panel with the PC's status, **Show Pairing Code**, your connected and
-  paired devices, the files moving right now (each with a progress bar and a Cancel button, and
-  Show in folder once it has arrived), Settings…, and Quit.
-- **Right-click** it for a menu with Show Pairing Code…, Settings…, and Quit, plus Send File and
+- **Click** the icon for a panel with the PC's status, **Show pairing code**, your connected
+  devices (Send file, Disconnect), the files moving right now (each with a progress bar and a
+  Cancel button, and Show in folder once it has arrived), how many devices are paired, Settings,
+  and Quit.
+- **Right-click** it for a menu with Show pairing code…, Settings…, and Quit, plus Send File and
   Disconnect for each connected device, and a Files section: each file's progress, Cancel or
-  Show in folder, and Open Receive Folder.
+  Show in folder, and Open receive folder.
 - While files move, the icon turns into a ring that fills as they go, with an arrow pointing down
   (arriving) or up (going to your device); hover over it to read "Receiving Report.pdf, 45%". A
   file cut off by a dropped connection says "Paused at 45% · resumes when Drew's iPad
   reconnects" and carries on from there when that device is back within an hour.
 
 To pair a device, add the PC in Casement (**Add from Tailscale…**, or **Add Manually…** with the
-PC's Tailscale name or address), choose **Show Pairing Code** in the panel, and type the six
+PC's Tailscale name or address), choose **Show pairing code** in the panel, and type the six
 digits into Casement. A code lasts 10 minutes and works once; after that the device connects
 straight away.
 
-**Settings…** opens a window with:
+**Settings** opens a window with:
 
-- **General**: the PC's tailnet address, Show Pairing Code, **Start Casement Host when I sign
-  in** (on from the first launch; Windows' Settings › Apps › Startup lists it too), **Show the
-  icon next to the clock** (the same choice as Settings › Personalization › Taskbar › Other
-  system tray icons), **Ask before restarting while a device is connected** (on by default:
+- **General**: the PC's status and Tailscale address, **Start when I sign in** (on from the first
+  launch; Windows' Settings › Apps › Startup lists it too), **Show the icon next to the clock**
+  (the same choice as Settings › Personalization › Taskbar › Other system tray icons), **Ask
+  before restarting** while a device is connected (on by default:
   while a device is connected, signing out, restarting or shutting down the PC, Windows Update's
   restarts included, stops on Windows' restart screen, which names Casement Host and the device,
   so someone at the PC can cancel or go ahead; a forced restart can't be stopped, and when the
@@ -62,12 +63,13 @@ straight away.
   without asking again. While it's off, Casement Host shows a notification on the PC when a click
   lands on such an app. Any program running as you could use that task to get administrator rights without
   a prompt, so turn this on only if you need it.
-- **Devices**: who's connected now and the devices you've paired. Removing one disconnects it, and
-  it needs a new code to come back.
+- **Devices**: **Show pairing code**, who's connected now, and the devices you've paired. Removing
+  one (under its **…** button) disconnects it, and it needs a new code to come back.
 - **Display**: which display is shared (the main one), whether devices may change its resolution
-  to fit their screen (on unless you turn it off), and the video encoder in use.
+  to fit their screen (on unless you turn it off), and, under Streaming details, how it's captured
+  and the video encoder in use.
 - **Files**: every file moving now, and for a minute after it's done (Show in folder for one that
-  arrived, **Cancel All** when several are moving),
+  arrived, **Cancel all** when several are moving),
   where files from your devices are saved (Downloads unless you choose another folder),
   and whether to show a notification when they arrive. Received files are marked as downloaded
   from the internet, so Windows checks them like any download.
@@ -281,9 +283,9 @@ powershell -ExecutionPolicy Bypass -File C:\src\vantage\WindowsHost\scripts\publ
 publishes `VantageHost.exe` self-contained into `%LOCALAPPDATA%\Programs\Vantage Host\` with a
 Start menu shortcut. It listens on 47820 (Release: tailnet peers only, no fixed code). Left-click
 the tray icon for the tray panel (`TrayPanel`, like the Mac host's menu-bar popover: status, Show
-Pairing Code with the code right there, connected and paired devices, Settings…, Quit; acrylic,
+pairing code with the code right there, connected devices, the paired count, Settings, Quit; acrylic,
 placed by `TrayPanelPlacement` from `Shell_NotifyIconGetRect`, gone on Esc or a click elsewhere),
-right-click for the native menu. Settings… opens the window (General shows the tailnet address);
+right-click for the native menu. Settings opens the window (General shows the tailnet address);
 "Start Casement Host when I sign in" is on from the first Release launch, and the app writes its
 own Start menu shortcut, so `publish.ps1`'s is only for Debug builds. Closing the window keeps it
 in the tray (a notification says so the first time); Quit is in the tray panel, the tray menu and

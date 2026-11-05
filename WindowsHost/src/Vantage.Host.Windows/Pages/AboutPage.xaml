@@ -2,43 +2,75 @@
 <Page
     x:Class="Vantage.Host.Windows.App.Pages.AboutPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="880" Padding="36,24,36,36" Spacing="12">
-            <TextBlock Margin="0,0,0,8" Style="{StaticResource TitleTextBlockStyle}" Text="About" />
+    <local:PageShell Title="About">
+        <StackPanel Spacing="4">
+            <Grid Margin="1,0,0,20" ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Image Width="56" Height="56" Source="ms-appx:///Assets/CasementHost.png" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Casement Host" />
+                    <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsTextSelectionEnabled="True" />
+                </StackPanel>
+            </Grid>
 
-            <Border Style="{StaticResource CardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Image Width="48" Height="48" Source="ms-appx:///Assets/CasementHost.png" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Casement Host" />
-                        <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="This PC" />
+            <tk:SettingsCard Header="This PC">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7F4;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.Description>
                     <TextBlock x:Name="HostText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="8">
-                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Logs and data" />
+                </tk:SettingsCard.Description>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="Logs and data">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7C3;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.Description>
                     <TextBlock x:Name="DataText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Click="OnOpenLogs" Content="Open Logs Folder" />
-                        <Button Click="OnQuit" Content="Quit Casement Host" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
+                </tk:SettingsCard.Description>
+                <Button Click="OnOpenLogs" Content="Open logs folder" />
+            </tk:SettingsCard>
+
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Casement on GitHub" />
+            <tk:SettingsCard Click="OnOpenLink" Header="Source code" IsClickEnabled="True" Tag="https://github.com/dlev02/Casement">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE943;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.ActionIcon>
+                    <FontIcon Glyph="&#xE8A7;" />
+                </tk:SettingsCard.ActionIcon>
+            </tk:SettingsCard>
+            <tk:SettingsCard Click="OnOpenLink" Header="Privacy policy" IsClickEnabled="True" Tag="https://github.com/dlev02/Casement/blob/main/PRIVACY.md">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE72E;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.ActionIcon>
+                    <FontIcon Glyph="&#xE8A7;" />
+                </tk:SettingsCard.ActionIcon>
+            </tk:SettingsCard>
+            <tk:SettingsCard Click="OnOpenLink" Header="Report a problem" IsClickEnabled="True" Tag="https://github.com/dlev02/Casement/issues">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xED15;" />
+                </tk:SettingsCard.HeaderIcon>
+                <tk:SettingsCard.ActionIcon>
+                    <FontIcon Glyph="&#xE8A7;" />
+                </tk:SettingsCard.ActionIcon>
+            </tk:SettingsCard>
+
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Stop hosting" />
+            <tk:SettingsCard Description="Your devices can't connect until Casement Host is opened again." Header="Quit Casement Host">
+                <tk:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7E8;" />
+                </tk:SettingsCard.HeaderIcon>
+                <Button Click="OnQuit" Content="Quit" AutomationProperties.Name="Quit Casement Host" />
+            </tk:SettingsCard>
         </StackPanel>
-    </ScrollViewer>
+    </local:PageShell>
 </Page>

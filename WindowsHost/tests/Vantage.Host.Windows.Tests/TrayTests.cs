@@ -12,7 +12,7 @@ public class TrayMenuModelTests
     public void IdleMenu()
     {
         var items = TrayMenuModel.Build(new TrayState("drew-pc", true, null, [], []));
-        Assert.Equal(["Casement Host: Listening on drew-pc", "", "Show Pairing Code…", "", "Open Receive Folder", "", "Settings…", "Quit Casement Host"],
+        Assert.Equal(["Casement Host: Listening on drew-pc", "", "Show pairing code…", "", "Open receive folder", "", "Settings…", "Quit Casement Host"],
                      items.Select(i => i.Text));
         Assert.False(items[0].IsEnabled);
         Assert.True(items[1].IsSeparator);
@@ -26,8 +26,8 @@ public class TrayMenuModelTests
     {
         var state = new TrayState("drew-pc", true, null, [new TrayClient(Session, "Drew's iPad")], [new TrayFileTarget(Channel, "Drew's iPad")]);
         var items = TrayMenuModel.Build(state);
-        Assert.Equal(["Casement Host: Listening on drew-pc", "Connected: Drew's iPad", "", "Show Pairing Code…",
-                      "Send File to Drew's iPad…", "Disconnect Drew's iPad", "", "Open Receive Folder", "", "Settings…", "Quit Casement Host"],
+        Assert.Equal(["Casement Host: Listening on drew-pc", "Connected: Drew's iPad", "", "Show pairing code…",
+                      "Send File to Drew's iPad…", "Disconnect Drew's iPad", "", "Open receive folder", "", "Settings…", "Quit Casement Host"],
                      items.Select(i => i.Text));
         Assert.False(items[1].IsEnabled);
         Assert.Equal(new TrayCommand(TrayCommandKind.SendFile, Channel), items[4].Command);
@@ -84,7 +84,7 @@ public class TrayMenuModelTests
                       "Movie.mov: Paused at 45% · resumes when Drew's iPad reconnects", "Cancel Movie.mov",
                       "Photo.heic: Received from Drew's iPad · in Downloads", "Show Photo.heic in folder",
                       "Big.zip: The disk is full.",
-                      "Open Receive Folder"],
+                      "Open receive folder"],
                      files.Select(i => i.Text));
         Assert.False(files[0].IsEnabled);
         Assert.Equal(new TrayCommand(TrayCommandKind.CancelTransfer, Moving), files[1].Command);

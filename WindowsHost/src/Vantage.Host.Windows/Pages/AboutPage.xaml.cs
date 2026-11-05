@@ -33,6 +33,11 @@ public sealed partial class AboutPage : Page
         DataText.Text = runtime.Paths.Root;
     }
 
+    private async void OnOpenLink(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is string url) await global::Windows.System.Launcher.LaunchUriAsync(new Uri(url));
+    }
+
     private void OnOpenLogs(object sender, RoutedEventArgs e)
     {
         if (_controller?.Runtime is { } runtime) ExplorerActions.OpenFolder(runtime.Paths.LogsDirectory);
