@@ -198,6 +198,7 @@ struct TailscaleDevicesSheet: View {
         case .pairingRequired: "Casement Host is running · pair to connect"
         case .needsPermission: device.platform == .windows ? "Casement Host needs permissions" : "Casement Host needs Mac permissions"
         case .incompatible: "Casement Host needs an update"
+        case .identityChanged: "Casement Host's identity has changed"
         case .unavailable: device.isRecentlySeen ? "Casement Host isn't reachable" : "Last seen \(lastSeenText(device))"
         case .checking: "Checking…"
         }

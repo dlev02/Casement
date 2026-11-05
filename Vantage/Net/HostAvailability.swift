@@ -4,7 +4,7 @@ import Observation
 import VantageCore
 
 enum HostAvailability: Equatable, Sendable {
-    case checking, ready, online, pairingRequired, needsPermission, unavailable, incompatible
+    case checking, ready, online, pairingRequired, needsPermission, unavailable, incompatible, identityChanged
     var label: String {
         switch self {
         case .checking: "Checking…"
@@ -14,6 +14,7 @@ enum HostAvailability: Equatable, Sendable {
         case .needsPermission: "Mac permission needed"
         case .unavailable: "Unavailable"
         case .incompatible: "Update needed"
+        case .identityChanged: "Identity changed"
         }
     }
 }
@@ -41,15 +42,28 @@ enum HostAvailability: Equatable, Sendable {
         let status: HostAvailability = await withTaskCancellationHandler {
             do {
                 try await channel.start()
+                let clientNonce = AuthTranscript.randomNonce()
                 try await channel.send(.hello(Hello(clientName: "Casement availability", deviceModel: "client", appVersion: "1.0",
                     clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264], maxDecodeWidth: 0,
-                    maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true)))
+                    maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true, clientNonce: clientNonce)))
                 guard let response = try await channel.receive() else { return .unavailable }
                 if case .authResult(let result) = response, result.status == .versionMismatch { return .incompatible }
                 guard case .challenge(let challenge) = response else { return .unavailable }
                 platform = challenge.hostPlatform
-                let signature = try identity.sign(AuthTranscript.bytes(nonce: challenge.nonce,
-                    hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData))
+                // This runs in the background, so it signs nothing for a host that can't prove it's
+                // the one this device was paired with (and the signature is good for a probe only).
+                do {
+                    _ = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
+                                                     expected: device.hostPublicKey)
+                } catch HostIdentityCheck.Failure.unsigned {
+                    return .incompatible
+                } catch HostIdentityCheck.Failure.changed {
+                    return .identityChanged
+                } catch {
+                    return .unavailable
+                }
+                let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
+                    hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData, purpose: .probe))
                 try await channel.send(.authenticate(Authenticate(signature: signature)))
                 guard case .authResult(let result)? = try await channel.receive() else { return .unavailable }
                 switch result.status {

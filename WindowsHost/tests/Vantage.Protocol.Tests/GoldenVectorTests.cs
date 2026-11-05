@@ -41,10 +41,21 @@ public class GoldenVectorTests
             SupportedCodecs = [], MaxDecodeWidth = 0, MaxDecodeHeight = 0, IsReadinessProbe = false,
             Features = new ClientFeatures { FileTransfer = true, FilesOnly = true },
         }),
+        ("helloProbe", new Hello
+        {
+            ProtocolVersion = 2, ClientName = "Casement availability", DeviceModel = "client", AppVersion = "1.0", ClientPublicKey = Key32,
+            SupportedCodecs = [VideoCodec.Hevc, VideoCodec.H264], MaxDecodeWidth = 0, MaxDecodeHeight = 0, IsReadinessProbe = true,
+            ClientNonce = Token,
+        }),
         ("challenge", new Challenge
         {
             HostName = "DREW-PC", HostVersion = "1.0", HostPublicKey = Key32, Nonce = Token, IsPaired = false,
             PeerTailnetName = "drew@example.com", HostPlatform = "windows",
+        }),
+        ("challengeSigned", new Challenge
+        {
+            HostName = "DREW-PC", HostVersion = "1.0", HostPublicKey = Key32, Nonce = Token, IsPaired = true,
+            HostPlatform = "windows", HostSignature = Signature64,
         }),
         ("authenticate", new Authenticate { Signature = Signature64, PairingCode = "024680" }),
         ("authResultOk", new AuthResult

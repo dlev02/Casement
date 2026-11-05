@@ -80,6 +80,11 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// does on a Mac (`KeyRemap`). Nil means on for a PC; a Mac ignores it. Optional so devices
     /// saved by earlier builds decode.
     var commandSendsControl: Bool?
+    /// The host's Ed25519 public key as verified on the first connection (the pairing). Every
+    /// later connection must present the same key, or Casement refuses to sign in. Optional so
+    /// devices saved by earlier builds decode; nil until the first connection with a host that
+    /// proves its identity. Syncs with the entry.
+    var hostPublicKey: Data?
 
     /// What the device runs, from `os` (recorded from the host itself once it has answered).
     var platform: HostPlatform { HostPlatform(savedOS: os) }
@@ -88,7 +93,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// The keyboard remapping this device's sessions use.
     var keyRemap: KeyRemap { KeyRemap.forHost(platform, commandSendsControl: commandSendsControl) }
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil, commandSendsControl: Bool? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil, commandSendsControl: Bool? = nil, hostPublicKey: Data? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -104,6 +109,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.controlStrip = controlStrip
         self.playMacAudio = playMacAudio
         self.commandSendsControl = commandSendsControl
+        self.hostPublicKey = hostPublicKey
     }
 }
 

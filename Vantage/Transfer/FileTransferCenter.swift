@@ -15,6 +15,9 @@ final class FileTransferCenter {
     /// Haptics for how transfers end, from every Mac's queue (the app plays them with
     /// `Haptics.play`, which does nothing off iPhone or in the background). Set once at launch.
     var onFeedback: ((Haptic) -> Void)?
+    /// A files-only session verified a host's key; the app remembers it on the saved device. Set
+    /// once at launch.
+    var onHostKeyVerified: ((UUID, Data) -> Void)?
     private let identity: DeviceIdentity
     private let receiveDirectory: URL
     private let clientName: String
@@ -41,6 +44,7 @@ final class FileTransferCenter {
         if let millis = ClientOptions.slowFilesMillis { link.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
         link.files.onFeedback = { [weak self] haptic in self?.onFeedback?(haptic) }
+        link.onHostKeyVerified = { [weak self] device, key in self?.onHostKeyVerified?(device.id, key) }
         link.update(device)
         links[device.id] = link
         return link

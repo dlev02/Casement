@@ -31,14 +31,36 @@ private func authenticate(_ channel: MessageChannel, status: AuthStatus, paired:
     try await channel.start()
     guard case .hello(let hello)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
     let host = DeviceIdentity()
-    let nonce = AuthTranscript.randomNonce()
-    try await channel.send(.challenge(Challenge(hostName: "Test Mac", hostVersion: "1.0",
-        hostPublicKey: host.publicKeyData, nonce: nonce, isPaired: paired)))
+    let challenge = try MockHostAuth.challenge(for: hello, identity: host, hostName: "Test Mac", isPaired: paired)
+    try await channel.send(.challenge(challenge))
     guard case .authenticate(let auth)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
-    #expect(AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: host.publicKeyData,
-                                  clientPublicKey: hello.clientPublicKey))
+    #expect(hello.clientNonce?.count == 32)
+    #expect(MockHostAuth.verify(auth, hello: hello, challenge: challenge, identity: host))
     try await channel.send(.authResult(AuthResult(status: status)))
     return auth
+}
+
+/// What every mock host does with a hello: answers a challenge the real client accepts (signed over
+/// the client's nonce, by the key it names), and checks the client's signature the way a host does.
+enum MockHostAuth {
+    static func challenge(for hello: Hello, identity: DeviceIdentity, hostName: String, nonce: Data = AuthTranscript.randomNonce(),
+                          isPaired: Bool, peerTailnetName: String? = nil, hostPlatform: HostPlatform? = nil) throws -> Challenge {
+        let signature = try hello.clientNonce.map {
+            try identity.sign(AuthTranscript.hostBytes(clientNonce: $0, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
+                                                       clientPublicKey: hello.clientPublicKey))
+        }
+        return Challenge(hostName: hostName, hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired,
+                         peerTailnetName: peerTailnetName, hostPlatform: hostPlatform, hostSignature: signature)
+    }
+
+    static func verify(_ auth: Authenticate, hello: Hello, challenge: Challenge, identity: DeviceIdentity) -> Bool {
+        guard let clientNonce = hello.clientNonce else {
+            return AuthTranscript.verify(signature: auth.signature, nonce: challenge.nonce, hostPublicKey: identity.publicKeyData,
+                                         clientPublicKey: hello.clientPublicKey)
+        }
+        return AuthTranscript.verifyClient(signature: auth.signature, clientNonce: clientNonce, hostNonce: challenge.nonce,
+                                           hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello))
+    }
 }
 
 private enum TestFailure: Error { case unexpectedMessage, timedOut }
@@ -190,13 +212,14 @@ struct SessionLifecycleTests {
                 guard case .hello(let hello)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
                 #expect(hello.isReadinessProbe == true)
                 let identity = DeviceIdentity()
-                let nonce = AuthTranscript.randomNonce()
-                try await channel.send(.challenge(Challenge(hostName: "Test", hostVersion: "1.0", hostPublicKey: identity.publicKeyData,
-                    nonce: nonce, isPaired: expected != .pairingRequired)))
+                let challenge = try MockHostAuth.challenge(for: hello, identity: identity, hostName: "Test", isPaired: expected != .pairingRequired)
+                try await channel.send(.challenge(challenge))
                 guard case .authenticate(let auth)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
                 #expect(auth.pairingCode == nil)
-                #expect(AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData,
-                                              clientPublicKey: hello.clientPublicKey))
+                #expect(MockHostAuth.verify(auth, hello: hello, challenge: challenge, identity: identity))
+                // A probe's signature is good for a probe only.
+                #expect(!AuthTranscript.verifyClient(signature: auth.signature, clientNonce: hello.clientNonce ?? Data(), hostNonce: challenge.nonce,
+                                                     hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey, purpose: .screen))
                 try await channel.send(.authResult(AuthResult(status: expected == .pairingRequired ? .pairingRequired : .ok,
                     readiness: expected == .online ? nil : HostReadiness(screenRecordingGranted: true,
                         accessibilityGranted: expected != .needsPermission))))
@@ -216,9 +239,9 @@ struct SessionLifecycleTests {
             // The probe: the challenge alone says what the host runs.
             let probe = try #require(await iterator.next())
             try await probe.start()
-            guard case .hello? = try await probe.receive() else { throw TestFailure.unexpectedMessage }
-            try await probe.send(.challenge(Challenge(hostName: "Desk PC", hostVersion: "1.0", hostPublicKey: DeviceIdentity().publicKeyData,
-                nonce: AuthTranscript.randomNonce(), isPaired: true, hostPlatform: .windows)))
+            guard case .hello(let probeHello)? = try await probe.receive() else { throw TestFailure.unexpectedMessage }
+            try await probe.send(.challenge(MockHostAuth.challenge(for: probeHello, identity: DeviceIdentity(), hostName: "Desk PC", isPaired: true,
+                                                                   hostPlatform: .windows)))
             guard case .authenticate? = try await probe.receive() else { throw TestFailure.unexpectedMessage }
             try await probe.send(.authResult(AuthResult(status: .ok)))
             _ = try await probe.receive()
@@ -227,9 +250,9 @@ struct SessionLifecycleTests {
             // The session: known from the challenge, before authenticating.
             let channel = try #require(await iterator.next())
             try await channel.start()
-            guard case .hello? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
-            try await channel.send(.challenge(Challenge(hostName: "Desk PC", hostVersion: "1.0", hostPublicKey: DeviceIdentity().publicKeyData,
-                nonce: AuthTranscript.randomNonce(), isPaired: true, hostPlatform: .windows)))
+            guard case .hello(let hello)? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
+            try await channel.send(.challenge(MockHostAuth.challenge(for: hello, identity: DeviceIdentity(), hostName: "Desk PC", isPaired: true,
+                                                                     hostPlatform: .windows)))
             guard case .authenticate? = try await channel.receive() else { throw TestFailure.unexpectedMessage }
             try await channel.send(.authResult(AuthResult(status: .ok, capabilities: HostCapabilities(codecs: [.hevc],
                 canManageVirtualDisplay: false, clipboard: true, maxFPS: 60, platform: .windows))))

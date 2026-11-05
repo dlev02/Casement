@@ -147,12 +147,25 @@ actor HostSession {
         let nonce = AuthTranscript.randomNonce()
         let isPaired = trust.isTrusted(hello.clientPublicKey)
         let lightweight = hello.isReadinessProbe == true || hello.features?.filesOnly == true
+        // A client that sent a nonce wants proof this challenge comes from the holder of the host
+        // key, and signs the transcript that binds both nonces and the connection's purpose. One
+        // that didn't (an older Casement) signs the older transcript; the host still takes that.
+        let clientNonce = hello.clientNonce.flatMap { $0.count == AuthTranscript.nonceLength ? $0 : nil }
+        let hostSignature = try clientNonce.map { clientNonce in
+            try identity.sign(AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
+                                                       clientPublicKey: hello.clientPublicKey))
+        }
         let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription),
-                                  hostPlatform: HostOptions.shared.platform)
+                                  hostPlatform: HostOptions.shared.platform, hostSignature: hostSignature)
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
-        let signatureValid = AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
+        let signatureValid = if let clientNonce {
+            AuthTranscript.verifyClient(signature: auth.signature, clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
+                                        clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello))
+        } else {
+            AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
+        }
         guard signatureValid else {
             try await channel.send(.authResult(AuthResult(status: .badSignature)))
             throw SessionError.authFailed

@@ -22,6 +22,8 @@ struct AddDeviceSheet: View {
     @State private var username = ""
     @State private var homeAddress = ""
     @State private var commandSendsControl = true
+    /// Save clears the remembered host key.
+    @State private var forgetsIdentity = false
     /// Kept here and saved with the rest, so Cancel also discards a controls change.
     @State private var controlStrip: ControlStripLayout?
     @State private var validationError: String?
@@ -67,6 +69,17 @@ struct AddDeviceSheet: View {
                         Text(codec == .hevc
                              ? "HEVC looks better at the same bandwidth. Switch to H.264 if video from \(name.isEmpty ? hostNoun.the : name) ever fails to decode."
                              : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
+                    }
+                }
+
+                if let key = existing?.hostPublicKey {
+                    Section {
+                        LabeledContent("Identity", value: forgetsIdentity ? "Forgotten on save" : DeviceIdentity.fingerprint(of: key))
+                        if !forgetsIdentity {
+                            Button("Forget Identity", role: .destructive) { forgetsIdentity = true }
+                        }
+                    } footer: {
+                        Text("Casement remembers \(hostNoun.thePossessive) identity from the first connection and refuses to sign in to a host that doesn't match. Forget it only after reinstalling Casement Host on \(hostNoun.the).")
                     }
                 }
 
@@ -176,6 +189,7 @@ struct AddDeviceSheet: View {
         device.homeAddress = home.isEmpty ? nil : home
         device.controlStrip = controlStrip
         if isPC { device.commandSendsControl = commandSendsControl }
+        if forgetsIdentity { device.hostPublicKey = nil }
         if existing != nil {
             store.update(device)
         } else {

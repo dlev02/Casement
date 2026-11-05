@@ -185,6 +185,9 @@ message. The host must **never send** a kind the client didn't opt into.
 - `viewport?` {`widthPoints` Double, `heightPoints` Double, `scale` Double}
 - `isReadinessProbe?` Bool
 - `features?` {`dictation?` Bool, `macAudio?` Bool, `fileTransfer?` Bool, `filesOnly?` Bool}
+- `clientNonce?` base64, 32 random bytes from a CSPRNG. The host signs it back in
+  `challenge.hostSignature`, and the client binds it into its own signature (§7.1). Absent from
+  clients that predate host authentication, which sign the older transcript.
 
 **Challenge (2, H→C)**
 - `hostName` String; the Mac uses its computer name. On Windows use the DNS hostname, case preserved.
@@ -194,9 +197,11 @@ message. The host must **never send** a kind the client didn't opt into.
 - `isPaired` Bool
 - `peerTailnetName?` String: the whois `UserProfile.LoginName`; omitted for probes and files-only
 - `hostPlatform?` String `"macos"|"windows"` (added for Windows hosts; old clients ignore it)
+- `hostSignature?` base64, 64 bytes: Ed25519 by `hostPublicKey` over the host transcript (§7.1),
+  sent whenever the hello carried `clientNonce`. The client refuses a host without it.
 
 **Authenticate (3, C→H)**
-- `signature` base64, 64 bytes
+- `signature` base64, 64 bytes (over the client transcript, §7.1)
 - `pairingCode?` String: six digits, sent only when `isPaired == false`
 
 **AuthResult (4, H→C)**
@@ -370,6 +375,14 @@ one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and contin
 2. If `protocolVersion != 2`: send `authResult{status:"versionMismatch", message:"Protocol 2 required"}`
    **instead of** a challenge, then close.
 3. Otherwise send `challenge`:
+   - `hostSignature`, when `hello.clientNonce` is 32 bytes (`AuthTranscript.HostBytes`):
+     `UTF8("vantage-host-auth-v1") ‖ clientNonce(32) ‖ nonce(32) ‖ hostPublicKey(32) ‖ clientPublicKey(32)`
+     (20 + 128 = **148 bytes**), signed with the host's identity key. This is how the client knows
+     the challenge comes from the holder of `hostPublicKey`, for this connection. The client
+     verifies it, and that the key is the one it remembered for the device on its first connection
+     (`SavedDevice.hostPublicKey`, `HostIdentityCheck`), before it signs anything or sends a
+     pairing code; a mismatch, or no signature, ends the connection on the client's side. A hello
+     without a nonce (an older client) gets no signature.
    - `isPaired` = the client key's fingerprint is in the trust list.
    - `peerTailnetName` = whois result, only for ordinary sessions (not probes or files-only). The Mac
      runs `tailscale whois --json <peerIP>` with a 2 s timeout, caches per IP, and uses
@@ -378,11 +391,19 @@ one 10 ms Opus packet, `frameCount` 480, `seq` from 0 for each stream and contin
    handshake (`HostSession.handshakeLimit`), and the Mac turns away new sessions while 8 are still
    signing in (`HostController.maxPendingHandshakes`). A session counts as connected (status, restart
    guard) only once it has signed in and started streaming.
-5. **Verify the signature** before anything else. The signed transcript is:
-   `transcript = UTF8("vantage-auth-v1") ‖ nonce(32) ‖ hostPublicKey(32) ‖ clientPublicKey(32)`
-   That's 15 + 96 = **111 bytes**, a plain concatenation with no lengths. The signature is Ed25519
-   (RFC 8032, pure) by the client key. CryptoKit signatures are randomized but standard; any RFC 8032
-   verifier accepts them. If invalid: `authResult{status:"badSignature"}` and close.
+5. **Verify the signature** before anything else. A client that sent `clientNonce` signs
+   (`AuthTranscript.ClientBytes`):
+   `UTF8("vantage-auth-v2") ‖ clientNonce(32) ‖ nonce(32) ‖ hostPublicKey(32) ‖ clientPublicKey(32) ‖ purpose(1)`
+   That's 15 + 128 + 1 = **144 bytes**, a plain concatenation with no lengths. `purpose` is what
+   the hello declared (`AuthTranscript.Purpose`): 0 screen, 1 `isReadinessProbe`, 2
+   `features.filesOnly`; the host computes it from the hello, so a signature a client made for an
+   availability check can't open a screen session, and one made for another host (another
+   `hostPublicKey`, another `nonce`) verifies nowhere else. A client that sent no nonce signs the
+   older transcript, still accepted:
+   `UTF8("vantage-auth-v1") ‖ nonce(32) ‖ hostPublicKey(32) ‖ clientPublicKey(32)` (**111 bytes**).
+   The signature is Ed25519 (RFC 8032, pure) by the client key. CryptoKit signatures are
+   randomized but standard; any RFC 8032 verifier accepts them. If invalid:
+   `authResult{status:"badSignature"}` and close.
 6. If the client isn't paired:
    - No `pairingCode`: `authResult{status:"pairingRequired", message:"Enter the pairing code shown on the PC"}`
      and close. The client shows its code prompt and reconnects with a new connection carrying the code.
@@ -952,9 +973,9 @@ Loopback peers are also accepted only in DEBUG. UI tests use ports 47821/47822,
 ## 12. Sequence summary
 
 ```
-C: hello ─────────────────────▶ H  (peer checked; 15 s for the first message)
-C ◀──────────────────── challenge   (or authResult versionMismatch, then close)
-C: authenticate ──────────────▶ H  (verify sig → pairing → probe/filesOnly/screen)
+C: hello ─────────────────────▶ H  (peer checked; 15 s for the first message; carries clientNonce)
+C ◀──────────────────── challenge   (hostSignature over clientNonce; or authResult versionMismatch, then close)
+C: authenticate ──────────────▶ H  (client checks host key first; verify sig → pairing → probe/filesOnly/screen)
 C ◀──────────────────── authResult (ok + token + displays + caps)  [non-ok → close]
 C: selectDisplay ─────────────▶ H
 C ◀──── hostStatus, [clipboard], streamConfig, videoConfig, videoFrame(IDR), videoFrame…
