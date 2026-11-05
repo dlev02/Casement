@@ -962,9 +962,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   and a Mac release its signed `appcast.xml`, which `scripts/make-mac-release.sh <version>` makes along with
   the DMG, zip and checksums (see Host updates). It notarizes with the App Store Connect API key in
   `ASC_PRIVATE_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID` (`--throwaway` makes a test run of any version).
-  Device delivery logs go in `docs/testing/<date>.md`. `.github/workflows/claude-issue-fix.yml`
-  hands each new bug report (or an issue labelled `claude-fix`) to Drew's "Bug report to draft
-  PR" routine, which may open a draft PR from `claude/issue-<n>`; nothing there merges.
+  Device delivery logs go in `docs/testing/<date>.md`. `.github/workflows/issue-fix.yml`
+  hands each new bug report (or an issue labelled `fix-this`) to Drew's "Bug report to draft
+  PR" routine, which may open a draft PR from `fix/issue-<n>`; nothing there merges.
 
 ## Build & test
 
