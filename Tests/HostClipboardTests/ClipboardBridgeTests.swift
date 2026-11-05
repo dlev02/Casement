@@ -26,6 +26,29 @@ private func copy(_ text: String, to board: NSPasteboard) {
 
 @MainActor
 struct ClipboardBridgeTests {
+    /// A password copied from a password manager must never reach the iPad, at the start of a
+    /// session or when it's copied during one. The copy after it still goes.
+    @Test func whatAPasswordManagerMarksStaysOnTheMac() {
+        let board = scratchPasteboard()
+        defer { board.releaseGlobally() }
+        let bridge = ClipboardBridge(pasteboard: board)
+        let changes = Changes()
+        bridge.onLocalChange = { changes.append($0) }
+
+        board.clearContents()
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        board.declareTypes([.string, concealed], owner: nil)
+        board.setString("hunter2", forType: .string)
+        board.setString("", forType: concealed)
+        #expect(bridge.currentPayload().isEmpty)
+        bridge.poll()
+        #expect(changes.all.isEmpty)
+
+        copy("not a secret", to: board)
+        bridge.poll()
+        #expect(changes.all.map(\.text) == ["not a secret"])
+    }
+
     /// The bridge used to set a "skip the next change" flag when it applied the iPad's clipboard,
     /// but it also recorded the change count, so the flag outlived the write and swallowed the
     /// user's next real copy.

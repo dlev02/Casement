@@ -747,6 +747,10 @@ Windows mapping:
   the clipboard changes. The payload carries text, RTF (if present), and PNG (if an image, ≤ 24 MiB).
 - Client → host: sent only when the user taps "Send Clipboard"; apply it with **echo suppression**.
 - The payload also goes out once when a stream starts, if not empty.
+- A copy marked as not meant to travel, as password managers mark theirs, is never sent, either way:
+  `org.nspasteboard.ConcealedType` or `TransientType` on the Mac; on Windows
+  `ExcludeClipboardContentFromMonitorProcessing`, or `CanIncludeInClipboardHistory` or
+  `CanUploadToCloudClipboard` holding a DWORD 0.
 - Disabled in synthetic mode.
 - Windows specifics:
   - Use `AddClipboardFormatListener` and track `GetClipboardSequenceNumber` to suppress echoes.

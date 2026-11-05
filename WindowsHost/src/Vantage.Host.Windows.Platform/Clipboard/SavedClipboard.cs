@@ -50,4 +50,13 @@ public static class ClipboardFormats
         if (hasUnicodeText && format is CF_TEXT or CF_OEMTEXT) return false;
         return name is null || !s_oleFormats.Contains(name);
     }
+
+    /// <summary>
+    /// Whether a copy is marked as not meant to travel, as password managers mark theirs: the exclude
+    /// marker is there, or either "can include" marker holds a DWORD 0. Those stay on this PC.
+    /// </summary>
+    public static bool IsPrivate(bool excludedFromMonitoring, byte[]? canIncludeInHistory, byte[]? canUploadToCloud) =>
+        excludedFromMonitoring || IsDwordZero(canIncludeInHistory) || IsDwordZero(canUploadToCloud);
+
+    private static bool IsDwordZero(byte[]? value) => value is { Length: >= 4 } && BitConverter.ToUInt32(value) == 0;
 }
