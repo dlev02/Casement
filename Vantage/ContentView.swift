@@ -90,6 +90,7 @@ struct ContentView: View {
             lock.authenticate()
             // Files finishing (or failing) with any Mac, in a session or from the device list.
             FileTransferCenter.shared.onFeedback = { Haptics.play($0) }
+            FileTransferCenter.shared.onHostKeyVerified = { id, key in store.recordHostKey(key, for: id) }
             #if os(iOS)
             TransferBackgroundActivity.shared.start()
             lock.watchProtectedData()

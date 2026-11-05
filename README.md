@@ -76,7 +76,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
 
-**Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device; your device's clipboard is sent only when you ask.
+**Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device, except what a password manager marks as private; your device's clipboard is sent only when you ask.
 
 **Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Casement Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
 

@@ -147,6 +147,9 @@ public sealed record HostCommandLine
                     result = result with { Platform = platform };
                     break;
                 case "--synthetic":
+                    // A synthetic run disables real input and uses a trust store of its own, like
+                    // the Mac host's --synthetic-capture: a debugging aid, never a mode of a shipped host.
+                    DebugOnly();
                     result = result with { Synthetic = true };
                     break;
                 case "--background":

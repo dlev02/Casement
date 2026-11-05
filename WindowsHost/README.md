@@ -61,7 +61,8 @@ straight away.
   those apps from Casement. Windows asks for permission once, and only at the PC itself; after
   that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
   without asking again. While it's off, Casement Host shows a notification on the PC when a click
-  lands on such an app.
+  lands on such an app. Any program running as you could use that task to get administrator rights without
+  a prompt, so turn this on only if you need it.
 - **Devices**: **Show pairing code**, who's connected now, and the devices you've paired. Removing
   one (under its **…** button) disconnects it, and it needs a new code to come back.
 - **Display**: which display is shared (the main one), whether devices may change its resolution
@@ -221,7 +222,7 @@ first; the scripts do. XAML compiles only on Windows: build the app from `Vantag
 Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
 `--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream,
 H.264 or HEVC: whichever the session streams),
-`--platform windows|macos`, `--synthetic` (separate `Vantage Host (Synthetic)` data folder, input
+`--platform windows|macos`, `--synthetic` (Debug; separate `Vantage Host (Synthetic)` data folder, input
 logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
 auto|hardware|software`, `--codec h264|hevc` (offer and stream only that codec, whatever the client
 prefers; default HEVC when the PC has an HEVC encoder, then H.264; `run-dev.ps1 -Codec`),

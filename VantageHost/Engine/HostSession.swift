@@ -59,6 +59,8 @@ actor HostSession {
     private let onFileChannel: @Sendable (HostFileChannel) -> Void
     /// Tells the controller who is watching once a screen session is authenticated (for the menu).
     private let onStreaming: @Sendable (HostSession, _ name: String, _ model: String, _ key: String) -> Void
+    /// Tells the controller the handshake is over, so it stops counting this session as pending.
+    private let onAuthenticated: @Sendable (HostSession) -> Void
     // Display sleep: the session outlives it. Capture stops while the display is off (SCK lists
     // no displays then) and comes back on wake; input while asleep wakes it.
     /// What the client last asked to stream, which capture returns to after a sleep or a failure.
@@ -93,8 +95,10 @@ actor HostSession {
     init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, peerHost: String,
          attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
          onStreaming: @escaping @Sendable (HostSession, String, String, String) -> Void = { _, _, _, _ in },
+         onAuthenticated: @escaping @Sendable (HostSession) -> Void = { _ in },
          onEnded: @escaping @Sendable (HostSession) -> Void) {
         self.channel = channel
+        self.onAuthenticated = onAuthenticated
         self.identity = identity
         self.trust = trust
         self.peerDescription = peerDescription
@@ -108,16 +112,29 @@ actor HostSession {
     /// Runs the session on a started channel whose first message, `hello`, the controller has
     /// already read (it reads one message to tell sessions from file channels).
     func run(hello: Hello) async {
+        // A peer that says hello and then nothing (or never signs in) would otherwise hold a
+        // session, and its buffers, open for as long as it liked; the whole handshake gets one limit.
+        let deadline = Task { [channel] in
+            do { try await Task.sleep(for: Self.handshakeLimit) } catch { return }
+            await channel.close()
+        }
         do {
             log.info("channel ready; handshaking")
-            if try await handshake(hello) {
+            let authenticated = try await handshake(hello)
+            deadline.cancel()
+            if authenticated {
+                onAuthenticated(self)
                 if state == .filesOnly { try await filesOnlyLoop() } else { try await receiveLoop() }
             }
         } catch {
+            deadline.cancel()
             log.error("session error: \(error.localizedDescription, privacy: .public)")
         }
         await teardown()
     }
+
+    /// How long a connection has from its `hello` to a successful `authResult`.
+    static let handshakeLimit: Duration = .seconds(15)
 
     // MARK: Handshake
 
@@ -130,12 +147,25 @@ actor HostSession {
         let nonce = AuthTranscript.randomNonce()
         let isPaired = trust.isTrusted(hello.clientPublicKey)
         let lightweight = hello.isReadinessProbe == true || hello.features?.filesOnly == true
+        // A client that sent a nonce wants proof this challenge comes from the holder of the host
+        // key, and signs the transcript that binds both nonces and the connection's purpose. One
+        // that didn't (an older Casement) signs the older transcript; the host still takes that.
+        let clientNonce = hello.clientNonce.flatMap { $0.count == AuthTranscript.nonceLength ? $0 : nil }
+        let hostSignature = try clientNonce.map { clientNonce in
+            try identity.sign(AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
+                                                       clientPublicKey: hello.clientPublicKey))
+        }
         let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription),
-                                  hostPlatform: HostOptions.shared.platform)
+                                  hostPlatform: HostOptions.shared.platform, hostSignature: hostSignature)
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
-        let signatureValid = AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
+        let signatureValid = if let clientNonce {
+            AuthTranscript.verifyClient(signature: auth.signature, clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
+                                        clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello))
+        } else {
+            AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
+        }
         guard signatureValid else {
             try await channel.send(.authResult(AuthResult(status: .badSignature)))
             throw SessionError.authFailed

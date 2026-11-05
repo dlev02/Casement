@@ -97,6 +97,53 @@ import Testing
     #expect(AuthTranscript.randomPairingCode().count == 6)
 }
 
+/// The host proves its key over the client's nonce, and the client's signature is tied to this
+/// host and this kind of connection: neither can be carried to another host or another purpose.
+@Test func hostAuthenticationBindsNoncesKeysAndPurpose() throws {
+    let client = DeviceIdentity()
+    let host = DeviceIdentity()
+    let clientNonce = AuthTranscript.randomNonce()
+    let hostNonce = AuthTranscript.randomNonce()
+    let hello = Hello(clientName: "iPad", deviceModel: "iPad16,6", appVersion: "1.0", clientPublicKey: client.publicKeyData,
+                      supportedCodecs: [], maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true, clientNonce: clientNonce)
+    #expect(AuthPurpose(hello: hello) == .probe)
+
+    let hostBytes = AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: host.publicKeyData, clientPublicKey: client.publicKeyData)
+    #expect(hostBytes.count == 148)
+    let hostSignature = try host.sign(hostBytes)
+    let challenge = Challenge(hostName: "Mac", hostVersion: "1.0", hostPublicKey: host.publicKeyData, nonce: hostNonce, isPaired: true,
+                              hostSignature: hostSignature)
+    #expect(try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: client.publicKeyData, expected: nil) == host.publicKeyData)
+    #expect(try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: client.publicKeyData, expected: host.publicKeyData) == host.publicKeyData)
+    // Another host's key, an unsigned challenge, a signature relayed from a different connection (other nonce).
+    #expect(throws: HostIdentityCheck.Failure.changed) {
+        try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: client.publicKeyData, expected: DeviceIdentity().publicKeyData)
+    }
+    var unsigned = challenge
+    unsigned.hostSignature = nil
+    #expect(throws: HostIdentityCheck.Failure.unsigned) {
+        try HostIdentityCheck.verify(unsigned, clientNonce: clientNonce, clientPublicKey: client.publicKeyData, expected: nil)
+    }
+    #expect(throws: HostIdentityCheck.Failure.badSignature) {
+        try HostIdentityCheck.verify(challenge, clientNonce: AuthTranscript.randomNonce(), clientPublicKey: client.publicKeyData, expected: nil)
+    }
+
+    let clientBytes = AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: host.publicKeyData,
+                                                 clientPublicKey: client.publicKeyData, purpose: .probe)
+    #expect(clientBytes.count == 144)
+    let signature = try client.sign(clientBytes)
+    #expect(AuthTranscript.verifyClient(signature: signature, clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: host.publicKeyData,
+                                        clientPublicKey: client.publicKeyData, purpose: .probe))
+    #expect(!AuthTranscript.verifyClient(signature: signature, clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: host.publicKeyData,
+                                         clientPublicKey: client.publicKeyData, purpose: .screen), "a probe's signature opens no screen")
+    #expect(!AuthTranscript.verifyClient(signature: signature, clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: DeviceIdentity().publicKeyData,
+                                         clientPublicKey: client.publicKeyData, purpose: .probe), "another host")
+    #expect(!AuthTranscript.verifyClient(signature: signature, clientNonce: clientNonce.prefix(16), hostNonce: hostNonce, hostPublicKey: host.publicKeyData,
+                                         clientPublicKey: client.publicKeyData, purpose: .probe), "a short nonce")
+    #expect(!AuthTranscript.verify(signature: signature, nonce: hostNonce, hostPublicKey: host.publicKeyData, clientPublicKey: client.publicKeyData),
+            "not valid as the older transcript either")
+}
+
 @Test func tailscaleRanges() {
     #expect(VantageNetwork.isTailscaleAddress(.ipv4(.init("100.64.0.4")!)))
     #expect(VantageNetwork.isTailscaleAddress(.ipv4(.init("100.64.0.2")!)))

@@ -134,6 +134,12 @@ public sealed record Hello : IMessage
     [JsonPropertyName("viewport")] public Viewport? Viewport { get; init; }
     [JsonPropertyName("isReadinessProbe")] public bool? IsReadinessProbe { get; init; }
     [JsonPropertyName("features")] public ClientFeatures? Features { get; init; }
+    /// <summary>
+    /// 32 random bytes the host signs back in <see cref="Challenge.HostSignature"/>, also bound
+    /// into the client's signature (<c>AuthTranscript.ClientBytes</c>). Absent from clients that
+    /// predate host authentication, which sign the older transcript.
+    /// </summary>
+    [JsonPropertyName("clientNonce")] public byte[]? ClientNonce { get; init; }
 }
 
 public sealed record Challenge : IMessage
@@ -149,12 +155,21 @@ public sealed record Challenge : IMessage
     [JsonPropertyName("peerTailnetName")] public string? PeerTailnetName { get; init; }
     /// <summary><see cref="HostPlatforms"/> value; older clients ignore it.</summary>
     [JsonPropertyName("hostPlatform")] public string? HostPlatform { get; init; }
+    /// <summary>
+    /// Ed25519 signature by <see cref="HostPublicKey"/> over <c>AuthTranscript.HostBytes</c>, which
+    /// includes the client's <see cref="Hello.ClientNonce"/>: the host's proof that it holds the
+    /// key it names. Sent whenever the hello carried a nonce; the client refuses a host without it.
+    /// </summary>
+    [JsonPropertyName("hostSignature")] public byte[]? HostSignature { get; init; }
 }
 
 public sealed record Authenticate : IMessage
 {
     MessageKind IMessage.Kind => MessageKind.Authenticate;
-    /// <summary>64-byte Ed25519 signature over the 111-byte auth transcript.</summary>
+    /// <summary>
+    /// 64-byte Ed25519 signature over the 144-byte client transcript (<c>AuthTranscript.ClientBytes</c>),
+    /// or the older 111-byte one from a client whose hello had no <c>clientNonce</c>.
+    /// </summary>
     [JsonPropertyName("signature")] public required byte[] Signature { get; init; }
     [JsonPropertyName("pairingCode")] public string? PairingCode { get; init; }
 }

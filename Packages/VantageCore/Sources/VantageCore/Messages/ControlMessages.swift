@@ -82,8 +82,13 @@ public struct Hello: Codable, Sendable {
     public var isReadinessProbe: Bool?
     /// Optional client abilities (dictation results, …). Absent from older clients.
     public var features: ClientFeatures?
+    /// 32 random bytes the host signs back in `Challenge.hostSignature`, so the client knows the
+    /// challenge was made for this connection by the holder of `hostPublicKey`. Also bound into
+    /// the client's own signature (`AuthTranscript.clientBytes`). Absent from clients that predate
+    /// host authentication, which sign the older transcript.
+    public var clientNonce: Data?
 
-    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil, features: ClientFeatures? = nil) {
+    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil, features: ClientFeatures? = nil, clientNonce: Data? = nil) {
         self.protocolVersion = protocolVersion
         self.clientName = clientName
         self.deviceModel = deviceModel
@@ -95,6 +100,7 @@ public struct Hello: Codable, Sendable {
         self.viewport = viewport
         self.isReadinessProbe = isReadinessProbe
         self.features = features
+        self.clientNonce = clientNonce
     }
 }
 
@@ -135,9 +141,13 @@ public struct Challenge: Codable, Sendable {
     /// What the host runs, known before authenticating (so a probe or the pairing prompt can
     /// tell a Mac from a PC). Nil from older hosts, which are all Macs.
     public var hostPlatform: HostPlatform?
+    /// Ed25519 signature by `hostPublicKey` over `AuthTranscript.hostBytes(...)`, which includes
+    /// the client's `Hello.clientNonce`: the host's proof that it holds the key it names. Sent
+    /// whenever the hello carried a nonce; the client refuses a host without it.
+    public var hostSignature: Data?
 
     public init(hostName: String, hostVersion: String, hostPublicKey: Data, nonce: Data, isPaired: Bool, peerTailnetName: String? = nil,
-                hostPlatform: HostPlatform? = nil) {
+                hostPlatform: HostPlatform? = nil, hostSignature: Data? = nil) {
         self.hostName = hostName
         self.hostVersion = hostVersion
         self.hostPublicKey = hostPublicKey
@@ -145,11 +155,13 @@ public struct Challenge: Codable, Sendable {
         self.isPaired = isPaired
         self.peerTailnetName = peerTailnetName
         self.hostPlatform = hostPlatform
+        self.hostSignature = hostSignature
     }
 }
 
 public struct Authenticate: Codable, Sendable {
-    /// Ed25519 signature over `AuthTranscript.bytes(...)`.
+    /// Ed25519 signature over `AuthTranscript.clientBytes(...)` (or, from a client whose hello had
+    /// no `clientNonce`, the older `AuthTranscript.bytes(...)`).
     public var signature: Data
     /// One-time pairing code shown on the host, required when not yet paired.
     public var pairingCode: String?
