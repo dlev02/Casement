@@ -219,7 +219,7 @@ first; the scripts do. XAML compiles only on Windows: build the app from `Vantag
 Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
 `--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream,
 H.264 or HEVC: whichever the session streams),
-`--platform windows|macos`, `--synthetic` (separate `Vantage Host (Synthetic)` data folder, input
+`--platform windows|macos`, `--synthetic` (Debug; separate `Vantage Host (Synthetic)` data folder, input
 logged instead of injected, in-memory clipboard, no power/lock actions), `--encoder
 auto|hardware|software`, `--codec h264|hevc` (offer and stream only that codec, whatever the client
 prefers; default HEVC when the PC has an HEVC encoder, then H.264; `run-dev.ps1 -Codec`),
