@@ -4,6 +4,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
 using Vantage.Host.Windows.Files;
 using Vantage.Host.Windows.Tailscale;
+using Vantage.Host.Windows.Updates;
 using Vantage.Protocol.Files;
 using Vantage.Protocol.Host;
 
@@ -15,15 +16,18 @@ namespace Vantage.Host.Windows.App;
 /// the installed host: <c>--open-settings general|devices|files|display|about</c>, <c>--open-panel</c>,
 /// <c>--window-size WxH</c> (DIPs), <c>--theme light|dark</c>,
 /// <c>--preview-state empty|one|many|transfers|pairing|problem</c>, <c>--expand</c> (open the expanders), <c>--pane-closed</c>,
-/// and <c>--capture PATH</c> (see <see cref="PreviewCapture"/>).
+/// and <c>--capture PATH</c> (see <see cref="PreviewCapture"/>). Updates: <c>--preview-update
+/// uptodate|checking|downloading|ready|manual|failed|rolledback</c> shows a state, and <c>--update-feed URL
+/// --update-key HEX --update-soon</c> runs the real thing against a test feed without the waits.
 /// </summary>
-internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, int? Height, string? State, string? Capture, bool ExpandAll, bool PaneClosed)
+internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, int? Height, string? State, string? Capture, bool ExpandAll, bool PaneClosed, string? UpdateFeed, string? UpdateKey, string? UpdatePreview, bool UpdateSoon)
 {
     /// <summary>The flags in <paramref name="args"/>, which are removed from it (the host's parser refuses them).</summary>
     public static PreviewOptions Take(ref string[] args)
     {
         var rest = new List<string>();
-        string? settings = null, state = null, capture = null;
+        string? settings = null, state = null, capture = null, updateFeed = null, updateKey = null, updatePreview = null;
+        var updateSoon = false;
         var panel = false;
         var expand = false;
         var paneClosed = false;
@@ -40,6 +44,18 @@ internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, 
                     break;
                 case "--capture" when i + 1 < args.Length:
                     capture = args[++i];
+                    break;
+                case "--update-feed" when i + 1 < args.Length:
+                    updateFeed = args[++i];
+                    break;
+                case "--update-key" when i + 1 < args.Length:
+                    updateKey = args[++i];
+                    break;
+                case "--preview-update" when i + 1 < args.Length:
+                    updatePreview = args[++i];
+                    break;
+                case "--update-soon":
+                    updateSoon = true;
                     break;
                 case "--pane-closed":
                     paneClosed = true;
@@ -64,7 +80,7 @@ internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, 
             }
         }
         args = [.. rest];
-        return new PreviewOptions(settings, panel, width, height, state, capture, expand, paneClosed);
+        return new PreviewOptions(settings, panel, width, height, state, capture, expand, paneClosed, updateFeed, updateKey, updatePreview, updateSoon);
     }
 
     /// <summary><c>--theme</c>, if given.</summary>
@@ -132,6 +148,18 @@ internal sealed record PreviewFixture
     public bool ShowCode { get; init; }
     public bool WithTransfers { get; init; }
     public TailscaleSelf? Tailnet { get; init; } = Fictional;
+
+    public static UpdateStatus UpdateStatusFor(string state) => state switch
+    {
+        "uptodate" => new UpdateStatus(UpdateStage.UpToDate),
+        "checking" => new UpdateStatus(UpdateStage.Checking),
+        "downloading" => new UpdateStatus(UpdateStage.Downloading) { Version = "1.5", Fraction = 0.45 },
+        "ready" => new UpdateStatus(UpdateStage.Ready) { Version = "1.5", NotesUrl = "https://github.com/dlev02/Casement/releases" },
+        "manual" => new UpdateStatus(UpdateStage.ManualOnly) { Version = "1.5", NotesUrl = "https://github.com/dlev02/Casement/releases" },
+        "failed" => new UpdateStatus(UpdateStage.Failed) { Message = "GitHub couldn't be reached." },
+        "rolledback" => new UpdateStatus(UpdateStage.RolledBack) { Version = "1.5" },
+        _ => new UpdateStatus(UpdateStage.Idle),
+    };
 
     public static PreviewFixture For(string state)
     {

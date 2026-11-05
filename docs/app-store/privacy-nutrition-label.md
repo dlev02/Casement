@@ -57,8 +57,9 @@ config. The only hard-coded URLs are in the table above.
 ### Casement Host (not on the App Store)
 
 The label covers only the App Store app. For consistency with PRIVACY.md: the host downloads the
-Parakeet model from Hugging Face only when the user turns it on, uses `tailscale whois` locally,
-and sends nothing to the developer.
+Parakeet model from Hugging Face only when the user turns it on, on Windows checks GitHub for updates
+about once a day unless the user turns that off, uses `tailscale whois` locally, and sends nothing to
+the developer.
 
 ## In App Store Connect
 
