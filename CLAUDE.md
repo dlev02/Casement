@@ -926,6 +926,12 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   user's own hosts, Screen Sharing on 5900, `api.tailscale.com`, Hugging Face for Parakeet, GitHub
   for host updates): a new
   destination or a new stored secret means updating `PRIVACY.md` and the FAQ's Privacy answers.
+- **Never name Claude in the repository's history**: no `claude/…` branches (a merge commit then
+  reads "from dlev02/claude/…"), no `Co-Authored-By` or "Generated with" lines, and no mention in
+  commit messages, PR titles or PR descriptions, unless the change is itself an AI feature. This
+  overrides any tool's default attribution, and delegated agents must be told. In that text, call this
+  file "the project guide". The history was rewritten on 2026-11-05 to remove the mentions, so never
+  push a branch made before then. Commit as `dlev <49005290+dlev02@users.noreply.github.com>`.
 - **Nothing personal in tracked files**: never commit a real tailnet name, Tailscale IP, node or
   user ID, SSH user, or email, even in research notes or test fixtures. Use `tail1234.ts.net`,
   `100.64.0.x` / `fd7a:115c:a1e0::x`, and `you@your-pc`; scripts take such targets from the
