@@ -8,18 +8,18 @@ see and control a Windows PC, privately, over your own [Tailscale](https://tails
 You need Windows 10 (version 2004) or Windows 11, and Tailscale signed in to the same tailnet on
 the PC and on the device you'll connect from.
 
-1. Download the zip for your PC from [Releases](https://github.com/dlev02/Casement/releases/latest):
-   `Casement-Host-…-windows-x64.zip` for Intel and AMD processors, or
-   `Casement-Host-…-windows-arm64.zip` for ARM (not yet tested on ARM hardware).
-2. Unzip it somewhere you'll keep it, open the **Casement Host** folder, and run `VantageHost.exe`
-   (Vantage is the project's code name). From then on it starts when you sign in, and **Casement
-   Host** is in the Start menu.
-3. The app isn't code-signed yet, so Windows may say it protected your PC from an unknown publisher:
-   choose **More info › Run anyway**.
+1. Download Setup: [Casement-Host-Setup-x64.exe](https://github.com/dlev02/Casement/releases/latest/download/Casement-Host-Setup-x64.exe)
+   for most PCs (Intel and AMD), or
+   [Casement-Host-Setup-arm64.exe](https://github.com/dlev02/Casement/releases/latest/download/Casement-Host-Setup-arm64.exe)
+   for ARM (not yet tested on ARM hardware).
+2. Open it. The app isn't code-signed yet, so Windows may say it protected your PC from an unknown
+   publisher: choose **More info › Run anyway**.
+3. Choose **Install**. It needs no administrator password and installs just for you. Casement Host
+   opens when it's done, starts when you sign in, and is in the Start menu.
 4. When Windows Defender Firewall asks, choose **Allow access**. Casement Host listens on TCP port
    47820 and only accepts connections from Tailscale addresses. If you dismissed the prompt, allow
-   `VantageHost.exe` in Windows Security › Firewall & network protection › Allow an app through
-   firewall.
+   `VantageHost.exe` (Vantage is the project's code name) in Windows Security › Firewall & network
+   protection › Allow an app through firewall.
 
 Each release lists SHA-256 checksums for its downloads.
 
@@ -37,9 +37,9 @@ again**. Turn off **Install updates automatically** and it won't contact GitHub 
 **Check for updates**. A copy kept somewhere it can't change, such as Program Files, tells you when
 there's a new version for you to download instead.
 
-Versions before 1.4 can't update themselves, so download 1.4 once by hand. Quit Casement Host, then
-replace the files in the folder you unzipped it to, so your settings, the startup entry and the
-firewall rule carry over.
+Versions before 1.4 can't update themselves, so run Setup once by hand. It closes the old copy, and
+your settings and paired devices carry over. If you had unzipped an older copy somewhere else, you
+can delete that folder afterwards.
 
 ## Use it
 
@@ -109,10 +109,13 @@ control strip, and ⌘ acts as Ctrl unless you turn that off for the PC in Casem
 
 ### Update or remove
 
-To update, choose **Quit**, replace the Casement Host folder with the one from the new zip, and
-run `VantageHost.exe` again. To remove it, turn off **Start Casement Host when I sign in** and
-**Control apps running as administrator**, quit, and delete the folder and the **Casement Host**
-shortcut in the Start menu; its settings, pairings, and logs are in `%LOCALAPPDATA%\Vantage Host`.
+It updates itself, and running a newer Setup does the same by hand. To remove it, use Windows'
+Settings › Apps › Installed apps. It asks whether to remove your settings and paired devices too
+(they're in `%LOCALAPPDATA%\Vantage Host`), and Windows asks for permission if **Control apps running
+as administrator** is on. If that setting is on and the host is running, choose **Quit** first.
+
+The zip attached to each release is what the updater downloads. A copy run from it works the same but
+has no entry in Installed apps: quit it and delete its folder to remove it.
 
 Something not working? [Open an issue](https://github.com/dlev02/Casement/issues/new/choose).
 

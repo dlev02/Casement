@@ -345,7 +345,11 @@ public sealed class AppController
         if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
         _log.LogInformation("running {Mode}", ElevatedWindows.ThisProcessIsElevated ? "as administrator" : "without administrator rights");
         if (!options.Synthetic) TurnOnStartAtLoginOnce();
-        if (!options.Synthetic && !DebugBuild) EnsureStartMenuShortcut();
+        if (!options.Synthetic && !DebugBuild)
+        {
+            EnsureStartMenuShortcut();
+            SyncInstalledAppsVersion();
+        }
 
         try
         {
@@ -763,7 +767,7 @@ public sealed class AppController
 
     /// <summary>
     /// A Start menu entry, so Start › "Casement" brings the host back after its window was closed
-    /// (the zip has no installer to add one). Rewritten when the folder moved.
+    /// (Setup makes the same one; a copy from the zip has nothing else to add it). Rewritten when the folder moved.
     /// </summary>
     private void EnsureStartMenuShortcut()
     {
@@ -774,6 +778,19 @@ public sealed class AppController
         catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
         {
             _log.LogWarning("couldn't add the Start menu shortcut: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>The updater replaces the folder without Setup, so Installed apps hears the new version from here.</summary>
+    private void SyncInstalledAppsVersion()
+    {
+        try
+        {
+            if (InstallRegistration.SyncVersion(ExecutablePath, VersionNumber)) _log.LogInformation("Installed apps now shows {Version}", VersionNumber);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            _log.LogWarning("couldn't update Installed apps: {Message}", ex.Message);
         }
     }
 
