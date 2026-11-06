@@ -36,7 +36,23 @@ final class ParakeetModel {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "dictation")
 
     private(set) var isEnabled: Bool
-    private(set) var state: State
+    private(set) var state: State {
+        didSet {
+            // Settings reads these while drawing, so the disk is checked when the state changes
+            // rather than on every draw. A download in progress is one case only for what follows.
+            if case .downloading = state {
+                hasModelFiles = true
+                hasCompleteModel = false
+            } else {
+                hasModelFiles = Self.hasFilesOnDisk
+                hasCompleteModel = Self.isInstalled
+            }
+        }
+    }
+    /// `hasFilesOnDisk` as of the last state change.
+    private(set) var hasModelFiles: Bool
+    /// `isInstalled` as of the last state change.
+    private(set) var hasCompleteModel: Bool
     /// Bytes the model occupies on disk, when installed.
     private(set) var installedBytes: Int64?
     /// How long the last load + warm-up took.
@@ -49,8 +65,10 @@ final class ParakeetModel {
     init(defaults: UserDefaults = .standard) {
         runtime = ParakeetRuntime(directory: Self.modelDirectory)
         isEnabled = defaults.bool(forKey: Self.enabledKey)
+        hasCompleteModel = Self.isInstalled
+        hasModelFiles = Self.hasFilesOnDisk
         state = Self.isInstalled ? .installed : .notInstalled
-        if Self.hasFilesOnDisk { measureDiskUsage() }
+        if hasModelFiles { measureDiskUsage() }
     }
 
     // MARK: Paths

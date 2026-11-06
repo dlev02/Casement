@@ -658,7 +658,10 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Casement Host with − and add it again (a stale TCC entry from another signature, e.g. a Debug
   build: the switch looks on but `AXIsProcessTrusted()` is false). Never run `tccutil` from the
   app. `--open-setup` (DEBUG) shows it as a preview that saves nothing.
-- **Host Settings** (`HostSettingsView` and its tabs): one convention, System Settings'. A row
+- **Host Settings** (`HostSettingsView` and its tabs): one convention, System Settings'. Each tab is
+  its own view, and bodies never ask another process anything: `SMAppService.status` read while
+  drawing was over half of every tab switch, so `LoginItem` keeps a copy and refreshes it off the
+  main thread; `ParakeetModel` checks the disk when its state changes. A row
   says what it is, with at most one short line under it saying what it does; anything longer is
   the section's footer (`Footer`), never a text row inside the section; values and buttons sit on
   the trailing edge, and a button names what it does in the current state (Allow…, Turn On…,
