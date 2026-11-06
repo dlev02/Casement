@@ -49,7 +49,7 @@
 
 Casement is free and open source. The native Mac client is [on the Mac App Store](https://apps.apple.com/app/id6821765234). Try beta builds for iPhone, iPad, Mac, and Apple Vision Pro through [TestFlight](https://testflight.apple.com/join/mctmTwrV). [What’s new in 1.1](docs/releases/1.1.md).
 
-**Casement Host** is the small app that runs on the computer you want to control. Download it from [Releases](https://github.com/dlev02/Casement/releases/latest):
+**Casement Host** is the small app that runs on the computer you want to control. Download it from [Releases](https://github.com/dlev02/Casement/releases/latest). [What’s new in Host 1.5](docs/releases/host-1.5.md):
 
 | Computer | Download | Install |
 | --- | --- | --- |
