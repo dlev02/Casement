@@ -20,7 +20,7 @@ namespace Vantage.Host.Windows.App;
 /// uptodate|checking|downloading|ready|manual|failed|rolledback</c> shows a state, and <c>--update-feed URL
 /// --update-key HEX --update-soon</c> runs the real thing against a test feed without the waits.
 /// </summary>
-internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, int? Height, string? State, string? Capture, bool ExpandAll, bool PaneClosed, string? UpdateFeed, string? UpdateKey, string? UpdatePreview, bool UpdateSoon)
+internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, int? Height, string? State, string? Capture, bool ExpandAll, bool PaneClosed, string? UpdateFeed, string? UpdateKey, string? UpdatePreview, bool UpdateSoon, string? HelpSearch = null)
 {
     /// <summary>The flags in <paramref name="args"/>, which are removed from it (the host's parser refuses them).</summary>
     public static PreviewOptions Take(ref string[] args)
@@ -28,6 +28,7 @@ internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, 
         var rest = new List<string>();
         string? settings = null, state = null, capture = null, updateFeed = null, updateKey = null, updatePreview = null;
         var updateSoon = false;
+        string? helpSearch = null;
         var panel = false;
         var expand = false;
         var paneClosed = false;
@@ -38,6 +39,9 @@ internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, 
             {
                 case "--open-settings" when i + 1 < args.Length:
                     settings = args[++i];
+                    break;
+                case "--help-search" when i + 1 < args.Length:
+                    helpSearch = args[++i];
                     break;
                 case "--open-panel":
                     panel = true;
@@ -80,7 +84,7 @@ internal sealed record PreviewOptions(string? Settings, bool Panel, int? Width, 
             }
         }
         args = [.. rest];
-        return new PreviewOptions(settings, panel, width, height, state, capture, expand, paneClosed, updateFeed, updateKey, updatePreview, updateSoon);
+        return new PreviewOptions(settings, panel, width, height, state, capture, expand, paneClosed, updateFeed, updateKey, updatePreview, updateSoon, helpSearch);
     }
 
     /// <summary><c>--theme</c>, if given.</summary>
@@ -131,6 +135,7 @@ internal static class PreviewCapture
     public static void Expand(DependencyObject root)
     {
         if (root is CommunityToolkit.WinUI.Controls.SettingsExpander expander) expander.IsExpanded = true;
+        if (root is Microsoft.UI.Xaml.Controls.Expander nativeExpander) nativeExpander.IsExpanded = true;
         for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); i++)
             Expand(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i));
     }

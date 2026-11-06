@@ -78,6 +78,11 @@ public sealed partial class GeneralPage : Page
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
             AdminSwitch.IsEnabled = _controller.Runtime is not null;
         }
+        AdminCard.Description = _controller.ControlsAdminApps
+            ? "On. Other programs running as you could also use its launch task to gain administrator rights without asking. Turning this off removes the task and closes the elevated host; reopen it from Start to run normally."
+            : AppController.IsElevated
+                ? "This copy was started as administrator. Quit Casement Host and reopen it normally to stop administrator access."
+                : "Off. Casement Host is running without administrator rights. Turn this on only if you need to control administrator apps such as Task Manager.";
         UpdateUpdates();
         _updating = false;
     }
@@ -225,17 +230,48 @@ public sealed partial class GeneralPage : Page
         AdminSwitch.IsEnabled = false;
         try
         {
+            if (!on && AppController.IsElevated)
+            {
+                var confirm = new ContentDialog
+                {
+                    XamlRoot = XamlRoot,
+                    Title = "Turn off administrator access?",
+                    Content = "The elevated launch task will be removed and Casement Host will close to release its administrator rights. Connected devices will disconnect and file transfers will pause. Reopen Casement Host from Start to run without administrator rights.",
+                    PrimaryButtonText = "Turn off and close",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    _updating = true;
+                    AdminSwitch.IsOn = true;
+                    _updating = false;
+                    return;
+                }
+            }
             if (!await _controller.SetControlsAdminAppsAsync(on))
             {
                 _updating = true;
                 AdminSwitch.IsOn = !on;
                 _updating = false;
+                AdminFeedback.Severity = InfoBarSeverity.Error;
+                AdminFeedback.Message = "Windows couldn't change administrator access. The setting has been restored. Try again and accept the Windows permission prompt if one appears.";
+                AdminFeedback.Visibility = Visibility.Visible;
+                AdminFeedback.IsOpen = true;
+            }
+            else if (!on && !AppController.IsElevated)
+            {
+                AdminFeedback.Severity = InfoBarSeverity.Success;
+                AdminFeedback.Message = "Administrator access is off. The elevated launch task has been removed.";
+                AdminFeedback.Visibility = Visibility.Visible;
+                AdminFeedback.IsOpen = true;
             }
         }
         finally
         {
             _adminBusy = false;
             AdminSwitch.IsEnabled = true;
+            Update();
         }
     }
 }

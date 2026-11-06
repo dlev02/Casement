@@ -132,6 +132,18 @@ public class AuthTests
             var trust = new ProtectedTrustStore(storage, TimeProvider.System);
             trust.Trust("0123456789abcdef", "iPad");
             Assert.True(new ProtectedTrustStore(storage, TimeProvider.System).IsTrusted("0123456789abcdef"));
+            var original = trust.List().Single();
+            var changes = 0;
+            trust.Changed += () => changes++;
+            Assert.False(trust.Rename(original.Fingerprint, "  "));
+            Assert.False(trust.Rename(original.Fingerprint, new string('x', 101)));
+            Assert.False(trust.Rename("unknown", "Another device"));
+            Assert.True(trust.Rename(original.Fingerprint, "  Drew's iPad  "));
+            var renamed = new ProtectedTrustStore(storage, TimeProvider.System).List().Single();
+            Assert.Equal("Drew's iPad", renamed.DisplayName);
+            Assert.Equal(original.Fingerprint, renamed.Fingerprint);
+            Assert.Equal(original.AddedAt, renamed.AddedAt);
+            Assert.Equal(1, changes);
             Assert.True(trust.Revoke("0123456789abcdef"));
             Assert.False(new ProtectedTrustStore(storage, TimeProvider.System).IsTrusted("0123456789abcdef"));
         }

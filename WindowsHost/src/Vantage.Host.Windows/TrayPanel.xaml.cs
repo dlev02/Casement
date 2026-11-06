@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using Vantage.Host.Windows.Tray;
 using Windows.Foundation;
 using Windows.Graphics;
@@ -39,6 +40,10 @@ public sealed partial class TrayPanel : Window
     private bool _closingForQuit;
     private string? _connectedShown;
     private bool _codeWasShowing;
+    private readonly DispatcherTimer _resizeTick = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private RectInt32? _targetBounds;
+    private RectInt32 _resizeFrom;
+    private long _resizeStarted;
 
     /// <param name="controller">The app.</param>
     public TrayPanel(AppController controller)
@@ -47,6 +52,7 @@ public sealed partial class TrayPanel : Window
         InitializeComponent();
         _transferRows = new TransferRows(TransferList, controller);
         Pairing.Attach(controller);
+        _resizeTick.Tick += (_, _) => AnimateResize();
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsResizable = false;
@@ -112,6 +118,7 @@ public sealed partial class TrayPanel : Window
     public void CloseForQuit()
     {
         _closingForQuit = true;
+        _resizeTick.Stop();
         Close();
     }
 
@@ -123,13 +130,21 @@ public sealed partial class TrayPanel : Window
         if (KeepOpen) return;
 #endif
         _visible = false;
+        _resizeTick.Stop();
+        _targetBounds = null;
         _hiddenAt = Environment.TickCount64;
         AppWindow.Hide();
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState == WindowActivationState.Deactivated) Dismiss();
+        if (args.WindowActivationState != WindowActivationState.Deactivated) return;
+        // Changing the focused control and resizing the panel can transiently deactivate WinUI.
+        // Dismiss only after that transition, if focus really moved to another window.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (GetForegroundWindow() != WindowNative.GetWindowHandle(this)) Dismiss();
+        });
     }
 
     private void OnEscape(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -156,7 +171,35 @@ public sealed partial class TrayPanel : Window
         height = Math.Min(height, work.Height - 2 * margin);
         var (x, y) = TrayPanelPlacement.Place(_icon, new ScreenRect(work.X, work.Y, work.X + work.Width, work.Y + work.Height),
                                               width, height, margin);
-        AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
+        var target = new RectInt32(x, y, width, height);
+        if (_targetBounds is { } previous && previous.Equals(target)) return;
+        _targetBounds = target;
+        _resizeTick.Stop();
+        if (!_visible || !new global::Windows.UI.ViewManagement.UISettings().AnimationsEnabled)
+        {
+            ApplyBounds(target);
+            return;
+        }
+        _resizeFrom = new RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
+        _resizeStarted = Environment.TickCount64;
+        _resizeTick.Start();
+    }
+
+    private void AnimateResize()
+    {
+        if (_targetBounds is not { } target) { _resizeTick.Stop(); return; }
+        var progress = Math.Clamp((Environment.TickCount64 - _resizeStarted) / 180.0, 0, 1);
+        var eased = 1 - Math.Pow(1 - progress, 3);
+        int Blend(int from, int to) => (int)Math.Round(from + (to - from) * eased);
+        ApplyBounds(new RectInt32(Blend(_resizeFrom.X, target.X), Blend(_resizeFrom.Y, target.Y),
+            Blend(_resizeFrom.Width, target.Width), Blend(_resizeFrom.Height, target.Height)));
+        if (progress >= 1) _resizeTick.Stop();
+    }
+
+    private void ApplyBounds(RectInt32 bounds)
+    {
+        // Keep focus and Z order unchanged throughout the resize.
+        SetWindowPos(WindowNative.GetWindowHandle(this), 0, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010 | 0x0004);
     }
 
     private void Update()
@@ -189,9 +232,23 @@ public sealed partial class TrayPanel : Window
         // The button that was focused has just gone: hand focus on, so Tab and Esc keep working.
         if (_visible && showingCode != _codeWasShowing)
         {
+            BodyScroller.ChangeView(null, 0, null, true);
             if (showingCode) Pairing.FocusCopy();
             else if (paired.Count > 0) ShowCodeRow.Focus(FocusState.Programmatic);
             else ShowCodeButton.Focus(FocusState.Programmatic);
+            if (new global::Windows.UI.ViewManagement.UISettings().AnimationsEnabled)
+            {
+                var reveal = new DoubleAnimation
+                {
+                    From = 0.65, To = 1, Duration = new Duration(TimeSpan.FromMilliseconds(160)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                };
+                Storyboard.SetTarget(reveal, showingCode ? Pairing : paired.Count > 0 ? ShowCodeRow : FirstPair);
+                Storyboard.SetTargetProperty(reveal, "Opacity");
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(reveal);
+                storyboard.Begin();
+            }
         }
         _codeWasShowing = showingCode;
         var update = _controller.Updater?.Status;
@@ -324,8 +381,6 @@ public sealed partial class TrayPanel : Window
     private void OnShowCode(object sender, RoutedEventArgs e)
     {
         _controller.ShowPairingCode(openWindow: false);
-        Update();
-        Fit();
     }
 
     private void OnSettings(object sender, RoutedEventArgs e)
@@ -362,6 +417,12 @@ public sealed partial class TrayPanel : Window
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool SetForegroundWindow(nint hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint MonitorFromPoint(NativePoint point, uint flags);

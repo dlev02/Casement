@@ -45,6 +45,12 @@ public sealed partial class MainWindow : Window
     }
 
 #if DEBUG
+    /// <summary>Sets the help query for a repeatable UI capture.</summary>
+    public void SearchHelpForPreview(string query)
+    {
+        if (ContentFrame.Content is HelpPage help) help.SearchForPreview(query);
+    }
+
     /// <summary><c>--window-size</c>: a size in DIPs, to check narrow layouts.</summary>
     public void ResizeForPreview(int width, int height)
     {
@@ -100,6 +106,7 @@ public sealed partial class MainWindow : Window
             "files" => typeof(FilesPage),
             "display" => typeof(DisplayPage),
             "about" => typeof(AboutPage),
+            "help" => typeof(HelpPage),
             _ => typeof(GeneralPage),
         };
         if (ContentFrame.CurrentSourcePageType != page) ContentFrame.Navigate(page, _controller);

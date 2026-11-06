@@ -81,8 +81,8 @@ public static class AdminLaunch
 
     /// <summary>Deletes the task (asks for permission unless elevated). False when it failed.</summary>
     public static async Task<bool> UnregisterAsync() =>
-        await SchtasksAsync(elevate: false, "/Query", "/TN", TaskName) != 0
-        || await SchtasksAsync(elevate: true, "/Delete", "/TN", TaskName, "/F") == 0;
+        // A failed query can also mean access denied: never report revocation on that basis.
+        await SchtasksAsync(elevate: true, "/Delete", "/TN", TaskName, "/F") == 0;
 
     private static async Task<int> SchtasksAsync(bool elevate, params string[] arguments)
     {

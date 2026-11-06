@@ -78,6 +78,7 @@
                     Toggled="OnRestartGuardToggled" />
             </tk:SettingsCard>
             <tk:SettingsCard
+                x:Name="AdminCard"
                 Description="Includes Task Manager. Windows asks once, then any program you run could use this to get administrator rights without asking, so turn it on only if you need it."
                 Header="Control apps running as administrator">
                 <tk:SettingsCard.HeaderIcon>
@@ -88,6 +89,8 @@
                     AutomationProperties.Name="Control apps running as administrator"
                     Toggled="OnAdminToggled" />
             </tk:SettingsCard>
+
+            <InfoBar x:Name="AdminFeedback" IsOpen="False" Visibility="Collapsed" IsClosable="True" />
 
             <StackPanel x:Name="UpdatesSection" Spacing="4" Visibility="Collapsed">
                 <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Updates" />

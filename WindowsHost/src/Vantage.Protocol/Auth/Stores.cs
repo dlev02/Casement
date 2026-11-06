@@ -138,6 +138,24 @@ public sealed class ProtectedTrustStore : ITrustStore
         lock (_lock) return [.. _clients];
     }
 
+    /// <inheritdoc />
+    public bool Rename(string fingerprint, string name)
+    {
+        name = name.Trim();
+        if (name.Length is 0 or > 100) return false;
+        lock (_lock)
+        {
+            var index = _clients.FindIndex(c => c.Fingerprint == fingerprint);
+            if (index < 0) return false;
+            var previous = _clients[index];
+            _clients[index] = previous with { DeviceName = name };
+            try { Save(); }
+            catch { _clients[index] = previous; throw; }
+        }
+        Changed?.Invoke();
+        return true;
+    }
+
     private void Save() => _storage.Write(FileName, JsonSerializer.SerializeToUtf8Bytes(_clients, TrustJsonContext.Default.ListTrustedClient));
 
     private static List<TrustedClient> Load(IProtectedStorage storage)

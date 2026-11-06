@@ -68,6 +68,9 @@ public interface ITrustStore
     /// <summary>Removes a client. Returns false if it wasn't there. The listener also closes its sessions and file channels.</summary>
     bool Revoke(string fingerprint);
 
+    /// <summary>Changes this host's label for a paired device without changing its identity.</summary>
+    bool Rename(string fingerprint, string name) => false;
+
     /// <summary>Everyone paired, oldest first.</summary>
     IReadOnlyList<TrustedClient> List();
 

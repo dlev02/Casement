@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="Vantage.Host.Windows.App.Pages.HelpPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Vantage.Host.Windows.App"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnFind" />
+    </Page.KeyboardAccelerators>
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TextBlock Margin="34,0,32,20" Text="Help &amp; FAQ" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <Grid Grid.Row="1" Margin="32,0,32,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="1000" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
+            <StackPanel Spacing="8" Margin="0,0,0,8">
+                <Grid>
+                    <TextBox x:Name="SearchBox" PlaceholderText="Search questions and answers" Padding="36,8,12,8"
+                        AutomationProperties.Name="Search help" TextChanged="OnSearchChanged" />
+                    <FontIcon Glyph="&#xE721;" FontSize="16" Margin="12,0,0,0" HorizontalAlignment="Left"
+                        VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </Grid>
+                <TextBlock x:Name="ResultStatus" Text="16 questions" TextWrapping="Wrap"
+                    Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+        </Grid>
+        <ScrollViewer Grid.Row="2">
+        <Grid Padding="32,0,32,32">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="1000" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
+        <StackPanel x:Name="HelpContent" Spacing="4" MaxWidth="1000" HorizontalAlignment="Stretch">
+            <StackPanel.ChildrenTransitions>
+                <TransitionCollection><RepositionThemeTransition IsStaggeringEnabled="False" /></TransitionCollection>
+            </StackPanel.ChildrenTransitions>
+
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Getting connected" />
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="What do I need to connect?">
+                    <TextBlock Margin="16" Text="Run Tailscale on this PC and your iPhone, iPad, Mac or Vision Pro, signed in to the same tailnet. Keep Casement Host running here, then add the PC in Casement on your other device. No Tailscale API key is needed when you add it by name or address." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="How do I pair a device?">
+                    <TextBlock Margin="16" Text="Choose Show pairing code in the tray panel or Settings → Devices, then enter it in Casement on the device. A code works once, expires after ten minutes, and is withdrawn after five wrong guesses or when you choose Done. New code replaces the previous code." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Why can't my device find this PC?">
+                    <TextBlock Margin="16" Text="Check that Tailscale is connected on both devices and Casement Host is running. Add the PC using the Tailscale name or address shown beside the pairing code. If it still fails, check your tailnet access rules and the Windows firewall. Casement accepts remote connections over Tailscale only." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Does closing the window stop hosting?">
+                    <TextBlock Margin="16" Text="No. Closing Settings hides the window; the host stays available in the system tray beside the clock, sometimes behind the ^ arrow. Choose Quit to stop hosting. Paired devices opens the full Devices settings page and closes the tray panel." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Devices and security" />
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Can I rename a paired device?">
+                    <TextBlock Margin="16" Text="Yes. Open Devices, choose the three dots beside a paired device, then Rename device. This changes its label on this PC only, without changing its pairing or its name in Tailscale. Older versions could show localhost for an iPad; you can rename an existing entry here." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Do paired devices expire?">
+                    <TextBlock Margin="16" Text="No. Pairing remains until you remove the device. In Devices, choose the three dots → Remove device to disconnect it and require a fresh pairing code next time. Remove devices you lose, sell or no longer use. Removing a PC from the client list does not revoke that client’s pairing on the host." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="What does administrator access allow?">
+                    <TextBlock Margin="16" Text="Windows normally blocks control of administrator apps such as Task Manager. General → Control apps running as administrator creates an elevated launch task after a Windows permission prompt and restarts the host with administrator rights. Enable it only when needed: other programs running as you could also use that task to gain administrator rights without another prompt." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="What happens when I turn administrator access off?">
+                    <TextBlock Margin="16" Text="The host removes its elevated launch task. If it is running as administrator, it closes to release those rights, disconnecting devices and pausing file transfers. Reopen Casement Host from Start to run normally. If Windows cannot remove the task, the switch returns to On and shows an error. A copy you explicitly run as administrator still has administrator rights until you quit it." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Can I answer UAC prompts or unlock Windows?">
+                    <TextBlock Margin="16" Text="No. Administrator access does not allow control of the Windows secure desktop, including UAC permission prompts and the lock or sign-in screen. Answer those at the PC. Type Password is available for Macs only. After a restart, someone must sign in before the host starts at login." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Is my screen private?">
+                    <TextBlock Margin="16" Text="Casement sends screen, input, audio and files through Tailscale’s encrypted connection. There is no Casement account or Casement relay. Only paired device keys are trusted, and host identity and pairing data are protected for your Windows user with DPAPI. Tailscale may relay encrypted traffic when a direct connection is unavailable." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Sound, display and files" />
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Can I hear the PC?">
+                    <TextBlock Margin="16" Text="With Casement Host 1.3 or later, turn on PC Audio in the client’s session controls. The PC keeps playing its sound too. The client remembers this choice for each computer." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Can the picture fit my device?">
+                    <TextBlock Margin="16" Text="Enable Fit the PC’s display in the saved PC’s settings in Casement. The host chooses a supported resolution for the connected display and restores its previous mode after the session. This changes the PC’s actual display; it does not create a separate virtual screen." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Where do received files go?">
+                    <TextBlock Margin="16" Text="Files go to Downloads or the receive folder selected in Files. The host can show them in Explorer or open them after arrival if you enable those options. Interrupted transfers can resume; a file appears under its final name only after it arrives whole and passes its integrity check." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Maintenance and help" />
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="How do updates work?">
+                    <TextBlock Margin="16" Text="The host checks GitHub for updates about once a day. Updates must pass signature and download integrity checks. Automatic installation waits until the host is idle; you can check or restart to update under General → Updates. You can also turn automatic updates off there." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Can Casement prevent a restart?">
+                    <TextBlock Margin="16" Text="General → Ask before restarting while a device is connected lets Windows show a blocking screen during a normal restart or shutdown. It cannot prevent a forced restart, a crash or a power cut. Keep that limit in mind when connecting from away." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="How do I report a problem?">
+                    <TextBlock Margin="16" Text="Use About → Report a problem to open GitHub issues. Include host and client versions, what you expected and what happened, and whether Tailscale shows both devices as connected. About → Open logs folder opens the local diagnostic logs. Review logs for personal details before sharing them." TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxWidth="720" HorizontalAlignment="Left" />
+            </Expander>
+        </StackPanel>
+        </Grid>
+        </ScrollViewer>
+    </Grid>
+</Page>

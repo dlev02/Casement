@@ -38,6 +38,7 @@ public static class TailscaleJson
             {
                 if (node.TryGetProperty("Hostinfo", out var hostinfo) && hostinfo.ValueKind == JsonValueKind.Object)
                     device = String(hostinfo, "Hostname");
+                if (string.Equals(device, "localhost", StringComparison.OrdinalIgnoreCase)) device = null;
                 device ??= String(node, "ComputedName");
                 if (device is null && String(node, "Name") is { } name) device = name.Split('.')[0];
             }

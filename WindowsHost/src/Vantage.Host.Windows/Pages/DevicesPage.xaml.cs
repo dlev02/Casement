@@ -136,6 +136,37 @@ public sealed partial class DevicesPage : Page
             await _controller!.RevokeAsync(fingerprint);
         };
         var flyout = new MenuFlyout();
+        var rename = new MenuFlyoutItem { Text = "Rename device", Icon = UiHelpers.Glyph("") };
+        rename.Click += async (_, _) =>
+        {
+            var field = new TextBox { Text = name, MaxLength = 100, Header = "Device name" };
+            AutomationProperties.SetName(field, "Device name");
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot, Title = "Rename device", Content = field,
+                PrimaryButtonText = "Save", CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            field.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(field.Text);
+            dialog.PrimaryButtonClick += (_, args) =>
+            {
+                try
+                {
+                    if (_controller?.Runtime?.Environment.Trust.Rename(fingerprint, field.Text) != true)
+                    {
+                        args.Cancel = true;
+                        field.Header = "This device is no longer paired. Cancel and try again.";
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    args.Cancel = true;
+                    field.Header = "Couldn't save the name. Check access to the data folder and try again.";
+                }
+            };
+            await dialog.ShowAsync();
+        };
+        flyout.Items.Add(rename);
         flyout.Items.Add(remove);
 
         var more = new Button

@@ -419,6 +419,11 @@ public sealed class AppController
         await Task.Delay(1500);
         try
         {
+            if (options.HelpSearch is { } query)
+            {
+                _window!.SearchHelpForPreview(query);
+                await Task.Delay(400);
+            }
             if (options.PaneClosed)
             {
                 _window!.ClosePaneForPreview();
@@ -522,7 +527,7 @@ public sealed class AppController
     /// <summary>
     /// Turns "Control apps running as administrator" on (registers the elevated task, which Windows
     /// asks permission for, then restarts through it, back on General) or off (deletes the task; this
-    /// copy stays elevated until it next starts). False when Windows' prompt was declined or failed.
+    /// elevated copy closes immediately). False when Windows' prompt was declined or failed.
     /// </summary>
     public async Task<bool> SetControlsAdminAppsAsync(bool on)
     {
@@ -541,6 +546,12 @@ public sealed class AppController
                 WriteOpenOnLaunch("general");
                 if (!await AdminLaunch.RunAsync()) _log.LogError("the administrator task didn't start");
             });
+        }
+        else if (!on && IsElevated)
+        {
+            // A process cannot shed its elevated token. Stop hosting rather than leave an
+            // elevated input injector alive behind a switch that says Off.
+            await QuitAsync();
         }
         return true;
     }

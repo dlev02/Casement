@@ -13,6 +13,15 @@ namespace Vantage.Host.Windows.Tests;
 
 public class TailscaleJsonTests
 {
+    [Theory]
+    [InlineData("localhost")]
+    [InlineData("LOCALHOST")]
+    public void IpadLocalhostUsesItsTailnetName(string hostname)
+    {
+        var json = $$"""{ "Node": { "Hostinfo": { "Hostname": "{{hostname}}" }, "ComputedName": "drews-ipad" } }""";
+        Assert.Equal("drews-ipad", TailscaleJson.ParseWhois(json)!.DeviceName);
+    }
+
     [Fact]
     public void WhoisGivesLoginAndDeviceName()
     {
