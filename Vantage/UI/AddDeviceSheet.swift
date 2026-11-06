@@ -87,7 +87,7 @@ struct AddDeviceSheet: View {
                     Section {
                         Toggle("Fit the PC's display to this screen", isOn: $useVirtualDisplay)
                     } footer: {
-                        Text("Casement Host switches the PC's display mode to match this screen while you're connected and puts it back afterwards.")
+                        Text("Casement Host matches the PC's display mode and scale to this screen while you're connected and puts them back afterwards.")
                     }
 
                     Section {

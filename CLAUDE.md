@@ -1269,8 +1269,21 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `FrameChangeTests`, `FrameComparerGpuTests` (skipped without a D3D11 device; prints the 4K cost,
   ~0.65 ms per frame with a synchronous readback). A real 22H2/23H2 or Windows 10 PC is unchecked.
 - **Display fitting** (the Mac's virtual display; Windows has none without a signed Indirect Display
-  Driver): `selectDisplay{fitViewport, useVirtualDisplay: true}` switches the main display's mode, as
-  Parsec and Sunshine do. `HostEnvironment.DisplayFitter` (`IDisplayFitter`, null on synthetic hosts)
+  Driver): `selectDisplay{fitViewport, useVirtualDisplay: true}` switches the main display's mode and
+  scale. **Scale** (`DisplayScales`): Windows App (RDP) makes its own session at the device's pixels
+  and scale (`RdpCoreTS` event 168 on Drew-PC: an iPad at 2420×1570; a Mac session running at 192 DPI),
+  which is why its taskbar looks right on an iPad; a mode alone gave 2560×1600 at 100%, far smaller.
+  `DisplayScales.Choose` picks the step giving the desktop about the device's own points (floor 1024×720
+  points), through the undocumented `DisplayConfigSetDeviceInfo` type -4. The value is relative to the
+  mode's recommended scale; the registry keeps one per monitor and mode, but the live value carries
+  across a mode change, so restore sets it before the mode (the other order flashed 225% in the user's
+  own mode for ~95 ms), checks it after, and `display-restore.txt` lets the next launch undo a crash
+  (`FailFast` left the 4K mode at 225%; recovery took 158 ms). Checked on the PG32UCDM with a throwaway
+  client: an 11" iPad's 1210×834@2 gets 2048×1536 at 175% (1170×878 points, taskbar 84 px; a 13" gets
+  150%), frames keep coming across the scale change, and mode and scale come back. Other windows can
+  move across the change, as with any mode switch. The mode rule below now floors at the viewport in
+  points, and a portrait viewport keeps the current mode, so the older 2560×1600 example is superseded.
+  `HostEnvironment.DisplayFitter` (`IDisplayFitter`, null on synthetic hosts)
   is `Capture/DisplayFitter.cs`: `ChangeDisplaySettingsEx(name, mode, CDS_FULLSCREEN)` (temporary,
   never in the registry; Windows put the mode back by itself when the host was killed), restore =
   `ChangeDisplaySettingsEx(name, null, 0)`; one session holds a display, a second streams what's there

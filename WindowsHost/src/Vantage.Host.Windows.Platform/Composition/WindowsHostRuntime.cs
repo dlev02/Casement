@@ -84,7 +84,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
               : new WasapiAudioSource(logging, options.Audio);
 
         // Synthetic runs share the PC with a real host and never touch its display modes.
-        DisplayFitter = options.Synthetic ? null : Own(new DisplayFitter(() => Settings.Current.AllowDisplayFitting, logging));
+        DisplayFitter = options.Synthetic ? null : Own(new DisplayFitter(() => Settings.Current.AllowDisplayFitting, logging, Paths.DisplayRestoreFile));
 
         Environment = new HostEnvironment
         {

@@ -29,8 +29,8 @@ public readonly record struct RawDisplayMode(int Width, int Height, int BitsPerP
 /// are unit-tested). The rule, in order:
 /// <list type="number">
 /// <item>Candidates are at least 1280×720, no larger than the panel's native (largest) mode, and
-/// at least the viewport in points at the display's scale (pixels ≥ points × scale), so the
-/// device never gets a desktop with less room than its own screen.</item>
+/// at least the viewport in points, so the scale chosen with the mode (<see cref="DisplayScales"/>)
+/// never has to go below 100% to give the device the room of its own screen.</item>
 /// <item>The current mode stays when its shape already matches the viewport within 1%.</item>
 /// <item>Otherwise the candidate whose shape covers most of the viewport wins (coverage =
 /// min(aspect ratio quotient, its inverse): the letterboxed fraction left over); among shapes
@@ -85,19 +85,19 @@ public static class DisplayModes
     /// <param name="viewportWidthPoints">The device's viewport in points.</param>
     /// <param name="viewportHeightPoints">The device's viewport in points.</param>
     /// <param name="deviceScale">The device's pixels per point (2 on an iPad, 3 on an iPhone).</param>
-    /// <param name="displayScale">The display's scale (effective DPI / 96) in the user's mode.</param>
     public static DisplayMode Choose(IReadOnlyList<DisplayMode> modes, DisplayMode current, double viewportWidthPoints, double viewportHeightPoints,
-                                     double deviceScale, double displayScale)
+                                     double deviceScale)
     {
         if (viewportWidthPoints <= 0 || viewportHeightPoints <= 0 || modes.Count == 0) return current;
+        // A monitor lists landscape modes: a portrait device would only trade pixels for a little less letterbox.
+        if (viewportHeightPoints > viewportWidthPoints) return current;
         var aspect = viewportWidthPoints / viewportHeightPoints;
         var currentCoverage = Coverage(current.Aspect, aspect);
         if (currentCoverage >= 1 - SameShape) return current;
 
-        var scale = displayScale > 0 ? displayScale : 1;
         var native = modes.MaxBy(m => (long)m.Width * m.Height);
-        var minimumWidth = Math.Max(MinimumWidth, viewportWidthPoints * scale - 0.5);
-        var minimumHeight = Math.Max(MinimumHeight, viewportHeightPoints * scale - 0.5);
+        var minimumWidth = Math.Max(MinimumWidth, viewportWidthPoints - 0.5);
+        var minimumHeight = Math.Max(MinimumHeight, viewportHeightPoints - 0.5);
         var candidates = modes.Where(m => m.Width >= minimumWidth && m.Height >= minimumHeight
                                           && m.Width <= native.Width && m.Height <= native.Height).ToList();
         if (candidates.Count == 0) return current;

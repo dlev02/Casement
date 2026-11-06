@@ -687,6 +687,7 @@ public sealed class HostSessionCore
             var now = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
             var after = main is null ? null : now.FirstOrDefault(d => d.Id == main.Id);
             if (main is null || after is null || after.PixelWidth != main.PixelWidth || after.PixelHeight != main.PixelHeight
+                || after.Scale != main.Scale
                 || _env.Time.GetElapsedTime(started) >= s_modeSettleLimit)
             {
                 if (after is not null)
