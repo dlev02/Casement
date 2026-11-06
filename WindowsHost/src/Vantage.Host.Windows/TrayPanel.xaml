@@ -30,7 +30,7 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <Image Width="36" Height="36" VerticalAlignment="Top" Source="ms-appx:///Assets/CasementHost.png" />
+                    <Image Width="36" Height="36" VerticalAlignment="Top" Source="{ThemeResource CasementHostIcon}" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Casement Host" />
                         <Grid ColumnSpacing="6">

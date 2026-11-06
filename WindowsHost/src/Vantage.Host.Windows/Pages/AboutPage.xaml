@@ -13,7 +13,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Image Width="56" Height="56" Source="ms-appx:///Assets/CasementHost.png" />
+                <Image Width="56" Height="56" Source="{ThemeResource CasementHostIcon}" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                     <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Casement Host" />
                     <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsTextSelectionEnabled="True" />

@@ -41,6 +41,8 @@
     <!-- The icon in the title bar, About and the tray panel (ms-appx:///Assets/…: a relative path in
          Pages\*.xaml resolves under Pages\ and shows nothing). The .ico stays the exe's icon. -->
     <Content Include="Assets\CasementHost.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\CasementHostLight.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\CasementHostDark.png" CopyToOutputDirectory="PreserveNewest" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

@@ -23,7 +23,7 @@
             IsPaneToggleButtonVisible="True"
             PaneToggleRequested="OnPaneToggleRequested">
             <TitleBar.IconSource>
-                <ImageIconSource ImageSource="ms-appx:///Assets/CasementHost.png" />
+                <ImageIconSource ImageSource="{ThemeResource CasementHostIcon}" />
             </TitleBar.IconSource>
         </TitleBar>
 

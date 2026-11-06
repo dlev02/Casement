@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="brand/casement-mac.png" width="128" alt="Casement app icon">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/casement-mac-dark.png">
+    <img src="brand/casement-mac.png" width="128" alt="Casement app icon">
+  </picture>
 </p>
 
 <h1 align="center">Casement</h1>

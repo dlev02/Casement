@@ -2,74 +2,48 @@
   "fill-specializations": [
     {
       "value": {
-        "linear-gradient": [
-          "extended-srgb:0.96863,0.97255,0.98039,1.00000",
-          "extended-srgb:0.76471,0.78431,0.81176,1.00000"
-        ],
-        "orientation": {
-          "start": {
-            "x": 0.5,
-            "y": 0.0
-          },
-          "stop": {
-            "x": 0.5,
-            "y": 1.0
-          }
-        }
+        "solid": "extended-srgb:0.917647,0.941176,0.949020,1.000000"
       }
     },
     {
       "appearance": "dark",
       "value": {
-        "linear-gradient": [
-          "extended-srgb:0.22745,0.23922,0.25882,1.00000",
-          "extended-srgb:0.07059,0.07451,0.08235,1.00000"
-        ],
-        "orientation": {
-          "start": {
-            "x": 0.5,
-            "y": 0.0
-          },
-          "stop": {
-            "x": 0.5,
-            "y": 1.0
-          }
-        }
+        "solid": "extended-srgb:0.078431,0.105882,0.133333,1.000000"
       }
     }
   ],
   "groups": [
     {
-      "name": "Pointer",
+      "name": "Pane",
       "layers": [
         {
-          "name": "pointer",
-          "image-name": "pointer.svg",
+          "name": "pane",
+          "image-name": "pane.svg",
           "glass": true,
           "fill-specializations": [
             {
               "value": {
-                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+                "solid": "extended-srgb:0.462745,0.592157,0.678431,1.000000"
               }
             },
             {
               "appearance": "dark",
               "value": {
-                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+                "solid": "extended-srgb:0.752941,0.850980,0.909804,1.000000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-srgb:1.000000,1.000000,1.000000,1.000000"
               }
             }
           ]
-        },
-        {
-          "name": "pointer-edge",
-          "image-name": "pointer-edge.svg",
-          "glass": false,
-          "fill": "none"
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.55
+        "opacity": 0.18
       },
       "translucency": {
         "enabled": false,
@@ -79,24 +53,81 @@
       "lighting": "combined"
     },
     {
-      "name": "Slab",
+      "name": "Screen",
       "layers": [
         {
-          "name": "glass-slab",
-          "image-name": "glass-slab.png",
-          "glass": false,
-          "fill": "none"
+          "name": "screen",
+          "image-name": "screen.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:0.325490,0.435294,0.509804,1.000000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.533333,0.674510,0.768627,1.000000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-srgb:1.000000,1.000000,1.000000,1.000000"
+              }
+            }
+          ]
         }
       ],
       "shadow": {
-        "kind": "layer-color",
-        "opacity": 0.5
+        "kind": "neutral",
+        "opacity": 0.18
       },
       "translucency": {
         "enabled": false,
         "value": 0.5
       },
-      "specular": false,
+      "specular": true,
+      "lighting": "combined"
+    },
+    {
+      "name": "Frame",
+      "layers": [
+        {
+          "name": "frame",
+          "image-name": "frame.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:0.203922,0.301961,0.380392,1.000000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.650980,0.768627,0.843137,1.000000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-srgb:1.000000,1.000000,1.000000,1.000000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.18
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "specular": true,
       "lighting": "combined"
     }
   ],

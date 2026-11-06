@@ -10,6 +10,18 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <BitmapImage x:Key="CasementHostIcon" UriSource="ms-appx:///Assets/CasementHostLight.png" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <BitmapImage x:Key="CasementHostIcon" UriSource="ms-appx:///Assets/CasementHostDark.png" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <BitmapImage x:Key="CasementHostIcon" UriSource="ms-appx:///Assets/CasementHost.png" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <!--
                 The one layout for the settings window (Windows 11 Settings'): the whole window is Mica,
                 so NavigationView's own rounded content panel goes; the cards are then the only surface.
