@@ -436,6 +436,12 @@ struct RemoteSessionScreen: View {
             }
         }
         #endif
+        .onChange(of: session.curtainStatus) { _, status in
+            if let reason = status?.unavailable {
+                store.setCurtain(false, for: device.id)
+                showMacAudioNotice(reason)
+            }
+        }
         .onChange(of: macAudio.status) { _, status in
             if case .unavailable(let reason) = status { showMacAudioNotice(reason) }
         }
@@ -493,6 +499,7 @@ struct RemoteSessionScreen: View {
             items: stripItems,
             onCustomize: { showStripEditor = true },
             macAudio: macAudioToggle,
+            curtain: curtainToggle,
             files: sendFileAction,
             host: hostPlatform
         )
@@ -628,6 +635,25 @@ struct RemoteSessionScreen: View {
             unavailableReason: session.state == .connected && !session.hostOffersAudio
                 ? "\(device.name)'s Casement Host can't send sound. Update Casement Host on \(host.the)." : nil,
             onToggle: toggleMacAudio)
+    }
+
+    private var wantsCurtain: Bool {
+        store.devices.first { $0.id == device.id }?.curtain ?? device.curtain ?? false
+    }
+
+    private var curtainToggle: CurtainToggle {
+        CurtainToggle(
+            // Once the host has answered, it says; a local lock at the computer lowers it.
+            isOn: session.curtainStatus?.isUp ?? wantsCurtain,
+            unavailableReason: session.state == .connected && !session.hostOffersCurtain
+                ? "\(device.name)'s Casement Host can't do this. Update Casement Host on \(host.the)." : nil,
+            onToggle: toggleCurtain)
+    }
+
+    private func toggleCurtain() {
+        let on = !curtainToggle.isOn
+        store.setCurtain(on, for: device.id)
+        session.setCurtain(on)
     }
 
     /// Off → on, on → off, and a failed stream → try again (the choice itself stays on).
@@ -926,6 +952,7 @@ struct RemoteSessionScreen: View {
         dictation.onMicrophoneActive = { active in macAudio.setMicrophoneActive(active) }
         macAudio.setWanted(wantsMacAudio)
         session.setMacAudio(wantsMacAudio)
+        session.setCurtain(wantsCurtain)
         input.mode = touchMode
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
@@ -1117,6 +1144,9 @@ extension RemoteSessionScreen {
             macAudioOn: wantsMacAudio && !macAudioFailed,
             macAudioAvailable: session.state == .connected && session.hostOffersAudio,
             toggleMacAudio: toggleMacAudio,
+            curtainOn: curtainToggle.isOn,
+            curtainAvailable: session.state == .connected && session.hostOffersCurtain,
+            toggleCurtain: toggleCurtain,
             canSendFiles: canSendFiles,
             sendFile: { showFileImporter = true },
             showTransfers: { showTransfers = true },

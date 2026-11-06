@@ -39,7 +39,7 @@ struct VantageApp: App {
         // The app's phase only reaches background once every window has, so an open session
         // doesn't lock just because the device list was closed.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { AppLock.shared.lockIfNeeded() }
+            if phase == .background { AppLock.shared.appDidEnterBackground() }
         }
         #endif
         #endif

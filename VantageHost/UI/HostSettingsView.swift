@@ -10,22 +10,21 @@ final class HostSettingsNavigation {
 }
 
 struct HostSettingsView: View {
-    @Bindable var controller: HostController
-    @AppStorage(RestartGuard.defaultsKey) private var confirmRestart = true
+    let controller: HostController
     @Bindable private var navigation = HostSettingsNavigation.shared
 
     var body: some View {
         TabView(selection: $navigation.tab) {
-            generalTab
+            GeneralSettingsTab(controller: controller)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag("general")
-            devicesTab
+            DevicesSettingsTab(controller: controller)
                 .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
                 .tag("devices")
             FilesSettingsTab()
                 .tabItem { Label("Files", systemImage: "arrow.down.doc") }
                 .tag("files")
-            readinessTab
+            RebootSettingsTab(controller: controller)
                 .tabItem { Label("Reboot", systemImage: "power.circle") }
                 .tag("reboot")
             DictationSettingsTab(parakeet: ParakeetModel.shared)
@@ -34,12 +33,18 @@ struct HostSettingsView: View {
         }
         .frame(width: 500, height: 570)
     }
+}
 
-    // Every tab follows System Settings: a row says what it is (and at most one short line under
-    // it says what it does); anything longer goes in the section's footer; values and buttons sit
-    // on the trailing edge, and a button names what it will do in the current state.
+// Every tab follows System Settings: a row says what it is (and at most one short line under
+// it says what it does); anything longer goes in the section's footer; values and buttons sit
+// on the trailing edge, and a button names what it will do in the current state.
+//
 
-    private var readinessTab: some View {
+private struct RebootSettingsTab: View {
+    @Bindable var controller: HostController
+    @AppStorage(RestartGuard.defaultsKey) private var confirmRestart = true
+
+    var body: some View {
         Form {
             Section {
                 Toggle(isOn: $confirmRestart) {
@@ -127,7 +132,12 @@ struct HostSettingsView: View {
         }
     }
 
-    private var generalTab: some View {
+}
+
+private struct GeneralSettingsTab: View {
+    @Bindable var controller: HostController
+
+    var body: some View {
         Form {
             Section("This Mac") {
                 LabeledContent("Name on your tailnet") {
@@ -178,11 +188,25 @@ struct HostSettingsView: View {
         }
     }
 
+    /// Allowed, or a button that asks for it.
+    @ViewBuilder private func permissionState(_ granted: Bool, request: @escaping () -> Void) -> some View {
+        if granted {
+            Label("Allowed", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else {
+            Button("Allow…", action: request)
+        }
+    }
+}
+
+private struct DevicesSettingsTab: View {
+    @Bindable var controller: HostController
     @State private var removing: TrustStore.TrustedClient?
     @State private var renaming: TrustStore.TrustedClient?
     @State private var newName = ""
 
-    private var devicesTab: some View {
+    var body: some View {
         Form {
             Section {
                 if controller.trustedClients.isEmpty {
@@ -229,17 +253,6 @@ struct HostSettingsView: View {
             Button("Rename") { controller.rename(client.fingerprint, to: newName) }
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
-        }
-    }
-
-    /// Allowed, or a button that asks for it.
-    @ViewBuilder private func permissionState(_ granted: Bool, request: @escaping () -> Void) -> some View {
-        if granted {
-            Label("Allowed", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .labelStyle(.titleAndIcon)
-        } else {
-            Button("Allow…", action: request)
         }
     }
 }

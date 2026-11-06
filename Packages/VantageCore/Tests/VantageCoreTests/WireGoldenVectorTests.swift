@@ -46,6 +46,8 @@ import Testing
         ("qualityFeedback", .qualityFeedback(QualityFeedback(rttMillis: 12.5, decodeMillis: 3.25, framesReceived: 15, framesDropped: 1,
                                                              queueDepth: 0, bytesReceived: 9_007_199_254_740_993, windowSeconds: 0.25))),
         ("requestKeyframe", .requestKeyframe),
+        ("curtainRequest", .curtainRequest(CurtainRequest(enabled: true))),
+        ("curtainStatus", .curtainStatus(CurtainStatus(isUp: false, unavailable: "Casement Host can't do this."))),
         ("clipboard", .clipboard(ClipboardPayload(text: "Line one\nLíne two ✓", imagePNG: Data([0x89, 0x50, 0x4E, 0x47, 0xFF, 0xFE]),
                                                   rtf: Data("{\\rtf1 hi}".utf8)))),
         ("hostCommand", .hostCommand(HostCommandMessage(command: .sleepDisplay))),

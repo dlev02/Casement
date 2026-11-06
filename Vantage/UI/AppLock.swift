@@ -2,9 +2,41 @@ import LocalAuthentication
 import SwiftUI
 #if os(macOS)
 import AppKit
-#elseif os(iOS)
+#else
 import UIKit
 #endif
+
+/// How long Casement can be out of sight before it asks again (Settings → Privacy & Security).
+/// Not on the Mac, which locks with the Mac itself.
+enum AppLockDelay: Int, CaseIterable, Identifiable {
+    case immediately = 0
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case oneHour = 3600
+
+    static let settingKey = "vantage.appLockDelay"
+    static let standard = AppLockDelay.fifteenMinutes
+
+    /// What's saved, read outside a view.
+    static var current: AppLockDelay {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: settingKey) != nil else { return standard }
+        return AppLockDelay(rawValue: defaults.integer(forKey: settingKey)) ?? standard
+    }
+
+    var id: Int { rawValue }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .immediately: "Immediately"
+        case .oneMinute: "After 1 Minute"
+        case .fiveMinutes: "After 5 Minutes"
+        case .fifteenMinutes: "After 15 Minutes"
+        case .oneHour: "After 1 Hour"
+        }
+    }
+}
 
 /// Gates the app behind biometric authentication when enabled.
 @MainActor
@@ -24,6 +56,9 @@ final class AppLock {
 
     init() {
         isLocked = UserDefaults.standard.bool(forKey: Self.settingKey)
+        #if DEBUG
+        if ClientOptions.lockPreviewStartsUnlocked { isLocked = false }
+        #endif
         #if os(macOS)
         watchThisMac()
         #endif
@@ -34,6 +69,9 @@ final class AppLock {
 
     func authenticate() {
         guard isLocked, !isAuthenticating else { return }
+        #if DEBUG
+        if ClientOptions.lockPreview { return }
+        #endif
         errorMessage = nil
         let context = LAContext()
         var error: NSError?
@@ -56,38 +94,41 @@ final class AppLock {
         }
     }
 
-    #if os(iOS)
-    /// When the app went to the background, if it hasn't locked yet (the iPad app on a Mac).
-    @ObservationIgnored private var backgroundedAt: Date?
+    #if !os(macOS)
+    /// While the app is out of sight but hasn't locked: `LockCurtain` still hides everything, so
+    /// the app switcher's snapshot never shows a computer's screen.
+    private(set) var isAway = false
+    /// A clock that keeps counting through sleep and can't be wound back from Settings.
+    @ObservationIgnored private var awaySince: ContinuousClock.Instant?
     @ObservationIgnored private var protectedDataObservers: [NSObjectProtocol] = []
 
-    /// The iPad app on a Mac goes to the background whenever its window leaves the screen:
-    /// swiping to another Space or a full-screen app, minimising, hiding. Locking then asked for
-    /// Touch ID on every swipe back. There it locks the way the Mac app does instead: when the
-    /// Mac locks (protected data goes away), or after `macAwayLimit` out of sight. On an iPhone
-    /// or iPad leaving the app still locks it straight away.
-    static let macAwayLimit: TimeInterval = 10 * 60
-
     func appDidEnterBackground() {
-        if MacHostedIPadApp.isRunning {
-            if backgroundedAt == nil { backgroundedAt = .now }
-        } else {
+        guard UserDefaults.standard.bool(forKey: Self.settingKey) else { return }
+        if AppLockDelay.current == .immediately {
             lockIfNeeded()
+        } else if awaySince == nil {
+            awaySince = .now
         }
+        #if os(iOS)
+        // The iPad app on a Mac leaves the screen on every Space swipe, and has no switcher.
+        isAway = !MacHostedIPadApp.isRunning
+        #endif
     }
 
     /// Call before `authenticate()` when the app comes back to the foreground.
     func appWillReturn() {
-        if let backgroundedAt, Date.now.timeIntervalSince(backgroundedAt) >= Self.macAwayLimit {
+        if let awaySince, ContinuousClock.now - awaySince >= .seconds(AppLockDelay.current.rawValue) {
             lockIfNeeded()
         }
-        backgroundedAt = nil
+        awaySince = nil
+        isAway = false
     }
 
-    /// The Mac locking (or sleeping) takes the protected data away; lock with it, and ask again
-    /// when it's back with Casement in front.
+    /// The device locking takes the protected data away; if Casement is still running to hear that,
+    /// it locks however long the delay, and asks again once the data is back with Casement in front.
+    /// A suspended app doesn't hear it, and then only the delay counts.
     func watchProtectedData() {
-        guard MacHostedIPadApp.isRunning, protectedDataObservers.isEmpty else { return }
+        guard protectedDataObservers.isEmpty else { return }
         let center = NotificationCenter.default
         protectedDataObservers = [
             center.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in
@@ -134,20 +175,30 @@ final class AppLock {
 struct LockOverlay: View {
     let errorMessage: String?
     let onUnlock: () -> Void
+
     var body: some View {
         ZStack {
             // Opaque, not a material: whatever sits under the lock must not show through.
             Rectangle().fill(.background).ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "lock.fill").font(.largeTitle)
-                Text("Casement is locked").font(.headline)
+            VStack(spacing: 32) {
+                LockGlyph()
                 if let errorMessage {
-                    Text(errorMessage).font(.callout).multilineTextAlignment(.center).padding(.horizontal)
+                    Text(errorMessage)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
                 }
-                Button("Unlock", action: onUnlock)
-                    .buttonStyle(.glassProminent)
-                    .keyboardShortcut(.defaultAction)
+                Button(action: onUnlock) {
+                    Label("Unlock", systemImage: Self.unlockSymbol)
+                        .font(.headline)
+                        .frame(minWidth: 140)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
             }
+            .padding(32)
         }
         #if os(macOS)
         // Swallows clicks and scrolls meant for whatever is underneath, a session included.
@@ -157,6 +208,30 @@ struct LockOverlay: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal) // nothing behind the lock is reachable
         .accessibilityIdentifier("appLock")
+    }
+
+    /// Says what the button will ask for.
+    private static let unlockSymbol: String = {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        return switch context.biometryType {
+        case .faceID: "faceid"
+        case .touchID: "touchid"
+        case .opticID: "opticid"
+        default: "lock.open.fill"
+        }
+    }()
+}
+
+/// The lock on its own: all the lock screen needs to say, and all the app switcher's snapshot shows.
+struct LockGlyph: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var size = 52
+
+    var body: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: size, weight: .regular))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Casement is locked")
     }
 }
 

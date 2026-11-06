@@ -14,19 +14,19 @@
                 </tk:SettingsCard.HeaderIcon>
             </tk:SettingsCard>
             <tk:SettingsCard
-                Description="This PC's own screen switches resolution while that device is connected, and goes back when it disconnects."
-                Header="Let devices fit this PC's resolution to their screen">
+                Description="This PC's own screen switches resolution and scale while that device is connected, and goes back when it disconnects."
+                Header="Let devices fit this PC's display to their screen">
                 <tk:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE740;" />
                 </tk:SettingsCard.HeaderIcon>
                 <ToggleSwitch
                     x:Name="FitSwitch"
-                    AutomationProperties.Name="Let devices fit this PC's resolution to their screen"
+                    AutomationProperties.Name="Let devices fit this PC's display to their screen"
                     Toggled="OnFitToggled" />
             </tk:SettingsCard>
             <TextBlock
                 Style="{StaticResource SectionFootnoteStyle}"
-                Text="Casement shares the main display unless your device picks another one. Windows can't add a virtual display the way a Mac can, so fitting picks the resolution closest to the device's shape." />
+                Text="Casement shares the main display unless your device picks another one. Windows can't add a virtual display the way a Mac can, so fitting picks the resolution closest to the device's shape and the scale that gives it the room of its own screen." />
 
             <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Advanced" />
             <tk:SettingsExpander Description="How the picture is captured and encoded" Header="Streaming details">

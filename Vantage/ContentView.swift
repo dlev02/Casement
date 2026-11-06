@@ -91,9 +91,9 @@ struct ContentView: View {
             // Files finishing (or failing) with any Mac, in a session or from the device list.
             FileTransferCenter.shared.onFeedback = { Haptics.play($0) }
             FileTransferCenter.shared.onHostKeyVerified = { id, key in store.recordHostKey(key, for: id) }
+            lock.watchProtectedData()
             #if os(iOS)
             TransferBackgroundActivity.shared.start()
-            lock.watchProtectedData()
             #endif
             #if DEBUG
             debugScreen = ClientOptions.openScreen
@@ -103,9 +103,7 @@ struct ContentView: View {
             switch phase {
             case .active:
                 reachability.refresh()
-                #if os(iOS)
                 lock.appWillReturn()
-                #endif
                 lock.authenticate()
                 // Files cut off while the app was away pick up where they stopped.
                 #if os(iOS)
@@ -117,7 +115,7 @@ struct ContentView: View {
                 #if os(visionOS)
                 break // `VantageApp` locks once every window has gone, not when the list closes
                 #else
-                lock.appDidEnterBackground() // the iPad app on a Mac doesn't lock on every Space swipe
+                lock.appDidEnterBackground()
                 TransferBackgroundActivity.shared.appDidEnterBackground()
                 #endif
             default: break
@@ -268,7 +266,10 @@ struct SessionWindow: View {
         .frame(minWidth: 480, minHeight: 300)
         .scrollInputBehavior(.enabled, for: .look) // the session menu, Transfers, and other sheets
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { lock.authenticate() }
+            if phase == .active {
+                lock.appWillReturn()
+                lock.authenticate()
+            }
         }
         #endif
     }
@@ -304,7 +305,7 @@ private struct LockCurtain: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SceneProbe, context: Context) {
-        context.coordinator.update(locked: lock.isLocked, appearance: appearance)
+        context.coordinator.update(locked: lock.isLocked || lock.isAway, appearance: appearance)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(lock: lock) }
@@ -364,7 +365,15 @@ private struct LockCurtain: UIViewRepresentable {
 private struct LockCurtainContent: View {
     let lock: AppLock
     var body: some View {
-        LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+        if lock.isLocked {
+            LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
+        } else {
+            // Away within the delay: nothing to unlock, only a screen to keep out of the app switcher.
+            ZStack {
+                Rectangle().fill(.background).ignoresSafeArea()
+                LockGlyph()
+            }
+        }
     }
 }
 #endif

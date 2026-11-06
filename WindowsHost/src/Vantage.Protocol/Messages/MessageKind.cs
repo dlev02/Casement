@@ -38,11 +38,15 @@ public enum MessageKind : byte
     AudioRequest = 63,
     /// <summary>Gated on <c>HostCapabilities.dictationEngines</c>; never advertised on Windows v1.</summary>
     DictationControl = 64,
+    /// <summary>Gated on <c>HostCapabilities.curtain</c>.</summary>
+    CurtainRequest = 65,
     CursorShape = 70,
     VideoConfig = 71,
     HostStatus = 72,
     AudioConfig = 73,
     DictationResult = 74,
+    /// <summary>Only to a client that said <c>features.curtain</c> or asked.</summary>
+    CurtainStatus = 75,
 
     // File channel only (JSON)
     FileOffer = 80,

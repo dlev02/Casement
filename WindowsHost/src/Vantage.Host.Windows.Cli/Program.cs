@@ -14,6 +14,8 @@ const bool DebugBuild = true;
 const bool DebugBuild = false;
 #endif
 
+if (args is [Vantage.Host.Windows.Desktop.CurtainGuard.Flag, var curtainHost]) return Vantage.Host.Windows.Desktop.CurtainGuard.Run(curtainHost);
+
 if (args.Contains("--help") || args.Contains("-h") || args.Contains("/?"))
 {
     Console.WriteLine(HostCommandLine.Usage);

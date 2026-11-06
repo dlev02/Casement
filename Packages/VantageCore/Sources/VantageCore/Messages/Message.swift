@@ -34,6 +34,8 @@ public enum Message: Sendable {
     case dictationResult(DictationResult)
     case micAudio(MicAudio)
     case audioRequest(AudioRequest)
+    case curtainRequest(CurtainRequest)
+    case curtainStatus(CurtainStatus)
     case audioConfig(AudioConfig)
     case audioPacket(AudioPacket)
     case fileOffer(FileOffer)
@@ -78,6 +80,8 @@ public enum Message: Sendable {
         case .dictationResult: .dictationResult
         case .micAudio: .micAudio
         case .audioRequest: .audioRequest
+        case .curtainRequest: .curtainRequest
+        case .curtainStatus: .curtainStatus
         case .audioConfig: .audioConfig
         case .audioPacket: .audioPacket
         case .fileOffer: .fileOffer
@@ -151,6 +155,8 @@ extension Message {
         case .dictationResult(let value): try Self.json(value)
         case .micAudio(let value): value.encode()
         case .audioRequest(let value): try Self.json(value)
+        case .curtainRequest(let value): try Self.json(value)
+        case .curtainStatus(let value): try Self.json(value)
         case .audioConfig(let value): try Self.json(value)
         case .audioPacket(let value): value.encode()
         case .fileOffer(let value): try Self.json(value)
@@ -201,6 +207,8 @@ extension Message {
         case .dictationResult: .dictationResult(try decodeJSON(DictationResult.self, payload))
         case .micAudio: .micAudio(try MicAudio.decode(payload))
         case .audioRequest: .audioRequest(try decodeJSON(AudioRequest.self, payload))
+        case .curtainRequest: .curtainRequest(try decodeJSON(CurtainRequest.self, payload))
+        case .curtainStatus: .curtainStatus(try decodeJSON(CurtainStatus.self, payload))
         case .audioConfig: .audioConfig(try decodeJSON(AudioConfig.self, payload))
         case .audioPacket: .audioPacket(try AudioPacket.decode(payload))
         case .fileOffer: .fileOffer(try decodeJSON(FileOffer.self, payload))

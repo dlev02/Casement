@@ -41,16 +41,37 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
             log.error("display \(self.displayID) isn't shareable (listed: \(content.displays.map(\.displayID), privacy: .public))")
             throw CaptureError.displayNotFound
         }
-        let excluded = content.applications.filter { excludedBundleIDs.contains($0.bundleIdentifier) }
-        let filter = excluded.isEmpty
-            ? SCContentFilter(display: display, excludingWindows: [])
-            : SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
+        let filter = makeFilter(display: display, content: content)
         let config = makeConfiguration()
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
         try await stream.startCapture()
         self.stream = stream
         log.info("capture started for display \(self.displayID) at \(self.pixelWidth)x\(self.pixelHeight)@\(self.fps)")
+    }
+
+    private func makeFilter(display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
+        // The curtain is on this Mac's panels, never in the picture.
+        let curtain = CurtainWindows.current
+        let excluded = content.applications.filter { excludedBundleIDs.contains($0.bundleIdentifier) }
+        guard !excluded.isEmpty else {
+            return SCContentFilter(display: display, excludingWindows: content.windows.filter { curtain.contains($0.windowID) })
+        }
+        // A client on this Mac (DEBUG): this form can't name windows, so the curtain goes with the host's app.
+        let host = content.applications.filter { !curtain.isEmpty && $0.processID == getpid() }
+        return SCContentFilter(display: display, excludingApplications: excluded + host, exceptingWindows: [])
+    }
+
+    /// The curtain's windows came or went: the running stream follows without restarting.
+    func refreshFilter() async {
+        guard let stream else { return }
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else { return }
+            try await stream.updateContentFilter(makeFilter(display: display, content: content))
+        } catch {
+            log.error("couldn't update the capture filter: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func updateFPS(_ fps: Int) {

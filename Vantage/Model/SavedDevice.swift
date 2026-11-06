@@ -76,6 +76,8 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// Play this Mac's sound on this device when a session starts (the strip's Mac Audio
     /// toggle). Optional so devices saved by earlier builds decode; nil means off.
     var playMacAudio: Bool?
+    /// Black out the computer's own screen while connected (nil = off).
+    var curtain: Bool?
     /// On a PC, the keyboard's ⌘ presses Ctrl (and Control the Windows key), so ⌘C copies as it
     /// does on a Mac (`KeyRemap`). Nil means on for a PC; a Mac ignores it. Optional so devices
     /// saved by earlier builds decode.

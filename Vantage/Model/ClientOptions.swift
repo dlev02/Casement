@@ -6,6 +6,10 @@ import VantageCore
 /// `-VantagePairingCode 123456` supplies the pairing code automatically.
 enum ClientOptions {
     static var seedHost: String? { value(for: "-VantageSeedHost") }
+    /// `-VantageLockPreview 1`: the lock screen stays up without asking for Face ID, for screenshots.
+    /// `session` starts unlocked, so it can be reached from a session by leaving the app and coming back.
+    static var lockPreview: Bool { value(for: "-VantageLockPreview") != nil }
+    static var lockPreviewStartsUnlocked: Bool { value(for: "-VantageLockPreview") == "session" }
     static var autoConnectHost: String? { value(for: "-VantageAutoConnect") }
     /// `autoConnectHost` the first time it's asked for, then nil: the launch opens the session
     /// once, and Disconnect really goes back to the list.

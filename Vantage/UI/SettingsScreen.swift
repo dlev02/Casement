@@ -369,6 +369,7 @@ struct ConnectionSettings: View {
 
 struct SecuritySettings: View {
     @AppStorage("vantage.requireBiometrics") private var requireBiometrics = false
+    @AppStorage(AppLockDelay.settingKey) private var lockDelay = AppLockDelay.standard.rawValue
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
@@ -390,8 +391,20 @@ struct SecuritySettings: View {
                 #else
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
                 #endif
+                if requireBiometrics {
+                    Picker("Lock", selection: $lockDelay) {
+                        ForEach(AppLockDelay.allCases) { delay in
+                            Text(delay.title).tag(delay.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.lockDelay")
+                }
             } footer: {
-                Text("Unlock Casement with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
+                if requireBiometrics {
+                    Text("Counts from when you leave Casement. An open session resumes after you unlock.")
+                } else {
+                    Text("Unlock Casement with biometrics or your device passcode after leaving the app.")
+                }
             }
 
             Section {
@@ -561,6 +574,12 @@ struct HelpScreen: View {
                      "At the login window the Mac's own Tailscale isn't running yet, so Casement can't connect. Add the Mac's home network address (like 192.168.1.20) in its settings, keep a Tailscale subnet router at home (an always-on PC or Apple TV advertising your home network), then \(logInGesture) and choose Log In with Screen Sharing. Casement types your password there, the Mac logs in, and a minute later you can connect as usual."),
             FAQEntry("What does Restart Safely do?",
                      "It's in Casement Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
+        ]),
+        FAQSection("Curtain", [
+            FAQEntry("What does Curtain do?",
+                     "It blacks out the computer's own screen and ignores its own keyboard and mouse while you work, so someone near it can't see or touch what you're doing. Your picture stays the same. Turn it on in the session menu, or in a computer's settings to have it on from the moment you connect. The computer's speakers still play, and the pointer may still show on a Mac's screen."),
+            FAQEntry("How does Curtain end?",
+                     "Turning it off lifts it straight away. A Mac locks itself a minute after your last device leaves, then lifts it, and someone at the Mac can press Control-Option-Command-L to lock it and lift it sooner. A PC stays curtained for your next connection, because a locked PC can't be unlocked from your device; pressing Windows-L at the PC locks it and lifts the curtain."),
         ]),
         FAQSection("Files, Sound & Clipboard", [
             FAQEntry("How do I send files?",

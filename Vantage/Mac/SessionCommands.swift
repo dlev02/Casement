@@ -28,6 +28,10 @@ struct SessionCommands {
     var macAudioAvailable: Bool
     let toggleMacAudio: () -> Void
 
+    var curtainOn: Bool
+    var curtainAvailable: Bool
+    let toggleCurtain: () -> Void
+
     var canSendFiles: Bool
     let sendFile: () -> Void
     let showTransfers: () -> Void

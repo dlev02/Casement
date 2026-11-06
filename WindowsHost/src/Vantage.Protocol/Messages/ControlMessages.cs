@@ -117,6 +117,8 @@ public sealed record ClientFeatures
     [JsonPropertyName("filesOnly")] public bool? FilesOnly { get; init; }
     /// <summary>The client draws the pointer itself from <c>cursorShape</c>/<c>cursorPosition</c>.</summary>
     [JsonPropertyName("localCursor")] public bool? LocalCursor { get; init; }
+    /// <summary>The client understands <c>curtainStatus</c>, so it hears of a curtain already up.</summary>
+    [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
 }
 
 public sealed record Hello : IMessage
@@ -191,6 +193,8 @@ public sealed record HostCapabilities
     /// sends <c>cursorShape</c> and <c>cursorPosition</c> instead.
     /// </summary>
     [JsonPropertyName("cursorShapes")] public bool? CursorShapes { get; init; }
+    /// <summary>The host can black out its own screen (<c>curtainRequest</c>).</summary>
+    [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
 }
 
 public sealed record HostReadiness

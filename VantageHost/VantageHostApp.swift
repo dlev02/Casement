@@ -3,6 +3,13 @@ import SwiftUI
 import os
 
 @main
+enum HostEntry {
+    static func main() {
+        CurtainGuard.runIfAsked()
+        VantageHostApp.main()
+    }
+}
+
 struct VantageHostApp: App {
     @NSApplicationDelegateAdaptor(HostAppDelegate.self) private var delegate
 
@@ -131,6 +138,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ScreenCurtain.shared.hostWillQuit()
         controller.stop()
     }
 }

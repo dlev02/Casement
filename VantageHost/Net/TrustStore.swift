@@ -19,10 +19,10 @@ nonisolated final class TrustStore: @unchecked Sendable {
         var symbol: String { DeviceSymbol.for(model: model, name: name) }
     }
 
-    private let defaults = HostOptions.shared.syntheticCapture
+    private let defaults = HostOptions.shared.syntheticCapture || HostOptions.shared.allowsSelfCurtain
         ? UserDefaults(suiteName: "com.benjaminlevinson.vantage.synthetic")! : .standard
     private let key = "vantage.trustedClients"
-    private let keychain = HostOptions.shared.syntheticCapture
+    private let keychain = HostOptions.shared.syntheticCapture || HostOptions.shared.allowsSelfCurtain
         ? nil : KeychainStore(service: "com.benjaminlevinson.vantage.host")
     private let keychainAccount = "trusted-clients"
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "trust")

@@ -22,7 +22,7 @@ English (U.S.) only. The text uses U.S. spelling ("color"), unlike the README.
 `whatsNew` is left out of 1.0 on purpose: App Store Connect does not take What’s New for an app’s first
 version. The 1.1 canonical file includes release notes for the Mac update. When pushing 1.1 to
 iOS or visionOS before their first public release, use a scoped copy with `whatsNew` omitted;
-all three TestFlight builds get the full [What to Test](testflight-1.1-build-6.txt) notes.
+all three TestFlight builds get the full [What to Test](testflight-1.1-build-7.txt) notes.
 
 App Store Connect can expose both live and editable App Information records. Resolve the
 editable record with `asc apps info list`, then pass its explicit `--app-info` to metadata

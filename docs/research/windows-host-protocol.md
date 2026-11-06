@@ -105,6 +105,8 @@ C→H means client to host; H→C means host to client. "Windows v1" is what the
 | 72 | hostStatus | JSON | H→C | send |
 | 73 | audioConfig | JSON | H→C | send in answer to `audioRequest` (§9.5) |
 | 74 | dictationResult | JSON | H→C | never send |
+| 65 | curtainRequest | JSON | C→H | handle when `curtain` is advertised: raise or lower the curtain |
+| 75 | curtainStatus | JSON | H→C | send after a `curtainRequest`, when it comes down by itself, and at sign-in to a client with `features.curtain` if it's up |
 | 80–84 | fileOffer/Accept/Complete/Result/Cancel | JSON | both, file channel only | handle and send |
 | 100 | videoFrame | bin | H→C | send |
 | 101 | cursorPosition | bin | H→C | same rule; the client uses `isVisible` |

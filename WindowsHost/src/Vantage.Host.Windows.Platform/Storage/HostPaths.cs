@@ -31,6 +31,9 @@ public sealed class HostPaths
     /// <summary><c>settings.json</c> (plain JSON; nothing secret).</summary>
     public string SettingsFile => Path.Combine(Root, "settings.json");
 
+    /// <summary>The display scale to put back if a run ends while a device has it changed.</summary>
+    public string DisplayRestoreFile => Path.Combine(Root, "display-restore.txt");
+
     /// <summary>Log folder.</summary>
     public string LogsDirectory => Path.Combine(Root, "logs");
 

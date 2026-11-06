@@ -31,6 +31,9 @@ public sealed class HostEnvironment
     /// </summary>
     public IAudioSource? Audio { get; init; }
 
+    /// <summary>The curtain; null when the platform has none (no <c>curtain</c> capability is advertised).</summary>
+    public IScreenCurtain? Curtain { get; init; }
+
     /// <summary>
     /// Switches the shared display's mode to fit a device's screen (<c>fitViewport</c> with
     /// <c>useVirtualDisplay</c>); null when the platform can't (the synthetic host), and then

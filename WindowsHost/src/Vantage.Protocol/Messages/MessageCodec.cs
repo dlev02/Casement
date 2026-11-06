@@ -67,6 +67,8 @@ public static class MessageCodec
         MessageKind.TextInput => FromJson(payload, Json.TextInput),
         MessageKind.ModifierState => FromJson(payload, Json.ModifierState),
         MessageKind.AudioRequest => FromJson(payload, Json.AudioRequest),
+        MessageKind.CurtainRequest => FromJson(payload, Json.CurtainRequest),
+        MessageKind.CurtainStatus => FromJson(payload, Json.CurtainStatus),
         MessageKind.DictationControl => FromJson(payload, Json.DictationControl),
         MessageKind.CursorShape => FromJson(payload, Json.CursorShape),
         MessageKind.VideoConfig => FromJson(payload, Json.VideoConfig),

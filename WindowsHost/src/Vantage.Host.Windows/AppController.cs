@@ -257,7 +257,8 @@ public sealed class AppController
     private UpdateActivity CurrentActivity(DateTimeOffset now)
     {
         var activity = new UpdateActivity(
-            Sessions.Count + FileChannels.Count,
+            // A curtain left up waits for its device: an update would lock the PC under it.
+            Sessions.Count + FileChannels.Count + (Runtime?.Curtain?.IsUp == true ? 1 : 0),
             Transfers.Items.Count(t => t.IsActive),
             PairingCode is not null,
             (_window?.AppWindow.IsVisible ?? false) || (_panel?.AppWindow.IsVisible ?? false),

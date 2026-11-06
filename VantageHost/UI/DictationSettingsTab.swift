@@ -37,7 +37,7 @@ struct DictationSettingsTab: View {
             Section {
                 Toggle(isOn: Binding(get: { parakeet.isEnabled }, set: { parakeet.setEnabled($0) })) {
                     Text("Parakeet")
-                    Text(ParakeetModel.isInstalled ? "English and 24 other European languages"
+                    Text(parakeet.hasCompleteModel ? "English and 24 other European languages"
                                                    : "Downloads about \(downloadSize) the first time you turn it on")
                 }
                 LabeledContent("Model") { modelRow }
@@ -93,7 +93,7 @@ struct DictationSettingsTab: View {
             modelStatus
             if case .downloading = parakeet.state {
                 Button("Cancel") { parakeet.cancelDownload() }
-            } else if ParakeetModel.hasFilesOnDisk {
+            } else if parakeet.hasModelFiles {
                 Button("Remove", role: .destructive) { parakeet.remove() }
                     .help("Delete the downloaded model and its Neural Engine cache")
             } else if parakeet.isEnabled {
