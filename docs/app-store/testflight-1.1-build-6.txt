@@ -1,0 +1,20 @@
+Casement 1.1 (6) — iPhone, iPad, Mac, and Apple Vision Pro
+
+A WINDOW OF YOUR OWN
+The new C-shaped casement icon supports the system's light, dark, clear, and tinted appearances on iPhone, iPad, and Mac. Vision Pro uses a layered circular icon.
+
+CONNECT WITH CONFIDENCE
+Computers prove their identity before sign-in. Casement asks before typing a saved Mac password over a home-network connection. Use Casement Host 1.4 or later.
+
+CONTROL THAT FITS
+New since build 5: PC Audio and display-fitting controls, clearer dictation levels, a show-password button, and better Settings and app-lock behavior when the iPad app runs on a Mac. Also recheck iPhone Duo laptop mode and compact iPhone controls.
+
+WHAT TO TEST
+• Install over your current TestFlight copy. Confirm saved computers, pairings, and settings remain available.
+• Check the Home Screen or Dock icon in each supported appearance. On Vision Pro, check the circular icon and depth.
+• Connect to both a Mac and a Windows PC with Casement Host 1.4 or later. Pair a new device and reconnect to a saved one. A changed computer identity should never be accepted silently.
+• Try pointer movement, keyboard shortcuts, clipboard sharing, audio, and a file transfer in each direction.
+• On iPhone Duo, fold, unfold, and rotate during a session. Check the desktop fit, keyboard, and session controls.
+• On Mac, open Settings with Command-comma and switch tabs. For the iPad app on Mac, check app lock while moving between Spaces.
+
+Report a problem from Settings/About and include diagnostics. Connections stay within your own Tailscale network. Host downloads: https://github.com/dlev02/Casement/releases

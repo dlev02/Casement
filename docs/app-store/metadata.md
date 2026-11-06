@@ -19,8 +19,14 @@ English (U.S.) only. The text uses U.S. spelling ("color"), unlike the README.
 | `metadata/app-info/en-US.json` | `name`, `subtitle`, `privacyPolicyUrl` |
 | `metadata/version/1.0/en-US.json` | `description`, `keywords`, `marketingUrl`, `promotionalText`, `supportUrl` |
 
-`whatsNew` is left out on purpose: App Store Connect doesn't take What's New for an app's first
-version. The draft below is for 1.0.1.
+`whatsNew` is left out of 1.0 on purpose: App Store Connect does not take What’s New for an app’s first
+version. The 1.1 canonical file includes release notes for the Mac update. When pushing 1.1 to
+iOS or visionOS before their first public release, use a scoped copy with `whatsNew` omitted;
+all three TestFlight builds get the full [What to Test](testflight-1.1-build-6.txt) notes.
+
+App Store Connect can expose both live and editable App Information records. Resolve the
+editable record with `asc apps info list`, then pass its explicit `--app-info` to metadata
+commands. Read back a completed push with the same `--dry-run` command and require zero changes.
 
 ```sh
 asc metadata validate --dir docs/app-store/metadata --output table

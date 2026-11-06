@@ -1,0 +1,9 @@
+Casement 1.1 requires Casement Host 1.4 or later, a free companion app at https://github.com/dlev02/Casement/releases. It controls the reviewer’s own Mac or Windows PC over the reviewer’s own Tailscale network. No Casement account or demo account is required.
+
+On a Mac: install and open Casement Host, complete its Screen Recording and Accessibility setup, and install Tailscale. On Windows: install Casement Host using the Setup file and open it, then install Tailscale. Sign both the computer and the test device into the same Tailscale account.
+
+In Casement, add the computer using + > Add Manually and its Tailscale name or address. In Casement Host, choose Pair a Device and enter its six-digit code in Casement. The computer now proves its identity before the client signs in. Existing pairings should remain usable; an unexpected identity change requires explicit re-pairing.
+
+Try pointer and keyboard input, clipboard, audio and a file transfer in each direction. The Mac client can connect to a host on the same Mac in View Only. The 1.1 beta also updates icon appearances, iPhone controls, iPhone Duo laptop mode and native Mac Settings.
+
+There is no developer-operated relay, account system, advertising, analytics, subscription or in-app purchase. All session traffic travels directly through Tailscale. Report a Problem in Settings/About exports local diagnostics with the user’s consent.

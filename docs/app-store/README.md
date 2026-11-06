@@ -1,5 +1,9 @@
 # App Store submission kit: Casement
 
+For the current 1.1 beta, see the [release log](../releases/1.1.md),
+[What to Test](testflight-1.1-build-6.txt), and
+[TestFlight release record](../testing/2026-11-06-testflight.md). The October preparation notes below are historical.
+
 > **Snapshot:** this folder records how Casement 1.0 was prepared for the App Store in October 2026, before submission. Statuses and IDs below reflect that moment; 1.0 (build 2) was submitted for review on 2026-10-12 for iOS, macOS and visionOS.
 
 Everything App Store Connect asks for, for the Casement client (formerly Porthole; code name
