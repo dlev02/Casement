@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Builds the Windows release files into artifacts\release: the x64 and arm64 zips, their SHA-256
-  checksums, and the signed update manifest installed copies check for.
+  Builds the Windows release files into artifacts\release: the x64 and arm64 Setup files people
+  download, the zips the updater fetches, their SHA-256 checksums, and the signed update manifest
+  installed copies check for.
 
 .DESCRIPTION
   Upload everything it prints to the GitHub release tagged host-<version>. A copy only updates to a
@@ -34,6 +35,7 @@ if ($declared -ne $Version) { throw "The csproj says version $declared, not $Ver
 New-Item -ItemType Directory -Force $out | Out-Null
 $readme = "Casement Host for Windows $Version. Run VantageHost.exe in this folder once. From then on it starts when you sign in, is in the Start menu, and keeps itself up to date. Keep this folder where it is."
 $zips = @{}
+$setups = @{}
 foreach ($arch in "x64", "arm64") {
     $staging = Join-Path $root "artifacts\publish\$arch\Casement Host"
     if (Test-Path (Split-Path $staging)) { Remove-Item -Recurse -Force (Split-Path $staging) }
@@ -41,6 +43,7 @@ foreach ($arch in "x64", "arm64") {
     if ($arch -eq "arm64") { $publish += @("-p:PlatformTarget=arm64", "-p:RuntimeIdentifier=win-arm64") }
     dotnet @publish
     if ($LASTEXITCODE -ne 0) { throw "Publishing $arch failed." }
+    $setups[$arch] = & (Join-Path $PSScriptRoot "make-installer.ps1") -Version $Version -Arch $arch -Source $staging -Out $out | Select-Object -Last 1
     Set-Content -Path (Join-Path $staging "README.txt") -Value $readme
     $zip = Join-Path $out "Casement-Host-$Version-windows-$arch.zip"
     if (Test-Path $zip) { Remove-Item $zip }
@@ -52,7 +55,7 @@ dotnet run --project $signer -c Release -- sign --key $Key --version $Version --
 if ($LASTEXITCODE -ne 0) { throw "Signing failed." }
 
 $sums = Join-Path $out "Casement-Host-$Version-windows-SHA256.txt"
-$zips.Values | Sort-Object | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $_ -Leaf)" } | Set-Content $sums
+@($zips.Values) + @($setups.Values) | Sort-Object | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $_ -Leaf)" } | Set-Content $sums
 
 Write-Host "`nUpload these to the host-$Version release:"
-Get-ChildItem $out | Where-Object { $_.Name -like "*$Version*" -or $_.Name -like "windows-update*" } | ForEach-Object { Write-Host "  $($_.FullName)" }
+Get-ChildItem $out | Where-Object { $_.Name -like "*$Version*" -or $_.Name -like "windows-update*" -or $_.Name -like "Casement-Host-Setup-*" } | ForEach-Object { Write-Host "  $($_.FullName)" }

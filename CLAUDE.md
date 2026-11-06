@@ -919,7 +919,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **License**: GPL-3.0 (`LICENSE`), © 2026 Drew Levinson. `CONTRIBUTING.md` asks contributors to
   also let Drew ship their work through app stores, which is what keeps the App Store build
   possible under the GPL. Dependencies are GPL-compatible (FluidAudio Apache-2.0, Parakeet model
-  CC BY 4.0, Sparkle MIT, NSec/Vortice/Windows Community Toolkit MIT, Concentus BSD-3-Clause); check any new one.
+  CC BY 4.0, Sparkle MIT, NSec/Vortice/Windows Community Toolkit MIT, Concentus BSD-3-Clause; Inno Setup, used only to build the installer, its own permissive licence); check any new one.
 - **Docs**: `README.md` (users first: features, platforms, first connection, building),
   `PRIVACY.md`, `TERMS.md`, `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`,
   `.github/` (issue forms, `FUNDING.yml`). The policies list every network destination (the
@@ -957,7 +957,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   listing, review notes, privacy answers, screenshot sets and the `asc` metadata files are in
   `docs/app-store/` (`README.md` is the index; `python3 -I docs/app-store/check-lengths.py`
   counts every limited field). Casement Host ships on GitHub Releases tagged `host-x.y`
-  (notarized Mac DMG and zip plus the Windows zips, with SHA-256 checksums; `v1.0` was the first). From
+  (notarized Mac DMG and zip plus the Windows Setup files and zips, with SHA-256 checksums; `v1.0` was the first). From
   1.4 a Windows release also needs its signed `windows-update.json` and `.sig` (see Windows host › Updates)
   and a Mac release its signed `appcast.xml`, which `scripts/make-mac-release.sh <version>` makes along with
   the DMG, zip and checksums (see Host updates). It notarizes with the App Store Connect API key in
@@ -1180,7 +1180,20 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   PC can answer), and every non-elevated launch with the setting on runs that task and exits
   (`Program.ShouldRelaunchElevated`). Start at login (the Run value) is turned on once at the first
   launch of a Release build (`StartAtLoginSettled`).
-- **Finding the host again** (the zip has no installer): a Release launch writes `Casement Host.lnk`
+- **Installer** (`installer/CasementHost.iss`, Inno Setup 6.6+; `scripts/make-installer.ps1`, called by
+  `make-release.ps1`): `Casement-Host-Setup-x64.exe`/`-arm64.exe` keep the same names every release so the
+  READMEs can link `releases/latest/download/`; the zips stay, because the signed manifest points the
+  updater at them. Per-user, no UAC, always `%LOCALAPPDATA%\Programs\Casement Host` (a folder the updater
+  can replace). The uninstaller lives in `Casement Host Uninstall` beside it, since a swap replaces the
+  whole install folder and would delete one inside, and uninstall removes the folder as a whole
+  because it can hold files Setup never recorded. Setup stops a running copy (`taskkill`; one running as
+  administrator can't be, so it says to Quit) and repoints an existing Run value, but never creates one:
+  the host's first launch does. The last page lists the steps to connect and offers Tailscale's download
+  only if it isn't installed. `InstallRegistration.SyncVersion` keeps Installed apps' version right after a
+  self-update. Never change the script's `AppGuid`: it's how a new Setup finds the old copy, and
+  `InstallRegistration.KeyPath` names it too. `-TestInstall` builds a copy with its own name, shortcut and Run
+  value, so the script can be tried on a PC with the real host. Tests: `InstallRegistrationTests`.
+- **Finding the host again** (a copy from the zip has no Start menu entry otherwise): a Release launch writes `Casement Host.lnk`
   into the user's Start menu Programs folder (`StartMenuShortcut`, `IShellLinkW` through built-in
   COM interop; rewritten when the folder moved, so Start › "Casement" opens the running copy's
   window through the single-instance redirect). The first time the settings window is closed, a

@@ -5,8 +5,8 @@ namespace Vantage.Host.Windows.Startup;
 
 /// <summary>
 /// "Casement Host" in the Start menu: <c>%APPDATA%\Microsoft\Windows\Start Menu\Programs\Casement
-/// Host.lnk</c>. The zip has no installer, so the host writes the shortcut itself when it starts and
-/// rewrites it when its folder moved; with it, Start › "Casement" brings the host back after its
+/// Host.lnk</c>. Setup makes it, and the host writes it too when it starts, for a copy from the zip,
+/// and rewrites it when its folder moved; with it, Start › "Casement" brings the host back after its
 /// window was closed (a second launch opens the running copy's window, see the app's Program).
 /// Plain <c>IShellLinkW</c> through built-in COM interop; nothing here needs packaging.
 /// </summary>
