@@ -24,8 +24,11 @@ Archives are in `~/Library/Developer/Xcode/Archives/2026-11-06/`, logs and porta
 
 ## Portal
 
-- The Internal group (all builds) gets all three. **The external Testers group wasn't added and no beta
-  review was submitted.**
+- The Internal group (all builds) gets all three, and all three are in the external Testers group with
+  tester notifications on. Beta review: iPhone/iPad approved at once; Mac waiting for review; Vision Pro
+  not yet submitted, because Apple allows one build in review per train and Vision Pro build 6 is still
+  waiting. Submit it with `asc testflight review submit --build-id <its ID> --confirm` once 6 clears.
+- The TestFlight review notes say what build 7 adds and that Curtain needs Host 1.6.
 - [What to Test](../app-store/testflight-1.1-build-7.txt) is on every build.
 - Build 7 is attached to each 1.1 draft. **Nothing was submitted to App Review.**
 - The Mac draft's What's New has the new sections; a dry run after applying reports no changes left. iOS
