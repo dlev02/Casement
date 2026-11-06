@@ -135,7 +135,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   secret from Safari on iPhone). visionOS still swaps views. **How soon it locks**:
   `AppLockDelay` (Settings → Privacy & Security → Lock; iOS and visionOS; `vantage.appLockDelay`,
   default 15 minutes), timed from leaving the app on a `ContinuousClock` so sleep counts and changing
-  the clock doesn't; locking the device always locks it (`watchProtectedData`). While away inside the
+  the clock doesn't; locking the device locks it if the app is still running to hear so
+  (`watchProtectedData`; a suspended app isn't, so don't promise it in the UI). While away inside the
   delay `isAway` keeps `LockCurtain` up, showing only `LockGlyph`, so the app switcher's snapshot
   never shows a computer's screen. The lock screen is the glyph and an Unlock button naming the
   biometry; the words are VoiceOver's only. `-VantageLockPreview 1` holds the lock screen without

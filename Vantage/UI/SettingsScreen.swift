@@ -401,7 +401,7 @@ struct SecuritySettings: View {
                 }
             } footer: {
                 if requireBiometrics {
-                    Text("Counts from when you leave Casement. Locking your device always locks Casement too. An open session resumes after you unlock.")
+                    Text("Counts from when you leave Casement. An open session resumes after you unlock.")
                 } else {
                     Text("Unlock Casement with biometrics or your device passcode after leaving the app.")
                 }

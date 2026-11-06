@@ -124,8 +124,9 @@ final class AppLock {
         isAway = false
     }
 
-    /// The device locking takes the protected data away; that always locks Casement, however long
-    /// the delay, and it asks again once the data is back with Casement in front.
+    /// The device locking takes the protected data away; if Casement is still running to hear that,
+    /// it locks however long the delay, and asks again once the data is back with Casement in front.
+    /// A suspended app doesn't hear it, and then only the delay counts.
     func watchProtectedData() {
         guard protectedDataObservers.isEmpty else { return }
         let center = NotificationCenter.default
