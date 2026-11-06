@@ -24,6 +24,9 @@ final class AppLock {
 
     init() {
         isLocked = UserDefaults.standard.bool(forKey: Self.settingKey)
+        #if DEBUG
+        if ClientOptions.lockPreviewStartsUnlocked { isLocked = false }
+        #endif
         #if os(macOS)
         watchThisMac()
         #endif
@@ -34,6 +37,9 @@ final class AppLock {
 
     func authenticate() {
         guard isLocked, !isAuthenticating else { return }
+        #if DEBUG
+        if ClientOptions.lockPreview { return }
+        #endif
         errorMessage = nil
         let context = LAContext()
         var error: NSError?
@@ -134,20 +140,30 @@ final class AppLock {
 struct LockOverlay: View {
     let errorMessage: String?
     let onUnlock: () -> Void
+
     var body: some View {
         ZStack {
             // Opaque, not a material: whatever sits under the lock must not show through.
             Rectangle().fill(.background).ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "lock.fill").font(.largeTitle)
-                Text("Casement is locked").font(.headline)
+            VStack(spacing: 32) {
+                LockGlyph()
                 if let errorMessage {
-                    Text(errorMessage).font(.callout).multilineTextAlignment(.center).padding(.horizontal)
+                    Text(errorMessage)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
                 }
-                Button("Unlock", action: onUnlock)
-                    .buttonStyle(.glassProminent)
-                    .keyboardShortcut(.defaultAction)
+                Button(action: onUnlock) {
+                    Label("Unlock", systemImage: Self.unlockSymbol)
+                        .font(.headline)
+                        .frame(minWidth: 140)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
             }
+            .padding(32)
         }
         #if os(macOS)
         // Swallows clicks and scrolls meant for whatever is underneath, a session included.
@@ -157,6 +173,30 @@ struct LockOverlay: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal) // nothing behind the lock is reachable
         .accessibilityIdentifier("appLock")
+    }
+
+    /// Says what the button will ask for.
+    private static let unlockSymbol: String = {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        return switch context.biometryType {
+        case .faceID: "faceid"
+        case .touchID: "touchid"
+        case .opticID: "opticid"
+        default: "lock.open.fill"
+        }
+    }()
+}
+
+/// The lock on its own: all the lock screen needs to say, and all the app switcher's snapshot shows.
+struct LockGlyph: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var size = 52
+
+    var body: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: size, weight: .regular))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Casement is locked")
     }
 }
 
