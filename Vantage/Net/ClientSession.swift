@@ -216,6 +216,23 @@ final class ClientSession {
         send(.audioRequest(AudioRequest(enabled: enabled)))
     }
 
+    /// The host can black out its own screen. False for hosts that predate it: never send them
+    /// `curtainRequest`.
+    var hostOffersCurtain: Bool { capabilities?.curtain == true }
+    /// Whether this session wants the curtain. Survives reconnects, like `wantsMacAudio`.
+    private(set) var wantsCurtain = false
+    /// What the host last said about the curtain; nil until it has answered this connection.
+    private(set) var curtainStatus: CurtainStatus?
+
+    /// Raises or lowers the curtain for this session (and every reconnect). Sends nothing to a
+    /// host that doesn't offer it, and nothing while it's already as asked.
+    func setCurtain(_ enabled: Bool) {
+        let changed = wantsCurtain != enabled
+        wantsCurtain = enabled
+        guard changed || enabled, state == .connected, hostOffersCurtain else { return }
+        send(.curtainRequest(CurtainRequest(enabled: enabled)))
+    }
+
     /// The Mac says its display is asleep (hosts that predate this never say so).
     var isDisplayAsleep: Bool { state == .connected && hostStatus?.isDisplayAsleep == true }
 
@@ -282,6 +299,10 @@ final class ClientSession {
                 if wantsMacAudio, hostOffersAudio {
                     try await channel.send(.audioRequest(AudioRequest(enabled: true)))
                 }
+                curtainStatus = nil
+                if wantsCurtain, hostOffersCurtain {
+                    try await channel.send(.curtainRequest(CurtainRequest(enabled: true)))
+                }
                 state = .connected
                 connectedAt = .now
                 fileLink.screenDidConnect(token: fileToken, capabilities: capabilities, host: device.host, port: port)
@@ -334,7 +355,7 @@ final class ClientSession {
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
                           clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
                           maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true),
+                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true, curtain: true),
                           clientNonce: clientNonce)
         try await channel.send(.hello(hello))
 
@@ -402,6 +423,8 @@ final class ClientSession {
             activeConfig = config
         case .hostStatus(let status):
             hostStatus = status
+        case .curtainStatus(let status):
+            curtainStatus = status
         case .dictationResult(let result):
             onDictationResult?(result)
         case .audioConfig, .audioPacket:

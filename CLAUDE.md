@@ -665,6 +665,33 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   Casement Host with − and add it again (a stale TCC entry from another signature, e.g. a Debug
   build: the switch looks on but `AXIsProcessTrusted()` is false). Never run `tccutil` from the
   app. `--open-setup` (DEBUG) shows it as a preview that saves nothing.
+- **Curtain** (`curtainRequest` 65, `curtainStatus` 75; gated on `HostCapabilities.curtain`, and a
+  client with `Hello.features.curtain` is told of one already up and takes it on): the computer's
+  panels go black and its physical input stops; the picture stays the real desktop. Per device,
+  `SavedDevice.curtain` (`DeviceStore.setCurtain`, Edit sheet, session menu, optional strip item,
+  Mac menu ⌃⌥⌘B); a failure comes back as `unavailable`. **Mac**: `ScreenCurtain` (one per Mac, up
+  while any session wants it): a shielding-level black window per screen, left out of the picture
+  by window ID (`CurtainWindows`, `ScreenCapture.makeFilter`, `refreshFilter`; measured: luma 0.90
+  excluded, 0 included), and `InputBlocker`, an active tap at `.cghidEventTap` on its own thread,
+  which drops everything physical; the host posts at the session tap, past it. A device turning it
+  off lifts it. Otherwise it never comes down onto the desktop: `reconnectGrace` (60 s) after the
+  last device goes the Mac locks, then it lifts; ⌃⌥⌘L at the keyboard does the same at once; quitting
+  locks; and `CurtainGuard`, a second copy of the host, locks the Mac if the host dies (killing a
+  host with the curtain up therefore locks the Mac). A client on the same Mac is refused.
+  **Windows**: `Desktop/ScreenCurtain.cs`: one topmost black window over the virtual screen with
+  `WDA_EXCLUDEFROMCAPTURE` and click-through, low-level hooks dropping non-injected input. A locked
+  PC can't be unlocked from a device, so the curtain waits with nobody connected, and comes down when
+  the PC locks (Windows-L, Ctrl+Alt+Del's Lock); `CurtainGuard` locks if the host dies; unattended
+  updates wait while it's up. Checked on Drew-PC with a throwaway client: affinity reads back 0x11,
+  WGC still sees the desktop under it, 102 frames in 1.8 s while up, 0 windows and guards after. Limits:
+  the pointer still draws over a Mac's curtain; on Windows the curtain is z-band 1 while Start and Search
+  are band 6 and a firewall prompt's dim band 4, so those can draw above it
+  (`MagSetFullscreenColorEffect` with a zero matrix succeeds unelevated and capture still sees the real
+  desktop, the likely stronger cover, but nobody has looked at the panel under it yet); hooks get nothing while an elevated
+  window is in front unless the host is elevated; the computer's speakers still play. Debug: DEBUG
+  host `--allow-self-curtain` (real capture and input, throwaway identity, no Keychain) lets a
+  client on the same Mac raise it. Never run a real non-synthetic Debug host without it from a shell
+  when you can avoid it: reading the Keychain raises a prompt on Drew's screen.
 - **Host Settings** (`HostSettingsView` and its tabs): one convention, System Settings'. Each tab is
   its own view, and bodies never ask another process anything: `SMAppService.status` read while
   drawing was over half of every tab switch, so `LoginItem` keeps a copy and refreshes it off the
@@ -1283,7 +1310,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   150%), frames keep coming across the scale change, and mode and scale come back. Other windows can
   move across the change, as with any mode switch. The mode rule below now floors at the viewport in
   points, and a portrait viewport keeps the current mode, so the older 2560×1600 example is superseded.
-  `HostEnvironment.DisplayFitter` (`IDisplayFitter`, null on synthetic hosts)
+  Parsec and Sunshine do. `HostEnvironment.DisplayFitter` (`IDisplayFitter`, null on synthetic hosts)
   is `Capture/DisplayFitter.cs`: `ChangeDisplaySettingsEx(name, mode, CDS_FULLSCREEN)` (temporary,
   never in the registry; Windows put the mode back by itself when the host was killed), restore =
   `ChangeDisplaySettingsEx(name, null, 0)`; one session holds a display, a second streams what's there
@@ -1348,7 +1375,7 @@ VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
   VANTAGE_INTEROP_CLIPBOARD_TEXT="from the PC" xcrun swift test --filter WindowsHostInteropTests
 ```
 
-**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 36 messages
+**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 38 messages
 defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
 `WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
 (JSON compared key for key after canonicalising, binary byte for byte);
@@ -1399,6 +1426,10 @@ unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
   reachable, but not at FileVault pre-boot.
 
 ## Known limitations
+
+- Curtain (2026-11-06) still needs hands and eyes: physical keys and mouse being dropped, ⌃⌥⌘L and
+  Windows-L, the guard's lock path, click-through on Windows, and what the PC's panel shows. No real
+  iPad has connected with it yet.
 
 - Virtual-display provisioning is wired but falls back to the main display if BetterDisplay's CLI
   isn't available. Real Mac video, pointer, clicks and software-keyboard typing are verified on a

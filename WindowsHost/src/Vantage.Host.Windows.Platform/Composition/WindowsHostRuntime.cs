@@ -85,6 +85,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
         // Synthetic runs share the PC with a real host and never touch its display modes.
         DisplayFitter = options.Synthetic ? null : Own(new DisplayFitter(() => Settings.Current.AllowDisplayFitting, logging, Paths.DisplayRestoreFile));
+        Curtain = options.Synthetic ? null : Own(new Desktop.ScreenCurtain(Window, logging));
 
         Environment = new HostEnvironment
         {
@@ -92,6 +93,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             Platform = options.Platform,
             Screen = Screen,
             DisplayFitter = DisplayFitter,
+            Curtain = options.Synthetic ? new PretendCurtain() : Curtain,
             Cursor = new Cursor.WindowsCursorSource(logging),
             Audio = Audio,
             Encoders = encoders,
@@ -176,6 +178,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>Switches the display's mode to fit a device's screen (null for synthetic runs).</summary>
     public DisplayFitter? DisplayFitter { get; }
+
+    /// <summary>The curtain (null on a synthetic host).</summary>
+    public Desktop.ScreenCurtain? Curtain { get; }
 
     /// <summary>The encoder factory (its <see cref="MediaFoundationEncoderFactory.CurrentEncoderName"/> is shown in About).</summary>
     public MediaFoundationEncoderFactory Encoders { get; }

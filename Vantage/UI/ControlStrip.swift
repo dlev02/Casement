@@ -28,6 +28,7 @@ struct ControlStrip: View {
     var onCustomize: (() -> Void)?
     /// The Mac Audio toggle (the session owns the player and the per-Mac setting).
     var macAudio = MacAudioToggle()
+    var curtain = CurtainToggle()
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
     /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
@@ -239,6 +240,7 @@ struct ControlStrip: View {
         case .sendClipboard: clipboardButton
         case .sendFile: sendFileButton
         case .macAudio: macAudioButton
+        case .curtain: curtainButton
         case .dictate: dictationButton
         case .keyboard: keyboardButton
         case .disconnect: disconnectButton
@@ -259,6 +261,20 @@ struct ControlStrip: View {
 
     /// A toggle like the modifier keys: tinted and filled while the host's sound plays here. Dimmed,
     /// with the reason as its VoiceOver hint, when the host can't send audio.
+    private var curtainButton: some View {
+        Button { guarded(toggleCurtain) } label: {
+            Image(systemName: curtain.isOn ? "curtains.closed" : StripItem.curtain.symbol)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(StripButtonStyle(isActive: curtain.isOn, isDimmed: curtain.unavailableReason != nil))
+        .disabled(curtain.unavailableReason != nil)
+        .help(StripItem.curtain.label)
+        .accessibilityLabel(StripItem.curtain.label)
+        .accessibilityValue(curtain.isOn ? "On" : "Off")
+        .accessibilityHint(curtain.unavailableReason ?? StripItem.curtain.detail(for: host))
+        .accessibilityIdentifier("session.toolbar.curtain")
+    }
+
     private var macAudioButton: some View {
         let isOn = macAudio.isOn
         return Button { guarded(toggleMacAudio) } label: {
@@ -304,6 +320,10 @@ struct ControlStrip: View {
                 Label("Transfers…", systemImage: "arrow.up.arrow.down")
             }
         }
+    }
+
+    private func toggleCurtain() {
+        withAnimation(.snappy(duration: 0.2)) { curtain.onToggle() }
     }
 
     private func toggleMacAudio() {
@@ -400,6 +420,11 @@ struct ControlStrip: View {
                 }
                 .disabled(macAudio.unavailableReason != nil)
                 .accessibilityIdentifier("session.menu.macAudio")
+                Toggle(isOn: Binding(get: { curtain.isOn }, set: { _ in toggleCurtain() })) {
+                    Label(StripItem.curtain.label, systemImage: curtain.isOn ? "curtains.closed" : StripItem.curtain.symbol)
+                }
+                .disabled(curtain.unavailableReason != nil)
+                .accessibilityIdentifier("session.menu.curtain")
                 Button(action: files.onSend) {
                     Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
                 }
@@ -731,6 +756,14 @@ struct MacAudioToggle {
     /// The user wants the host's sound here (and nothing has failed this session).
     var isOn = false
     /// Nil when the host can send audio; otherwise why the toggle is dimmed.
+    var unavailableReason: String?
+    var onToggle: () -> Void = {}
+}
+
+/// What the strip needs to draw and flip Curtain.
+struct CurtainToggle {
+    var isOn = false
+    /// Nil when the host can do it; otherwise why the toggle is dimmed.
     var unavailableReason: String?
     var onToggle: () -> Void = {}
 }

@@ -7,6 +7,21 @@ namespace Vantage.Protocol.Messages;
 // advertises `dictationEngines`, so the dictation kinds never arrive and are here so the codec
 // knows every kind.
 
+/// <summary>Client → host: raise or lower the curtain for this session.</summary>
+public sealed record CurtainRequest : IMessage
+{
+    MessageKind IMessage.Kind => MessageKind.CurtainRequest;
+    [JsonPropertyName("enabled")] public required bool Enabled { get; init; }
+}
+
+/// <summary>Host → client: whether the curtain is up, and when a request failed, why.</summary>
+public sealed record CurtainStatus : IMessage
+{
+    MessageKind IMessage.Kind => MessageKind.CurtainStatus;
+    [JsonPropertyName("isUp")] public required bool IsUp { get; init; }
+    [JsonPropertyName("unavailable")] public string? Unavailable { get; init; }
+}
+
 public sealed record AudioRequest : IMessage
 {
     MessageKind IMessage.Kind => MessageKind.AudioRequest;

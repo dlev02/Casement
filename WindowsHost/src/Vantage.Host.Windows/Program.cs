@@ -23,6 +23,7 @@ public static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is [Desktop.CurtainGuard.Flag, var host]) return Desktop.CurtainGuard.Run(host);
         // A staged update running as the swapper: no window, no instance key, no XAML.
         if (args is [UpdateInstaller.FinishFlag, ..]) return FinishUpdate(args);
 #if DEBUG

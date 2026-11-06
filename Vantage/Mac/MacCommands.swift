@@ -89,6 +89,9 @@ struct MacCommands: Commands {
         Toggle("\(hostName) Audio", isOn: toggle(\.macAudioOn) { $0.toggleMacAudio() })
             .keyboardShortcut("a", modifiers: Self.vantageChord)
             .disabled(session?.macAudioAvailable != true)
+        Toggle("Curtain", isOn: toggle(\.curtainOn) { $0.toggleCurtain() })
+            .keyboardShortcut("b", modifiers: Self.vantageChord)
+            .disabled(session?.curtainAvailable != true)
         Button(session?.isDictating == true ? "Stop Dictating" : "Dictate") { session?.toggleDictation() }
             .keyboardShortcut("d", modifiers: Self.vantageChord)
             .disabled(!canType)

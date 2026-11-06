@@ -81,6 +81,8 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device, except what a password manager marks as private; your device's clipboard is sent only when you ask.
 
+**Keep the screen to yourself.** Curtain blacks out the computer's own screen and ignores its keyboard and mouse while you work from afar, on a Mac or a PC.
+
 **Get into a locked Mac.** Type your saved password even where macOS blocks typing (the lock screen, password fields), through the Mac's own Screen Sharing. Casement Host can also stop an accidental restart while you're connected, and **Restart Safely** gets past FileVault for a planned restart.
 
 **Fit right in.** Siri and Shortcuts ("Connect to Studio in Casement"), Spotlight, Home Screen widgets, a Control Center control, a Face ID, Touch ID, or Optic ID app lock, and iCloud Keychain sync for saved passwords.

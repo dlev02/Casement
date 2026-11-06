@@ -358,9 +358,13 @@ public sealed class HostSessionCore
                 CursorShapes = _env.Cursor is not null ? true : null,
                 // Like the Mac, offered to every client; only one that said macAudio is answered.
                 Audio = _env.Audio is { UnavailableReason: null } ? true : null,
+                Curtain = _env.Curtain is not null ? true : null,
             },
         }).ConfigureAwait(false);
         _log.LogInformation("client authenticated: {Client}", hello.ClientName);
+        // A curtain left up by a session that ended: this one takes it on and can lower it.
+        if (hello.Features?.Curtain == true && _env.Curtain?.Adopt(Id, _connection.Post) == true)
+            _connection.Post(new CurtainStatus { IsUp = true });
         return true;
     }
 
@@ -488,9 +492,29 @@ public sealed class HostSessionCore
                 if (request.Enabled) await StartAudioAsync().ConfigureAwait(false);
                 else await StopAudioAsync().ConfigureAwait(false);
                 break;
+            case CurtainRequest request:
+                HandleCurtain(request.Enabled);
+                break;
             default:
                 break; // dictation, modifierState, …: never advertised, ignored
         }
+    }
+
+    private void HandleCurtain(bool enabled)
+    {
+        if (_env.Curtain is not { } curtain) return;
+        string? problem;
+        try
+        {
+            problem = curtain.Set(enabled, Id, _connection.Post);
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _log.LogError("the curtain failed: {Error}", error.Message);
+            problem = $"Casement Host couldn't black out this {HostNoun}'s screen.";
+        }
+        _log.LogInformation("curtain request {Enabled}: {Result}", enabled, problem ?? "done");
+        _connection.Post(new CurtainStatus { IsUp = enabled && problem is null, Unavailable = problem });
     }
 
     // MARK: Streaming
@@ -1402,6 +1426,7 @@ public sealed class HostSessionCore
             _recovery = null;
             if (wasStreaming)
             {
+                _env.Curtain?.SessionEnded(Id);
                 await StopAudioAsync().ConfigureAwait(false);
                 await StopCaptureAsync().ConfigureAwait(false);
                 try

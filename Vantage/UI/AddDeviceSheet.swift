@@ -18,6 +18,7 @@ struct AddDeviceSheet: View {
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
     @State private var useVirtualDisplay = false
+    @State private var curtain = false
     @State private var password = ""
     @State private var username = ""
     @State private var homeAddress = ""
@@ -81,6 +82,14 @@ struct AddDeviceSheet: View {
                     } footer: {
                         Text("Casement remembers \(hostNoun.thePossessive) identity from the first connection and refuses to sign in to a host that doesn't match. Forget it only after reinstalling Casement Host on \(hostNoun.the).")
                     }
+                }
+
+                Section {
+                    Toggle("Curtain", isOn: $curtain)
+                } footer: {
+                    Text(isPC
+                         ? "Blacks out the PC's own screen and ignores its keyboard and mouse while you're connected. Pressing Windows-L at the PC locks it and lifts the curtain."
+                         : "Blacks out the Mac's own screen and ignores its keyboard and mouse while you're connected. A minute after you leave, the Mac locks and the curtain lifts.")
                 }
 
                 if isPC {
@@ -163,6 +172,7 @@ struct AddDeviceSheet: View {
         codec = existing.preferredCodec ?? .hevc
         naturalScroll = existing.naturalScroll
         useVirtualDisplay = existing.useVirtualDisplay == true
+        curtain = existing.curtain == true
         password = DeviceSecrets.password(for: existing) ?? ""
         username = DeviceSecrets.username(for: existing) ?? ""
         homeAddress = existing.homeAddress ?? ""
@@ -185,6 +195,7 @@ struct AddDeviceSheet: View {
         device.preferredCodec = codec
         device.naturalScroll = naturalScroll
         device.useVirtualDisplay = useVirtualDisplay
+        device.curtain = curtain ? true : nil
         let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         device.homeAddress = home.isEmpty ? nil : home
         device.controlStrip = controlStrip

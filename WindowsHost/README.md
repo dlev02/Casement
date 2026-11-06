@@ -107,6 +107,14 @@ the PC's screen goes back to its own resolution when the device disconnects, and
 Casement Host stops. Start, Task View, Task Manager, and the other Windows shortcuts are in Casement's
 control strip, and ⌘ acts as Ctrl unless you turn that off for the PC in Casement.
 
+### Curtain
+
+Turn on **Curtain** in Casement on your device (the session menu, or the computer's settings) and this
+PC's own screen goes black and its keyboard and mouse stop working, while your device still sees the
+desktop. It stays up after you disconnect, ready for your next connection, because a locked PC can't be
+unlocked from your device. To use the PC in person, press **Windows-L**: it locks, the curtain lifts,
+and you sign in as usual.
+
 ### Update or remove
 
 It updates itself, and running a newer Setup does the same by hand. To remove it, use Windows'

@@ -84,6 +84,8 @@ public class GoldenVectorTests
             BytesReceived = 9_007_199_254_740_993, WindowSeconds = 0.25,
         }),
         ("requestKeyframe", RequestKeyframe.Instance),
+        ("curtainRequest", new CurtainRequest { Enabled = true }),
+        ("curtainStatus", new CurtainStatus { IsUp = false, Unavailable = "Casement Host can't do this." }),
         ("clipboard", new ClipboardPayload { Text = "Line one\nLíne two ✓", ImagePNG = [0x89, 0x50, 0x4E, 0x47, 0xFF, 0xFE], Rtf = Encoding.UTF8.GetBytes("{\\rtf1 hi}") }),
         ("hostCommand", new HostCommandMessage { Command = HostCommand.SleepDisplay }),
         ("ping", new Ping { SentAtNanos = 18_446_744_073_709_551_615 }),

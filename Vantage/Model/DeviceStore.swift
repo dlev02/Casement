@@ -174,6 +174,13 @@ final class DeviceStore {
         save()
     }
 
+    func setCurtain(_ on: Bool, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), (devices[index].curtain ?? false) != on else { return }
+        devices[index].curtain = on
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     /// Records what a device's host said it runs (its session, or the list's availability
     /// check), so a PC is shown and controlled as a PC before the next connection. Stamped like
     /// any other edit so other devices learn it too; nothing happens while it's unchanged.

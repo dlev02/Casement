@@ -28,6 +28,8 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case audioRequest = 63
     /// Capability-gated: only sent to hosts that list dictation engines.
     case dictationControl = 64
+    /// Capability-gated: only sent to hosts whose capabilities say `curtain`.
+    case curtainRequest = 65
     case cursorShape = 70
     case videoConfig = 71
     case hostStatus = 72
@@ -35,6 +37,8 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case audioConfig = 73
     /// Capability-gated: only sent to clients whose `Hello.features` includes dictation.
     case dictationResult = 74
+    /// Only sent to clients that sent `curtainRequest`.
+    case curtainStatus = 75
     /// File transfer (§C.3). Only on the file channel, which only a client that said
     /// `Hello.features.fileTransfer` opens to a host that advertised `HostCapabilities.fileTransfer`.
     case fileOffer = 80

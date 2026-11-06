@@ -14,7 +14,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
     case control, option, command, shift
     case escape, tab, leftArrow, upArrow, downArrow, rightArrow
     case startMenu, spotlight, missionControl, applicationWindows, showDesktop, taskManager, typePassword, sendClipboard
-    case sendFile, macAudio, dictate, keyboard, disconnect
+    case sendFile, macAudio, curtain, dictate, keyboard, disconnect
 
     /// Groups the strip separates with a thin divider, and the editor tints alike.
     enum Category: String, CaseIterable, Sendable {
@@ -63,6 +63,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .sendClipboard: "Send Clipboard"
         case .sendFile: "Send File"
         case .macAudio: "Mac Audio"
+        case .curtain: "Curtain"
         case .dictate: "Dictate"
         case .keyboard: "Keyboard"
         case .disconnect: "Disconnect"
@@ -93,6 +94,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .sendClipboard: "doc.on.clipboard"
         case .sendFile: "arrow.up.doc"
         case .macAudio: "speaker.wave.2" // `.fill` while on
+        case .curtain: "curtains.open" // `curtains.closed` while on
         case .dictate: "mic"
         case .keyboard: "keyboard"
         case .disconnect: "xmark.circle"
@@ -132,6 +134,8 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case (.typePassword, nil): return "Types the Mac's saved password. Macs only"
         case (.macAudio, nil): return "Hear the computer's sound on \(LocalDevice.this)"
         case (.macAudio, _): return "Hear \(host)'s sound on \(LocalDevice.this)"
+        case (.curtain, nil): return "Blacks out the computer's own screen while you work"
+        case (.curtain, _): return "Blacks out \(host)'s own screen while you work"
         case (.sendClipboard, _): return "Sends your clipboard to \(host)"
         case (.sendFile, _): return "Sends a file from \(LocalDevice.this) to \(host)"
         default: return macDetail
@@ -160,6 +164,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .sendClipboard: "Sends your clipboard to the Mac"
         case .sendFile: "Sends a file from \(LocalDevice.this) to the Mac"
         case .macAudio: "Hear the Mac's sound on \(LocalDevice.this)"
+        case .curtain: "Blacks out the Mac's own screen while you work"
         case .dictate: "Hold to talk, or \(LocalDevice.tap) to start and stop"
         case .keyboard: "Shows the on-screen keyboard"
         case .disconnect: "Ends the session right away"
@@ -171,7 +176,7 @@ nonisolated enum StripItem: String, Codable, CaseIterable, Identifiable, Sendabl
         case .control, .option, .command, .shift: .modifiers
         case .escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow: .keys
         case .startMenu, .spotlight, .missionControl, .applicationWindows, .showDesktop, .taskManager, .typePassword, .sendClipboard: .shortcuts
-        case .sendFile, .macAudio, .dictate, .keyboard, .disconnect: .actions
+        case .sendFile, .macAudio, .curtain, .dictate, .keyboard, .disconnect: .actions
         }
     }
 

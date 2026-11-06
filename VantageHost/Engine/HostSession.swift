@@ -83,7 +83,7 @@ actor HostSession {
     /// window would show itself showing itself.
     private var excludedFromPicture: [String] {
         #if DEBUG
-        peerHost == "::1" || peerHost.hasPrefix("127.") ? AudioCapture.clientBundleIDs : []
+        isLoopbackPeer ? AudioCapture.clientBundleIDs : []
         #else
         []
         #endif
@@ -241,11 +241,19 @@ actor HostSession {
         let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
                                             dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
                                             audio: true, fileTransfer: clientTakesFiles ? true : nil,
-                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform)
+                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform,
+                                            curtain: true)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
         onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
         log.info("client authenticated: \(hello.clientName)")
+        if hello.features?.curtain == true, !HostOptions.shared.syntheticCapture {
+            let channel = self.channel
+            let adopted = await ScreenCurtain.shared.adopt(ObjectIdentifier(self)) { status in
+                channel.sendDetached(.curtainStatus(status))
+            }
+            if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
+        }
         return true
     }
 
@@ -298,6 +306,8 @@ actor HostSession {
             case .audioRequest(let request):
                 guard clientTakesAudio else { break } // never send audio kinds to a client that didn't ask for them
                 if request.enabled { await startAudio() } else { await stopAudio() }
+            case .curtainRequest(let request):
+                await handleCurtain(request.enabled)
             case .disconnect:
                 return
             default:
@@ -305,6 +315,32 @@ actor HostSession {
             }
         }
     }
+
+    /// Raises or lowers the curtain and says how that went. Synthetic hosts only pretend: there's
+    /// no real desktop behind their picture. A client on this same Mac could never get it back.
+    private func handleCurtain(_ enabled: Bool) async {
+        var status = CurtainStatus(isUp: enabled)
+        if HostOptions.shared.syntheticCapture {
+            // Nothing to do beyond answering.
+        } else if enabled, isLoopbackPeer, !HostOptions.shared.allowsSelfCurtain {
+            status = CurtainStatus(isUp: false, unavailable: "Curtain can't cover the Mac you're using it from.")
+        } else {
+            let channel = self.channel
+            let problem = await ScreenCurtain.shared.set(enabled, for: ObjectIdentifier(self)) { status in
+                channel.sendDetached(.curtainStatus(status))
+            }
+            if let problem { status = CurtainStatus(isUp: false, unavailable: problem) }
+        }
+        log.info("curtain request \(enabled): up \(status.isUp)")
+        channel.sendDetached(.curtainStatus(status))
+    }
+
+    /// The curtain's windows came or went: the capture's filter follows.
+    func curtainWindowsChanged() async {
+        await (capture as? ScreenCapture)?.refreshFilter()
+    }
+
+    private var isLoopbackPeer: Bool { peerHost == "::1" || peerHost.hasPrefix("127.") }
 
     /// A files-only session's primary connection: it only keeps the session (and its token) alive.
     /// Anything that would touch the screen, input, audio, or clipboard is ignored.
@@ -931,6 +967,9 @@ actor HostSession {
         let wasFilesOnly = state == .filesOnly
         state = .closed
         attachTokens.revoke(owner: self)
+        if !HostOptions.shared.syntheticCapture {
+            await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self))
+        }
         // The file channel, if any, carries on without the session (see `attachFileChannel`); a
         // files-only session never started anything else.
         if !wasFilesOnly {

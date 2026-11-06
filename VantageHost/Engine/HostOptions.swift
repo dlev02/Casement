@@ -47,6 +47,9 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let syntheticCapture: Bool
     let fixedPairingCode: String?
     let port: UInt16
+    /// A client on this same Mac may raise the curtain (DEBUG only; for testing it). Real capture
+    /// and input, with a throwaway identity and trust list, so a test never touches the Keychain.
+    let allowsSelfCurtain: Bool
     /// Settings tab to show at launch (DEBUG only).
     let openSettingsTab: String?
     /// File to send to every client once its file channel attaches (DEBUG only).
@@ -102,6 +105,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             fixedPairingCode = nil
         }
+        allowsSelfCurtain = args.contains("--allow-self-curtain")
         if let index = args.firstIndex(of: "--open-settings"), index + 1 < args.count {
             openSettingsTab = args[index + 1]
         } else {
@@ -171,6 +175,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         syntheticCapture = false
         fixedPairingCode = nil
         port = 47820
+        allowsSelfCurtain = false
         openSettingsTab = nil
         sendFileOnConnect = nil
         receiveFolder = nil

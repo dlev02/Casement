@@ -37,6 +37,8 @@ namespace Vantage.Protocol.Messages;
 [JsonSerializable(typeof(TextInput))]
 [JsonSerializable(typeof(ModifierState))]
 [JsonSerializable(typeof(AudioRequest))]
+[JsonSerializable(typeof(CurtainRequest))]
+[JsonSerializable(typeof(CurtainStatus))]
 [JsonSerializable(typeof(DictationControl))]
 [JsonSerializable(typeof(CursorShape))]
 [JsonSerializable(typeof(VideoConfig))]

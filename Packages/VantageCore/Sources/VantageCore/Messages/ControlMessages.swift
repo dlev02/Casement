@@ -207,9 +207,13 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// `cursorPosition` (when it's shown or hidden). Nil from hosts that always draw the pointer
     /// into the video (every Mac: macOS has no public API for the system cursor's image).
     public var cursorShapes: Bool?
+    /// The host can black out its own screen (`curtainRequest`). Nil from older hosts, which would
+    /// drop the session on that kind.
+    public var curtain: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
-                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil) {
+                audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil,
+                curtain: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -218,6 +222,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.audio = audio
         self.fileTransfer = fileTransfer
         self.filesOnlySessions = filesOnlySessions
+        self.curtain = curtain
         self.platform = platform
         self.cursorShapes = cursorShapes
     }

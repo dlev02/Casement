@@ -575,6 +575,12 @@ struct HelpScreen: View {
             FAQEntry("What does Restart Safely do?",
                      "It's in Casement Host's menu and settings, and it's offered when you restart while connected. You enter your Mac password once, FileVault unlocks by itself for that one restart, and the Mac comes back at the login window instead of the FileVault screen. From there, Log In with Screen Sharing gets you back in."),
         ]),
+        FAQSection("Curtain", [
+            FAQEntry("What does Curtain do?",
+                     "It blacks out the computer's own screen and ignores its own keyboard and mouse while you work, so someone near it can't see or touch what you're doing. Your picture stays the same. Turn it on in the session menu, or in a computer's settings to have it on from the moment you connect. The computer's speakers still play, and the pointer may still show on a Mac's screen."),
+            FAQEntry("How does Curtain end?",
+                     "Turning it off lifts it straight away. A Mac locks itself a minute after your last device leaves, then lifts it, and someone at the Mac can press Control-Option-Command-L to lock it and lift it sooner. A PC stays curtained for your next connection, because a locked PC can't be unlocked from your device; pressing Windows-L at the PC locks it and lifts the curtain."),
+        ]),
         FAQSection("Files, Sound & Clipboard", [
             FAQEntry("How do I send files?",
                      sendFilesAnswer),

@@ -55,13 +55,17 @@ public struct ClientFeatures: Codable, Sendable, Equatable {
     /// with `HostCapabilities.cursorShapes` then leaves the pointer out of the video, so it moves
     /// at the client's own frame rate instead of a capture-encode-decode round trip later.
     public var localCursor: Bool?
+    /// The client understands `curtainStatus`, so it can hear of a curtain already up when it
+    /// connects (left by a session that ended).
+    public var curtain: Bool?
 
-    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil, localCursor: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil, localCursor: Bool? = nil, curtain: Bool? = nil) {
         self.dictation = dictation
         self.macAudio = macAudio
         self.fileTransfer = fileTransfer
         self.filesOnly = filesOnly
         self.localCursor = localCursor
+        self.curtain = curtain
     }
 }
 

@@ -11,7 +11,7 @@ import VantageCore
             .startMenu, .spotlight, .missionControl, .taskManager, .typePassword,
             .sendFile, .macAudio, .dictate, .keyboard, .disconnect,
         ])
-        #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard])
+        #expect(ControlStripLayout.standard.hidden == [.applicationWindows, .showDesktop, .sendClipboard, .curtain])
     }
 
     @Test func macStartsWithWhatAKeyboardCantDo() {

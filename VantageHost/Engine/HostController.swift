@@ -104,7 +104,7 @@ final class HostController {
     private static func loadIdentity() -> DeviceIdentity {
         #if DEBUG
         // An update test host is signed for the test and replaces itself: it stays out of the Keychain.
-        if HostOptions.shared.syntheticCapture, HostOptions.shared.updateFeed != nil { return DeviceIdentity() }
+        if (HostOptions.shared.syntheticCapture && HostOptions.shared.updateFeed != nil) || HostOptions.shared.allowsSelfCurtain { return DeviceIdentity() }
         #endif
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
         return (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()
@@ -115,6 +115,11 @@ final class HostController {
         refreshTailscale()
         monitorPermissions()
         observeDisplayChanges()
+        ScreenCurtain.shared.onWindowsChanged = { [weak self] in
+            for session in self?.sessions ?? [] {
+                Task { await session.curtainWindowsChanged() }
+            }
+        }
         listener.onAccept = { [weak self] connection in
             Task { @MainActor in self?.accept(connection) }
         }
