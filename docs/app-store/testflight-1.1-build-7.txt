@@ -1,0 +1,19 @@
+Casement 1.1 (7) — iPhone, iPad, Mac, and Apple Vision Pro
+
+KEEP THE SCREEN TO YOURSELF
+Curtain blacks out your computer's own screen and ignores its keyboard and mouse while you work from afar. Turn it on from the session menu or Edit Device. It needs Casement Host 1.6 or later; with an older Host the toggle is dimmed and says to update.
+
+UNLOCK ON YOUR TERMS
+Settings > Privacy & Security > Lock chooses how long Casement waits before asking for Face ID or Touch ID: Immediately, 1, 5 or 15 minutes, or 1 hour. The lock screen is now a lock and one Unlock button.
+
+A PC THAT FITS YOUR SCREEN
+With Fit the PC's Display on, Casement Host 1.6 sets the PC's scale as well as its resolution, and puts both back afterwards.
+
+WHAT TO TEST
+• Turn on the app lock, leave the app and come back: within the delay it shouldn't ask; after it, or with Immediately, it should. Do this from the device list and from inside a session.
+• With Host 1.6: turn on Curtain. The computer's screen should go black and its keyboard and mouse stop working, while your picture and your control carry on.
+• On a Mac: turn Curtain off and confirm the Mac's own keyboard and mouse work again. Then leave it on and disconnect: the Mac should lock about a minute later. Press Control-Option-Command-L at a curtained Mac: it should lock.
+• On a PC: disconnect with Curtain on and reconnect: it should still be on. Press Windows-L at the PC: it should lock and the curtain should lift.
+• With Fit the PC's Display on: check the taskbar's size on your device, and that the PC's resolution and scale return when you disconnect.
+
+Report a problem from Settings/About and include diagnostics. Host downloads: https://github.com/dlev02/Casement/releases
