@@ -2,9 +2,41 @@ import LocalAuthentication
 import SwiftUI
 #if os(macOS)
 import AppKit
-#elseif os(iOS)
+#else
 import UIKit
 #endif
+
+/// How long Casement can be out of sight before it asks again (Settings → Privacy & Security).
+/// Not on the Mac, which locks with the Mac itself.
+enum AppLockDelay: Int, CaseIterable, Identifiable {
+    case immediately = 0
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case oneHour = 3600
+
+    static let settingKey = "vantage.appLockDelay"
+    static let standard = AppLockDelay.fifteenMinutes
+
+    /// What's saved, read outside a view.
+    static var current: AppLockDelay {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: settingKey) != nil else { return standard }
+        return AppLockDelay(rawValue: defaults.integer(forKey: settingKey)) ?? standard
+    }
+
+    var id: Int { rawValue }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .immediately: "Immediately"
+        case .oneMinute: "After 1 Minute"
+        case .fiveMinutes: "After 5 Minutes"
+        case .fifteenMinutes: "After 15 Minutes"
+        case .oneHour: "After 1 Hour"
+        }
+    }
+}
 
 /// Gates the app behind biometric authentication when enabled.
 @MainActor
@@ -62,38 +94,40 @@ final class AppLock {
         }
     }
 
-    #if os(iOS)
-    /// When the app went to the background, if it hasn't locked yet (the iPad app on a Mac).
-    @ObservationIgnored private var backgroundedAt: Date?
+    #if !os(macOS)
+    /// While the app is out of sight but hasn't locked: `LockCurtain` still hides everything, so
+    /// the app switcher's snapshot never shows a computer's screen.
+    private(set) var isAway = false
+    /// A clock that keeps counting through sleep and can't be wound back from Settings.
+    @ObservationIgnored private var awaySince: ContinuousClock.Instant?
     @ObservationIgnored private var protectedDataObservers: [NSObjectProtocol] = []
 
-    /// The iPad app on a Mac goes to the background whenever its window leaves the screen:
-    /// swiping to another Space or a full-screen app, minimising, hiding. Locking then asked for
-    /// Touch ID on every swipe back. There it locks the way the Mac app does instead: when the
-    /// Mac locks (protected data goes away), or after `macAwayLimit` out of sight. On an iPhone
-    /// or iPad leaving the app still locks it straight away.
-    static let macAwayLimit: TimeInterval = 10 * 60
-
     func appDidEnterBackground() {
-        if MacHostedIPadApp.isRunning {
-            if backgroundedAt == nil { backgroundedAt = .now }
-        } else {
+        guard UserDefaults.standard.bool(forKey: Self.settingKey) else { return }
+        if AppLockDelay.current == .immediately {
             lockIfNeeded()
+        } else if awaySince == nil {
+            awaySince = .now
         }
+        #if os(iOS)
+        // The iPad app on a Mac leaves the screen on every Space swipe, and has no switcher.
+        isAway = !MacHostedIPadApp.isRunning
+        #endif
     }
 
     /// Call before `authenticate()` when the app comes back to the foreground.
     func appWillReturn() {
-        if let backgroundedAt, Date.now.timeIntervalSince(backgroundedAt) >= Self.macAwayLimit {
+        if let awaySince, ContinuousClock.now - awaySince >= .seconds(AppLockDelay.current.rawValue) {
             lockIfNeeded()
         }
-        backgroundedAt = nil
+        awaySince = nil
+        isAway = false
     }
 
-    /// The Mac locking (or sleeping) takes the protected data away; lock with it, and ask again
-    /// when it's back with Casement in front.
+    /// The device locking takes the protected data away; that always locks Casement, however long
+    /// the delay, and it asks again once the data is back with Casement in front.
     func watchProtectedData() {
-        guard MacHostedIPadApp.isRunning, protectedDataObservers.isEmpty else { return }
+        guard protectedDataObservers.isEmpty else { return }
         let center = NotificationCenter.default
         protectedDataObservers = [
             center.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in

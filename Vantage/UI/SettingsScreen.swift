@@ -369,6 +369,7 @@ struct ConnectionSettings: View {
 
 struct SecuritySettings: View {
     @AppStorage("vantage.requireBiometrics") private var requireBiometrics = false
+    @AppStorage(AppLockDelay.settingKey) private var lockDelay = AppLockDelay.standard.rawValue
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
@@ -390,8 +391,20 @@ struct SecuritySettings: View {
                 #else
                 Toggle("Require Face ID / Touch ID", isOn: $requireBiometrics)
                 #endif
+                if requireBiometrics {
+                    Picker("Lock", selection: $lockDelay) {
+                        ForEach(AppLockDelay.allCases) { delay in
+                            Text(delay.title).tag(delay.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.lockDelay")
+                }
             } footer: {
-                Text("Unlock Casement with biometrics or your device passcode after leaving the app. An open session resumes after you unlock.")
+                if requireBiometrics {
+                    Text("Counts from when you leave Casement. Locking your device always locks Casement too. An open session resumes after you unlock.")
+                } else {
+                    Text("Unlock Casement with biometrics or your device passcode after leaving the app.")
+                }
             }
 
             Section {

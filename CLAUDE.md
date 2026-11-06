@@ -132,12 +132,19 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
   and threw away half-typed input whenever the user switched apps (e.g. copying a Tailscale
-  secret from Safari on iPhone). visionOS still swaps views.
+  secret from Safari on iPhone). visionOS still swaps views. **How soon it locks**:
+  `AppLockDelay` (Settings → Privacy & Security → Lock; iOS and visionOS; `vantage.appLockDelay`,
+  default 15 minutes), timed from leaving the app on a `ContinuousClock` so sleep counts and changing
+  the clock doesn't; locking the device always locks it (`watchProtectedData`). While away inside the
+  delay `isAway` keeps `LockCurtain` up, showing only `LockGlyph`, so the app switcher's snapshot
+  never shows a computer's screen. The lock screen is the glyph and an Unlock button naming the
+  biometry; the words are VoiceOver's only. `-VantageLockPreview 1` holds the lock screen without
+  asking, for screenshots.
 - **The iPad app on a Mac** ("Designed for iPad", e.g. a TestFlight install; `MacHostedIPadApp`,
   `ProcessInfo.isiOSAppOnMac`): not the native Mac app, but people do run it. Its scene goes to
   the background whenever the window leaves the screen (another Space, a full-screen app), so
-  `AppLock.appDidEnterBackground` doesn't lock there; it locks when protected data goes away or
-  after `macAwayLimit` (10 min) out of sight. The device list drops its large title and bar
+  `AppLock` counts that as leaving under the same delay (with Immediately it asks on every swipe
+  back), without the away cover. The device list drops its large title and bar
   background there (`MacHostedListBar`; the window's title bar already says Casement), and
   Casement › Settings… (⌘,) opens Casement's Settings in a sheet (`MacHostedSettingsCommand`)
   instead of macOS's generic settings window for iOS apps.
