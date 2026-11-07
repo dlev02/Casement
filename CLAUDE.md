@@ -1428,8 +1428,10 @@ unchecked on the Mac so far). Use ports ≥ 47860 and never 47820.
 
 ## Known limitations
 
-- The Windows ARM64 package (1.5, 1.6) probably won't start: `make-release.ps1` publishes it with
-  `-p:Platform=x64`, so 44 native files, `Microsoft.ui.xaml.dll` among them, are x64. Never run on ARM hardware.
+- The published Windows ARM64 packages (1.5, 1.6) probably won't start: they were published with
+  `-p:Platform=x64`, so 44 native files, `Microsoft.ui.xaml.dll` among them, were x64. The script now passes the
+  real platform and `check-package-arch.ps1` fails a release on the wrong kind of binary. ARM64 has
+  still never run on ARM hardware.
 - Curtain (2026-11-06) still needs hands and eyes: physical keys and mouse being dropped, ⌃⌥⌘L and
   Windows-L, the guard's lock path, click-through on Windows, and what the PC's panel shows. No real
   iPad has connected with it yet.

@@ -39,10 +39,9 @@ $setups = @{}
 foreach ($arch in "x64", "arm64") {
     $staging = Join-Path $root "artifacts\publish\$arch\Casement Host"
     if (Test-Path (Split-Path $staging)) { Remove-Item -Recurse -Force (Split-Path $staging) }
-    $publish = @("publish", $project, "-c", "Release", "-r", "win-$arch", "--self-contained", "-p:Platform=x64", "-o", $staging)
-    if ($arch -eq "arm64") { $publish += @("-p:PlatformTarget=arm64", "-p:RuntimeIdentifier=win-arm64") }
-    dotnet @publish
+    dotnet publish $project -c Release -r "win-$arch" --self-contained "-p:Platform=$arch" -o $staging
     if ($LASTEXITCODE -ne 0) { throw "Publishing $arch failed." }
+    & (Join-Path $PSScriptRoot "check-package-arch.ps1") -Arch $arch -Folder $staging
     $setups[$arch] = & (Join-Path $PSScriptRoot "make-installer.ps1") -Version $Version -Arch $arch -Source $staging -Out $out | Select-Object -Last 1
     Set-Content -Path (Join-Path $staging "README.txt") -Value $readme
     $zip = Join-Path $out "Casement-Host-$Version-windows-$arch.zip"
