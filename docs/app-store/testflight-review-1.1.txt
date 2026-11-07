@@ -6,4 +6,6 @@ In Casement, add the computer using + > Add Manually and its Tailscale name or a
 
 Try pointer and keyboard input, clipboard, audio and a file transfer in each direction. The Mac client can connect to a host on the same Mac in View Only. The 1.1 beta also updates icon appearances, iPhone controls, iPhone Duo laptop mode and native Mac Settings.
 
+Build 7 also adds an app-lock delay (Settings > Privacy & Security > Lock) and Curtain, which blacks out the computer's own screen during a session. Curtain needs Casement Host 1.6; with an older Host the toggle is dimmed and says to update, so everything else can be reviewed without it.
+
 There is no developer-operated relay, account system, advertising, analytics, subscription or in-app purchase. All session traffic travels directly through Tailscale. Report a Problem in Settings/About exports local diagnostics with the user’s consent.
