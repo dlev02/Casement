@@ -587,7 +587,7 @@ struct HelpScreen: View {
             FAQEntry("Where do files end up?",
                      "On a Mac, in Downloads, or the folder chosen in Casement Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Casement Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
             FAQEntry("Can I hear the Mac's or PC's sound?",
-                     "Yes. Turn on Mac Audio (PC Audio for a PC) in the session controls or the session menu, and the computer's sound plays on \(LocalDevice.this) while you're connected (the computer keeps playing it too). Casement remembers the choice for each Mac and PC. A PC sends its sound with Casement Host 1.3 or later; an older one dims the button and says why."),
+                     "Yes. Turn on Mac Audio (PC Audio for a PC) in the session controls or the session menu, and the computer's sound plays on \(LocalDevice.this) while you're connected (the computer keeps playing it too). Casement remembers the choice for each Mac and PC, and you can set it ahead of time in a computer's settings. A PC sends its sound with Casement Host 1.3 or later; an older one dims the button and says why."),
             FAQEntry("How does the clipboard work?",
                      clipboardAnswer),
         ]),

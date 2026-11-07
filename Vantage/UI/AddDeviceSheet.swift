@@ -18,6 +18,7 @@ struct AddDeviceSheet: View {
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
     @State private var useVirtualDisplay = false
+    @State private var playAudio = false
     @State private var curtain = false
     @State private var password = ""
     @State private var username = ""
@@ -82,6 +83,10 @@ struct AddDeviceSheet: View {
                     } footer: {
                         Text("Casement remembers \(hostNoun.thePossessive) identity from the first connection and refuses to sign in to a host that doesn't match. Forget it only after reinstalling Casement Host on \(hostNoun.the).")
                     }
+                }
+
+                Section {
+                    Toggle("Play \(hostNoun.name) Audio", isOn: $playAudio)
                 }
 
                 Section {
@@ -172,6 +177,7 @@ struct AddDeviceSheet: View {
         codec = existing.preferredCodec ?? .hevc
         naturalScroll = existing.naturalScroll
         useVirtualDisplay = existing.useVirtualDisplay == true
+        playAudio = existing.playMacAudio == true
         curtain = existing.curtain == true
         password = DeviceSecrets.password(for: existing) ?? ""
         username = DeviceSecrets.username(for: existing) ?? ""
@@ -195,6 +201,7 @@ struct AddDeviceSheet: View {
         device.preferredCodec = codec
         device.naturalScroll = naturalScroll
         device.useVirtualDisplay = useVirtualDisplay
+        device.playMacAudio = playAudio ? true : nil
         device.curtain = curtain ? true : nil
         let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         device.homeAddress = home.isEmpty ? nil : home

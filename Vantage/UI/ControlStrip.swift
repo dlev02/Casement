@@ -39,6 +39,10 @@ struct ControlStrip: View {
     var isPreview = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     /// The last modifier the user tapped, for its haptic. Modifiers that clear themselves after a
     /// key press stay quiet; only your own tap latches or releases one.
     @State private var modifierTap = ModifierTap()
@@ -404,88 +408,15 @@ struct ControlStrip: View {
 
     private var sessionMenu: some View {
         Menu {
-            #if os(iOS) // look and pinch, and a Mac's own pointer, always point absolutely
-            Picker("Touch", selection: $touchMode) {
-                ForEach(InputController.TouchMode.allCases) { mode in
-                    Label(mode.label, systemImage: mode.symbol).tag(mode)
-                }
+            #if os(iOS)
+            if usesShortMenu {
+                shortMenu
+            } else {
+                fullMenu
             }
-            .pickerStyle(.inline)
+            #else
+            fullMenu
             #endif
-
-            Section {
-                // Any host may send sound; one that can't (`HostCapabilities.audio`) dims it.
-                Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
-                    Label(StripItem.macAudio.label(for: host), systemImage: StripItem.macAudio.symbol)
-                }
-                .disabled(macAudio.unavailableReason != nil)
-                .accessibilityIdentifier("session.menu.macAudio")
-                Toggle(isOn: Binding(get: { curtain.isOn }, set: { _ in toggleCurtain() })) {
-                    Label(StripItem.curtain.label, systemImage: curtain.isOn ? "curtains.closed" : StripItem.curtain.symbol)
-                }
-                .disabled(curtain.unavailableReason != nil)
-                .accessibilityIdentifier("session.menu.curtain")
-                Button(action: files.onSend) {
-                    Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
-                }
-                .disabled(files.unavailableReason != nil)
-                .accessibilityIdentifier("session.menu.sendFile")
-                Button(action: files.onShowTransfers) {
-                    Label("Transfers…", systemImage: "arrow.up.arrow.down")
-                }
-                .accessibilityIdentifier("session.menu.transfers")
-                Button(action: onSendClipboard) {
-                    Label("Send Clipboard to \(noun.name)", systemImage: "doc.on.clipboard")
-                }
-                if !noun.isWindows { // saved-password typing is for a Mac
-                    Button(action: onSendPassword) {
-                        Label("Type Password", systemImage: "key.radiowaves.forward")
-                    }
-                }
-            }
-
-            Section(noun.name) {
-                ForEach(HostShortcut.sessionMenu(for: host)) { shortcut in
-                    Button { send(shortcut) } label: { Label(shortcut.label, systemImage: shortcut.symbol) }
-                }
-                Button { onHostCommand(.sleepDisplay) } label: {
-                    Label("Sleep Display", systemImage: "moon")
-                }
-                Button { onHostCommand(.lockScreen) } label: {
-                    Label("Lock \(noun.name)", systemImage: "lock")
-                }
-            }
-
-            Section {
-                #if !os(visionOS)
-                Menu {
-                    Picker("Corner", selection: Binding(get: { dock }, set: { move(to: $0) })) {
-                        ForEach(ToolbarDock.allCases) { position in
-                            Label(position.label, systemImage: position.symbol).tag(position)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label("Move Controls", systemImage: "arrow.up.left.and.arrow.down.right")
-                }
-                #endif
-                if let onCustomize {
-                    Button(action: onCustomize) {
-                        Label("Customize Controls…", systemImage: "slider.horizontal.3")
-                    }
-                }
-                #if !os(visionOS)
-                Button(action: toggleCollapsed) {
-                    Label("Collapse Controls", systemImage: "rectangle.compress.vertical")
-                }
-                #endif
-            }
-
-            Section {
-                Button(role: .destructive, action: onDisconnect) {
-                    Label("Disconnect", systemImage: "xmark.circle")
-                }
-            }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
@@ -494,6 +425,146 @@ struct ControlStrip: View {
         .disabled(tapGuard?.isDragging == true) // a drag that starts here mustn't open the menu
         .help("Session Options")
         .accessibilityLabel("Session Options")
+    }
+
+    #if os(iOS)
+    /// A phone shows about seven rows in landscape, far fewer than the full menu has. Its menu
+    /// stays short enough to read without scrolling, with the longer lists one level down.
+    private var usesShortMenu: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
+
+    @ViewBuilder private var shortMenu: some View {
+        Section {
+            Menu {
+                touchPicker
+            } label: {
+                Label(touchMode.label, systemImage: touchMode.symbol)
+            }
+            audioAndCurtainRows
+            Menu {
+                fileRows
+            } label: {
+                Label("Files & Clipboard", systemImage: "doc.on.clipboard")
+            }
+            Menu {
+                if !noun.isWindows { passwordRow }
+                hostRows
+            } label: {
+                Label(noun.name, systemImage: noun.symbol)
+            }
+            Menu {
+                controlsRows
+            } label: {
+                Label("Controls", systemImage: "slider.horizontal.3")
+            }
+        }
+        Section { disconnectRow }
+    }
+
+    private var touchPicker: some View {
+        Picker("Touch", selection: $touchMode) {
+            ForEach(InputController.TouchMode.allCases) { mode in
+                Label(mode.label, systemImage: mode.symbol).tag(mode)
+            }
+        }
+        .pickerStyle(.inline)
+    }
+    #endif
+
+    @ViewBuilder private var fullMenu: some View {
+        #if os(iOS) // look and pinch, and a Mac's own pointer, always point absolutely
+        touchPicker
+        #endif
+
+        Section {
+            audioAndCurtainRows
+            fileRows
+            if !noun.isWindows { passwordRow }
+        }
+
+        Section(noun.name) { hostRows }
+
+        Section { controlsRows }
+
+        Section { disconnectRow }
+    }
+
+    /// Any host may send sound; one that can't (`HostCapabilities.audio`) dims it.
+    @ViewBuilder private var audioAndCurtainRows: some View {
+        Toggle(isOn: Binding(get: { macAudio.isOn }, set: { _ in toggleMacAudio() })) {
+            Label(StripItem.macAudio.label(for: host), systemImage: StripItem.macAudio.symbol)
+        }
+        .disabled(macAudio.unavailableReason != nil)
+        .accessibilityIdentifier("session.menu.macAudio")
+        Toggle(isOn: Binding(get: { curtain.isOn }, set: { _ in toggleCurtain() })) {
+            Label(StripItem.curtain.label, systemImage: curtain.isOn ? "curtains.closed" : StripItem.curtain.symbol)
+        }
+        .disabled(curtain.unavailableReason != nil)
+        .accessibilityIdentifier("session.menu.curtain")
+    }
+
+    @ViewBuilder private var fileRows: some View {
+        Button(action: files.onSend) {
+            Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
+        }
+        .disabled(files.unavailableReason != nil)
+        .accessibilityIdentifier("session.menu.sendFile")
+        Button(action: files.onShowTransfers) {
+            Label("Transfers…", systemImage: "arrow.up.arrow.down")
+        }
+        .accessibilityIdentifier("session.menu.transfers")
+        Button(action: onSendClipboard) {
+            Label("Send Clipboard to \(noun.name)", systemImage: "doc.on.clipboard")
+        }
+    }
+
+    /// Saved-password typing is for a Mac.
+    private var passwordRow: some View {
+        Button(action: onSendPassword) {
+            Label("Type Password", systemImage: "key.radiowaves.forward")
+        }
+    }
+
+    @ViewBuilder private var hostRows: some View {
+        ForEach(HostShortcut.sessionMenu(for: host)) { shortcut in
+            Button { send(shortcut) } label: { Label(shortcut.label, systemImage: shortcut.symbol) }
+        }
+        Button { onHostCommand(.sleepDisplay) } label: {
+            Label("Sleep Display", systemImage: "moon")
+        }
+        Button { onHostCommand(.lockScreen) } label: {
+            Label("Lock \(noun.name)", systemImage: "lock")
+        }
+    }
+
+    @ViewBuilder private var controlsRows: some View {
+        #if !os(visionOS)
+        Menu {
+            Picker("Corner", selection: Binding(get: { dock }, set: { move(to: $0) })) {
+                ForEach(ToolbarDock.allCases) { position in
+                    Label(position.label, systemImage: position.symbol).tag(position)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Move Controls", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+        #endif
+        if let onCustomize {
+            Button(action: onCustomize) {
+                Label("Customize Controls…", systemImage: "slider.horizontal.3")
+            }
+        }
+        #if !os(visionOS)
+        Button(action: toggleCollapsed) {
+            Label("Collapse Controls", systemImage: "rectangle.compress.vertical")
+        }
+        #endif
+    }
+
+    private var disconnectRow: some View {
+        Button(role: .destructive, action: onDisconnect) {
+            Label("Disconnect", systemImage: "xmark.circle")
+        }
     }
 
     private func modifierButton(_ item: StripItem, _ modifier: KeyModifiers) -> some View {
