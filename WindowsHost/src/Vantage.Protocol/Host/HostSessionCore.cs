@@ -46,9 +46,6 @@ public sealed class HostSessionCore
     /// </summary>
     public const double IdleDirtyRatio = 0.0001;
 
-    private static readonly TimeSpan s_captureNoFrameLimit = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan s_unavailableNotice = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan s_maxRecoveryDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan s_refitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan s_modeSettleLimit = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan s_captureCatchUp = TimeSpan.FromSeconds(2);
@@ -66,7 +63,10 @@ public sealed class HostSessionCore
     private FileTransferEngine? _fileEngine;
 
     // Streaming state (queue only).
-    private SelectDisplay? _wanted;
+    // The capture lifecycle (what is wanted, restarts, sleep, the watchdog) is the supervisor's; the
+    // session runs its steps and owns the capture, encoder and connection they act on.
+    private readonly CaptureSupervisor _supervisor;
+    private CancellationTokenSource? _ticker;
     // The client asked for the display fitted to its screen (fitViewport + useVirtualDisplay) and
     // hasn't sent restoreDisplays since: capture (re)starts fit the mode through IDisplayFitter.
     private bool _fitting;
@@ -74,8 +74,6 @@ public sealed class HostSessionCore
     private bool _refitScheduled;
     private DateTimeOffset? _modeChangedAt; // the next capture start checks it got the new mode's size
     private int _captureGeneration; // which capture start a stop callback belongs to
-    private bool _streamStarting;
-    private SelectDisplay? _pendingStart;
     private ICaptureStream? _capture;
     private IVideoEncoder? _encoder;
     private EncoderSink? _encoderSink;
@@ -93,19 +91,8 @@ public sealed class HostSessionCore
     private AdaptiveController _adaptive = new(20_000);
     private int _currentFps = 60;
     private int _currentMaxQP = 44;
-    private DateTimeOffset? _captureStartedAt;
-    private bool _captureHasFramed;
-    private DateTimeOffset? _captureLostAt;
-    private string _captureLossReason = "";
-    private DateTimeOffset _nextRecoveryAttempt;
-    private TimeSpan _recoveryDelay = TimeSpan.FromMilliseconds(500);
-    private CancellationTokenSource? _recovery;
-    private bool _screenUnavailable;
     private DateTimeOffset? _captureFailsUntil;
     private bool _monitoring;
-    private bool _displayAsleep;
-    private DateTimeOffset? _sleptAt;
-    private DateTimeOffset _lastWakeForInput = DateTimeOffset.MinValue;
     private IInputSink? _input;
     private IDisposable? _clipboardWatch;
     private IDisposable? _cursorWatch;
@@ -127,6 +114,7 @@ public sealed class HostSessionCore
         Peer = connection.PeerAddress;
         _log = _env.Logging.CreateLogger("Vantage.Session");
         _queue = new SerialQueue(_log);
+        _supervisor = new CaptureSupervisor(_env.Time, _log);
         _connection.VideoDrained += () => _queue.Post(OnVideoDrained);
     }
 
@@ -477,9 +465,9 @@ public sealed class HostSessionCore
                 await RequestKeyframeAsync().ConfigureAwait(false);
                 break;
             case ViewportChanged changed:
-                if (_fitting && _wanted is { Selection: DisplaySelection.FitViewport } fitted)
+                if (_fitting && _supervisor.Wanted is { Selection: DisplaySelection.FitViewport } fitted)
                 {
-                    _wanted = fitted with { Selection = new DisplaySelection.FitViewport(changed.Viewport) };
+                    _supervisor.Retarget(fitted with { Selection = new DisplaySelection.FitViewport(changed.Viewport) });
                     ScheduleRefit();
                 }
                 await RequestKeyframeAsync().ConfigureAwait(false);
@@ -521,7 +509,6 @@ public sealed class HostSessionCore
 
     private async Task SelectDisplayAsync(SelectDisplay select)
     {
-        _wanted = select;
         _fitting = select is { Selection: DisplaySelection.FitViewport, UseVirtualDisplay: true } && _env.DisplayFitter is { IsEnabled: true };
         if (_captureFailsUntil is null && _listener.Options.CaptureFailsFor is { } fails)
         {
@@ -529,49 +516,56 @@ public sealed class HostSessionCore
             _log.LogInformation("--capture-fails-for: capture fails for {Seconds} s", fails.TotalSeconds);
         }
         StartMonitoring();
-        if (_env.Status.Current.IsDisplayAsleep) await WakeDisplayForStreamingAsync().ConfigureAwait(false);
-        if (await StartStreamAsync(select).ConfigureAwait(false) == false) CaptureUnavailable();
+        await ApplyAsync(_supervisor.DeviceAsked(select, _env.Status.Current.IsDisplayAsleep)).ConfigureAwait(false);
     }
 
-    /// <summary>Starts or restarts the stream, one at a time. Null: another start was running and takes this request over.</summary>
-    private async Task<bool?> StartStreamAsync(SelectDisplay select)
+    /// <summary>Runs the supervisor's steps in order, feeding each start's and stop's outcome back to it.</summary>
+    private async Task ApplyAsync(IReadOnlyList<CaptureStep> steps)
     {
-        if (_streamStarting)
+        foreach (var step in steps)
         {
-            _pendingStart = select;
-            return null;
+            switch (step)
+            {
+                case CaptureStep.WakeDisplayAndWait:
+                    await WakeDisplayForStreamingAsync().ConfigureAwait(false);
+                    break;
+                case CaptureStep.Start start:
+                    await ApplyAsync(await StartAsync(start.Target).ConfigureAwait(false)).ConfigureAwait(false);
+                    break;
+                case CaptureStep.Stop stop:
+                    if (_capture is { } capture) await CaptureStoppedAsync(capture, stop.Reason).ConfigureAwait(false);
+                    break;
+                case CaptureStep.SendStatus status:
+                    SendStatus(status.Force);
+                    break;
+                case CaptureStep.WakeDisplay:
+                    _env.Power.WakeDisplay();
+                    break;
+                case CaptureStep.ForceKeyframe:
+                    await RequestKeyframeAsync().ConfigureAwait(false);
+                    break;
+            }
         }
-        _streamStarting = true;
+        if (_supervisor.WantsTicks) StartTicker();
+        else StopTicker();
+    }
+
+    /// <summary>One start, reported to the supervisor. An <see cref="IOException"/> (the connection) still ends the session.</summary>
+    private async Task<IReadOnlyList<CaptureStep>> StartAsync(SelectDisplay target)
+    {
         try
         {
-            var next = select;
-            var started = false;
-            while (next is not null)
-            {
-                _pendingStart = null;
-                try
-                {
-                    await StartStreamingAsync(next).ConfigureAwait(false);
-                    started = true;
-                }
-                catch (Exception error) when (error is not IOException)
-                {
-                    started = false;
-                    _captureLossReason = error.Message;
-                    _log.LogError("capture didn't start: {Reason}{Asleep}", _captureLossReason, _env.Status.Current.IsDisplayAsleep ? " (display asleep)" : "");
-                }
-                next = _pendingStart;
-            }
-            return started;
+            var (display, codec) = await StartStreamingAsync(target).ConfigureAwait(false);
+            return _supervisor.Started(display, codec);
         }
-        finally
+        catch (Exception error) when (error is not IOException)
         {
-            _streamStarting = false;
+            return _supervisor.StartFailed(error.Message);
         }
     }
 
     /// <summary>Sets up capture and encoding. Throws when there's nothing to capture; callers keep the session.</summary>
-    private async Task StartStreamingAsync(SelectDisplay select)
+    private async Task<(DisplayInfo Display, VideoCodec Codec)> StartStreamingAsync(SelectDisplay select)
     {
         var began = _env.Time.GetTimestamp();
         await StopCaptureAsync().ConfigureAwait(false);
@@ -640,8 +634,6 @@ public sealed class HostSessionCore
         _codec = codec;
         _configSentForEncoder = false;
         _lastParameterSets = null;
-        _captureStartedAt = _env.Time.GetUtcNow();
-        _captureHasFramed = false;
         Display = chosen;
 
         // The input sink (and whatever it holds) survives capture restarts. It glides after an
@@ -664,10 +656,10 @@ public sealed class HostSessionCore
 
         await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
         _needsKeyframe = true;
-        StartWatchdog(); // a capture that never sends a frame counts as failed after 5 s
         _listener.SessionChanged();
         _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}); stream setup took {Ms} ms",
                             chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+        return (chosen, codec);
     }
 
     /// <summary>
@@ -767,17 +759,12 @@ public sealed class HostSessionCore
     private async Task RefitAsync()
     {
         if (State != SessionState.Streaming || !_fitting || _env.DisplayFitter is not { } fitter
-            || _wanted is not { Selection: DisplaySelection.FitViewport fit } wanted || Display is not { } display) return;
-        if (_streamStarting)
-        {
-            ScheduleRefit(); // a start is running; look again once it's done
-            return;
-        }
+            || _supervisor.Wanted is not { Selection: DisplaySelection.FitViewport fit } wanted || Display is not { } display) return;
         if (!fitter.WouldChange(Id, display, fit.Viewport)) return;
         _log.LogInformation("viewport now {Width}x{Height} points at {Scale}x: fitting the display again",
                             fit.Viewport.WidthPoints, fit.Viewport.HeightPoints, fit.Viewport.Scale);
         _needsKeyframe = true;
-        if (await StartStreamAsync(wanted).ConfigureAwait(false) == false) CaptureUnavailable();
+        await ApplyAsync(_supervisor.DeviceAsked(wanted, _env.Status.Current.IsDisplayAsleep)).ConfigureAwait(false);
     }
 
     /// <summary><c>restoreDisplays</c>: put the mode back now and stream the display as it is.</summary>
@@ -786,8 +773,7 @@ public sealed class HostSessionCore
         if (_env.DisplayFitter is not { } fitter) return;
         var wasFitting = _fitting;
         _fitting = false;
-        if (_streamStarting) return; // the start under way sees _fitting off and restores the mode itself
-        if (!wasFitting || _wanted is null)
+        if (!wasFitting || _supervisor.Wanted is null)
         {
             if (fitter.Restore(Id)) _log.LogInformation("display mode restored");
             return;
@@ -800,7 +786,8 @@ public sealed class HostSessionCore
             _log.LogInformation("display mode restored");
             _modeChangedAt = _env.Time.GetUtcNow();
         }
-        await RestartStreamAsync("display mode restored").ConfigureAwait(false);
+        _needsKeyframe = true;
+        await ApplyAsync(_supervisor.RestartAsked("display mode restored")).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -855,9 +842,8 @@ public sealed class HostSessionCore
             frame.Dispose();
             return;
         }
-        _captureHasFramed = true;
-        if (_captureLostAt is not null) CaptureRecovered();
-        var fps = Math.Min(_adaptive.Observe(frame.DirtyRatio), _wanted?.TargetFPS ?? 60);
+        await ApplyAsync(_supervisor.FrameArrived()).ConfigureAwait(false);
+        var fps = Math.Min(_adaptive.Observe(frame.DirtyRatio), _supervisor.Wanted?.TargetFPS ?? 60);
         if (_adaptive.Mode != _loggedMode)
         {
             _loggedMode = _adaptive.Mode;
@@ -1027,13 +1013,11 @@ public sealed class HostSessionCore
         switch (command)
         {
             case HostCommand.SleepDisplay:
-                _sleptAt = _env.Time.GetUtcNow();
+                _supervisor.SleepAsked();
                 _env.Power.SleepDisplay();
                 break;
             case HostCommand.WakeDisplay:
-                _sleptAt = null;
-                _env.Power.WakeDisplay();
-                await RetryCaptureNowAsync().ConfigureAwait(false); // Wake doubles as Retry
+                await ApplyAsync(_supervisor.WakeAsked()).ConfigureAwait(false); // Wake doubles as Retry
                 break;
             case HostCommand.LockScreen:
                 _env.Power.LockScreen();
@@ -1061,7 +1045,7 @@ public sealed class HostSessionCore
             InputPath = HostInputPath.Native,
             Message = conditions.Message,
             IsDisplayAsleep = conditions.IsDisplayAsleep,
-            IsScreenUnavailable = _screenUnavailable && !conditions.IsDisplayAsleep,
+            IsScreenUnavailable = _supervisor.ScreenUnavailable && !conditions.IsDisplayAsleep,
         };
     }
 
@@ -1080,54 +1064,20 @@ public sealed class HostSessionCore
         _monitoring = true;
         _keepAwake = _env.Power.KeepAwake();
         _statusWatch = _env.Status.Watch(() => _queue.Post(HostStatusChangedAsync));
-        _displayAsleep = _env.Status.Current.IsDisplayAsleep;
-        SendStatus(force: true);
     }
 
     private async Task HostStatusChangedAsync()
     {
         if (State != SessionState.Streaming) return;
-        SendStatus();
-        var asleep = _env.Status.Current.IsDisplayAsleep;
-        if (asleep == _displayAsleep)
-        {
-            // Capture waiting on something else (a lock screen): try again now that things changed.
-            if (!asleep && _capture is null && _wanted is not null && !_streamStarting) await RestartStreamAsync("host state changed").ConfigureAwait(false);
-            return;
-        }
-        _displayAsleep = asleep;
-        if (asleep)
-        {
-            _log.LogInformation("display went to sleep; the session stays up");
-            _captureLostAt = null; // the asleep state explains the missing picture
-            _screenUnavailable = false;
-            SendStatus();
-        }
-        else
-        {
-            _log.LogInformation("display woke");
-            _sleptAt = null;
-            _needsKeyframe = true;
-            if (_capture is null) await RestartStreamAsync("display woke").ConfigureAwait(false);
-            else await RequestKeyframeAsync().ConfigureAwait(false);
-        }
+        await ApplyAsync(_supervisor.StatusChanged(_env.Status.Current.IsDisplayAsleep)).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Input while the display is asleep wakes it (at most once a second) instead of reaching a
-    /// screen nobody sees; releases still go through. Input in the 2 s after Sleep Display doesn't count.
-    /// </summary>
+    /// <summary>The supervisor's input-while-asleep rule; a wake it asks for happens here.</summary>
     private bool AdmitsInput(bool isRelease)
     {
-        if (!_displayAsleep || isRelease) return true;
-        var now = _env.Time.GetUtcNow();
-        if (_sleptAt is { } slept && now - slept < TimeSpan.FromSeconds(2)) return false;
-        if (now - _lastWakeForInput >= TimeSpan.FromSeconds(1))
-        {
-            _lastWakeForInput = now;
-            _env.Power.WakeDisplay();
-        }
-        return false;
+        var admits = _supervisor.AdmitsInput(isRelease, out var wakeDisplay);
+        if (wakeDisplay) _env.Power.WakeDisplay();
+        return admits;
     }
 
     /// <summary>Wakes the display and waits (up to ~3 s) for it to be awake with displays listed.</summary>
@@ -1144,39 +1094,31 @@ public sealed class HostSessionCore
 
     // MARK: Capture watchdog
 
-    /// <summary>
-    /// Capture is down while the client waits: retry with backoff (0.5 s doubling to 5 s) for as
-    /// long as the session lasts, and tell the client after 3 s (<c>isScreenUnavailable</c>).
-    /// </summary>
-    private void CaptureUnavailable()
+    /// <summary>Ticks the supervisor every <see cref="CaptureSupervisor.TickInterval"/> while it wants the clock (capture lost, or up without a frame yet).</summary>
+    private void StartTicker()
     {
-        if (State != SessionState.Streaming || _wanted is null || _capture is not null) return;
-        SendStatus();
-        if (_env.Status.Current.IsDisplayAsleep) return;
-        if (_captureLostAt is null)
-        {
-            _captureLostAt = _env.Time.GetUtcNow();
-            _recoveryDelay = TimeSpan.FromMilliseconds(500);
-            _nextRecoveryAttempt = _captureLostAt.Value + _recoveryDelay;
-        }
-        StartWatchdog();
-    }
-
-    private void StartWatchdog()
-    {
-        if (_recovery is not null) return;
+        if (_ticker is not null) return;
         var stop = CancellationTokenSource.CreateLinkedTokenSource(_ended.Token);
-        _recovery = stop;
+        _ticker = stop;
         _ = Task.Run(async () =>
         {
             try
             {
                 while (!stop.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), _env.Time, stop.Token).ConfigureAwait(false);
-                    var keepGoing = true;
-                    await _queue.RunAsync(async () => keepGoing = await RecoveryTickAsync(stop).ConfigureAwait(false)).ConfigureAwait(false);
-                    if (!keepGoing) return;
+                    await Task.Delay(CaptureSupervisor.TickInterval, _env.Time, stop.Token).ConfigureAwait(false);
+                    var more = true;
+                    await _queue.RunAsync(async () =>
+                    {
+                        if (!ReferenceEquals(_ticker, stop) || State != SessionState.Streaming)
+                        {
+                            more = false;
+                            return;
+                        }
+                        await ApplyAsync(_supervisor.Tick()).ConfigureAwait(false); // ApplyAsync stops this ticker once the supervisor is done with the clock
+                        more = ReferenceEquals(_ticker, stop);
+                    }).ConfigureAwait(false);
+                    if (!more) return;
                 }
             }
             catch (OperationCanceledException)
@@ -1186,101 +1128,19 @@ public sealed class HostSessionCore
         });
     }
 
-    /// <summary>One watchdog tick; false once there's nothing left to recover.</summary>
-    private async Task<bool> RecoveryTickAsync(CancellationTokenSource owner)
+    private void StopTicker()
     {
-        if (!ReferenceEquals(_recovery, owner)) return false;
-        if (State != SessionState.Streaming || _wanted is null || _env.Status.Current.IsDisplayAsleep)
-        {
-            _recovery = null;
-            return false;
-        }
-        var now = _env.Time.GetUtcNow();
-        // A capture that started but never sent a frame counts as failed after 5 s.
-        if (_capture is { } capture && !_captureHasFramed && _captureStartedAt is { } startedAt && now - startedAt > s_captureNoFrameLimit)
-        {
-            _captureLossReason = "capture started but sent no frames";
-            await CaptureStoppedAsync(capture, _captureLossReason).ConfigureAwait(false);
-            _captureLostAt ??= startedAt;
-        }
-        if (_captureLostAt is not { } lostAt)
-        {
-            if (_capture is not null && _captureHasFramed)
-            {
-                _recovery = null;
-                return false;
-            }
-            return true;
-        }
-        var seconds = (int)(now - lostAt).TotalSeconds;
-        if (now - lostAt >= s_unavailableNotice && !_screenUnavailable)
-        {
-            _screenUnavailable = true;
-            _log.LogError("capture unavailable for {Seconds} s: {Reason}; telling the client", seconds, _captureLossReason);
-            SendStatus();
-        }
-        if (_capture is not null || _streamStarting || now < _nextRecoveryAttempt) return true;
-        _log.LogError("capture unavailable for {Seconds} s: {Reason}; trying again", seconds, _captureLossReason);
-        await RestartStreamAsync($"capture unavailable for {seconds} s").ConfigureAwait(false);
-        _recoveryDelay = TimeSpan.FromTicks(Math.Min(_recoveryDelay.Ticks * 2, s_maxRecoveryDelay.Ticks));
-        _nextRecoveryAttempt = _env.Time.GetUtcNow() + _recoveryDelay;
-        return true;
+        _ticker?.Cancel();
+        _ticker = null;
     }
 
-    private void CaptureRecovered()
-    {
-        if (_captureLostAt is not { } lostAt) return;
-        _captureLostAt = null;
-        _recovery?.Cancel();
-        _recovery = null;
-        _log.LogInformation("capture back after {Ms} ms", (int)(_env.Time.GetUtcNow() - lostAt).TotalMilliseconds);
-        if (_screenUnavailable)
-        {
-            _screenUnavailable = false;
-            SendStatus();
-        }
-    }
-
-    private async Task RetryCaptureNowAsync()
-    {
-        if (_captureLostAt is null || _capture is not null) return;
-        _recoveryDelay = TimeSpan.FromMilliseconds(500);
-        _nextRecoveryAttempt = _env.Time.GetUtcNow() + _recoveryDelay;
-        _log.LogInformation("capture retry asked for by the client");
-        if (!_streamStarting) await RestartStreamAsync("client asked to retry").ConfigureAwait(false);
-    }
-
-    /// <summary>Capture stopped by itself: the session, input, and power carry on; only capture waits.</summary>
+    /// <summary>Capture stopped by itself (or its encoder failed, or it never framed): the session, input, and power carry on; only capture waits.</summary>
     private async Task CaptureStoppedAsync(ICaptureStream capture, string reason)
     {
         if (!ReferenceEquals(capture, _capture)) return;
-        _log.LogInformation("capture stopped ({Reason}); display {State}", reason, _env.Status.Current.IsDisplayAsleep ? "asleep" : "awake");
-        _captureLossReason = reason;
         await StopCaptureAsync().ConfigureAwait(false);
         _needsKeyframe = true;
-        CaptureUnavailable();
-    }
-
-    /// <summary>Brings capture back on the display it was on, else the client's original choice; failing both, retries later.</summary>
-    private async Task RestartStreamAsync(string reason)
-    {
-        if (State != SessionState.Streaming || _wanted is not { } wanted || _streamStarting) return;
-        _log.LogInformation("restarting capture: {Reason}", reason);
-        _needsKeyframe = true;
-        var targets = new List<SelectDisplay>();
-        if (Display is { } display)
-            targets.Add(new SelectDisplay { Selection = new DisplaySelection.Display(display.Id), TargetFPS = wanted.TargetFPS, Quality = wanted.Quality });
-        targets.Add(wanted);
-        foreach (var target in targets)
-        {
-            switch (await StartStreamAsync(target).ConfigureAwait(false))
-            {
-                case true:
-                case null:
-                    return;
-            }
-        }
-        if (_captureLostAt is null) CaptureUnavailable();
+        await ApplyAsync(_supervisor.CaptureStopped(reason)).ConfigureAwait(false);
     }
 
     /// <summary>Stops capture and encoding only; input, power, and status stay.</summary>
@@ -1422,8 +1282,7 @@ public sealed class HostSessionCore
             var wasStreaming = State == SessionState.Streaming;
             State = SessionState.Closed;
             _listener.AttachTokens.Revoke(this);
-            _recovery?.Cancel();
-            _recovery = null;
+            StopTicker();
             if (wasStreaming)
             {
                 _env.Curtain?.SessionEnded(Id);
