@@ -75,22 +75,8 @@ public sealed class HostSessionCore
     private DateTimeOffset? _modeChangedAt; // the next capture start checks it got the new mode's size
     private int _captureGeneration; // which capture start a stop callback belongs to
     private ICaptureStream? _capture;
-    private IVideoEncoder? _encoder;
-    private EncoderSink? _encoderSink;
-    private ICapturedFrame? _latest;
-    private bool _pendingEncode;
-    private int _encodesInFlight;
-    private bool _needsKeyframe = true;
-    private bool _configSentForEncoder;
-    private byte[][]? _lastParameterSets;
-    private VideoCodec _codec = VideoCodec.H264;
-    private ulong _sequence;
-    private ulong _framesSent;
-    private ulong _idleSkipped;
-    private EncodingMode _loggedMode = EncodingMode.Motion;
-    private AdaptiveController _adaptive = new(20_000);
-    private int _currentFps = 60;
-    private int _currentMaxQP = 44;
+    private VideoPipeline? _video; // frames from _capture to the wire; made and dropped with it
+    private ulong _nextSequence; // videoFrame numbering continues across captures
     private DateTimeOffset? _captureFailsUntil;
     private bool _monitoring;
     private IInputSink? _input;
@@ -435,15 +421,15 @@ public sealed class HostSessionCore
                 await SelectDisplayAsync(select).ConfigureAwait(false);
                 break;
             case PointerEvent pointer:
-                _adaptive.NoteInput();
+                _video?.NoteInput();
                 if (AdmitsInput(pointer.Action == PointerAction.Up)) _input?.Pointer(pointer);
                 break;
             case ScrollEvent scroll:
-                _adaptive.NoteInput();
+                _video?.NoteInput();
                 if (AdmitsInput(false)) _input?.Scroll(scroll);
                 break;
             case KeyEvent key:
-                _adaptive.NoteInput();
+                _video?.NoteInput();
                 if (AdmitsInput(!key.IsDown)) _input?.Key(key);
                 break;
             case TextInput text:
@@ -459,7 +445,7 @@ public sealed class HostSessionCore
                 if (!clipboard.IsEmpty) _env.Clipboard.Apply(clipboard);
                 break;
             case QualityFeedback feedback:
-                if (_adaptive.Apply(feedback) is { } bitrate) _encoder?.SetBitrate(bitrate);
+                _video?.ApplyFeedback(feedback);
                 break;
             case RequestKeyframe:
                 await RequestKeyframeAsync().ConfigureAwait(false);
@@ -601,16 +587,15 @@ public sealed class HostSessionCore
             }
         }
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
-        _adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
-        _currentFps = fps;
-        _currentMaxQP = _adaptive.MaxQP;
+        var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
         var codec = ChooseCodec(select.PreferredCodec, _env.Encoders.SupportedCodecs, hello.SupportedCodecs);
-        IVideoEncoder encoder;
+        VideoPipeline video;
         try
         {
+            IVideoEncoder encoder;
             try
             {
-                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, adaptive.BitrateKbps, adaptive.MaxQP));
             }
             catch (CaptureUnavailableException error) when (codec != VideoCodec.H264 && _env.Encoders.SupportedCodecs.Contains(VideoCodec.H264))
             {
@@ -618,11 +603,11 @@ public sealed class HostSessionCore
                 // encoder, or the driver turned the settings down): H.264 still gets a picture.
                 _log.LogWarning("{Codec} encoder unavailable ({Reason}); streaming H.264", codec, error.Message);
                 codec = VideoCodec.H264;
-                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, _adaptive.BitrateKbps, _adaptive.MaxQP));
+                encoder = _env.Encoders.Create(capture, new VideoEncoderSettings(codec, width, height, fps, adaptive.BitrateKbps, adaptive.MaxQP));
             }
-            var sink = new EncoderSink(this, encoder);
-            encoder.Start(sink);
-            _encoderSink = sink;
+            video = new VideoPipeline(encoder, capture, codec, fps, adaptive, _connection, _queue, _env.Time, _nextSequence,
+                                      error => CaptureStoppedAsync(capture, "encoder failed: " + error.Message), _log);
+            video.Start();
         }
         catch
         {
@@ -630,10 +615,7 @@ public sealed class HostSessionCore
             throw;
         }
         _capture = capture;
-        _encoder = encoder;
-        _codec = codec;
-        _configSentForEncoder = false;
-        _lastParameterSets = null;
+        _video = video;
         Display = chosen;
 
         // The input sink (and whatever it holds) survives capture restarts. It glides after an
@@ -654,8 +636,7 @@ public sealed class HostSessionCore
         _cursorWatch?.Dispose();
         _cursorWatch = localCursor ? _env.Cursor!.Watch(chosen, state => _queue.Post(() => SendCursor(state))) : null;
 
-        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = _adaptive.BitrateKbps }).ConfigureAwait(false);
-        _needsKeyframe = true;
+        await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = video.BitrateKbps }).ConfigureAwait(false);
         _listener.SessionChanged();
         _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}); stream setup took {Ms} ms",
                             chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
@@ -763,7 +744,6 @@ public sealed class HostSessionCore
         if (!fitter.WouldChange(Id, display, fit.Viewport)) return;
         _log.LogInformation("viewport now {Width}x{Height} points at {Scale}x: fitting the display again",
                             fit.Viewport.WidthPoints, fit.Viewport.HeightPoints, fit.Viewport.Scale);
-        _needsKeyframe = true;
         await ApplyAsync(_supervisor.DeviceAsked(wanted, _env.Status.Current.IsDisplayAsleep)).ConfigureAwait(false);
     }
 
@@ -786,7 +766,6 @@ public sealed class HostSessionCore
             _log.LogInformation("display mode restored");
             _modeChangedAt = _env.Time.GetUtcNow();
         }
-        _needsKeyframe = true;
         await ApplyAsync(_supervisor.RestartAsked("display mode restored")).ConfigureAwait(false);
     }
 
@@ -835,176 +814,21 @@ public sealed class HostSessionCore
         });
     }
 
+    /// <summary>A captured frame: the supervisor hears the picture is back, the pipeline takes the frame.</summary>
     private async Task Ingest(ICapturedFrame frame)
     {
-        if (_capture is null || _encoder is null || State != SessionState.Streaming)
+        if (_capture is null || _video is not { } video || State != SessionState.Streaming)
         {
             frame.Dispose();
             return;
         }
         await ApplyAsync(_supervisor.FrameArrived()).ConfigureAwait(false);
-        var fps = Math.Min(_adaptive.Observe(frame.DirtyRatio), _supervisor.Wanted?.TargetFPS ?? 60);
-        if (_adaptive.Mode != _loggedMode)
-        {
-            _loggedMode = _adaptive.Mode;
-            _log.LogInformation("video mode {Mode} (max QP {QP}); {Skipped} unchanged frames skipped so far",
-                                _loggedMode == EncodingMode.Text ? "text" : "motion", _adaptive.MaxQP, _idleSkipped);
-        }
-        if (fps != _currentFps)
-        {
-            _currentFps = fps;
-            _capture.SetFrameRate(fps);
-            _encoder.SetFrameRate(fps);
-        }
-        if (_adaptive.MaxQP != _currentMaxQP)
-        {
-            _currentMaxQP = _adaptive.MaxQP;
-            _encoder.SetMaxQP(_currentMaxQP);
-        }
-        var previous = _latest;
-        _latest = frame;
-        previous?.Dispose();
-
-        // Idle suppression: skip a static frame, but always honour a pending keyframe.
-        if (frame.DirtyRatio <= IdleDirtyRatio && !_needsKeyframe && _framesSent > 0)
-        {
-            _idleSkipped++;
-            return;
-        }
-        if (_encodesInFlight >= 1)
-        {
-            _pendingEncode = true;
-            return;
-        }
-        await EncodeLatestAsync().ConfigureAwait(false);
+        await video.IngestAsync(frame).ConfigureAwait(false);
     }
 
-    /// <summary>Encodes the newest frame (forcing an IDR when one is due). A due IDR waits while the video lane is backed up.</summary>
-    private async Task EncodeLatestAsync()
-    {
-        if (_encoder is not { } encoder || _latest is not { } frame || _encodesInFlight > 0) return;
-        if (_needsKeyframe && _connection.IsVideoBacklogged)
-        {
-            _pendingEncode = true; // VideoDrained brings it back
-            return;
-        }
-        _pendingEncode = false;
-        var force = _needsKeyframe;
-        _needsKeyframe = false;
-        _encodesInFlight++;
-        try
-        {
-            await encoder.EncodeAsync(frame, force, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception error)
-        {
-            _encodesInFlight = Math.Max(0, _encodesInFlight - 1);
-            if (force) _needsKeyframe = true;
-            _log.LogError("encode failed: {Error}", error.Message);
-        }
-    }
+    private Task RequestKeyframeAsync() => _video?.RequestKeyframeAsync() ?? Task.CompletedTask;
 
-    private async Task RequestKeyframeAsync()
-    {
-        _needsKeyframe = true;
-        // A static screen sends no new frames: re-encode the last one now.
-        if (_encodesInFlight == 0) await EncodeLatestAsync().ConfigureAwait(false);
-    }
-
-    private async Task OnVideoDrained()
-    {
-        if (_needsKeyframe && _encodesInFlight == 0) await EncodeLatestAsync().ConfigureAwait(false);
-    }
-
-    private async Task EmitAsync(IVideoEncoder source, EncodedFrame? output)
-    {
-        if (!ReferenceEquals(source, _encoder)) return; // a replaced encoder's late output
-        _encodesInFlight = Math.Max(0, _encodesInFlight - 1);
-        if (output is not null) SendEncoded(output);
-        if (_pendingEncode || (_needsKeyframe && _latest is not null)) await EncodeLatestAsync().ConfigureAwait(false);
-    }
-
-    private void SendEncoded(EncodedFrame output)
-    {
-        AccessUnit unit;
-        try
-        {
-            unit = output.Format == NalFormat.AnnexB ? AnnexB.ToAccessUnit(output.Data, _codec) : AnnexB.FromUnits(AnnexB.SplitAvcc(output.Data), _codec);
-        }
-        catch (FormatException error)
-        {
-            _log.LogError("encoder output didn't parse: {Error}", error.Message);
-            _needsKeyframe = true;
-            return;
-        }
-        if (unit.Avcc.Length == 0) return;
-        if (unit.IsKeyframe)
-        {
-            if (WireParameterSets(unit, output.ParameterSets) is { } sets)
-            {
-                if (!_configSentForEncoder || _lastParameterSets is null || !SameSets(sets, _lastParameterSets))
-                {
-                    _connection.PostVideo(new VideoConfig
-                    {
-                        Codec = _codec,
-                        Width = output.Width,
-                        Height = output.Height,
-                        ParameterSets = sets,
-                        NalLengthSize = 4,
-                        Fps = _currentFps,
-                    }, droppable: false);
-                    _lastParameterSets = sets;
-                    _configSentForEncoder = true;
-                }
-            }
-        }
-        if (!_configSentForEncoder)
-        {
-            // The client can't decode anything before a videoConfig: wait for an IDR.
-            _needsKeyframe = true;
-            return;
-        }
-        var frame = new VideoFrame
-        {
-            Sequence = _sequence++,
-            CaptureNanos = output.CaptureNanos,
-            IsKeyframe = unit.IsKeyframe,
-            Width = (uint)output.Width,
-            Height = (uint)output.Height,
-            Data = unit.Avcc,
-        };
-        if (_connection.PostVideo(frame, droppable: !unit.IsKeyframe))
-        {
-            _framesSent++;
-            return;
-        }
-        // The link is behind: this P-frame is gone, so the picture needs an IDR once it catches up.
-        _needsKeyframe = true;
-        if (_adaptive.NoteBacklog() is { } bitrate) _encoder?.SetBitrate(bitrate);
-    }
-
-    /// <summary>
-    /// The keyframe's parameter sets in wire order for the current codec (H.264 <c>[SPS, PPS]</c>,
-    /// HEVC <c>[VPS, SPS, PPS]</c>), each from the AU or else from what the encoder handed over
-    /// beside it; null while any is missing.
-    /// </summary>
-    private byte[][]? WireParameterSets(AccessUnit unit, IReadOnlyList<byte[]>? side)
-    {
-        byte[]? Side(int type) => side?.FirstOrDefault(p => NalType.Of(p, _codec) == type);
-        if (_codec == VideoCodec.Hevc)
-        {
-            var vps = unit.Vps ?? Side(HevcNalType.Vps);
-            var hevcSps = unit.Sps ?? Side(HevcNalType.Sps);
-            var hevcPps = unit.Pps ?? Side(HevcNalType.Pps);
-            return vps is not null && hevcSps is not null && hevcPps is not null ? [vps, hevcSps, hevcPps] : null;
-        }
-        var sps = unit.Sps ?? Side(NalType.Sps);
-        var pps = unit.Pps ?? Side(NalType.Pps);
-        return sps is not null && pps is not null ? [sps, pps] : null;
-    }
-
-    private static bool SameSets(byte[][] a, byte[][] b) =>
-        a.Length == b.Length && a.Zip(b).All(pair => pair.First.AsSpan().SequenceEqual(pair.Second));
+    private Task OnVideoDrained() => _video?.LaneDrainedAsync() ?? Task.CompletedTask;
 
     // MARK: Commands, status, display sleep
 
@@ -1139,7 +963,6 @@ public sealed class HostSessionCore
     {
         if (!ReferenceEquals(capture, _capture)) return;
         await StopCaptureAsync().ConfigureAwait(false);
-        _needsKeyframe = true;
         await ApplyAsync(_supervisor.CaptureStopped(reason)).ConfigureAwait(false);
     }
 
@@ -1147,18 +970,17 @@ public sealed class HostSessionCore
     private async Task StopCaptureAsync()
     {
         var capture = _capture;
-        var encoder = _encoder;
+        var video = _video;
         _cursorWatch?.Dispose();
         _cursorWatch = null;
         _capture = null;
-        _encoder = null;
-        _encoderSink = null;
-        _encodesInFlight = 0;
-        _pendingEncode = false;
-        _latest?.Dispose();
-        _latest = null;
+        _video = null;
+        if (video is not null)
+        {
+            _nextSequence = video.NextSequence;
+            await video.DisposeAsync().ConfigureAwait(false); // the kept frame and the encoder, before the capture they came from
+        }
         if (capture is not null) await SafeDisposeAsync(capture).ConfigureAwait(false);
-        if (encoder is not null) await SafeDisposeAsync(encoder).ConfigureAwait(false);
     }
 
     private async Task SafeDisposeAsync(IAsyncDisposable disposable)
@@ -1327,20 +1149,5 @@ public sealed class HostSessionCore
         _connection.Close();
         _queue.Complete();
         _listener.SessionEnded(this);
-    }
-
-    /// <summary>Forwards encoder output onto the session queue, tagged with the encoder it came from.</summary>
-    private sealed class EncoderSink(HostSessionCore session, IVideoEncoder encoder) : IEncodedFrameSink
-    {
-        public void OnFrame(EncodedFrame frame) => session._queue.Post(() => session.EmitAsync(encoder, frame));
-
-        public void OnFrameSkipped() => session._queue.Post(() => session.EmitAsync(encoder, null));
-
-        public void OnError(Exception error) => session._queue.Post(async () =>
-        {
-            if (!ReferenceEquals(encoder, session._encoder) || session._capture is not { } capture) return;
-            session._log.LogError("encoder failed: {Error}", error.Message);
-            await session.CaptureStoppedAsync(capture, "encoder failed: " + error.Message).ConfigureAwait(false);
-        });
     }
 }

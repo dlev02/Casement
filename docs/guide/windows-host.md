@@ -54,6 +54,21 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `FakeTimeProvider` (sleep and wake, the backoff and the notice, started but no frames);
   `HostListenerTests.SleepingDisplayIsReportedAndWakeBringsThePictureBack` and
   `MissingPictureIsExplainedUntilFramesReturn` still prove the wiring over loopback.
+- **Video pipeline** (`Host/VideoPipeline`, one per capture): captured frame → `videoConfig` and
+  `videoFrame` on the connection's video lane (`IVideoLane`, which `FramedConnection` implements).
+  It owns the adaptive controller (frame rate and max QP to the capture and encoder, bitrate from
+  `qualityFeedback` and backlog, the input hold), idle suppression (`HostSessionCore.IdleDirtyRatio`,
+  never over a due keyframe), latest frame wins with one encode in flight, keyframes when due
+  (start, `requestKeyframe`, a dropped P-frame, output that didn't parse) and only once the lane
+  has drained, Annex-B → AVCC/HVCC with the parameter sets pulled out, `videoConfig` before an IDR
+  whose sets changed, no frame before the first `videoConfig`, and P-frames dropped while the lane
+  is backed up. `videoFrame.sequence` carries on across captures (`NextSequence`). The encoder's
+  one-callback-per-encode rule is no longer load-bearing: an encode with no word back within 1 s
+  (`EncodeStallLimit`, on the session's `TimeProvider`) is given up on and a keyframe forced, so a
+  lost callback can't leave one frame "in flight" and the picture frozen for good (the Mac host had
+  that bug). `IVideoEncoder` is unchanged; the session only makes it and hands it over. Tests:
+  `VideoPipelineTests` (fake encoder that loses one callback, fake clock), with `HevcSessionTests`
+  and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…` over loopback.
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the

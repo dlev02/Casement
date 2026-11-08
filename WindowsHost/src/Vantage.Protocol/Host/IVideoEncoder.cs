@@ -43,9 +43,11 @@ public sealed record VideoEncoderSettings(VideoCodec Codec, int Width, int Heigh
 /// primaries / sRGB (or BT.709) transfer / BT.709 matrix / video range.
 /// </summary>
 /// <remarks>
-/// Every <see cref="EncodeAsync"/> the encoder accepts ends in exactly one call to the sink:
+/// Every <see cref="EncodeAsync"/> the encoder accepts should end in one call to the sink:
 /// <see cref="IEncodedFrameSink.OnFrame"/> or <see cref="IEncodedFrameSink.OnFrameSkipped"/>. The
-/// core keeps one frame in flight and relies on that to send the next.
+/// session's video pipeline keeps one frame in flight and sends the next on that call, but doesn't
+/// depend on it: an encode with no word back within a second is given up on and a keyframe forced,
+/// so a lost callback costs a frame, never the picture.
 /// </remarks>
 public interface IVideoEncoder : IAsyncDisposable
 {
