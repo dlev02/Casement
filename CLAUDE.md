@@ -166,6 +166,9 @@ xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'generi
 xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platform=macOS' -derivedDataPath .deriveddata
 ```
 
+CI (`.github/workflows/ci.yml`) runs `scripts/check.sh` on GitHub's `xcode-27` runner with Xcode 27.2,
+unsigned (`check.sh` skips signing when `CI` is set), and the Windows host's tests on `windows-latest`.
+
 Reuse `.deriveddata`; do not create per-task DerivedData trees. Use regular Xcode 27, not Xcode-beta. Set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for shell builds and `xcrun swift` for tests. `scripts/check.sh` runs both test suites, the host build, and the iOS and macOS client builds, and compiles the Mac UI tests.
 
 ## Research
