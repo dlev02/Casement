@@ -22,9 +22,9 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   H.264 and HEVC, chosen by `VideoCodec`; the codec-less overloads are H.264), `Adaptive/`,
   `Input/` (`WindowsInputTranslator`: kVK → set-1 scan codes, chords, held state, scroll
   remainder, point → virtual-desktop pixels; only `IInputInjector` calls `SendInput`), and
-  `Host/` (`HostListener`, `HostSessionCore`, and the platform interfaces: `IScreenSource`,
-  `IVideoEncoderFactory`, `IInputSink`, `IClipboard`, `IHostStatusSource`, `IPowerControl`,
-  `IPeerDirectory`, `IFileStore`).
+  `Host/` (`HostListener`, `HostSessionCore`, the session's modules named below, and the platform
+  interfaces: `IScreenSource`, `IVideoEncoderFactory`, `IInputSink`, `IClipboard`,
+  `IHostStatusSource`, `IPowerControl`, `IPeerDirectory`, `IFileStore`).
 - `src/Vantage.SyntheticHost`: the real session logic with a looping pre-encoded clip
   (`assets/test-clip/clip-1600x1000.h264`, IDR every 30 frames; a keyframe request jumps to the
   next one), a JSONL input log (wire events plus the Windows events the translator would inject),
@@ -37,6 +37,61 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 
+- **Admission** (`Host/SessionAdmission`, the Mac's `HostSession.handshake`): one module turns
+  `hello` + trust + pairing code + host identity into the `challenge` (`Challenge(peerTailnetName)`),
+  then the `authenticate` into an `AdmissionVerdict` (`Judge`: version, the signature over the
+  transcript the device chose, pairing accepted/incorrect/expired with `Delay` for the 1 s pause and
+  the five-miss burn in `PairingCodes`, then a `SessionKind`: availability check, files-only, or
+  screen, or `Denied` when capture isn't supported or a files-only hello takes no files) and writes
+  the `authResult{ok}` for what was admitted (`Accept(kind, token, displays)`: readiness, the
+  files-only capabilities, or the full set). `HostSessionCore.HandshakeAsync` only exchanges the
+  messages, does the whois and the display wake, and sets itself up as what it was admitted as.
+  Every message is built exactly as before: `GoldenVectorTests` and the interop suite hold it to
+  that. Tests: `SessionAdmissionTests` (a code that ran out), with `HostListenerTests` for pairing,
+  burning, probes, version mismatches, purpose binding and files-only over loopback.
+- **Capture lifecycle** (`Host/CaptureSupervisor`, the Mac's rules in `HostSession`): one module
+  keeps a picture coming for a screen session. Events go in (`DeviceAsked`, `Started`,
+  `StartFailed`, `CaptureStopped`, `FrameArrived`, `StatusChanged`, `SleepAsked`/`WakeAsked`,
+  `AdmitsInput`, `Tick`) and `CaptureStep`s come out (`Start` a target, `Stop` a capture that
+  never framed, `SendStatus`, `WakeDisplay`, `WakeDisplayAndWait`, `ForceKeyframe`), which
+  `HostSessionCore.ApplyAsync` runs in order on the session queue, reporting each start's outcome
+  back. It holds what the device wants, one start at a time with a pending takeover, the display's
+  sleep state (learned from the events, so it lags a change the session hasn't relayed yet), the
+  input-while-asleep rule (releases go through; other input wakes the display at most once a second
+  and is dropped, none of it in the 2 s after Sleep Display), the retry schedule (0.5 s doubling to
+  5 s while the display is awake, each wait counted from the end of the attempt before it, so a
+  start that takes seconds to fail doesn't use the wait up, whether the clock, Wake/Retry (which
+  starts the backoff over) or a change of host state began it; `isScreenUnavailable` after 3 s) and
+  the 5 s no-frame rule.
+  `WantsTicks` says when the session must tick it every 250 ms. A restart tries the display it was
+  on first, **keeping the codec it streamed** (as the Mac does; it used to choose again), then the
+  device's own `selectDisplay`. It does no I/O, so `CaptureSupervisorTests` drive it on a
+  `FakeTimeProvider` (sleep and wake, the backoff and the notice, started but no frames);
+  `HostListenerTests.SleepingDisplayIsReportedAndWakeBringsThePictureBack` and
+  `MissingPictureIsExplainedUntilFramesReturn` still prove the wiring over loopback.
+- **Video pipeline** (`Host/VideoPipeline`, one per capture): captured frame → `videoConfig` and
+  `videoFrame` on the connection's video lane (`IVideoLane`, which `FramedConnection` implements).
+  It owns the adaptive controller (frame rate and max QP to the capture and encoder, bitrate from
+  `qualityFeedback` and backlog, the input hold), idle suppression (`HostSessionCore.IdleDirtyRatio`,
+  never over a due keyframe), latest frame wins with one encode in flight, keyframes when due
+  (start, `requestKeyframe`, a dropped P-frame, output that didn't parse) and only once the lane
+  has drained, Annex-B → AVCC/HVCC with the parameter sets pulled out, `videoConfig` before an IDR
+  whose sets changed, no frame before the first `videoConfig`, and P-frames dropped while the lane
+  is backed up. `videoFrame.sequence` carries on across captures (`NextSequence`). The encoder's
+  one-callback-per-encode rule is no longer load-bearing: an encode with no word back within 1 s
+  (`EncodeStallLimit`, on the session's `TimeProvider`) is given up on and a keyframe forced, so a
+  lost callback can't leave one frame "in flight" and the picture frozen for good (the Mac host had
+  that bug). Every `EncodeAsync` carries an `encodeId` and the sink call that answers it
+  (`OnFrame`, `OnFrameSkipped`) carries it back, so an answer from an encode already given up on
+  is dropped without touching the encode that replaced it, its timer or its keyframe (Media
+  Foundation reports an abandoned input as skipped about a second later, right when the
+  replacement is in flight), and an encode that never answers at all shifts nothing. A stall
+  timeout acts only when it was armed for the encode still in flight and that encode's deadline
+  has passed; one already queued behind the answer that finished its encode does nothing. The
+  session only makes the encoder and hands it over. Tests: `VideoPipelineTests` (scripted encoder
+  that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
+  answer), with `HevcSessionTests` and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
+  over loopback.
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
@@ -238,12 +293,18 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   mode, and ≥ viewport points × the display's scale; keep the current mode when its shape is within
   1% of the viewport's; else the best coverage (letterboxed fraction), ties by pixel count nearest
   viewport × device scale; switch only for ≥ 5% more coverage (portrait devices and 16:9 phones keep
-  the mode). `HostSessionCore` fits after stopping capture (`FitDisplayModeAsync`), lists displays again
-  (`streamConfig` reports the new mode), refits 500 ms after the last `viewportChanged`
-  (`ScheduleRefit`), and restores on `restoreDisplays`, a non-fitting `selectDisplay`, teardown and
-  `HostListener.StopAsync` (`RestoreAll`). Right after a change WGC can still size a new capture for the
-  old mode: the start retries until the size matches (≤ 2 s), and a capture's stop callback carries
-  its start's generation so a replaced one's late stop is ignored. `canManageVirtualDisplay` follows
+  the mode). `Host/DisplayChoice` (one per session) owns display choice and fitting: `Wanted(select)`
+  remembers whether the device wants the display fitted, `ChooseAsync(select)` (with capture
+  stopped) lists the displays, fits or restores the mode as wanted, waits ≤ 1 s for the new size
+  so `streamConfig` reports the new mode, and picks the display (by id, else the main one);
+  `CaptureSizedForOldMode` drives the retry below; `StopFitting`/`RestoreNow` serve
+  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`. A
+  refit comes from the `selectDisplay` Casement resends when its viewport changes
+  (`ClientSession.updateViewport`); **`viewportChanged` only forces a keyframe**, as on the Mac (no
+  client sends it; the 500 ms `ScheduleRefit` path and `IDisplayFitter.WouldChange` are gone).
+  Right after a change WGC can still size a new capture for the old mode: the start retries until
+  the size matches (≤ 2 s), and a capture's stop callback carries its start's generation so a
+  replaced one's late stop is ignored. `canManageVirtualDisplay` follows
   `HostSettings.AllowDisplayFitting` (Display page switch, default on). Checked on the 4K PG32UCDM: a
   1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
   scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and

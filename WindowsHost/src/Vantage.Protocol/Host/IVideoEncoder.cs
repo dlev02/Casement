@@ -43,9 +43,13 @@ public sealed record VideoEncoderSettings(VideoCodec Codec, int Width, int Heigh
 /// primaries / sRGB (or BT.709) transfer / BT.709 matrix / video range.
 /// </summary>
 /// <remarks>
-/// Every <see cref="EncodeAsync"/> the encoder accepts ends in exactly one call to the sink:
-/// <see cref="IEncodedFrameSink.OnFrame"/> or <see cref="IEncodedFrameSink.OnFrameSkipped"/>. The
-/// core keeps one frame in flight and relies on that to send the next.
+/// Every <see cref="EncodeAsync"/> the encoder accepts should end in one call to the sink,
+/// <see cref="IEncodedFrameSink.OnFrame"/> or <see cref="IEncodedFrameSink.OnFrameSkipped"/>, naming
+/// the encode it answers by the <c>encodeId</c> it was given. The session's video pipeline keeps one
+/// frame in flight and sends the next on that call, but doesn't depend on it: an encode with no
+/// word back within a second is given up on and a keyframe forced, so a lost callback costs a
+/// frame, never the picture. The id is what makes that safe: an answer that comes after its encode
+/// was given up on is dropped, and never counts against the encode that replaced it.
 /// </remarks>
 public interface IVideoEncoder : IAsyncDisposable
 {
@@ -59,8 +63,9 @@ public interface IVideoEncoder : IAsyncDisposable
     /// </summary>
     /// <param name="frame">A frame from the capture stream this encoder was created for.</param>
     /// <param name="forceKeyframe">The output must be an IDR carrying its parameter sets (SPS and PPS; HEVC also VPS) (stream start, <c>requestKeyframe</c>, after dropped frames).</param>
+    /// <param name="encodeId">The caller's number for this encode; the sink call that answers it carries the same number.</param>
     /// <param name="cancellationToken">Cancels waiting for the encoder to take the frame.</param>
-    ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken);
+    ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken);
 
     /// <summary>New target bitrate in kbps (2 000…60 000), applied without a keyframe.</summary>
     void SetBitrate(int kbps);
@@ -80,10 +85,13 @@ public interface IEncodedFrameSink
     /// the frame for its session queue, so it's safe to call from the encoder's own event thread
     /// (the core never waits on anything inside these callbacks).
     /// </summary>
-    void OnFrame(EncodedFrame frame);
+    /// <param name="encodeId">The <c>encodeId</c> of the <see cref="IVideoEncoder.EncodeAsync"/> this answers.</param>
+    /// <param name="frame">The output.</param>
+    void OnFrame(long encodeId, EncodedFrame frame);
 
-    /// <summary>The encoder took a frame and produced nothing for it (rate control dropped it).</summary>
-    void OnFrameSkipped();
+    /// <summary>The encoder took a frame and produced nothing for it (rate control dropped it, or it never came out).</summary>
+    /// <param name="encodeId">The <c>encodeId</c> of the <see cref="IVideoEncoder.EncodeAsync"/> this answers.</param>
+    void OnFrameSkipped(long encodeId);
 
     /// <summary>The encoder failed; the core logs it and restarts capture and encoding.</summary>
     void OnError(Exception error);

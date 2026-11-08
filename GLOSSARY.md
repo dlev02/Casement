@@ -46,6 +46,10 @@ _Avoid_: PIN, password
 The key a computer proves it holds on every connection, remembered from the first one. A different key shows as "Identity changed" until the person chooses Forget Identity.
 _Avoid_: fingerprint (that is how the identity is displayed), certificate
 
+**Admission**:
+What Casement Host decides when a device connects: refused (an older protocol, a bad signature, no or a wrong pairing code), or admitted as an availability check, a files-only session or a screen session, which the connection then runs as. Code name: `SessionAdmission` on Windows, the handshake in `HostSession` on the Mac.
+_Avoid_: login, authentication (one step of it), handshake (the messages, not the decision)
+
 **Availability check**:
 A short connection Casement makes to see whether a saved computer is reachable and what it is, without opening its screen. Code name: probe.
 _Avoid_: ping, status check
