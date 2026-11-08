@@ -67,10 +67,14 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
 - **Host pipeline**: `ScreenCapture` (ScreenCaptureKit, `'420v'`, sRGB, dirty-rect ratio) →
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held
-  keys/buttons on disconnect). `AdaptiveController` runs AIMD bitrate + text/motion fps from client
-  feedback. `HostSession` (actor) orchestrates one client through a `HostEnvironment` (real Mac or
-  synthetic adapters, chosen once in `HostController`, which owns the listener); see Host
-  environment in `docs/guide/connection.md`.
+  keys/buttons on disconnect). `VideoPacer` runs the path from captured frame to wire frames (one
+  encode in flight, the latest frame wins, idle suppression, a keyframe request on a still screen
+  re-encodes the last frame at once, the encoder's answer to every frame so a dropped frame can't
+  freeze the picture) with `AdaptiveController`'s AIMD bitrate + text/motion fps from client
+  feedback; `CaptureLifecycle` decides when capture starts, stops and retries (display sleep, the
+  watchdog, the status the client hears). `HostSession` (actor) orchestrates one client through a
+  `HostEnvironment` (real Mac or synthetic adapters, chosen once in `HostController`, which owns
+  the listener); see Host environment and Capture lifecycle in `docs/guide/connection.md`.
 - **Client pipeline**: `ClientSession` (handshake, reconnect with backoff) → `VideoStreamController`
   (`AVSampleBufferDisplayLayer.sampleBufferRenderer`, `DisplayImmediately`, flush + keyframe request
   on decode failure). `RemoteInteractionView` captures touch/trackpad/mouse/hardware-keyboard and

@@ -28,7 +28,9 @@ above), answer the prompt. `codesign -dv` on the app should say `TeamIdentifier=
 The Mac session itself is also covered without a simulator: `HostSessionTests` (root `xcrun swift test`)
 run the real `HostSession` over loopback on the synthetic environment (pairing, the stream's first
 messages and keyframe, display sleep and wake, a missing picture), the way the Windows host's
-`HostListenerTests` run its session.
+`HostListenerTests` run its session; `CaptureLifecycleTests` and `VideoPacerTests` check the two
+modules behind it on a fake clock, frame source and encoder (the retry backoff, the no-frame
+rule, a dropped frame, a keyframe on a still screen) in milliseconds.
 
 The simulator cannot route to the Mac's Tailscale interface, so test over loopback (the host accepts
 loopback peers in addition to tailnet peers):

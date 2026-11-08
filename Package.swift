@@ -24,7 +24,7 @@ let package = Package(
         // session code the app ships.
         .target(name: "VantageHostSession", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost", exclude: ["en.lproj", "Assets.xcassets", "CasementHost.icon", "Info.plist", "VantageHost.entitlements"],
-                sources: ["Engine/HostSession.swift", "Engine/HostEnvironment.swift", "Engine/SyntheticHostEnvironment.swift", "Engine/CaptureLifecycle.swift",
+                sources: ["Engine/HostSession.swift", "Engine/HostEnvironment.swift", "Engine/SyntheticHostEnvironment.swift", "Engine/CaptureLifecycle.swift", "Engine/VideoPacer.swift",
                           "Engine/SyntheticFrameSource.swift", "Engine/FrameSource.swift", "Engine/MonotonicClock.swift",
                           "Engine/VideoEncoder.swift", "Engine/AdaptiveController.swift",
                           "Engine/AudioSource.swift", "Engine/SyntheticAudioSource.swift", "Engine/AudioEncoder.swift",

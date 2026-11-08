@@ -32,7 +32,9 @@ actor HostSession {
     /// in, so a late one from a stopped capture or encoder can't touch its replacement's state.
     private var captureEpoch: UInt64 = 0
     private var injector: (any InputSink)?
-    private var adaptive = AdaptiveController()
+    /// From captured frames to wire frames: one encode in flight, the latest frame wins, idle
+    /// suppression, keyframes on demand, the adaptive rate and bitrate. One per capture.
+    private var pacer: VideoPacer?
     private let power: any HostPowerControl
     private var clipboard: (any HostClipboard)?
     private let lockMonitor: any HostStatusMonitor
@@ -41,14 +43,6 @@ actor HostSession {
     private var lifecycle: CaptureLifecycle
     /// Runs the lifecycle's 250 ms ticks while it wants them (`syncTicker`).
     private var ticker: Task<Void, Never>?
-    private var pendingPixelBuffer: CVPixelBuffer?
-    private var encodesInFlight = 0
-    /// When the encode in flight was handed over; past `encodeLimit` it counts as lost.
-    private var encodeStartedAt: ContinuousClock.Instant?
-    private var needsKeyframe = true
-    private var framesSent: UInt64 = 0
-    /// The frame rate capture and the encoder were last told; they hear only changes.
-    private var currentFPS = 0
     /// Dictation audio waiting for `commit`. Only filled for clients that asked for dictation.
     private var dictationClips = DictationClipStore()
     private var dictationEngines: [DictationEngineID] = []
@@ -270,13 +264,13 @@ actor HostSession {
                 }
                 await dispatch(.selectionRequested(select))
             case .pointerEvent(let event):
-                adaptive.noteInput()
+                pacer?.noteInput()
                 if admitsInput(isRelease: event.action == .up) { injector?.handle(event) }
             case .scrollEvent(let event):
-                adaptive.noteInput()
+                pacer?.noteInput()
                 if admitsInput(isRelease: false) { injector?.handle(event) }
             case .keyEvent(let event):
-                adaptive.noteInput()
+                pacer?.noteInput()
                 if admitsInput(isRelease: !event.isDown) { injector?.handle(event) }
             case .textInput(let input):
                 guard admitsInput(isRelease: false), let injector else { break }
@@ -291,15 +285,14 @@ actor HostSession {
                 // Awaited, so a ⌘V the client sends right behind its clipboard pastes this one.
                 if let clipboard { await clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
-                if let newBitrate = adaptive.apply(feedback: feedback) {
-                    encoder?.setBitrate(kbps: newBitrate)
-                }
+                pacer?.apply(feedback: feedback)
             case .requestKeyframe:
-                needsKeyframe = true
+                pacer?.requestKeyframe(now: now)
             case .hostCommand(let command):
                 await handle(command.command)
-            case .viewportChanged(let change):
-                await handleViewportChange(change.viewport)
+            case .viewportChanged:
+                // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
+                pacer?.requestKeyframe(now: now)
             case .ping(let ping):
                 channel.sendDetached(.pong(Pong(echoNanos: ping.sentAtNanos)))
             case .dictationControl(let control):
@@ -382,7 +375,7 @@ actor HostSession {
 
         let codec: VideoCodec = select.preferredCodec ?? .hevc
         let startFPS = min(select.targetFPS, 60)
-        adaptive = AdaptiveController(startBitrateKbps: bitrateForPixels(chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
+        let adaptive = AdaptiveController(startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
         let epoch = captureEpoch
         let encoder = VideoEncoder(configuration: .init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
@@ -391,6 +384,7 @@ actor HostSession {
             Task { await self.emit(outcome, epoch: epoch) }
         }
         self.encoder = encoder
+        pacer = VideoPacer(encoder: encoder, adaptive: adaptive, fps: startFPS) { [channel] message in channel.sendDetached(message) }
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
         // The injector (and whatever keys it holds) survives capture restarts.
@@ -439,8 +433,6 @@ actor HostSession {
         }
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
-        currentFPS = startFPS
-        needsKeyframe = true
         log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
         return (chosen, codec)
     }
@@ -450,57 +442,12 @@ actor HostSession {
         let decisions = lifecycle.handle(.frameArrived, now: now)
         if !decisions.isEmpty { Task { await self.apply(decisions) } }
         if !lifecycle.wantsTicks { syncTicker() }
-        let (_, fps) = adaptive.observe(dirtyRatio: frame.dirtyRatio)
-        if fps != currentFPS {
-            currentFPS = fps
-            capture?.updateFPS(fps)
-            encoder?.setExpectedFrameRate(fps)
-        }
-
-        // Idle suppression: skip encoding a static frame (but always honor a pending keyframe).
-        if frame.dirtyRatio <= 0.0001 && !needsKeyframe && framesSent > 0 { return }
-        // The encoder answers every frame, encoded or dropped; this is the net under that promise.
-        if encodesInFlight > 0, let encodeStartedAt, now - encodeStartedAt > Self.encodeLimit {
-            log.error("an encode has been in flight for over \(Self.encodeLimit.components.seconds, privacy: .public) s; giving up on it")
-            encodesInFlight = 0
-            needsKeyframe = true
-        }
-        guard encodesInFlight < 1 else {
-            pendingPixelBuffer = frame.pixelBuffer
-            return
-        }
-        encode(frame.pixelBuffer, ptsNanos: frame.displayNanos)
-    }
-
-    /// Longer than this with no word from the encoder means the frame is lost, whatever it says later.
-    static let encodeLimit: Duration = .seconds(1)
-
-    private func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64) {
-        encodesInFlight += 1
-        encodeStartedAt = now
-        let force = needsKeyframe
-        needsKeyframe = false
-        encoder?.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: force)
+        if let fps = pacer?.ingest(frame, now: now) { capture?.updateFPS(fps) }
     }
 
     private func emit(_ outcome: VideoEncoder.Outcome, epoch: UInt64) {
         guard epoch == captureEpoch else { return } // a stopped encoder's late word
-        encodesInFlight = max(0, encodesInFlight - 1)
-        switch outcome {
-        case .encoded(let output):
-            if let config = output.config {
-                channel.sendDetached(.videoConfig(config))
-            }
-            channel.sendDetached(.videoFrame(output.frame))
-            framesSent &+= 1
-        case .dropped:
-            // The client's decoder has a hole now; the next frame fills it.
-            needsKeyframe = true
-        }
-        if let pending = pendingPixelBuffer {
-            pendingPixelBuffer = nil
-            encode(pending, ptsNanos: MonotonicClock.nanos())
-        }
+        pacer?.encoderReported(outcome, now: now)
     }
 
     private func sendClipboard(_ payload: ClipboardPayload) {
@@ -661,11 +608,6 @@ actor HostSession {
         }
     }
 
-    private func handleViewportChange(_ viewport: Viewport) async {
-        // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
-        needsKeyframe = true
-    }
-
     // MARK: Keeping the picture coming
 
     /// Hands the lifecycle an event and carries out what it decides.
@@ -683,7 +625,6 @@ actor HostSession {
                 await execute(request)
             case .stopCapture(let reason):
                 await stopCapture()
-                needsKeyframe = true
                 log.info("capture stopped (\(reason, privacy: .public)); display \(self.power.isDisplayAsleep ? "asleep" : "awake", privacy: .public)")
             case .sendStatus(let status):
                 channel.sendDetached(.hostStatus(status))
@@ -703,7 +644,7 @@ actor HostSession {
                 lockMonitor.start()
                 await dispatch(.statusChanged(lockMonitor.currentStatus()))
             case .requestKeyframe:
-                needsKeyframe = true
+                pacer?.requestKeyframe(now: now)
             case .note(let text):
                 log.info("\(text, privacy: .public)")
             }
@@ -789,7 +730,6 @@ actor HostSession {
         // The encoder goes too (a late result from it would be a frame of a stopped capture);
         // the restart makes a new one.
         await stopCapture()
-        needsKeyframe = true
         log.info("capture stopped (\(reason, privacy: .public)); display \(self.power.isDisplayAsleep ? "asleep" : "awake", privacy: .public)")
         await dispatch(.captureStopped(reason: reason))
     }
@@ -806,9 +746,7 @@ actor HostSession {
         capture = nil
         encoder?.stop()
         encoder = nil
-        pendingPixelBuffer = nil
-        encodesInFlight = 0
-        encodeStartedAt = nil
+        pacer = nil
     }
 
     private func stopStreaming() async {
@@ -853,12 +791,6 @@ actor HostSession {
             await stopStreaming()
         }
         onEnded(self)
-    }
-
-    private func bitrateForPixels(_ pixels: Int, fps: Int) -> Int {
-        // ~0.08 bits/pixel/frame baseline for crisp screen content.
-        let bits = Double(pixels) * Double(fps) * 0.08
-        return Int(min(60_000, max(4_000, bits / 1000)))
     }
 }
 
