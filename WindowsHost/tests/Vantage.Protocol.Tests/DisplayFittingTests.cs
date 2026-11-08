@@ -24,11 +24,6 @@ internal sealed class RecordingDisplayFitter : IDisplayFitter
         lock (_lock) return [.. Calls];
     }
 
-    public bool WouldChange(Guid owner, DisplayInfo display, Viewport viewport)
-    {
-        lock (_lock) return _held is { } held && held.Owner == owner && held.Viewport != viewport;
-    }
-
     public DisplayFitResult Fit(Guid owner, DisplayInfo display, Viewport viewport)
     {
         lock (_lock)
@@ -139,8 +134,13 @@ public class DisplayFittingTests
         Assert.Equal(["fit 1376x1032", "restore", "fit 1376x1032", "restore"], fitter.Snapshot());
     }
 
+    /// <summary>
+    /// Casement never sends <c>viewportChanged</c>: a rotation arrives as a new <c>selectDisplay</c>
+    /// (<c>ClientSession.updateViewport</c>). A client that does send it gets a keyframe, as from the
+    /// Mac host, and the display is left alone.
+    /// </summary>
     [Fact]
-    public async Task ViewportChangesRefitOnceAfterTheyStop()
+    public async Task AViewportChangeOnlyForcesAKeyframeAndANewSelectionRefits()
     {
         var fitter = new RecordingDisplayFitter();
         await using var host = new TestHost(displayFitter: fitter);
@@ -148,17 +148,16 @@ public class DisplayFittingTests
         await connection.SendAsync(Fit(s_iPad));
         await Loopback.Next<VideoFrame>(connection);
 
-        // A rotation animation: several sizes inside 500 ms, then portrait.
-        foreach (var width in new[] { 1300.0, 1200, 1100 })
-        {
-            await connection.SendAsync(new ViewportChanged { Viewport = new Viewport { WidthPoints = width, HeightPoints = 1100, Scale = 2 } });
-            await Task.Delay(100);
-        }
-        await connection.SendAsync(new ViewportChanged { Viewport = new Viewport { WidthPoints = 1032, HeightPoints = 1376, Scale = 2 } });
-        await WaitUntil(() => fitter.Snapshot().Length == 2, "refitted");
-        await Task.Delay(800);
-        Assert.Equal(["fit 1376x1032", "fit 1032x1376"], fitter.Snapshot());
+        var portrait = new Viewport { WidthPoints = 1032, HeightPoints = 1376, Scale = 2 };
+        await connection.SendAsync(new ViewportChanged { Viewport = portrait });
+        VideoFrame frame;
+        do frame = await Loopback.Next<VideoFrame>(connection); while (!frame.IsKeyframe);
+        await Task.Delay(300);
+        Assert.Equal(["fit 1376x1032"], fitter.Snapshot());
+
+        await connection.SendAsync(Fit(portrait));
         await Loopback.Next<StreamConfig>(connection); // capture restarted on the new mode
+        Assert.Equal(["fit 1376x1032", "fit 1032x1376"], fitter.Snapshot());
         connection.Close();
     }
 

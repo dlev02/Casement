@@ -31,13 +31,6 @@ public interface IDisplayFitter
     bool IsEnabled { get; }
 
     /// <summary>
-    /// Whether <see cref="Fit"/> with these arguments would change the mode (so the session stops
-    /// capture first). False when disabled, when another owner holds the display, or when the
-    /// best mode is the one showing.
-    /// </summary>
-    bool WouldChange(Guid owner, DisplayInfo display, Viewport viewport);
-
-    /// <summary>
     /// Switches <paramref name="display"/> to the mode that best fits <paramref name="viewport"/>,
     /// remembering the mode it had so <see cref="Restore"/> can put it back. Choosing the display's
     /// original mode again restores it and lets go of the display.

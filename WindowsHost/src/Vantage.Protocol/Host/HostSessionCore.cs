@@ -46,10 +46,6 @@ public sealed class HostSessionCore
     /// </summary>
     public const double IdleDirtyRatio = 0.0001;
 
-    private static readonly TimeSpan s_refitDelay = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan s_modeSettleLimit = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan s_captureCatchUp = TimeSpan.FromSeconds(2);
-
     private readonly HostListener _listener;
     private readonly HostEnvironment _env;
     private readonly FramedConnection _connection;
@@ -67,12 +63,7 @@ public sealed class HostSessionCore
     // session runs its steps and owns the capture, encoder and connection they act on.
     private readonly CaptureSupervisor _supervisor;
     private CancellationTokenSource? _ticker;
-    // The client asked for the display fitted to its screen (fitViewport + useVirtualDisplay) and
-    // hasn't sent restoreDisplays since: capture (re)starts fit the mode through IDisplayFitter.
-    private bool _fitting;
-    private DateTimeOffset _refitDue;
-    private bool _refitScheduled;
-    private DateTimeOffset? _modeChangedAt; // the next capture start checks it got the new mode's size
+    private readonly DisplayChoice _display; // which display to stream, fitted to the device or not, and what to put back
     private int _captureGeneration; // which capture start a stop callback belongs to
     private ICaptureStream? _capture;
     private VideoPipeline? _video; // frames from _capture to the wire; made and dropped with it
@@ -101,6 +92,7 @@ public sealed class HostSessionCore
         _log = _env.Logging.CreateLogger("Vantage.Session");
         _queue = new SerialQueue(_log);
         _supervisor = new CaptureSupervisor(_env.Time, _log);
+        _display = new DisplayChoice(Id, _env.DisplayFitter, _env.Screen, _env.Time, _log);
         _connection.VideoDrained += () => _queue.Post(OnVideoDrained);
     }
 
@@ -353,12 +345,9 @@ public sealed class HostSessionCore
             case RequestKeyframe:
                 await RequestKeyframeAsync().ConfigureAwait(false);
                 break;
-            case ViewportChanged changed:
-                if (_fitting && _supervisor.Wanted is { Selection: DisplaySelection.FitViewport } fitted)
-                {
-                    _supervisor.Retarget(fitted with { Selection = new DisplaySelection.FitViewport(changed.Viewport) });
-                    ScheduleRefit();
-                }
+            case ViewportChanged:
+                // As on the Mac: geometry is fixed for a capture, so this only forces a keyframe.
+                // Casement never sends it; a viewport change arrives as a new selectDisplay.
                 await RequestKeyframeAsync().ConfigureAwait(false);
                 break;
             case HostCommandMessage command:
@@ -398,7 +387,7 @@ public sealed class HostSessionCore
 
     private async Task SelectDisplayAsync(SelectDisplay select)
     {
-        _fitting = select is { Selection: DisplaySelection.FitViewport, UseVirtualDisplay: true } && _env.DisplayFitter is { IsEnabled: true };
+        _display.Wanted(select);
         if (_captureFailsUntil is null && _listener.Options.CaptureFailsFor is { } fails)
         {
             _captureFailsUntil = _env.Time.GetUtcNow() + fails;
@@ -459,15 +448,7 @@ public sealed class HostSessionCore
         var began = _env.Time.GetTimestamp();
         await StopCaptureAsync().ConfigureAwait(false);
         if (_captureFailsUntil is { } until && _env.Time.GetUtcNow() < until) throw new CaptureUnavailableException("capture fails on purpose (--capture-fails-for)");
-        var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
-        displays = await FitDisplayModeAsync(select, displays).ConfigureAwait(false);
-        var chosen = select.Selection switch
-        {
-            DisplaySelection.Display byId => displays.FirstOrDefault(d => d.Id == byId.Id)
-                                             ?? throw new CaptureUnavailableException($"display {byId.Id} isn't connected"),
-            _ => displays.FirstOrDefault(d => d.IsMain) ?? displays.FirstOrDefault()
-                 ?? throw new CaptureUnavailableException("no displays to capture"),
-        };
+        var chosen = await _display.ChooseAsync(select).ConfigureAwait(false);
         var fps = Math.Clamp(select.TargetFPS, 1, 60);
         var hello = _hello!;
         // A client that draws the pointer itself gets it at its own frame rate, the way Remote
@@ -475,19 +456,11 @@ public sealed class HostSessionCore
         var localCursor = hello.Features?.LocalCursor == true && _env.Cursor is not null;
         var request = new CaptureRequest(chosen, fps, IncludesCursor: !localCursor);
         var capture = await StartCaptureAsync(request).ConfigureAwait(false);
-        if (_modeChangedAt is { } modeChangedAt)
+        while (_display.CaptureSizedForOldMode(capture.FrameWidth, capture.FrameHeight, chosen))
         {
-            // Just after a mode change, Windows.Graphics.Capture can still size a new capture for
-            // the old mode, which then stops at its first frame: start again until it matches (≤ 2 s).
-            _modeChangedAt = null;
-            while ((capture.FrameWidth != chosen.PixelWidth || capture.FrameHeight != chosen.PixelHeight)
-                   && _env.Time.GetUtcNow() - modeChangedAt < s_captureCatchUp)
-            {
-                _log.LogInformation("capture still sized {Width}x{Height} for the old mode; starting it again", capture.FrameWidth, capture.FrameHeight);
-                await SafeDisposeAsync(capture).ConfigureAwait(false);
-                await Task.Delay(TimeSpan.FromMilliseconds(100), _env.Time, CancellationToken.None).ConfigureAwait(false);
-                capture = await StartCaptureAsync(request).ConfigureAwait(false);
-            }
+            await SafeDisposeAsync(capture).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), _env.Time, CancellationToken.None).ConfigureAwait(false);
+            capture = await StartCaptureAsync(request).ConfigureAwait(false);
         }
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
         var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
@@ -546,129 +519,18 @@ public sealed class HostSessionCore
         return (chosen, codec);
     }
 
-    /// <summary>
-    /// With capture stopped: fits the main display's mode to the viewport while the client wants a
-    /// fitted display (the Mac's virtual display, done the Windows way), or puts back a mode this
-    /// session changed once it doesn't. Returns the displays as they are afterwards. A refused mode,
-    /// or a display another session holds, streams what's there.
-    /// </summary>
-    private async Task<IReadOnlyList<DisplayInfo>> FitDisplayModeAsync(SelectDisplay select, IReadOnlyList<DisplayInfo> displays)
-    {
-        if (_env.DisplayFitter is not { } fitter) return displays;
-        var main = displays.FirstOrDefault(d => d.IsMain) ?? displays.FirstOrDefault();
-        bool changed;
-        try
-        {
-            if (_fitting && select.Selection is DisplaySelection.FitViewport fit && main is not null)
-            {
-                var result = fitter.Fit(Id, main, fit.Viewport);
-                if (result is DisplayFitResult.Busy) _log.LogInformation("another device has display {Id} fitted to its screen; streaming it as it is", main.Id);
-                changed = result is DisplayFitResult.Changed;
-            }
-            else
-            {
-                // A display chosen by id while fitting, or fitting over: only the latter puts the mode back.
-                changed = !_fitting && fitter.Restore(Id);
-            }
-        }
-        catch (Exception error)
-        {
-            _log.LogError("fitting the display mode failed: {Error}", error.Message);
-            return displays;
-        }
-        if (!changed) return displays;
-        _modeChangedAt = _env.Time.GetUtcNow();
-
-        // The monitor's rect follows the mode at once, but give it a moment (≤ 1 s) to report the
-        // new size so streamConfig describes the mode being shown.
-        var started = _env.Time.GetTimestamp();
-        while (true)
-        {
-            var now = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
-            var after = main is null ? null : now.FirstOrDefault(d => d.Id == main.Id);
-            if (main is null || after is null || after.PixelWidth != main.PixelWidth || after.PixelHeight != main.PixelHeight
-                || after.Scale != main.Scale
-                || _env.Time.GetElapsedTime(started) >= s_modeSettleLimit)
-            {
-                if (after is not null)
-                    _log.LogInformation("display {Id} now {Width}x{Height} at {Scale}x ({PointWidth}x{PointHeight} points)",
-                                        after.Id, after.PixelWidth, after.PixelHeight, after.Scale, after.PointWidth, after.PointHeight);
-                return now;
-            }
-            await Task.Delay(TimeSpan.FromMilliseconds(100), _env.Time, CancellationToken.None).ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>
-    /// A fitted session's viewport changed (rotation, Stage Manager, a window resize): fit again
-    /// 500 ms after the last change, so a rotation animation switches the mode once, not per step.
-    /// </summary>
-    private void ScheduleRefit()
-    {
-        _refitDue = _env.Time.GetUtcNow() + s_refitDelay;
-        if (_refitScheduled) return;
-        _refitScheduled = true;
-        var ended = _ended.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var wait = s_refitDelay;
-                while (true)
-                {
-                    await Task.Delay(wait, _env.Time, ended).ConfigureAwait(false);
-                    TimeSpan? more = null;
-                    await _queue.RunAsync(async () =>
-                    {
-                        var left = _refitDue - _env.Time.GetUtcNow();
-                        if (left > TimeSpan.Zero)
-                        {
-                            more = left;
-                            return;
-                        }
-                        _refitScheduled = false;
-                        await RefitAsync().ConfigureAwait(false);
-                    }).ConfigureAwait(false);
-                    if (more is not { } next) return;
-                    wait = next;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Session over.
-            }
-        });
-    }
-
-    private async Task RefitAsync()
-    {
-        if (State != SessionState.Streaming || !_fitting || _env.DisplayFitter is not { } fitter
-            || _supervisor.Wanted is not { Selection: DisplaySelection.FitViewport fit } wanted || Display is not { } display) return;
-        if (!fitter.WouldChange(Id, display, fit.Viewport)) return;
-        _log.LogInformation("viewport now {Width}x{Height} points at {Scale}x: fitting the display again",
-                            fit.Viewport.WidthPoints, fit.Viewport.HeightPoints, fit.Viewport.Scale);
-        await ApplyAsync(_supervisor.DeviceAsked(wanted, _env.Status.Current.IsDisplayAsleep)).ConfigureAwait(false);
-    }
-
     /// <summary><c>restoreDisplays</c>: put the mode back now and stream the display as it is.</summary>
     private async Task RestoreDisplaysAsync()
     {
-        if (_env.DisplayFitter is not { } fitter) return;
-        var wasFitting = _fitting;
-        _fitting = false;
-        if (!wasFitting || _supervisor.Wanted is null)
+        if (!_display.StopFitting() || _supervisor.Wanted is null)
         {
-            if (fitter.Restore(Id)) _log.LogInformation("display mode restored");
+            _display.RestoreNow();
             return;
         }
         // Stop first: a running capture would stop itself on the size change, and its late stop
         // could land on the capture that replaces it.
         await StopCaptureAsync().ConfigureAwait(false);
-        if (fitter.Restore(Id))
-        {
-            _log.LogInformation("display mode restored");
-            _modeChangedAt = _env.Time.GetUtcNow();
-        }
+        _display.RestoreNow();
         await ApplyAsync(_supervisor.RestartAsked("display mode restored")).ConfigureAwait(false);
     }
 
@@ -1013,14 +875,7 @@ public sealed class HostSessionCore
                 _env.Curtain?.SessionEnded(Id);
                 await StopAudioAsync().ConfigureAwait(false);
                 await StopCaptureAsync().ConfigureAwait(false);
-                try
-                {
-                    if (_env.DisplayFitter?.Restore(Id) == true) _log.LogInformation("display mode restored at session end");
-                }
-                catch (Exception error)
-                {
-                    _log.LogError("restoring the display mode failed: {Error}", error.Message);
-                }
+                _display.RestoreAtEnd();
                 if (_input is not null)
                 {
                     try

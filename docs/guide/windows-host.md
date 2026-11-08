@@ -282,12 +282,18 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   mode, and ≥ viewport points × the display's scale; keep the current mode when its shape is within
   1% of the viewport's; else the best coverage (letterboxed fraction), ties by pixel count nearest
   viewport × device scale; switch only for ≥ 5% more coverage (portrait devices and 16:9 phones keep
-  the mode). `HostSessionCore` fits after stopping capture (`FitDisplayModeAsync`), lists displays again
-  (`streamConfig` reports the new mode), refits 500 ms after the last `viewportChanged`
-  (`ScheduleRefit`), and restores on `restoreDisplays`, a non-fitting `selectDisplay`, teardown and
-  `HostListener.StopAsync` (`RestoreAll`). Right after a change WGC can still size a new capture for the
-  old mode: the start retries until the size matches (≤ 2 s), and a capture's stop callback carries
-  its start's generation so a replaced one's late stop is ignored. `canManageVirtualDisplay` follows
+  the mode). `Host/DisplayChoice` (one per session) owns display choice and fitting: `Wanted(select)`
+  remembers whether the device wants the display fitted, `ChooseAsync(select)` (with capture
+  stopped) lists the displays, fits or restores the mode as wanted, waits ≤ 1 s for the new size
+  so `streamConfig` reports the new mode, and picks the display (by id, else the main one);
+  `CaptureSizedForOldMode` drives the retry below; `StopFitting`/`RestoreNow` serve
+  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`. A
+  refit comes from the `selectDisplay` Casement resends when its viewport changes
+  (`ClientSession.updateViewport`); **`viewportChanged` only forces a keyframe**, as on the Mac (no
+  client sends it; the 500 ms `ScheduleRefit` path and `IDisplayFitter.WouldChange` are gone).
+  Right after a change WGC can still size a new capture for the old mode: the start retries until
+  the size matches (≤ 2 s), and a capture's stop callback carries its start's generation so a
+  replaced one's late stop is ignored. `canManageVirtualDisplay` follows
   `HostSettings.AllowDisplayFitting` (Display page switch, default on). Checked on the 4K PG32UCDM: a
   1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
   scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and

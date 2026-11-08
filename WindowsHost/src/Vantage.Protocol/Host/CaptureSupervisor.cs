@@ -205,9 +205,6 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         return steps;
     }
 
-    /// <summary>The device's selection changed without a new <c>selectDisplay</c> (a <c>viewportChanged</c> under a fitted display).</summary>
-    public void Retarget(SelectDisplay select) => _wanted = select;
-
     /// <summary>The session put the display mode back (or something else changed under capture): start again.</summary>
     public IReadOnlyList<CaptureStep> RestartAsked(string reason) =>
         _wanted is null || _starting ? s_nothing : BeginStart(RestartTargets(), reason);

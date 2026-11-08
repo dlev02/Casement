@@ -481,7 +481,8 @@ On the first `selectDisplay`:
    (`ChangeDisplaySettingsEx(…, CDS_FULLSCREEN)`), to the mode closest to the viewport's shape that
    still has room for the viewport in points at the display's scale (rule in `DisplayModes.Choose`),
    lists the displays again so `streamConfig.display` describes the new mode, and captures that. A
-   `viewportChanged` re-chooses 500 ms after the last one. `restoreDisplays`, a later
+   new `selectDisplay` (which the client sends when its viewport changes) chooses again;
+   `viewportChanged` only forces a keyframe. `restoreDisplays`, a later
    `selectDisplay` without it, the session ending, and the host stopping put the user's mode back
    (Windows also does if the host process dies). One session fits a display at a time; another
    streams what's there. Without `useVirtualDisplay` the viewport size is ignored.
