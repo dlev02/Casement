@@ -6,7 +6,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   locked and `LockCurtain` (in `ContentView.swift`) raises an opaque window above every sheet and
   cover. Never go back to swapping the root view for the lock screen: that dismissed open sheets
   and threw away half-typed input whenever the user switched apps (e.g. copying a Tailscale
-  secret from Safari on iPhone). visionOS still swaps views. **How soon it locks**:
+  secret from Safari on iPhone). The same goes for the session's full-screen cover: the screen
+  session stays connected under the curtain, as on the Mac, and is there when Face ID clears; never
+  swap it for `LockOverlay`, which ended the session. visionOS still swaps views. **How soon it locks**:
   `AppLockDelay` (Settings → Privacy & Security → Lock; iOS and visionOS; `vantage.appLockDelay`,
   default 15 minutes), timed from leaving the app on a `ContinuousClock` so sleep counts and changing
   the clock doesn't; locking the device locks it if the app is still running to hear so

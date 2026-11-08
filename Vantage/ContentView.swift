@@ -59,14 +59,10 @@ struct ContentView: View {
         }
         #else
         .fullScreenCover(item: $selectedDevice) { device in
-            Group {
-                if lock.isLocked {
-                    LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
-                } else {
-                    RemoteSessionScreen(device: device).environment(store)
-                }
-            }
-            .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+            // The session stays up under the lock, as on the Mac: `LockCurtain` covers it (and
+            // takes every touch and key) until Face ID clears, then it's there, already connected.
+            RemoteSessionScreen(device: device).environment(store)
+                .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         }
         #endif
         #if os(iOS)
