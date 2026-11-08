@@ -234,6 +234,10 @@ struct ScreenSessionModelTests {
         #expect(!model.isCurtainOn)
         #expect(model.macAudioNotice.value == "The Mac's displays can't be blacked out.")
         #expect(store.connections == 1, "connecting was recorded")
+        // Retry takes the saved choices as they are now, not as the session started.
+        store.device.playMacAudio = false
+        model.retry()
+        #expect(!model.session.wantsCurtain && !model.session.wantsMacAudio)
         model.stop()
     }
 
@@ -262,7 +266,9 @@ struct ScreenSessionModelTests {
         try await waitUntil("reconnected") { model.isConnected && host.screenCount == 2 }
         #expect(!model.hasPicture, "no picture until the new connection's first frame")
         #expect(store.connections == 2)
+        model.dictation.showFixture("macTranscribing") // a clip on its way when the screen closes
         model.stop()
         #expect(model.phase == .stopped && !model.isEnded, "stopping isn't Disconnect")
+        #expect(model.dictation.phase == .idle, "closing the screen drops the clip, so the mic can't open later")
     }
 }

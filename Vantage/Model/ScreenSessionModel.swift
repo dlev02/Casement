@@ -197,9 +197,7 @@ final class ScreenSessionModel {
         #if DEBUG
         if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
         #endif
-        macAudio.setWanted(wantsMacAudio)
-        session.setMacAudio(wantsMacAudio)
-        session.setCurtain(wantsCurtain)
+        applySavedChoices()
         input.mode = touchMode
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
@@ -215,6 +213,9 @@ final class ScreenSessionModel {
     func stop() {
         guard phase == .running else { return }
         phase = .stopped
+        // Before the watchers go: a clip being prepared, recorded or transcribed is dropped (and
+        // the computer told, while the connection is still up), so the mic never opens afterwards.
+        dictation.cancel()
         feedbackTask?.cancel()
         feedbackTask = nil
         viewportDebounce?.cancel()
@@ -251,8 +252,19 @@ final class ScreenSessionModel {
         isEnded = true
     }
 
-    /// Retry after a failure (the same connection, nothing rewired).
-    func retry() { connect(pairingCode: ClientOptions.pairingCode) }
+    /// Retry after a failure: the same wiring, with the saved choices as they are now (a refused
+    /// Curtain cleared its choice; sound or Curtain may have changed while the session was down).
+    func retry() {
+        applySavedChoices()
+        connect(pairingCode: ClientOptions.pairingCode)
+    }
+
+    /// The saved computer's sound and Curtain choices, applied to the player and the connection.
+    private func applySavedChoices() {
+        macAudio.setWanted(wantsMacAudio)
+        session.setMacAudio(wantsMacAudio)
+        session.setCurtain(wantsCurtain)
+    }
 
     func submitPairingCode(_ code: String) { connect(pairingCode: code) }
 
