@@ -175,4 +175,6 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
 
 enum CaptureError: Error {
     case displayNotFound
+    /// The stream reported itself stopped before `start` returned.
+    case stoppedWhileStarting
 }

@@ -25,6 +25,9 @@ actor HostSession {
     private var state: State = .handshaking
     private var capture: (any FrameSource)?
     private var encoder: VideoEncoder?
+    /// Bumped by every `stopCapture`; frame and encoder callbacks carry the epoch they were made
+    /// in, so a late one from a stopped capture or encoder can't touch its replacement's state.
+    private var captureEpoch: UInt64 = 0
     private var injector: InputInjector?
     private var adaptive = AdaptiveController()
     private let power = PowerManager()
@@ -456,10 +459,11 @@ actor HostSession {
         let startFPS = min(select.targetFPS, 60)
         adaptive = AdaptiveController(startBitrateKbps: bitrateForPixels(chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
+        let epoch = captureEpoch
         let encoder = VideoEncoder(configuration: .init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
         try encoder.start { [weak self] outcome in
             guard let self else { return }
-            Task { await self.emit(outcome) }
+            Task { await self.emit(outcome, epoch: epoch) }
         }
         self.encoder = encoder
 
@@ -478,21 +482,30 @@ actor HostSession {
             : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
                             excludingBundleIDs: excludedFromPicture)
         let captureID = ObjectIdentifier(capture)
-        try await capture.start(onFrame: { [weak self] frame in
-            guard let self else { return }
-            Task { await self.ingest(frame) }
-        }, onStop: { [weak self] error in
-            guard let self else { return }
-            let reason = error.map { Self.describe($0) } ?? "stopped"
-            Task { await self.captureStopped(captureID, reason: reason) }
-        })
+        // Known as the current capture before it starts, so a stop that fires while it's starting
+        // (`captureStopped` checks the id) isn't lost.
+        self.capture = capture
+        do {
+            try await capture.start(onFrame: { [weak self] frame in
+                guard let self else { return }
+                Task { await self.ingest(frame, epoch: epoch) }
+            }, onStop: { [weak self] error in
+                guard let self else { return }
+                let reason = error.map { Self.describe($0) } ?? "stopped"
+                Task { await self.captureStopped(captureID, reason: reason) }
+            })
+        } catch {
+            if self.capture === capture { self.capture = nil }
+            throw error
+        }
         guard state == .streaming else { // ended while capture was starting: nothing may keep running
             await capture.stop()
+            if self.capture === capture { self.capture = nil }
             encoder.stop()
             self.encoder = nil
             throw SessionError.closed
         }
-        self.capture = capture
+        guard self.capture === capture else { throw CaptureError.stoppedWhileStarting }
         captureStartedAt = .now
         captureHasFramed = false
         armWatchdog() // a capture that never sends a frame counts as failed after 5 s
@@ -514,7 +527,8 @@ actor HostSession {
         log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
     }
 
-    private func ingest(_ frame: CapturedFrame) {
+    private func ingest(_ frame: CapturedFrame, epoch: UInt64) {
+        guard epoch == captureEpoch else { return } // a frame from a capture that was stopped
         captureHasFramed = true
         if captureLostAt != nil { captureRecovered() }
         let (_, fps) = adaptive.observe(dirtyRatio: frame.dirtyRatio)
@@ -550,7 +564,8 @@ actor HostSession {
         encoder?.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: force)
     }
 
-    private func emit(_ outcome: VideoEncoder.Outcome) {
+    private func emit(_ outcome: VideoEncoder.Outcome, epoch: UInt64) {
+        guard epoch == captureEpoch else { return } // a stopped encoder's late word
         encodesInFlight = max(0, encodesInFlight - 1)
         switch outcome {
         case .encoded(let output):
@@ -1003,12 +1018,14 @@ actor HostSession {
 
     /// Stops capture and encoding only; input, power, and status monitoring stay.
     private func stopCapture() async {
+        captureEpoch &+= 1
         await capture?.stop()
         capture = nil
         encoder?.stop()
         encoder = nil
         pendingPixelBuffer = nil
         encodesInFlight = 0
+        encodeStartedAt = nil
     }
 
     private func stopStreaming() async {
