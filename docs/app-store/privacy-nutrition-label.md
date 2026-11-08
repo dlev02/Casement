@@ -49,7 +49,7 @@ config. The only hard-coded URLs are in the table above.
   Data synced by the user's own iCloud isn't "collected" by the developer.
 - Dictation audio is transcribed on the device (SpeechAnalyzer) or sent to the user's own
   computer, and isn't kept.
-- Logs use `os.Logger`. Transcripts are `.private` (CLAUDE.md, Dictation) and nothing is
+- Logs use `os.Logger`. Transcripts are `.private` (`docs/guide/dictation-and-audio.md`, Dictation) and nothing is
   uploaded.
 - Crash reports and analytics that users opt into in iOS Settings are Apple's and aren't declared
   by the developer.

@@ -182,7 +182,7 @@ Client:        AVSampleBufferDisplayLayer ←── VantageCore ←────�
 | [`WindowsHost/`](WindowsHost) | The Windows host in C#, with a synthetic host for testing from a Mac |
 | [`VantageWidgets/`](VantageWidgets), [`Shared/`](Shared) | Widgets and the code they share with the app |
 | [`docs/research/`](docs/research/README.md) | Engineering notes behind the harder decisions, with sources |
-| [`CLAUDE.md`](CLAUDE.md) | The engineering guide: architecture, conventions, debug flags, and gotchas |
+| [`CLAUDE.md`](CLAUDE.md), [`docs/guide/`](docs/guide) | The engineering guide: architecture, conventions, debug flags, and gotchas, one guide per area |
 
 ## Privacy and security
 

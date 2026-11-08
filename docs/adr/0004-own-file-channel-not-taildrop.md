@@ -1,0 +1,3 @@
+# Files move over Casement's own file channel, not Taildrop
+
+Casement moves files over a second connection of its own to the host (the file channel), with resume, progress, drag and drop, and files-only sessions, rather than handing them to Taildrop or another app. The early research recommended Taildrop first, but no public API lets a third-party iOS app drive it, so files couldn't be sent from inside a session, land where Casement shows them, or report progress and resume after a dropped connection. The cost is a transfer engine to maintain on both hosts (Swift and C#) and its wire messages in the golden vectors. Decided in September 2026, when native transfers were built; see `docs/research/audio-dictation-files.md` §C.

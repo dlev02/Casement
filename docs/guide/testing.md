@@ -1,0 +1,50 @@
+# Running hosts and the app end to end
+
+Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout and repo rules this assumes.
+
+## Running for real
+
+The host needs two TCC grants the first time: Screen Recording and Accessibility (for CGEvent). The
+menu-bar UI surfaces both with buttons. Tailscale must be running on both devices. Unattended access
+(login-window capture, FileVault reboot recovery) is deliberately out of scope for v1 — see the
+research notes.
+
+**Keychain experiments**: use a throwaway item in the login Keychain, never change an item's access
+rules (`kSecAttrAccess` in an update raises a system dialog even with interaction off), and never
+kill a process stuck on a prompt: that crashed `securityd`, and its restart locked the login Keychain
+until the password was entered again. Results from a keychain made with `security create-keychain`
+don't carry over: there another program's overwrite was readable by the owner, while in the login
+Keychain it wasn't.
+
+## Headless end-to-end testing (no permissions needed)
+
+The simulator cannot route to the Mac's Tailscale interface, so test over loopback (the host accepts
+loopback peers in addition to tailnet peers):
+
+```
+open -n ".deriveddata/Build/Products/Debug/Casement Host.app" --args --synthetic-capture --port 47821 --pairing-code 246810
+xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1:47821 -VantagePairingCode 246810
+```
+
+`--synthetic-capture` streams a rendered test pattern and never touches ScreenCaptureKit, so the
+whole encode → transport → decode → display path runs without Screen Recording access.
+`--synthetic-image <png>` (DEBUG) streams that picture instead, and the pretend display takes the
+picture's size at 2x (a 2752 × 2064 picture fills a 13" iPad in landscape). The README screenshots
+use it with the made-up desktops in `docs/images/source/` (HTML, rendered with headless Chrome:
+`"Google Chrome" --headless=new --force-device-scale-factor=2 --window-size=1376,1032
+--screenshot=out.png file://…/mac-desktop.html`); never screenshot a real desktop for the README.
+
+To test against the **real** host (display capture + CGEvent input) from the simulator, launch the
+Debug host with `--pairing-code 246810` and no `--synthetic-capture`, then auto-connect the
+simulator to `127.0.0.1`. The simulator's identity is trusted after the first pairing. To verify
+clicks without touching anything on the desktop, build `scripts/click-target.swift` (`swiftc -O`)
+and run it: it floats an orange window at CG 400–700 × 300–500 and prints every pointer event it
+receives; a tap in the simulator in Trackpad mode clicks at the display centre, inside that window.
+Drive the simulator with Axiom's `xcui tap -x -y` (the `--label` matcher does not resolve SwiftUI
+rows here). Host timing is logged as "stream setup took N ms" in the `session` category, and every
+click as "pointer down/up" in the `input` category. Synthetic mode
+disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
+and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward, or launch it with `--exit-after <seconds>` (DEBUG) so it quits by itself. Client debug
+flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
+are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
+`log` in Drew's profile).

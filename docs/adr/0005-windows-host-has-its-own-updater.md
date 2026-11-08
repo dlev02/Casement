@@ -1,0 +1,3 @@
+# The Windows host has its own updater
+
+Casement Host for Windows updates itself with a small signed updater of its own (a signed `windows-update.json`, a swap through a second process, and rollback) instead of Velopack, the usual ready-made choice. The host's install folder must keep its path across updates: the Run value, the administrator Task Scheduler task, the firewall rule, the Start menu shortcut and Windows' tray icon choice all name it, so an update that moved it would undo them. The cost is owning the updater's edge cases (a running exe can't replace itself; the uninstaller lives outside the folder) and its Ed25519 signing key, whose loss means every installed copy needs a manual download.

@@ -195,7 +195,7 @@ xcrun simctl launch <sim> me.drewlevinson.casement -VantageAutoConnect 127.0.0.1
 
 A fixed `--pairing-code` is used up by one pairing (as on the Mac); `--pairing-code-rearm S` shows
 it again S seconds later. The Swift side of the proof (golden vectors, `WindowsHostInteropTests`,
-`LiveHostFilesTests`, `SessionUITests`) is described in the repo's `CLAUDE.md`, "Windows host".
+`LiveHostFilesTests`, `SessionUITests`) is described in the repo's [`docs/guide/windows-host.md`](../docs/guide/windows-host.md).
 
 ## On the PC
 

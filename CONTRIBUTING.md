@@ -8,10 +8,10 @@ Thanks for your interest in Casement. Bug reports, ideas, and pull requests are 
 
 ## Pull requests
 
-1. Read [`CLAUDE.md`](CLAUDE.md). It's the engineering guide for the whole project: architecture, conventions, debug flags, and the decisions behind them. The research notes in [`docs/research`](docs/research/README.md) back the trickier parts.
+1. Read [`CLAUDE.md`](CLAUDE.md) and the guide in [`docs/guide`](docs/guide) for the area you're changing. Together they're the engineering guide for the whole project: architecture, conventions, debug flags, and the decisions behind them. The research notes in [`docs/research`](docs/research/README.md) back the trickier parts.
 2. Keep each pull request to one change, and describe what it does for someone using the app.
 3. Run `scripts/check.sh` before you open it. It runs both Swift test suites and builds the host and the iOS and macOS clients. If you touched `WindowsHost/`, also run `dotnet test --solution Vantage.Windows.slnx` from that folder.
-4. If you change a wire message, update both the Swift and the C# golden vectors (see "Golden vectors" in `CLAUDE.md`).
+4. If you change a wire message, update both the Swift and the C# golden vectors (see "Golden vectors" in [`docs/guide/windows-host.md`](docs/guide/windows-host.md)).
 
 ## Licensing of contributions
 
