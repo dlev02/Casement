@@ -37,6 +37,8 @@ actor HostSession {
     private var encodeStartedAt: ContinuousClock.Instant?
     private var needsKeyframe = true
     private var framesSent: UInt64 = 0
+    /// The frame rate capture and the encoder were last told; they hear only changes.
+    private var currentFPS = 0
     /// Dictation audio waiting for `commit`. Only filled for clients that asked for dictation.
     private var dictationClips = DictationClipStore()
     private var dictationEngines: [DictationEngineID] = []
@@ -485,6 +487,7 @@ actor HostSession {
         }
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
+        currentFPS = startFPS
         needsKeyframe = true
         log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
     }
@@ -493,8 +496,11 @@ actor HostSession {
         captureHasFramed = true
         if captureLostAt != nil { captureRecovered() }
         let (_, fps) = adaptive.observe(dirtyRatio: frame.dirtyRatio)
-        capture?.updateFPS(fps)
-        encoder?.setExpectedFrameRate(fps)
+        if fps != currentFPS {
+            currentFPS = fps
+            capture?.updateFPS(fps)
+            encoder?.setExpectedFrameRate(fps)
+        }
 
         // Idle suppression: skip encoding a static frame (but always honor a pending keyframe).
         if frame.dirtyRatio <= 0.0001 && !needsKeyframe && framesSent > 0 { return }
