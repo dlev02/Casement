@@ -19,7 +19,7 @@ private final class MockOwner: Sendable {}
 /// Stands in for Casement Host on loopback: authenticates, offers files (keeping them without the
 /// screen or not, like a current or an older host), takes the file channel, and answers Curtain
 /// as told.
-private final class MockHost: @unchecked Sendable {
+private final class MockScreenHost: @unchecked Sendable {
     private let listener: NWListener
     private let registry = AttachTokenRegistry<MockOwner>()
     private let lock = NSLock()
@@ -156,7 +156,7 @@ private let viewport = Viewport(widthPoints: 800, heightPoints: 600, scale: 2)
 
 /// A model on a fresh identity and its own files, against `host`.
 @MainActor
-private func makeModel(host: MockHost, store: FakeStore) throws -> ScreenSessionModel {
+private func makeModel(host: MockScreenHost, store: FakeStore) throws -> ScreenSessionModel {
     let files = FileTransferController(receiveDirectory: FileManager.default.temporaryDirectory.appending(path: "screen-received-\(UUID().uuidString)"))
     let session = ClientSession(identity: DeviceIdentity(), files: files)
     session.reconnectDelay = { _ in .milliseconds(50) }
@@ -191,7 +191,7 @@ struct ScreenSessionModelTests {
     /// would stop a file still moving; a current Mac keeps the files, so it ends at once.
     @Test @MainActor func disconnectAsksOnlyWhenAnOlderMacWouldStopFiles() async throws {
         for keepsFiles in [false, true] {
-            let host = try await MockHost(keepsFiles: keepsFiles)
+            let host = try await MockScreenHost(keepsFiles: keepsFiles)
             defer { host.stop() }
             let store = FakeStore(device: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port))
             let model = try makeModel(host: host, store: store)
@@ -221,7 +221,7 @@ struct ScreenSessionModelTests {
     /// The saved Curtain choice asks on connect; a host that can't do it answers why, and the
     /// choice is cleared so the next connection doesn't ask again.
     @Test @MainActor func refusedCurtainClearsTheSavedChoice() async throws {
-        let host = try await MockHost(keepsFiles: true, curtainRefusal: "The Mac's displays can't be blacked out.")
+        let host = try await MockScreenHost(keepsFiles: true, curtainRefusal: "The Mac's displays can't be blacked out.")
         defer { host.stop() }
         var device = SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port)
         device.curtain = true
@@ -245,7 +245,7 @@ struct ScreenSessionModelTests {
     /// one) and tells dictation, which loses the recording on its way to the Mac; the
     /// reconnection starts clean.
     @Test @MainActor func reconnectResetsTheFirstFrameAndDictation() async throws {
-        let host = try await MockHost(keepsFiles: true, behaviour: .dropAfter(3))
+        let host = try await MockScreenHost(keepsFiles: true, behaviour: .dropAfter(3))
         defer { host.stop() }
         let store = FakeStore(device: SavedDevice(name: "Mock Mac", host: "127.0.0.1", port: host.port))
         let model = try makeModel(host: host, store: store)
