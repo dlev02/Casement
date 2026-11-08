@@ -551,7 +551,7 @@ struct ControlStrip: View {
         #endif
         if let onCustomize {
             Button(action: onCustomize) {
-                Label("Customize Controls…", systemImage: "slider.horizontal.3")
+                Label("Customize Control Strip…", systemImage: "slider.horizontal.3")
             }
         }
         #if !os(visionOS)

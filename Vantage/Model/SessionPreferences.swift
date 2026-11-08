@@ -104,8 +104,8 @@ enum PencilAction: String, CaseIterable, Identifiable, Sendable {
         case .none: "Nothing"
         case .rightClick: "Secondary Click"
         case .middleClick: "Middle Click"
-        case .collapseControls: "Collapse Controls"
-        case .hideControls: "Hide Controls"
+        case .collapseControls: "Collapse Control Strip"
+        case .hideControls: "Hide Control Strip"
         case .showKeyboard: "Show Keyboard"
         }
     }

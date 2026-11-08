@@ -36,8 +36,8 @@ final class CloudSync {
         var explanation: String? {
             switch self {
             case .available: nil
-            case .noiCloudAccount: "Sign in to iCloud in Settings to sync your device list."
-            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain. This copy of Casement isn't signed for iCloud storage, so the device list stays on this device."
+            case .noiCloudAccount: "Sign in to iCloud in Settings to sync your computers."
+            case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain. This copy of Casement isn't signed for iCloud storage, so your list of computers stays on this device."
             }
         }
     }

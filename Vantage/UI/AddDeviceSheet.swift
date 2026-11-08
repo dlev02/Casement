@@ -110,14 +110,14 @@ struct AddDeviceSheet: View {
                         Text("Keyboard")
                     } footer: {
                         Text(commandSendsControl
-                             ? "Your keyboard's ⌘ presses Ctrl on the PC and Control presses the Windows key, so ⌘C, ⌘V and ⌘Z work as they do on a Mac. The Ctrl, Alt and Win buttons in the session controls always send those keys."
-                             : "Keys go to the PC as they are: ⌘ is the Windows key and Control is Ctrl. The Ctrl, Alt and Win buttons in the session controls always send those keys.")
+                             ? "Your keyboard's ⌘ presses Ctrl on the PC and Control presses the Windows key, so ⌘C, ⌘V and ⌘Z work as they do on a Mac. The Ctrl, Alt and Win buttons in the control strip always send those keys."
+                             : "Keys go to the PC as they are: ⌘ is the Windows key and Control is Ctrl. The Ctrl, Alt and Win buttons in the control strip always send those keys.")
                     }
                 } else {
                     macSections
                 }
             }
-            .navigationTitle(existing == nil ? "Add Device" : "Edit Device")
+            .navigationTitle(existing == nil ? "Add Computer" : "Edit Computer")
             #if os(macOS)
             .formStyle(.grouped)
             #endif

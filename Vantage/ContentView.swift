@@ -279,7 +279,7 @@ struct SessionWindow: View {
             RemoteSessionScreen(device: device).environment(store)
         } else {
             ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
-                                   description: Text("This Mac is no longer in your device list."))
+                                   description: Text("This Mac is no longer in your list of computers."))
                 #if os(visionOS) // the session window is plain
                 .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
                 #endif

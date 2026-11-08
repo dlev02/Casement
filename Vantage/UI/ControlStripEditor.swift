@@ -69,7 +69,7 @@ struct ControlStripEditor: View {
             }
         }
         .sensoryFeedback(.selection, trigger: layout)
-        .navigationTitle("Customize Controls")
+        .navigationTitle("Customize Control Strip")
         .modifier(MacSubtitle(name: mac?.name))
         #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -417,7 +417,7 @@ struct ControlStripPreview: View {
             }
             .environment(\.colorScheme, .dark)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Preview of the session controls")
+            .accessibilityLabel("Preview of the control strip")
             .accessibilityValue(items.isEmpty ? "Menu and collapse button only" : items.map { $0.label(for: host) }.joined(separator: ", "))
     }
 }

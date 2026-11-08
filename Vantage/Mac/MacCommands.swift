@@ -52,7 +52,7 @@ struct MacCommands: Commands {
 
         CommandGroup(after: .toolbar) {
             Divider()
-            Button(session?.controlsHidden == true ? "Show Controls" : "Hide Controls") { session?.toggleControls() }
+            Button(session?.controlsHidden == true ? "Show Control Strip" : "Hide Control Strip") { session?.toggleControls() }
                 .keyboardShortcut("c", modifiers: Self.vantageChord)
                 .disabled(session == nil)
             Button("Actual Size") { session?.actualSize() }
@@ -123,7 +123,7 @@ struct MacCommands: Commands {
         }
         .disabled(session == nil)
         Divider()
-        Button("Customize Controls…") { session?.customizeControls() }
+        Button("Customize Control Strip…") { session?.customizeControls() }
             .disabled(session == nil)
         Divider()
         Button("Disconnect") { session?.disconnect() }
