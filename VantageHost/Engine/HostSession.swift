@@ -258,6 +258,10 @@ actor HostSession {
             let adopted = await ScreenCurtain.shared.adopt(ObjectIdentifier(self)) { status in
                 channel.sendDetached(.curtainStatus(status))
             }
+            guard state == .streaming else { // removed while adopting
+                if adopted { await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self)) }
+                return false
+            }
             if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
         }
         return true
@@ -265,8 +269,12 @@ actor HostSession {
 
     // MARK: Message loop
 
+    /// Every message is handled only while the session is streaming: a teardown from elsewhere
+    /// (the device was removed) closes the channel first, and anything this loop was in the middle
+    /// of awaiting checks the state again before it acts.
     private func receiveLoop() async throws {
-        while let message = try await channel.receive() {
+        while state == .streaming, let message = try await channel.receive() {
+            guard state == .streaming else { return }
             switch message {
             case .selectDisplay(let select):
                 await selectDisplay(select)
@@ -335,8 +343,14 @@ actor HostSession {
             let problem = await ScreenCurtain.shared.set(enabled, for: ObjectIdentifier(self)) { status in
                 channel.sendDetached(.curtainStatus(status))
             }
+            guard state == .streaming else {
+                // The session ended while the curtain was going up: nobody's left to hold it.
+                await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self))
+                return
+            }
             if let problem { status = CurtainStatus(isUp: false, unavailable: problem) }
         }
+        guard state == .streaming else { return }
         log.info("curtain request \(enabled): up \(status.isUp)")
         channel.sendDetached(.curtainStatus(status))
     }
@@ -352,7 +366,7 @@ actor HostSession {
     /// Anything that would touch the screen, input, audio, or clipboard is ignored.
     private func filesOnlyLoop() async throws {
         var ignored = 0
-        while let message = try await channel.receive() {
+        while state == .filesOnly, let message = try await channel.receive() {
             switch message {
             case .ping(let ping):
                 channel.sendDetached(.pong(Pong(echoNanos: ping.sentAtNanos)))
@@ -373,6 +387,7 @@ actor HostSession {
         let startedAt = MonotonicClock.nanos()
         defer { log.info("stream setup took \((MonotonicClock.nanos() - startedAt) / 1_000_000) ms") }
         await stopCapture()
+        guard state == .streaming else { throw SessionError.closed }
         // The pretend display fails the way ScreenCaptureKit does while the screen is off.
         if DisplayPower.fake.isEnabled, DisplayPower.fake.isAsleep { throw CaptureError.displayNotFound }
         if let captureFailsUntil, ContinuousClock.now < captureFailsUntil { throw CaptureError.displayNotFound }
@@ -434,6 +449,7 @@ actor HostSession {
                 }
             }
         }
+        guard state == .streaming else { throw SessionError.closed } // ended while displays were listed
         displayInfo = chosen
 
         let codec: VideoCodec = select.preferredCodec ?? .hevc
@@ -470,6 +486,12 @@ actor HostSession {
             let reason = error.map { Self.describe($0) } ?? "stopped"
             Task { await self.captureStopped(captureID, reason: reason) }
         })
+        guard state == .streaming else { // ended while capture was starting: nothing may keep running
+            await capture.stop()
+            encoder.stop()
+            self.encoder = nil
+            throw SessionError.closed
+        }
         self.capture = capture
         captureStartedAt = .now
         captureHasFramed = false
@@ -734,6 +756,7 @@ actor HostSession {
         }
         startMonitoring()
         if DisplayPower.isAsleep() { await wakeDisplayForStreaming() }
+        guard state == .streaming else { return }
         if await startStream(select) == false { captureUnavailable() }
     }
 
@@ -824,7 +847,7 @@ actor HostSession {
         defer { streamStarting = false }
         var next: SelectDisplay? = select
         var started = false
-        while let current = next {
+        while state == .streaming, let current = next {
             pendingStart = nil
             do {
                 try await startStreaming(current)
@@ -1016,6 +1039,9 @@ actor HostSession {
         let wasFilesOnly = state == .filesOnly
         state = .closed
         attachTokens.revoke(owner: self)
+        // The channel goes first, so a receive loop still running ends now and nothing it was
+        // about to do (a curtain request, a display change, input) lands on a dead session.
+        await channel.close()
         if !HostOptions.shared.syntheticCapture {
             await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self))
         }
@@ -1026,7 +1052,6 @@ actor HostSession {
             await stopAudio()
             await stopStreaming()
         }
-        await channel.close()
         onEnded(self)
     }
 
@@ -1075,4 +1100,6 @@ enum SessionError: Error {
     case versionMismatch
     case authFailed
     case pairingRequired
+    /// The session ended (the device was removed, the connection closed) while something was starting.
+    case closed
 }

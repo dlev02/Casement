@@ -27,7 +27,10 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
   Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
   sends `disconnect` ("This device was removed from the Mac.") and tears down
-  (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does; the client shows "The Mac
+  (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does. Teardown closes the
+  connection first, and everything the receive loop awaits (a curtain request, a display change, a
+  capture start) checks the session is still streaming afterwards, so a request in flight when the
+  device was removed can't leave a curtain holder or a capture behind for a dead session; the client shows "The Mac
   ended the session." and doesn't reconnect.
   The host names its OS in `Challenge.hostPlatform` and `HostCapabilities.platform` (`HostPlatform`,
   a string wrapper: `macos`, `windows`, unknown values still decode; nil from older hosts means a
