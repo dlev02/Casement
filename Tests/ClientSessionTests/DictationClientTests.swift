@@ -25,7 +25,7 @@ private func dictationHost(capabilities: HostCapabilities?,
         guard let channel = await iterator.next() else { throw DictationTestFailure.unexpectedMessage }
         try await channel.start()
         guard case .hello(let hello)? = try await channel.receive() else { throw DictationTestFailure.unexpectedMessage }
-        try await channel.send(.challenge(MockHostAuth.challenge(for: hello, identity: DeviceIdentity(), hostName: "Test Mac", isPaired: true)))
+        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Test Mac", isPaired: true).0))
         guard case .authenticate? = try await channel.receive() else { throw DictationTestFailure.unexpectedMessage }
         try await channel.send(.authResult(AuthResult(status: .ok, displays: [], capabilities: capabilities)))
         guard case .selectDisplay? = try await channel.receive() else { throw DictationTestFailure.unexpectedMessage }

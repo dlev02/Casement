@@ -21,6 +21,8 @@ final class HostController {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "controller")
     private let identity: DeviceIdentity
     let trust = TrustStore()
+    /// The real Mac or the synthetic stand-ins, chosen once here and handed to every session.
+    let environment: HostEnvironment
     private let listener = TailscaleListener(port: HostOptions.shared.port)
     private var sessions: [HostSession] = []
     /// Files-only sessions (Send Files from the iPad's device list): authenticated, no screen.
@@ -67,7 +69,31 @@ final class HostController {
 
     /// This Mac's name as Sharing settings has it ("Drew's MacBook Pro"); never `Host.current()`,
     /// which can block on DNS.
-    let computerName = (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "This Mac"
+    let computerName = readComputerName()
+
+    private static func readComputerName() -> String {
+        (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "This Mac"
+    }
+
+    /// The composition root: a synthetic host (`--synthetic-capture`) gets a pretend display,
+    /// test pattern and chime and never touches the real displays, input or permissions; a real
+    /// host gets the Mac.
+    private static func makeEnvironment(hostName: String) -> HostEnvironment {
+        let options = HostOptions.shared
+        let files: @Sendable () -> FileDestination = {
+            let store = HostFileStore.current
+            return FileDestination(directory: store.directory, configuration: store.configuration)
+        }
+        let captureFailsFor = options.captureFailsForSeconds.map { Duration.seconds($0) }
+        if options.syntheticCapture {
+            return SyntheticHostEnvironment.make(hostName: hostName, platform: options.platform,
+                                                 display: FakeDisplay(asleep: options.fakeDisplaySleep),
+                                                 picture: SyntheticHostEnvironment.loadPicture(atPath: options.syntheticImage),
+                                                 fileDestination: files, captureFailsFor: captureFailsFor)
+        }
+        return MacHostEnvironment.make(hostName: hostName, platform: options.platform, allowsSelfCurtain: options.allowsSelfCurtain,
+                                       fileDestination: files, captureFailsFor: captureFailsFor)
+    }
 
     var fingerprint: String { identity.fingerprint }
     /// A screen session is up (files-only sessions live in `fileSessions` and never count): the
@@ -87,6 +113,7 @@ final class HostController {
 
     init() {
         self.identity = Self.loadIdentity()
+        self.environment = Self.makeEnvironment(hostName: Self.readComputerName())
         trust.onChange = { [weak self] in
             Task { @MainActor in self?.refreshTrusted() }
         }
@@ -313,8 +340,8 @@ final class HostController {
             Task { await channel.close() }
             return
         }
-        let session = HostSession(channel: channel, identity: identity, trust: trust, peerDescription: peer, peerHost: peerHost,
-                                  attachTokens: attachTokens,
+        let session = HostSession(channel: channel, identity: identity, trust: trust, environment: environment,
+                                  peerDescription: peer, peerHost: peerHost, attachTokens: attachTokens,
                                   onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
                                   onStreaming: { [weak self] session, name, model, key in
                                       Task { @MainActor in

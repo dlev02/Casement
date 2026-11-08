@@ -20,8 +20,8 @@ import VantageCore
 ///   menu bar is too crowded to show the item).
 /// - `--log-input-events`: log the key events reaching the session (`InputEventLog`).
 /// - `--exit-after 300`: quit after that many seconds, so a test host never outlives its run.
-/// - `--display-asleep`: pretend the display starts asleep (`DisplayPower.fake`); synthetic hosts
-///   then behave like a Mac whose screen is off until something wakes it.
+/// - `--display-asleep`: with `--synthetic-capture`, the pretend display (`FakeDisplay`) starts
+///   asleep, so the synthetic host behaves like a Mac whose screen is off until something wakes it.
 /// - `--capture-fails-for 6`: each session's capture can't start for that many seconds after its
 ///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
 /// - `--synthetic-image /path.png`: a synthetic host streams that picture instead of the test

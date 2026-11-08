@@ -16,6 +16,15 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   a nonce (older builds) still signs the older `vantage-auth-v1` transcript, which hosts accept; a
   host without a signature (older Casement Host) is refused with "Update Casement Host". Any change
   here updates the Swift and C# sides and the golden vectors (`helloProbe`, `challengeSigned`).
+  The host side of all this (version check, the transcript the device's build signs, signature
+  checks, the pairing code's accepted/wrong/run-out answers and the second each miss costs, the
+  availability check, files-only sessions, the Screen Recording refusal, and the capabilities to
+  advertise) is one module, `SessionAdmission` (VantageCore `Identity`): `begin(hello:)` makes the
+  challenge, `Pending.finish` judges the answer into a session kind or a refusal, and the pairing
+  code's own rules are `PairingCodes` beside it. `HostSession` only sends what it says, and the
+  client tests' mock hosts (`MockHost` in `ClientSessionTests`) run the same module, so there is
+  one copy of the host's rules in Swift; `SessionAdmissionTests` cover pairing, the five-miss burn,
+  purpose binding, older clients and files-only sessions. Trust reaches it as `PairingAuthority`.
   First connection needs a 6-digit pairing code shown on the Mac; after
   that the key is trusted. The Mac keeps trusted keys in the Keychain (`TrustStore`, moved once from
   `vantage.trustedClients` in defaults), since any program this user runs can rewrite defaults;
@@ -23,11 +32,14 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
   Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
   and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
-  guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
+  guesses (`PairingCodes`, kept by `TrustStore`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
   Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
   sends `disconnect` ("This device was removed from the Mac.") and tears down
-  (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does; the client shows "The Mac
+  (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does. Teardown closes the
+  connection first, and everything the receive loop awaits (a curtain request, a display change, a
+  capture start) checks the session is still streaming afterwards, so a request in flight when the
+  device was removed can't leave a curtain holder or a capture behind for a dead session; the client shows "The Mac
   ended the session." and doesn't reconnect.
   The host names its OS in `Challenge.hostPlatform` and `HostCapabilities.platform` (`HostPlatform`,
   a string wrapper: `macos`, `windows`, unknown values still decode; nil from older hosts means a
@@ -56,12 +68,43 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
   `controlStripMac` edits the first saved Mac and `controlStripPC`/`editPC` the first PC, so pair
   them with `-VantageSeedSamples 1`, which includes one PC).
-- **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
+- **Host environment** (`HostEnvironment`, `VantageHost/Engine`): everything platform-specific a
+  `HostSession` needs (displays and capture, display power and status, input, clipboard, sound,
+  Curtain, dictation, tailnet names, the receive folder, a clock) comes through one struct of
+  protocols, chosen once in `HostController.makeEnvironment` (the composition root): the real Mac
+  (`MacHostEnvironment`: ScreenCaptureKit, `PowerManager`, `LockMonitor`, `InputInjector`,
+  `ClipboardBridge`, `ScreenCurtain`, `HostTranscriber`, `TailscaleCLI`) or the synthetic
+  stand-ins (`SyntheticHostEnvironment`: `FakeDisplay`, the test pattern, the chime, no input or
+  clipboard). The session never reads `HostOptions` or a singleton, so the Windows host's
+  `HostEnvironment` and the Mac's have the same shape, and `HostSessionTests` (root
+  `xcrun swift test`) drive the real session over loopback on the synthetic environment. A new
+  platform dependency goes behind a protocol here, with a synthetic adapter, never straight into
+  the session. Pairing and trust reach the session as `HostTrust` (`TrustStore` on a real host).
+- **Capture lifecycle** (`CaptureLifecycle`, `VantageHost/Engine`; the Windows host's session runs
+  the same machine): everything that keeps a picture coming for a screen session lives in one pure
+  module, events in and decisions out, with the caller's clock on every event. Events: the device
+  asked for a selection; a capture started, failed or stopped; a frame arrived; the status monitor
+  changed (lock, secure input, display sleep); Wake (also Retry) or Sleep Display; the displays
+  changed; a 250 ms tick. Decisions: start capture on these targets (the display it was on first,
+  keeping its codec, then the device's own choice; synthetic displays only the latter), stop it,
+  send a `HostStatus` (only when it differs from the last one sent, as the Windows host does), wake
+  or sleep the display, re-read the status, begin monitoring, request a keyframe (a wake with
+  capture still running), or log a note. It also answers whether input may reach the screen.
+  `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
+  while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
+  objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
+  `--capture-fails-for`. Rules below are the module's; `CaptureLifecycleTests` check them with a
+  fake clock and frame source, `HostSessionTests` over loopback.
+- **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
+  `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture
   can't start (that was the reconnect loop): capture waits, `HostStatus.isDisplayAsleep` (optional;
   nil from older hosts) tells the client, and capture restarts with a keyframe when the display
-  wakes (NSWorkspace screensDid*, a 1 s poll, the controller's restart; one start at a time). The
+  wakes (NSWorkspace screensDid*, a 1 s poll, the controller's restart; one start at a time, a
+  request made meanwhile takes over afterwards; the asleep notice stops the capture at once rather
+  than waiting for ScreenCaptureKit, so nothing encoded before the sleep arrives after the wake,
+  and a wake that finds capture still running asks for a keyframe instead). The
   injector, power assertion, and status monitor live for the session, not the capture. Connecting
   wakes a sleeping display before listing displays; input while asleep wakes it (≤ 1/s) instead
   of being delivered (releases still are), except for 2 s after Sleep Display; the Wake command
@@ -69,21 +112,27 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   assertion id (Remote lights the display on macOS 27 too; a fresh id per call leaked an assertion
   every time). On Drew's Mac display sleep also posts `com.apple.screenIsLocked` + Secure Input
   even with screen lock off; both clear on wake. **Awake but no picture** (capture won't start;
-  once seen after a wake, when SCK listed no displays for 10+ s): a watchdog in `HostSession`
+  once seen after a wake, when SCK listed no displays for 10+ s): the lifecycle's watchdog
   retries (0.5 s doubling to 5 s) for the whole session, logs every attempt as "capture
-  unavailable for N s: <reason>; <panel state>; trying again" (category `session`), re-declares
-  local activity when CGDisplayIsAsleep or an empty active-display list says the panel is off
-  (IOKit has no display power state on Apple silicon), treats a started capture with no frame in
-  5 s as failed, and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on the
-  first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
+  unavailable for N s: <reason>; trying again" with the panel state (category `session`),
+  re-declares local activity when CGDisplayIsAsleep or an empty active-display list says the panel
+  is off (IOKit has no display power state on Apple silicon), watches every capture start and
+  treats one with no frame in 5 s as failed (armed on every start as the Windows host does, not
+  only after a failure), and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on
+  the first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
   (last frame dimmed, glass note, Wake/Retry button, tap anywhere) shows "The Mac's display is
   asleep" or "Waiting for the Mac's screen…", never a frozen frame without a word; the lock
   banner hides only while asleep. `ClientSession`
   resets its reconnect backoff only once the host answers the stream request or the connection
-  lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (a
-  pretend display that starts asleep; sleep/wake commands work on synthetic hosts too) and
+  lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (with
+  `--synthetic-capture`: the pretend display, `FakeDisplay`, starts asleep; sleep and wake
+  commands flip it, and its capture stops when it sleeps as ScreenCaptureKit's does; a synthetic
+  host never reads the real Mac's display power, so a test host on a Mac whose screen is off still
+  behaves) and
   `--capture-fails-for <s>` (each session's capture fails that long from its first stream
-  request). Tests: `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
+  request). Tests: `CaptureLifecycleTests` (the rules on a fake clock), `HostSessionTests` (the
+  Mac session over loopback: sleep and wake, a missing picture), `DisplaySleepSessionTests`,
+  `HostStatusTests` (VantageCore),
   `SessionUITests.testSleepDisplayShowsAsleepStateAndWakes` (synthetic host with
   `--display-asleep`; `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST=127.0.0.1:<port>` and
   `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults),

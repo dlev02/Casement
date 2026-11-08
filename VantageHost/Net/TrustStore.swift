@@ -7,7 +7,7 @@ import os
 /// identity: any program this user runs can rewrite UserDefaults without a Screen Recording or
 /// Accessibility grant, and could have paired itself that way. Synthetic hosts keep their
 /// throwaway list in a defaults suite of their own.
-nonisolated final class TrustStore: @unchecked Sendable {
+nonisolated final class TrustStore: HostTrust, @unchecked Sendable {
     struct TrustedClient: Codable, Sendable, Identifiable {
         var fingerprint: String
         var name: String
@@ -29,16 +29,11 @@ nonisolated final class TrustStore: @unchecked Sendable {
     private let lock = NSLock()
     /// The list as last read or written; nil until the first read succeeds.
     private var loadedClients: [TrustedClient]?
-    private var activePairingCode: String?
-    private var pairingIssuedAt: Date?
-    private var failedPairingAttempts = 0
+    /// The code on show, with its ten-minute and five-miss rules (`PairingCodes`, VantageCore).
+    private var codes = PairingCodes(fixedCode: HostOptions.shared.fixedPairingCode)
 
-    /// A code is burned after this many wrong guesses, so a peer gets 5 tries in a million.
-    static let maxPairingAttempts = 5
-    /// A code shown on the Mac stops working after ten minutes.
-    static let pairingLifetime: TimeInterval = 10 * 60
-
-    enum PairingCheck: Sendable { case accepted, incorrect, unavailable }
+    /// A code shown on the Mac stops working after ten minutes (`PairingCodes.lifetime`).
+    static let pairingLifetime: TimeInterval = TimeInterval(PairingCodes.lifetime.components.seconds)
 
     var onChange: (@Sendable () -> Void)?
     /// Called when a code stops being valid (used, expired, or burned by wrong guesses).
@@ -60,9 +55,7 @@ nonisolated final class TrustStore: @unchecked Sendable {
     }
 
     /// What iOS and visionOS call every device, now that apps can't read the name its owner gave it.
-    static func isGenericName(_ name: String) -> Bool {
-        ["iPad", "iPhone", "iPod touch", "Apple Vision Pro"].contains(name)
-    }
+    static func isGenericName(_ name: String) -> Bool { HostSession.isGenericName(name) }
 
     func name(ofFingerprint fingerprint: String) -> String? {
         trustedClients().first { $0.fingerprint == fingerprint }?.name
@@ -105,53 +98,25 @@ nonisolated final class TrustStore: @unchecked Sendable {
     @discardableResult
     func newPairingCode() -> String {
         lock.lock(); defer { lock.unlock() }
-        let code = HostOptions.shared.fixedPairingCode ?? AuthTranscript.randomPairingCode()
-        activePairingCode = code
-        pairingIssuedAt = Date()
-        failedPairingAttempts = 0
-        return code
+        return codes.issue(now: .now)
     }
 
     func consumePairingCode(_ code: String) -> PairingCheck {
         lock.lock(); defer { lock.unlock() }
-        guard let active = activePairingCode else { return .unavailable }
-        if HostOptions.shared.fixedPairingCode == nil, let issued = pairingIssuedAt,
-           Date().timeIntervalSince(issued) > Self.pairingLifetime {
-            clearPairingCodeLocked()
-            return .unavailable
-        }
-        guard Self.constantTimeEquals(active, code) else {
-            failedPairingAttempts += 1
-            if failedPairingAttempts >= Self.maxPairingAttempts { clearPairingCodeLocked() }
-            return .incorrect
-        }
-        clearPairingCodeLocked()
-        return .accepted
+        let (result, cleared) = codes.check(code, now: .now)
+        if cleared { onPairingCodeCleared?() }
+        return result
     }
 
     /// Withdraws the code shown on the Mac (Done, or its ten minutes ran out).
     func cancelPairingCode() {
         lock.lock(); defer { lock.unlock() }
-        guard activePairingCode != nil else { return }
-        clearPairingCodeLocked()
-    }
-
-    private func clearPairingCodeLocked() {
-        activePairingCode = nil
-        pairingIssuedAt = nil
-        failedPairingAttempts = 0
-        onPairingCodeCleared?()
-    }
-
-    private static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
-        let x = Array(a.utf8), y = Array(b.utf8)
-        guard x.count == y.count else { return false }
-        return zip(x, y).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+        if codes.cancel() { onPairingCodeCleared?() }
     }
 
     var currentPairingCode: String? {
         lock.lock(); defer { lock.unlock() }
-        return activePairingCode
+        return codes.current
     }
 
     /// Nil when the Keychain can't be read right now: nobody is trusted, and nothing is saved over

@@ -45,14 +45,10 @@ nonisolated final class PowerManager: @unchecked Sendable {
         let now = ContinuousClock.now
         if minimumInterval > .zero, let lastWake, now - lastWake < minimumInterval { return false }
         lastWake = now
-        if DisplayPower.fake.isEnabled {
-            DisplayPower.fake.wake()
-        } else {
-            // Local and Remote both light a sleeping display on macOS 27 (checked with
-            // `pmset displaysleepnow`); Local is what a key press on the Mac itself declares.
-            let status = IOPMAssertionDeclareUserActivity("Casement remote input" as CFString, kIOPMUserActiveLocal, &activityID)
-            if status != kIOReturnSuccess { log.error("declaring user activity failed: \(status)") }
-        }
+        // Local and Remote both light a sleeping display on macOS 27 (checked with
+        // `pmset displaysleepnow`); Local is what a key press on the Mac itself declares.
+        let status = IOPMAssertionDeclareUserActivity("Casement remote input" as CFString, kIOPMUserActiveLocal, &activityID)
+        if status != kIOReturnSuccess { log.error("declaring user activity failed: \(status)") }
         log.info("waking the display (\(reason, privacy: .public))")
         return true
     }
@@ -87,52 +83,28 @@ nonisolated final class PowerManager: @unchecked Sendable {
 
 /// Whether the Mac's display is asleep. While it is, ScreenCaptureKit lists no displays and any
 /// running stream stops ("Failed to find any displays or windows to capture"), so capture can
-/// only come back after a wake.
+/// only come back after a wake. The real display only; a synthetic host's pretend display is
+/// `FakeDisplay` in `SyntheticHostEnvironment`.
 nonisolated enum DisplayPower {
     static func isAsleep() -> Bool {
-        if fake.isEnabled { return fake.isAsleep }
-        return CGDisplayIsAsleep(CGMainDisplayID()) != 0
+        CGDisplayIsAsleep(CGMainDisplayID()) != 0
     }
 
     /// Whether any panel is actually lit: CGDisplayIsAsleep plus the active display list (empty
     /// while every display is off). IOKit has no display power state to read on Apple silicon
     /// (IODisplayWrangler carries no power properties there), so these are the signals.
     static func panelDescription() -> (isOff: Bool, text: String) {
-        if fake.isEnabled { return (fake.isAsleep, fake.isAsleep ? "pretend display asleep" : "pretend display on") }
         var active: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &active)
         let asleep = CGDisplayIsAsleep(CGMainDisplayID()) != 0
         return (asleep || active == 0, "main display \(asleep ? "asleep" : "on"), \(active) active")
     }
 
-    /// `pmset displaysleepnow`, like the Mac's own "Sleep display" (or the pretend display).
+    /// `pmset displaysleepnow`, like the Mac's own "Sleep display".
     static func sleepNow() {
-        if fake.isEnabled {
-            fake.sleep()
-            return
-        }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         task.arguments = ["displaysleepnow"]
         try? task.run()
-    }
-
-    /// DEBUG `--display-asleep`: a pretend display that starts asleep, for synthetic hosts and
-    /// tests. Sleep and wake flip it the way they would a real one.
-    static let fake = FakeDisplay(enabled: HostOptions.shared.fakeDisplaySleep)
-
-    final class FakeDisplay: @unchecked Sendable {
-        let isEnabled: Bool
-        private let lock = NSLock()
-        private var asleep: Bool
-
-        init(enabled: Bool) {
-            isEnabled = enabled
-            asleep = enabled
-        }
-
-        var isAsleep: Bool { lock.withLock { asleep } }
-        func sleep() { lock.withLock { asleep = true } }
-        func wake() { lock.withLock { asleep = false } }
     }
 }

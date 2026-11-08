@@ -85,7 +85,7 @@ private final class MockScreenHost: @unchecked Sendable {
 
     private func screen(_ channel: MessageChannel, hello: Hello, peer: String) async throws {
         let number = lock.withLock { screens += 1; return screens }
-        try await channel.send(.challenge(MockHostAuth.challenge(for: hello, identity: DeviceIdentity(), hostName: "Mock Mac", isPaired: true)))
+        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Mock Mac", isPaired: true).0))
         guard case .authenticate? = try await channel.receive() else { throw ChannelError.closed }
         let owner = MockOwner()
         let token = registry.issue(for: owner, peer: peer)
