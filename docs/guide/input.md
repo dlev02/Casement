@@ -54,7 +54,8 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`. A PC's shortcuts: see
   [pc-on-the-client.md](pc-on-the-client.md).
   `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
-  Keychain (when-unlocked class); the key button types it plus Return through the host. When
+  Keychain (when-unlocked class); the key button types it plus Return through the host
+  (`TypePasswordDecision` picks the route; `ScreenSessionModel.typePassword` acts on it). When
   `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
   Screen Sharing (`ScreenSharingTyper` in VantageCore: RFB 3.889, ARD auth type 30 — DH with a
   256-bit exponent over the server's 4096-bit prime, MD5, AES-128-ECB — then KeyEvents only, no

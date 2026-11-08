@@ -72,7 +72,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
 - **Client pipeline**: `ClientSession` (handshake, reconnect with backoff) → `VideoStreamController`
   (`AVSampleBufferDisplayLayer.sampleBufferRenderer`, `DisplayImmediately`, flush + keyframe request
   on decode failure). `RemoteInteractionView` captures touch/trackpad/mouse/hardware-keyboard and
-  forwards through `InputController`. SwiftUI shell: `DeviceListScreen`, `RemoteSessionScreen`,
+  forwards through `InputController`. `ScreenSessionModel` owns one screen session's collaborators,
+  choices and actions (see `docs/guide/client.md`). SwiftUI shell: `DeviceListScreen`, `RemoteSessionScreen`,
   `ControlStrip`, Liquid Glass throughout.
 
 ## Topic guides

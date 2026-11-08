@@ -279,3 +279,7 @@ final class DeviceStore {
         defaults.set(stamps, forKey: tombstonesKey)
     }
 }
+
+extension DeviceStore: ScreenSessionStore {
+    func savedDevice(_ id: UUID) -> SavedDevice? { devices.first { $0.id == id } }
+}

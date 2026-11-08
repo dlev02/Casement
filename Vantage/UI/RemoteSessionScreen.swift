@@ -1,26 +1,47 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import VantageCore
-import os
 #if os(macOS)
 import AppKit
 #endif
 
-/// Full-screen remote session: shows the video, hosts input capture, overlays the control strip
-/// and connection status, and runs the periodic feedback/ping loop.
+/// Full-screen remote session: makes the screen session's model once, then lays it out
+/// (`RemoteSessionLayout`). The model is made when the screen appears rather than in `init`, so
+/// a parent re-rendering never makes a second connection or Keychain identity.
 struct RemoteSessionScreen: View {
     let device: SavedDevice
+    @Environment(DeviceStore.self) private var store
+    @State private var model: ScreenSessionModel?
+
+    var body: some View {
+        if let model {
+            RemoteSessionLayout(model: model)
+        } else {
+            placeholder.onAppear {
+                // Takes this computer's shared `FileLink`, so files keep moving after the screen closes.
+                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device))
+            }
+        }
+    }
+
+    @ViewBuilder private var placeholder: some View {
+        #if os(visionOS)
+        Color.clear
+        #else
+        Color.black.ignoresSafeArea()
+        #endif
+    }
+}
+
+/// The screen session laid out: the picture, input capture, the control strip and dictation
+/// panel, notices and the connection overlay, all reading one `ScreenSessionModel`.
+struct RemoteSessionLayout: View {
+    @Bindable var model: ScreenSessionModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(DeviceStore.self) private var store
 
-    /// Takes this Mac's shared `FileLink` in `startSession`, so files keep moving after it closes.
-    @State private var session = ClientSession()
-    @State private var video = VideoStreamController()
-    @State private var input = InputController()
-    @State private var stickyModifiers: KeyModifiers = []
     @State private var showKeyboard = false
-    @State private var hasVideo = false
     /// The whole screen, under the safe area.
     @State private var screenSize = CGSize(width: 1210, height: 834)
     @State private var screenInsets = EdgeInsets()
@@ -29,9 +50,10 @@ struct RemoteSessionScreen: View {
     @AppStorage(TabletopDeckMode.enabledKey) private var tabletopEnabled = true
     private var tabletop: TabletopLayout? { tabletopEnabled ? foldedLikeALaptop : nil }
     @Environment(\.displayScale) private var displayScale
-    @AppStorage("vantage.trackpadSensitivity") private var trackpadSensitivity = 1.5
-    @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
-    @AppStorage("vantage.softwareKeyboardMode") private var keyboardMode = SoftwareKeyboardMode.unicode
+    /// The strip's collapsed state and corner: seeded from the defaults and written back on
+    /// change, not `@AppStorage`. UI tests and screenshot launches pin these keys in the
+    /// argument domain (`-vantage.toolbarDock bottomLeft`), which outranks every write, so an
+    /// `@AppStorage` strip could never move or collapse during such a launch.
     @State private var toolbarCollapsed = UserDefaults.standard.bool(forKey: "vantage.toolbarCollapsed")
     @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -44,55 +66,27 @@ struct RemoteSessionScreen: View {
     @State private var toolbarFrame = CGRect.zero
     @GestureState private var isDraggingToolbar = false
     @State private var stripTapGuard = StripTapGuard()
-    @State private var feedbackTask: Task<Void, Never>?
-    @State private var passwordPrompt: PasswordPrompt?
-    @State private var newPassword = ""
-    @State private var newUsername = ""
-    @State private var screenSharingTyping: ScreenSharingTypingState?
-    @State private var screenSharingError: String?
-    @State private var controlsHidden = false
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
-    @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
-    @AppStorage(ControlStripLayout.defaultsKey) private var defaultStripLayout = ControlStripLayout.platformStandard
-    @State private var showStripEditor = false
-    @State private var dictation = DictationController()
-    @State private var macAudio = MacAudioPlayer()
-    /// `-VantageMacAudio` (DEBUG) until the user flips the toggle.
-    @State private var macAudioOverride = ClientOptions.macAudio
-    /// A brief note when Mac audio stopped or couldn't start.
-    @State private var macAudioNotice: String?
-    @State private var macAudioNoticeTask: Task<Void, Never>?
-    // File transfer
-    @State private var showFileImporter = false
-    @State private var showTransfers = false
-    @State private var showDisconnectGuard = false
-    /// The file just received, for the notice at the top; clears itself.
-    @State private var receivedNotice: FileTransferController.Transfer?
-    @State private var receivedNoticeTask: Task<Void, Never>?
-    /// Files are being dragged over the Mac's screen.
-    @State private var isDropTargeted = ClientOptions.dropHintFixture
-    @State private var queuedTestFile = false
-    /// Wake was tapped and the Mac's display hasn't come on yet (clears itself after a while so
-    /// the button works again if the Mac didn't answer).
-    @State private var wakeRequested = false
-    @State private var wakeTask: Task<Void, Never>?
     #if os(macOS)
-    /// "Send keyboard shortcuts to the Mac" (Settings, the Session menu, the toolbar).
-    @AppStorage(MacKeyboardSettings.captureShortcutsKey) private var capturesShortcuts = true
     @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapsCommandAndControl = false
-    /// Watch without sending the pointer or keys. On by default when the Mac is this one.
-    @State private var isViewOnly = false
-    /// The session's Mac is the one this app runs on (see `ThisMac`).
-    @State private var viewsThisMac = false
-    @State private var checkedThisMac = false
     @State private var windowShape = SessionWindowShape()
     #if DEBUG
     @State private var keyProbe = KeyProbe()
     #endif
     #endif
 
-    private var isLive: Bool { session.state == .connected && hasVideo }
+    var session: ClientSession { model.session }
+    var device: SavedDevice { model.device }
+    #if os(macOS)
+    // For the Mac layout in `RemoteSessionScreen+macOS.swift`; the stored properties stay private so `@State` defers.
+    var macSwapsCommandAndControl: Bool { swapsCommandAndControl }
+    #if DEBUG
+    var macKeyProbe: KeyProbe { keyProbe }
+    #endif
+    #endif
+    /// "Mac" or "PC", for everything the session says about the computer.
+    var host: HostNoun { model.host }
     /// What the host fits its picture to: the screen, or the half above the fold in tabletop (so a
     /// virtual display takes that shape and fills it).
     private var viewportSize: CGSize { tabletop?.picture.size ?? screenSize }
@@ -102,17 +96,8 @@ struct RemoteSessionScreen: View {
         session.activeConfig.map { CGFloat($0.display.pointWidth) / CGFloat(max($0.display.pointHeight, 1)) } ?? 16 / 10
     }
     #endif
-
-    /// The saved device as it is now (edits and what the host said arrive through the store).
-    private var savedDevice: SavedDevice { store.devices.first { $0.id == device.id } ?? device }
-    /// What the host runs: what it said in this session, else what the saved device remembers.
-    private var hostPlatform: HostPlatform { session.hostPlatform ?? savedDevice.platform }
-    /// "Mac" or "PC", for everything the session says about the host.
-    private var host: HostNoun { HostNoun(hostPlatform) }
     /// What VoiceOver calls the picture of the host's screen.
-    private var screenLabel: String { "Screen of \(device.name)" }
-    /// "⌘ acts as Ctrl" for a PC; nothing for a Mac.
-    private var keyRemap: KeyRemap { KeyRemap.forHost(hostPlatform, commandSendsControl: savedDevice.commandSendsControl) }
+    var screenLabel: String { "Screen of \(device.name)" }
 
     var body: some View {
         ZStack {
@@ -128,8 +113,8 @@ struct RemoteSessionScreen: View {
             #endif
 
             #if canImport(UIKit)
-            if session.state == .connected {
-                RemoteSessionRepresentable(input: input, video: video, stickyModifiers: stickyModifiers,
+            if model.isConnected {
+                RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
                     #if os(visionOS)
@@ -146,24 +131,25 @@ struct RemoteSessionScreen: View {
                     #endif
             }
             #elseif os(macOS)
-            if session.state == .connected {
+            if model.isConnected {
                 macSessionSurface
             }
             #endif
 
-            if let screenNote {
-                MacScreenNote(kind: screenNote, host: host, isWaking: wakeRequested, hasPicture: hasVideo, onWake: wakeDisplay)
+            if let screenNote = model.screenNote {
+                MacScreenNote(kind: screenNote, host: host, isWaking: model.isWakeRequested, hasPicture: model.hasPicture,
+                              onWake: model.wakeDisplay)
                     .padding(.bottom, belowPicture)
                     .transition(.opacity)
-            } else if !isLive {
+            } else if !model.isLive {
                 connectionOverlay
                     .transition(.opacity)
             }
 
             VStack {
                 #if os(macOS)
-                if viewsThisMac && session.state == .connected {
-                    ThisMacBanner(isViewOnly: isViewOnly)
+                if model.viewsThisMac && model.isConnected {
+                    ThisMacBanner(isViewOnly: model.isViewOnly)
                         .padding(.top, 12)
                         .transition(bannerTransition)
                 }
@@ -174,22 +160,22 @@ struct RemoteSessionScreen: View {
                         .padding(.top, 12)
                         .transition(bannerTransition)
                 }
-                if let screenSharingTyping {
+                if let screenSharingTyping = model.screenSharingTyping {
                     ScreenSharingTypingBadge(state: screenSharingTyping)
                         .padding(.top, 8)
                         .transition(bannerTransition)
                 }
-                if let macAudioNotice {
+                if let macAudioNotice = model.macAudioNotice.value {
                     MacAudioNotice(message: macAudioNotice)
                         .padding(.top, 8)
                         .transition(bannerTransition)
                 }
-                if isDropTargeted && canSendFiles {
+                if model.isDropTargeted && model.canSendFiles {
                     DropToSendHint(macName: device.name)
                         .padding(.top, 12)
                         .transition(noticeTransition)
                 }
-                if let receivedNotice {
+                if let receivedNotice = model.receivedNotice.value {
                     ReceivedFileNotice(transfer: receivedNotice)
                         .padding(.top, 8)
                         .padding(.horizontal, 16)
@@ -209,74 +195,28 @@ struct RemoteSessionScreen: View {
             #if os(visionOS)
             // The control strip is an ornament under the window; the dictation panel floats over
             // the bottom of the Mac, just above it.
-            if session.state == .connected {
+            if model.isConnected {
                 dictationPanel
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(24)
-                    .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
             }
             #else
             #if os(iOS)
-            if session.state == .connected, let tabletop {
+            if model.isConnected, let tabletop {
                 tabletopDeck(tabletop)
             }
             #endif
-            if session.state == .connected && tabletop == nil && (!controlsHidden || isDictationActive) {
-                GeometryReader { geometry in
-                    // The dictation panel stacks on the strip's inner side, so it stays in the
-                    // corner the user chose and keeps the middle of the Mac visible.
-                    VStack(alignment: toolbarAlignment.horizontal, spacing: 12) {
-                        if !toolbarDock.isTop { dictationPanel }
-                        if !controlsHidden {
-                            controlStrip
-                                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.toolbarSpace)) } action: { frame in
-                                    if toolbarOffset == .zero { toolbarFrame = frame }
-                                }
-                                .offset(toolbarOffset)
-                                .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .named(Self.toolbarSpace))
-                                    .updating($isDraggingToolbar) { _, dragging, _ in dragging = true }
-                                    .onChanged { value in
-                                        stripTapGuard.dragMoved()
-                                        toolbarOffset = ToolbarPlacement(area: toolbarArea(in: geometry.size), frame: toolbarFrame)
-                                            .constrained(value.translation)
-                                    }
-                                    .onEnded { value in
-                                        settleToolbar(translation: value.translation,
-                                                      predicted: value.predictedEndTranslation, in: geometry.size)
-                                    })
-                        }
-                        if toolbarDock.isTop { dictationPanel }
-                    }
-                    .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
-                    .padding(Self.toolbarInsets)
-                    // A drag the system cancels (a notification, a system gesture) never ends, so
-                    // settle from wherever the strip was left.
-                    .onChange(of: isDraggingToolbar) { _, dragging in
-                        if !dragging && toolbarOffset != .zero {
-                            settleToolbar(translation: toolbarOffset, predicted: toolbarOffset, in: geometry.size)
-                        }
-                    }
-                }
-                .coordinateSpace(.named(Self.toolbarSpace))
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            if model.isConnected && tabletop == nil && (!model.areControlsHidden || model.dictation.isActive) {
+                floatingControls
             }
             #endif
         }
-        .animation(.smooth(duration: 0.35), value: isLive)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: screenNote)
-        .onChange(of: screenNote) { _, note in
-            wakeTask?.cancel()
-            wakeRequested = false
-            switch note {
-            case .asleep?: AccessibilityNotification.Announcement("\(host.thePossessiveCapitalized) display is asleep").post()
-            case .unavailable?: AccessibilityNotification.Announcement("Waiting for \(host.thePossessive) screen").post()
-            case nil: break
-            }
-        }
+        .animation(.smooth(duration: 0.35), value: model.isLive)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: model.screenNote)
         #if os(visionOS)
         // Keep the window bar: it's how the session window is moved and closed.
-        .ornament(visibility: session.state == .connected ? .visible : .hidden,
+        .ornament(visibility: model.isConnected ? .visible : .hidden,
                   attachmentAnchor: .scene(.bottom), contentAlignment: .top) {
             controlStrip
                 .padding(.top, 20)
@@ -288,7 +228,7 @@ struct RemoteSessionScreen: View {
         }
         // The window is plain; glass backs it only while there's no picture to show.
         .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous),
-                               displayMode: isLive ? .never : .always)
+                               displayMode: model.isLive ? .never : .always)
         #elseif os(macOS)
         .background {
             WindowAspectMatcher(displaySize: session.activeConfig.map {
@@ -298,17 +238,16 @@ struct RemoteSessionScreen: View {
         .navigationTitle(device.name)
         .navigationSubtitle(windowSubtitle)
         .toolbar { macToolbar }
-        .focusedSceneValue(\.sessionCommands, sessionCommands)
-        .animation(.smooth(duration: 0.3), value: viewsThisMac && session.state == .connected)
+        .focusedSceneValue(\.screenSession, model)
+        .focusedSceneValue(\.sessionWindowShape, windowShape)
+        .animation(.smooth(duration: 0.3), value: model.viewsThisMac && model.isConnected)
         // The Mac client isn't suspended in the background (its windows stay on screen); it lets
         // go when the Mac sleeps and picks up again when it wakes.
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
-            if dictation.isListening { dictation.stop(then: .review) }
-            stickyModifiers = []
-            session.suspendForBackground()
+            model.suspend()
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
-            session.retryNow()
+            model.resume()
         }
         #else
         .statusBarHidden()
@@ -332,56 +271,21 @@ struct RemoteSessionScreen: View {
             return proxy.size
             #endif
         } action: { screenSize = $0 }
-        // Once a fold, rotation, or resize has settled, so a live resize asks once, not per frame.
-        .task(id: viewportSize) {
-            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
-            session.updateViewport(currentViewport())
-        }
-        .onChange(of: session.state) { _, state in
-            if state == .connected {
-                store.markConnected(device)
-                // Hosts before the platform field are all Macs.
-                store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
-                if let key = session.hostPublicKey { store.recordHostKey(key, for: device.id) }
-                #if os(macOS)
-                checkForThisMac()
-                #endif
-                #if DEBUG
-                if let fixture = ClientOptions.dictationFixture { dictation.showFixture(fixture) }
-                if let phrase = ClientOptions.dictationSpeech, !dictation.isActive {
-                    dictation.speakForTesting(phrase, route: dictationRoute)
-                }
-                #endif
-            } else {
-                announce(state)
-                hasVideo = false
-                video.resetFirstFrame()
-                dictation.connectionLost()
-                macAudio.connectionLost()
-            }
-        }
-        .onChange(of: session.activeConfig) { _, config in
-            if let config {
-                input.displayPointSize = CGSize(width: config.display.pointWidth, height: config.display.pointHeight)
-            }
-        }
-        .onChange(of: touchMode) { _, newValue in input.mode = newValue }
-        .onChange(of: keyRemap, initial: true) { _, remap in input.keyRemap = remap }
-        .onChange(of: trackpadSensitivity) { _, newValue in input.trackpadSensitivity = newValue }
-        .onChange(of: naturalScroll) { _, newValue in input.naturalScroll = newValue }
+        // A fold, rotation, or resize: the model asks the host once it has settled.
+        .onChange(of: viewportSize) { _, _ in model.viewportChanged(currentViewport()) }
         .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
         .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
+        .onChange(of: voiceOverEnabled, initial: true) { _, on in model.usesVoiceOver = on }
+        .onChange(of: model.isEnded) { _, ended in if ended { dismiss() } }
         .onChange(of: scenePhase) { _, phase in
             #if !os(macOS)
             if phase == .background {
-                if dictation.isListening { dictation.stop(then: .review) }
                 showKeyboard = false
-                stickyModifiers = []
-                session.suspendForBackground()
+                model.suspend()
                 return
             }
             #endif
-            if phase == .active { session.retryNow() }
+            if phase == .active { model.resume() }
         }
         .overlay(alignment: .top) { hiddenKeyboardField }
         #if DEBUG
@@ -391,29 +295,29 @@ struct RemoteSessionScreen: View {
         .overlay(alignment: .bottomLeading) { keyProbeElement }
         #endif
         .modifier(SessionHaptics(state: session.state, pairingError: session.pairingError, dock: toolbarDock,
-                                 dictationPhase: dictationPhase, screenSharingTyping: screenSharingTyping,
-                                 screenSharingError: screenSharingError))
-        .animation(.smooth(duration: 0.3), value: screenSharingTyping)
-        .animation(.smooth(duration: 0.3), value: macAudioNotice)
+                                 dictationPhase: model.dictation.phase, screenSharingTyping: model.screenSharingTyping,
+                                 screenSharingError: model.screenSharingError))
+        .animation(.smooth(duration: 0.3), value: model.screenSharingTyping)
+        .animation(.smooth(duration: 0.3), value: model.macAudioNotice.value)
         // Hints and notices: in quickly with ease-out, out a little faster.
-        .animation(.easeOut(duration: isDropTargeted ? 0.2 : 0.15), value: isDropTargeted && canSendFiles)
-        .animation(.easeOut(duration: receivedNotice == nil ? 0.18 : 0.25), value: receivedNotice?.id)
-        .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: canSendFiles, isTargeted: $isDropTargeted,
+        .animation(.easeOut(duration: model.isDropTargeted ? 0.2 : 0.15), value: model.isDropTargeted && model.canSendFiles)
+        .animation(.easeOut(duration: model.receivedNotice.value == nil ? 0.18 : 0.25), value: model.receivedNotice.value?.id)
+        .onDrop(of: [.item], delegate: FileDropDelegate(isEnabled: model.canSendFiles, isTargeted: $model.isDropTargeted,
                                                         files: { session.files }))
-        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $model.isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { session.files.send(urls, securityScoped: true) }
         }
-        .sheet(isPresented: $showTransfers) {
+        .sheet(isPresented: $model.isShowingTransfers) {
             NavigationStack {
-                TransfersView(files: session.files, macName: device.name, host: host, canSend: canSendFiles)
+                TransfersView(files: session.files, macName: device.name, host: host, canSend: model.canSendFiles)
             }
             #if os(macOS)
             .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
             #endif
             .appLockCurtain()
         }
-        .alert("Files are still transferring. Disconnect anyway?", isPresented: $showDisconnectGuard) {
-            Button("Disconnect", role: .destructive) { endSession() }
+        .alert("Files are still transferring. Disconnect anyway?", isPresented: $model.isConfirmingDisconnect) {
+            Button("Disconnect", role: .destructive) { model.end() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("\(device.name)'s Casement Host stops transfers when the screen closes. They'll pick up where they stopped next time you connect.")
@@ -423,45 +327,18 @@ struct RemoteSessionScreen: View {
         // computer (on visionOS and the Mac the device list asks).
         .modifier(SharedFileConfirmation(destination: device.name, isActive: true, onSend: {}))
         #endif
-        // Files opened in Casement from other apps join this session's queue once approved.
-        .onChange(of: SharedFileInbox.shared.pending.count, initial: true) { _, count in
-            guard count > 0 else { return }
-            for copy in SharedFileInbox.shared.take() { session.files.sendOutboxCopy(copy) }
-        }
-        #if DEBUG
-        .onChange(of: session.files.isConnected) { _, connected in
-            if connected, !queuedTestFile, let bytes = ClientOptions.sendTestFileBytes {
-                queuedTestFile = true
-                session.files.queueTestFile(bytes: bytes)
-            }
-        }
-        #endif
-        .onChange(of: session.curtainStatus) { _, status in
-            if let reason = status?.unavailable {
-                store.setCurtain(false, for: device.id)
-                showMacAudioNotice(reason)
-            }
-        }
-        .onChange(of: macAudio.status) { _, status in
-            if case .unavailable(let reason) = status { showMacAudioNotice(reason) }
-        }
-        .sheet(item: $passwordPrompt) { prompt in
-            PasswordPromptSheet(prompt: prompt, password: $newPassword, username: $newUsername) { saved in
-                passwordPrompt = nil
-                defer { newPassword = ""; newUsername = "" }
-                guard saved else { return }
-                if prompt == .missing { DeviceSecrets.setPassword(newPassword, for: device) }
-                if !newUsername.isEmpty { DeviceSecrets.setUsername(newUsername, for: device) }
-                sendPassword()
+        .sheet(item: $model.passwordPrompt) { prompt in
+            PasswordPromptSheet(prompt: prompt, onCancel: { model.passwordPrompt = nil }) { password, accountName in
+                model.savePasswordAndType(password: password, accountName: accountName)
             }
             .appLockCurtain()
         }
-        .sheet(isPresented: $showStripEditor) {
+        .sheet(isPresented: $model.isEditingControls) {
             NavigationStack {
                 MacControlStripEditor(deviceID: device.id)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showStripEditor = false }
+                            Button("Done") { model.isEditingControls = false }
                         }
                     }
             }
@@ -471,338 +348,85 @@ struct RemoteSessionScreen: View {
             .environment(store)
             .appLockCurtain()
         }
-        .alert("Couldn't Type the Password", isPresented: Binding(get: { screenSharingError != nil },
-                                                                set: { if !$0 { screenSharingError = nil } })) {
+        .alert("Couldn't Type the Password", isPresented: Binding(get: { model.screenSharingError != nil },
+                                                                set: { if !$0 { model.screenSharingError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(screenSharingError ?? "")
+            Text(model.screenSharingError ?? "")
         }
-        .task { await startSession() }
-        .onDisappear { teardown() }
+        .task { model.start(viewport: currentViewport()) }
+        .onDisappear { model.stop() }
     }
+
+    // MARK: Control strip
 
     private var controlStrip: some View {
         ControlStrip(
             isCollapsed: $toolbarCollapsed,
             dock: $toolbarDock,
-            stickyModifiers: $stickyModifiers,
-            touchMode: $touchMode,
-            onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) },
+            stickyModifiers: $model.stickyModifiers,
+            touchMode: $model.touchMode,
+            onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) },
             onShowKeyboard: { showKeyboard.toggle() },
-            onSendClipboard: sendClipboard,
-            onSendPassword: sendPassword,
-            onHostCommand: { session.send(.hostCommand(HostCommandMessage(command: $0))) },
-            onDisconnect: disconnect,
-            isDictating: isDictationListening,
-            onDictation: handleDictationPress,
+            onSendClipboard: { model.sendClipboard() },
+            onSendPassword: { model.typePassword() },
+            onHostCommand: { model.sendHostCommand($0) },
+            onDisconnect: { model.disconnect() },
+            isDictating: model.dictation.isListening,
+            onDictation: { model.dictationPressed($0) },
             tapGuard: stripTapGuard,
-            items: stripItems,
-            onCustomize: { showStripEditor = true },
-            macAudio: macAudioToggle,
-            curtain: curtainToggle,
-            files: sendFileAction,
-            host: hostPlatform
+            items: model.stripItems,
+            onCustomize: { model.isEditingControls = true },
+            macAudio: model.macAudioToggle,
+            curtain: model.curtainToggle,
+            files: model.sendFileAction,
+            host: model.hostPlatform
         )
     }
 
-    // MARK: Files
-
-    /// The Mac takes files (the file channel comes up on demand).
-    private var canSendFiles: Bool { session.state == .connected && session.hostOffersFiles }
-
-    private var sendFileAction: SendFileAction {
-        let active = session.files.transfers.filter { $0.state == .active }
-        let progress: Double? = active.isEmpty ? nil
-            : Double(active.reduce(0) { $0 + $1.bytesDone }) / Double(max(1, active.reduce(0) { $0 + $1.byteCount }))
-        return SendFileAction(
-            unavailableReason: session.state == .connected && !session.hostOffersFiles
-                ? "\(device.name)'s Casement Host can't receive files. Update Casement Host on \(host.the)." : nil,
-            progress: progress,
-            hasTransfers: session.files.hasTransfers,
-            onSend: { showFileImporter = true },
-            onShowTransfers: { showTransfers = true })
-    }
-
-    /// Files moving with the Mac, shown by themselves (tap for Transfers).
-    private var transferCapsule: some View {
-        TransferCapsule(files: session.files, macName: device.name) { showTransfers = true }
-            .padding(.horizontal, 16)
-    }
-
-    /// The capsule sits on the edge away from the control strip, so they never meet.
-    private var capsuleOnTop: Bool {
-        #if os(visionOS)
-        true // the strip is an ornament under the window
-        #else
-        !toolbarDock.isTop || controlsHidden || tabletop != nil
-        #endif
-    }
-
-    /// How far the bottom of the safe area sits below the picture: the deck's share in tabletop,
-    /// so banners and notes stay on the half that stands up.
-    private var belowPicture: CGFloat {
-        guard let tabletop else { return 0 }
-        return max(0, screenSize.height - screenInsets.bottom - tabletop.picture.maxY)
-    }
-
-    #if os(iOS)
-    /// Tabletop: the strip, keyboard and trackpad on the half on the desk, and dictation's panel
-    /// over the bottom of the picture, where it can be read.
-    private func tabletopDeck(_ layout: TabletopLayout) -> some View {
-        ZStack(alignment: .topLeading) {
-            dictationPanel
-                .frame(maxWidth: 520)
-                .frame(width: layout.picture.width, height: layout.picture.height, alignment: .bottom)
-                .padding(.bottom, 12)
-                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: isDictationActive)
-            TabletopDeck(input: input, stickyModifiers: $stickyModifiers, host: hostPlatform,
-                         onKey: { keyCode, modifiers in input.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
-                if !controlsHidden { controlStrip }
+    #if !os(visionOS)
+    /// The strip in its corner, draggable between corners, with the dictation panel stacked on
+    /// its inner side so it stays in the corner the user chose and keeps the middle of the
+    /// computer's screen visible.
+    private var floatingControls: some View {
+        GeometryReader { geometry in
+            VStack(alignment: toolbarAlignment.horizontal, spacing: 12) {
+                if !toolbarDock.isTop { dictationPanel }
+                if !model.areControlsHidden {
+                    controlStrip
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.toolbarSpace)) } action: { frame in
+                            if toolbarOffset == .zero { toolbarFrame = frame }
+                        }
+                        .offset(toolbarOffset)
+                        .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .named(Self.toolbarSpace))
+                            .updating($isDraggingToolbar) { _, dragging, _ in dragging = true }
+                            .onChanged { value in
+                                stripTapGuard.dragMoved()
+                                toolbarOffset = ToolbarPlacement(area: toolbarArea(in: geometry.size), frame: toolbarFrame)
+                                    .constrained(value.translation)
+                            }
+                            .onEnded { value in
+                                settleToolbar(translation: value.translation,
+                                              predicted: value.predictedEndTranslation, in: geometry.size)
+                            })
+                }
+                if toolbarDock.isTop { dictationPanel }
             }
-            // The container already stops above the home indicator.
-            .padding(EdgeInsets(top: 0, leading: max(16, screenInsets.leading), bottom: 12,
-                                trailing: max(16, screenInsets.trailing)))
-            .frame(width: layout.deck.width, height: layout.deck.height)
-            .offset(y: layout.deck.minY)
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: toolbarAlignment)
+            .padding(Self.toolbarInsets)
+            // A drag the system cancels (a notification, a system gesture) never ends, so
+            // settle from wherever the strip was left.
+            .onChange(of: isDraggingToolbar) { _, dragging in
+                if !dragging && toolbarOffset != .zero {
+                    settleToolbar(translation: toolbarOffset, predicted: toolbarOffset, in: geometry.size)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .ignoresSafeArea()
-        .transition(.opacity)
+        .coordinateSpace(.named(Self.toolbarSpace))
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
     #endif
-
-    /// Banners slide down from the top, or just fade with Reduce Motion.
-    private var bannerTransition: AnyTransition {
-        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
-    }
-
-    private var noticeTransition: AnyTransition {
-        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .offset(y: -6))
-    }
-
-    /// Shows "Received …" for a few seconds (long enough to reach its buttons with VoiceOver)
-    /// and says it aloud, since the notice appears without focus moving to it. A run of several
-    /// files is announced once, by the capsule, when it ends.
-    private func showReceived(_ transfer: FileTransferController.Transfer) {
-        receivedNotice = transfer
-        if session.files.summary.count <= 1 {
-            AccessibilityNotification.Announcement("Received \(transfer.name) from \(device.name)").post()
-        }
-        receivedNoticeTask?.cancel()
-        receivedNoticeTask = Task {
-            do { try await Task.sleep(for: .seconds(voiceOverEnabled ? 15 : 6)) } catch { return }
-            receivedNotice = nil
-        }
-    }
-
-    // MARK: Display sleep
-
-    /// Why there's no live picture, if the Mac has said.
-    private var screenNote: MacScreenNote.Kind? {
-        if session.isDisplayAsleep { return .asleep }
-        if session.isScreenUnavailable { return .unavailable }
-        return nil
-    }
-
-    /// Wake/Retry, or a tap on the Mac's screen while there's no live picture.
-    private func wakeDisplay() {
-        guard !wakeRequested else { return }
-        session.wakeDisplay()
-        wakeRequested = true
-        wakeTask?.cancel()
-        wakeTask = Task {
-            do { try await Task.sleep(for: .seconds(6)) } catch { return }
-            wakeRequested = false
-        }
-    }
-
-    // MARK: Mac audio
-
-    /// This Mac's saved choice (from the store, so it follows edits and iCloud), unless a debug
-    /// launch flag says otherwise.
-    private var wantsMacAudio: Bool {
-        macAudioOverride ?? store.devices.first { $0.id == device.id }?.playMacAudio ?? device.playMacAudio ?? false
-    }
-
-    private var macAudioFailed: Bool {
-        if case .unavailable = macAudio.status { return true }
-        return false
-    }
-
-    private var macAudioToggle: MacAudioToggle {
-        MacAudioToggle(
-            isOn: wantsMacAudio && !macAudioFailed,
-            unavailableReason: session.state == .connected && !session.hostOffersAudio
-                ? "\(device.name)'s Casement Host can't send sound. Update Casement Host on \(host.the)." : nil,
-            onToggle: toggleMacAudio)
-    }
-
-    private var wantsCurtain: Bool {
-        store.devices.first { $0.id == device.id }?.curtain ?? device.curtain ?? false
-    }
-
-    private var curtainToggle: CurtainToggle {
-        CurtainToggle(
-            // Once the host has answered, it says; a local lock at the computer lowers it.
-            isOn: session.curtainStatus?.isUp ?? wantsCurtain,
-            unavailableReason: session.state == .connected && !session.hostOffersCurtain
-                ? "\(device.name)'s Casement Host can't do this. Update Casement Host on \(host.the)." : nil,
-            onToggle: toggleCurtain)
-    }
-
-    private func toggleCurtain() {
-        let on = !curtainToggle.isOn
-        store.setCurtain(on, for: device.id)
-        session.setCurtain(on)
-    }
-
-    /// Off → on, on → off, and a failed stream → try again (the choice itself stays on).
-    private func toggleMacAudio() {
-        let on = macAudioFailed ? true : !wantsMacAudio
-        macAudioOverride = nil
-        store.setPlayMacAudio(on, for: device.id)
-        macAudioNotice = nil
-        if on, macAudioFailed { macAudio.setWanted(false) } // start over
-        macAudio.setWanted(on)
-        session.setMacAudio(on)
-    }
-
-    #if DEBUG
-    /// For UI tests launched with `-VantageMacAudio`: the player's numbers as an invisible
-    /// accessibility element (`session.macAudioStats`), refreshed every second.
-    @ViewBuilder private var macAudioStatsProbe: some View {
-        if ClientOptions.macAudio != nil {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                let stats = macAudio.stats
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .accessibilityElement()
-                    .accessibilityIdentifier("session.macAudioStats")
-                    .accessibilityLabel("playing \(macAudio.status == .playing ? 1 : 0) pushed \(String(stats.framesPushed)) played \(String(stats.framesPlayed)) depth \(Int(stats.milliseconds(stats.depthFrames))) latency \(Int(stats.milliseconds(stats.smoothedDepthFrames))) target \(Int(stats.milliseconds(stats.targetFrames))) underruns \(stats.underruns) skips \(stats.skips) trims \(stats.startTrims)")
-            }
-            .allowsHitTesting(false)
-        }
-    }
-    #endif
-
-    private func showMacAudioNotice(_ message: String) {
-        macAudioNotice = message
-        macAudioNoticeTask?.cancel()
-        macAudioNoticeTask = Task {
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            macAudioNotice = nil
-        }
-    }
-
-    /// This Mac's own layout if it has one, else the default, less what this device can't use
-    /// (the Mac client has no on-screen keyboard). Read from the store rather than `device` so
-    /// edits made mid-session (or synced in) show up straight away.
-    private var stripItems: [StripItem] {
-        (savedDevice.controlStrip ?? defaultStripLayout).visibleItems(excluding: StripItem.unavailable(on: hostPlatform))
-    }
-
-    private var connectionOverlay: some View {
-        VStack(spacing: 16) {
-            switch session.state {
-            case .connecting, .authenticating, .connected:
-                overlayProgress
-                Text(session.state == .connected ? "Starting screen capture…" : "Connecting to \(device.name)…")
-                    .contentTransition(.opacity)
-            case .reconnecting, .suspended:
-                overlayProgress
-                Text("Reconnecting…")
-            case .pairingRequired:
-                PairingPrompt(host: host, errorMessage: session.pairingError) { code in
-                    session.connect(to: device, viewport: currentViewport(), pairingCode: code)
-                }
-            case .failed(let message):
-                VStack(spacing: 12) {
-                    Image(systemName: "wifi.exclamationmark").font(.largeTitle)
-                        .accessibilityHidden(true)
-                    Text(message).multilineTextAlignment(.center)
-                    Button("Retry") { Task { await startSession() } }.buttonStyle(.onCardProminent)
-                    Button("Close") { disconnect() }.buttonStyle(.onCard)
-                }
-            default:
-                EmptyView()
-            }
-            if case .failed = session.state {} else {
-                Button("Close", action: disconnect).buttonStyle(.onCard)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: 420)
-        #if os(macOS)
-        // Dark glass over the black picture area, like `MacScreenNote`. Set for this card only:
-        // `preferredColorScheme` from in here would also darken the window's toolbar.
-        .platformGlass(in: .rect(cornerRadius: 24))
-        .environment(\.colorScheme, .dark)
-        #else
-        .foregroundStyle(.white)
-        .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
-        .preferredColorScheme(.dark)
-        #endif
-    }
-
-    private var overlayProgress: some View {
-        ProgressView()
-            .controlSize(.large)
-            #if !os(macOS)
-            .tint(.white)
-            #endif
-    }
-
-    /// Says what the overlay now shows, since it appears without VoiceOver's focus moving to it.
-    private func announce(_ state: ClientSession.State) {
-        let text: String? = switch state {
-        case .reconnecting: "Reconnecting to \(device.name)"
-        case .pairingRequired: "Enter the pairing code shown on \(host.the)"
-        case .failed(let message): message
-        default: nil
-        }
-        if let text { AccessibilityNotification.Announcement(text).post() }
-    }
-
-    // MARK: Dictation
-
-    private var isDictationActive: Bool { dictation.isActive }
-
-    private var dictationPhase: DictationController.Phase? { dictation.phase }
-
-    private var isDictationListening: Bool { dictation.isListening }
-
-    /// Mac (MacWhisper) when the host advertised it and Settings allows it; otherwise the iPad.
-    private var dictationRoute: DictationRoute {
-        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines)
-    }
-
-    @ViewBuilder private var dictationPanel: some View {
-        if dictation.isActive {
-            DictationPanel(dictation: dictation,
-                           isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
-                           onCopy: Self.copyToClipboard)
-                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
-        }
-    }
-
-    private static func copyToClipboard(_ text: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #else
-        UIPasteboard.general.string = text
-        #endif
-    }
-
-    private func handleDictationPress(_ press: DictationPress) {
-        stickyModifiers = []
-        switch press {
-        case .began: dictation.pressBegan(route: dictationRoute)
-        case .ended(let held): dictation.pressEnded(held: held)
-        case .toggle: dictation.toggle(route: dictationRoute)
-        case .cancelled: dictation.pressCancelled()
-        }
-    }
 
     nonisolated private static let toolbarSpace = "toolbarArea"
     #if os(macOS)
@@ -839,29 +463,168 @@ struct RemoteSessionScreen: View {
         }
     }
 
+    // MARK: Files
+
+    /// Files moving with the computer, shown by themselves (tap for Transfers).
+    private var transferCapsule: some View {
+        TransferCapsule(files: session.files, macName: device.name) { model.isShowingTransfers = true }
+            .padding(.horizontal, 16)
+    }
+
+    /// The capsule sits on the edge away from the control strip, so they never meet.
+    private var capsuleOnTop: Bool {
+        #if os(visionOS)
+        true // the strip is an ornament under the window
+        #else
+        !toolbarDock.isTop || model.areControlsHidden || tabletop != nil
+        #endif
+    }
+
+    /// How far the bottom of the safe area sits below the picture: the deck's share in tabletop,
+    /// so banners and notes stay on the half that stands up.
+    private var belowPicture: CGFloat {
+        guard let tabletop else { return 0 }
+        return max(0, screenSize.height - screenInsets.bottom - tabletop.picture.maxY)
+    }
+
+    #if os(iOS)
+    /// Tabletop: the strip, keyboard and trackpad on the half on the desk, and dictation's panel
+    /// over the bottom of the picture, where it can be read.
+    private func tabletopDeck(_ layout: TabletopLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            dictationPanel
+                .frame(maxWidth: 520)
+                .frame(width: layout.picture.width, height: layout.picture.height, alignment: .bottom)
+                .padding(.bottom, 12)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
+            TabletopDeck(input: model.input, stickyModifiers: $model.stickyModifiers, host: model.hostPlatform,
+                         onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
+                if !model.areControlsHidden { controlStrip }
+            }
+            // The container already stops above the home indicator.
+            .padding(EdgeInsets(top: 0, leading: max(16, screenInsets.leading), bottom: 12,
+                                trailing: max(16, screenInsets.trailing)))
+            .frame(width: layout.deck.width, height: layout.deck.height)
+            .offset(y: layout.deck.minY)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea()
+        .transition(.opacity)
+    }
+    #endif
+
+    /// Banners slide down from the top, or just fade with Reduce Motion.
+    private var bannerTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
+    }
+
+    private var noticeTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .offset(y: -6))
+    }
+
+    #if DEBUG
+    /// For UI tests launched with `-VantageMacAudio`: the player's numbers as an invisible
+    /// accessibility element (`session.macAudioStats`), refreshed every second.
+    @ViewBuilder private var macAudioStatsProbe: some View {
+        if ClientOptions.macAudio != nil {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let stats = model.macAudio.stats
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("session.macAudioStats")
+                    .accessibilityLabel("playing \(model.macAudio.status == .playing ? 1 : 0) pushed \(String(stats.framesPushed)) played \(String(stats.framesPlayed)) depth \(Int(stats.milliseconds(stats.depthFrames))) latency \(Int(stats.milliseconds(stats.smoothedDepthFrames))) target \(Int(stats.milliseconds(stats.targetFrames))) underruns \(stats.underruns) skips \(stats.skips) trims \(stats.startTrims)")
+            }
+            .allowsHitTesting(false)
+        }
+    }
+    #endif
+
+    // MARK: Connection overlay
+
+    private var connectionOverlay: some View {
+        VStack(spacing: 16) {
+            switch session.state {
+            case .connecting, .authenticating, .connected:
+                overlayProgress
+                Text(model.isConnected ? "Starting screen capture…" : "Connecting to \(device.name)…")
+                    .contentTransition(.opacity)
+            case .reconnecting, .suspended:
+                overlayProgress
+                Text("Reconnecting…")
+            case .pairingRequired:
+                PairingPrompt(host: host, errorMessage: session.pairingError) { code in
+                    model.submitPairingCode(code)
+                }
+            case .failed(let message):
+                VStack(spacing: 12) {
+                    Image(systemName: "wifi.exclamationmark").font(.largeTitle)
+                        .accessibilityHidden(true)
+                    Text(message).multilineTextAlignment(.center)
+                    Button("Retry") { model.retry() }.buttonStyle(.onCardProminent)
+                    Button("Close") { model.disconnect() }.buttonStyle(.onCard)
+                }
+            default:
+                EmptyView()
+            }
+            if case .failed = session.state {} else {
+                Button("Close") { model.disconnect() }.buttonStyle(.onCard)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: 420)
+        #if os(macOS)
+        // Dark glass over the black picture area, like `MacScreenNote`. Set for this card only:
+        // `preferredColorScheme` from in here would also darken the window's toolbar.
+        .platformGlass(in: .rect(cornerRadius: 24))
+        .environment(\.colorScheme, .dark)
+        #else
+        .foregroundStyle(.white)
+        .background(.black.opacity(0.8), in: .rect(cornerRadius: 24))
+        .preferredColorScheme(.dark)
+        #endif
+    }
+
+    private var overlayProgress: some View {
+        ProgressView()
+            .controlSize(.large)
+            #if !os(macOS)
+            .tint(.white)
+            #endif
+    }
+
+    // MARK: Dictation
+
+    @ViewBuilder private var dictationPanel: some View {
+        if model.dictation.isActive {
+            DictationPanel(dictation: model.dictation,
+                           isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
+                           onCopy: Self.copyToClipboard)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
+        }
+    }
+
+    private static func copyToClipboard(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+
+    // MARK: Keyboard and Pencil
+
     @ViewBuilder
     private var hiddenKeyboardField: some View {
         #if canImport(UIKit)
         if showKeyboard {
-            RemoteKeyboardField(isPresented: $showKeyboard, onText: typeFromSoftwareKeyboard, onKey: { keyCode in
-                input.tapChord(keyCode: keyCode, modifiers: stickyModifiers)
-                stickyModifiers = []
-            })
+            RemoteKeyboardField(isPresented: $showKeyboard, onText: { model.typeFromSoftwareKeyboard($0) },
+                                onKey: { model.tapKeyWithStickyModifiers($0) })
             .frame(width: 1, height: 1)
             .opacity(0.01)
         }
         #endif
-    }
-
-    /// Unicode text is the default. Keystrokes mode, or any held ⌘/⌥/⌃, sends real key presses so
-    /// shortcuts like ⌘C work from the software keyboard.
-    private func typeFromSoftwareKeyboard(_ text: String) {
-        if keyboardMode == .keystrokes || !stickyModifiers.isEmpty {
-            input.typeCharacters(text, modifiers: stickyModifiers)
-            stickyModifiers = []
-        } else {
-            input.typeText(text)
-        }
     }
 
     /// Runs the Pencil action that needs the session's own state rather than the pointer.
@@ -870,10 +633,10 @@ struct RemoteSessionScreen: View {
         switch action {
         case .collapseControls:
             withAnimation(animation) {
-                if controlsHidden { controlsHidden = false } else { toolbarCollapsed.toggle() }
+                if model.areControlsHidden { model.areControlsHidden = false } else { toolbarCollapsed.toggle() }
             }
         case .hideControls:
-            withAnimation(animation) { controlsHidden.toggle() }
+            withAnimation(animation) { model.areControlsHidden.toggle() }
         case .showKeyboard:
             showKeyboard.toggle()
         case .none, .rightClick, .middleClick:
@@ -881,551 +644,11 @@ struct RemoteSessionScreen: View {
         }
     }
 
-    /// Types the saved password for this Mac and presses Return. macOS drops Vantage Host's
-    /// keystrokes while a password field, auth dialog, or the lock screen holds Secure Event Input,
-    /// so those go through the Mac's own Screen Sharing server instead (it needs the account name).
-    private func sendPassword() {
-        guard !host.isWindows else { return } // a PC has no saved password to type (Macs only)
-        guard let password = DeviceSecrets.password(for: device) else {
-            passwordPrompt = .missing
-            return
-        }
-        let blocked = session.hostStatus.map { $0.isSecureInputActive || $0.isScreenLocked } ?? false
-        guard blocked else {
-            typePassword(password)
-            return
-        }
-        guard DeviceSecrets.username(for: device) != nil else {
-            passwordPrompt = .needsAccount
-            return
-        }
-        typeThroughScreenSharing()
-    }
-
-    private func typeThroughScreenSharing() {
-        guard screenSharingTyping != .typing else { return }
-        stickyModifiers = []
-        screenSharingTyping = .typing
-        Task {
-            do {
-                try await ScreenSharingPassword.type(for: device)
-                screenSharingTyping = .sent
-                try? await Task.sleep(for: .seconds(1.6))
-                if screenSharingTyping == .sent { screenSharingTyping = nil }
-            } catch {
-                screenSharingTyping = nil
-                screenSharingError = ScreenSharingPassword.message(for: error)
-            }
-        }
-    }
-
-    private func typePassword(_ password: String) {
-        stickyModifiers = []
-        input.typeCharacters(password)
-        input.tapChord(keyCode: 0x24, modifiers: []) // Return
-    }
-
-    private func startSession() async {
-        session.useFileLink(FileTransferCenter.shared.link(for: device))
-        session.onVideo = { message in video.consume(message) }
-        session.files.onReceived = { transfer in showReceived(transfer) }
-        #if DEBUG
-        if let millis = ClientOptions.slowFilesMillis { session.files.chunkDelayForTesting = .milliseconds(millis) }
-        #endif
-        session.onClipboard = { payload in ClipboardSync.apply(payload) }
-        session.onCursorShape = { shape in input.setCursorShape(shape) }
-        session.onCursor = { position in input.setCursorVisible(position.isVisible) }
-        video.onNeedsKeyframe = {
-            Task { @MainActor in session.send(.requestKeyframe) }
-        }
-        video.onFirstFrame = {
-            Task { @MainActor in hasVideo = true }
-        }
-        input.send = { message in session.send(message) }
-        dictation.send = { message in session.send(message) }
-        dictation.deliver = { text, pressReturn in
-            input.typeText(text)
-            if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
-        }
-        session.onDictationResult = { result in dictation.handle(result) }
-        session.onAudio = { message in macAudio.handle(message) }
-        dictation.onMicrophoneActive = { active in macAudio.setMicrophoneActive(active) }
-        macAudio.setWanted(wantsMacAudio)
-        session.setMacAudio(wantsMacAudio)
-        session.setCurtain(wantsCurtain)
-        input.mode = touchMode
-        input.naturalScroll = naturalScroll
-        input.trackpadSensitivity = trackpadSensitivity
-
-        session.connect(to: device, viewport: currentViewport(), pairingCode: ClientOptions.pairingCode)
-        startFeedbackLoop()
-    }
-
-    private func startFeedbackLoop() {
-        feedbackTask?.cancel()
-        feedbackTask = Task {
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
-                guard session.state == .connected else { continue }
-                session.ping()
-                let feedback = video.snapshotStats(windowSeconds: 0.25, rttMillis: session.lastRTTMillis)
-                session.sendFeedback(feedback)
-            }
-        }
-    }
-
-    /// Disconnect from the strip, the menu, or the overlay. Files keep moving without the screen
-    /// on a current Mac (the device list shows them). Only an older Mac, which would stop them,
-    /// gets the one confirmation Disconnect ever asks for.
-    private func disconnect() {
-        if session.files.hasActiveTransfers, session.fileLink.macKeepsFiles == false {
-            showDisconnectGuard = true
-        } else {
-            endSession()
-        }
-    }
-
-    private func endSession() {
-        teardown()
-        dismiss()
-    }
-
-    private func teardown() {
-        feedbackTask?.cancel()
-        feedbackTask = nil
-        macAudioNoticeTask?.cancel()
-        receivedNoticeTask?.cancel()
-        wakeTask?.cancel()
-        macAudio.setWanted(false)
-        // The Mac's transfers outlive this screen; stop reporting them here.
-        session.files.onReceived = nil
-        session.disconnect()
-    }
-
     private func currentViewport() -> Viewport {
         Viewport(widthPoints: Double(viewportSize.width), heightPoints: Double(viewportSize.height), scale: Double(displayScale))
     }
-
-    /// This Mac's saved Natural Scrolling (from the store, so an edit mid-session applies).
-    private var naturalScroll: Bool {
-        store.devices.first { $0.id == device.id }?.naturalScroll ?? device.naturalScroll
-    }
-
-    /// Send Clipboard: whatever is on the clipboard here, now.
-    private func sendClipboard() {
-        let payload = ClipboardSync.currentPayload()
-        if !payload.isEmpty { session.send(.clipboard(payload)) }
-    }
 }
-
-#if os(macOS)
-// MARK: - Mac client
-
-extension RemoteSessionScreen {
-    /// Pointer and keys go to the Mac.
-    private var sendsInput: Bool {
-        session.state == .connected && !isViewOnly && !AppLock.shared.isLocked
-    }
-
-    @ViewBuilder var macSessionSurface: some View {
-        #if DEBUG
-        RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
-                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
-                                     pasteModifier: host.isWindows ? .control : .command,
-                                     stickyModifiers: stickyModifiers, screenLabel: screenLabel,
-                                     onPaste: pasteThroughClipboard, keyProbe: MacSessionOptions.keyProbe ? keyProbe : nil)
-        #else
-        RemoteSessionNSRepresentable(input: input, video: video, sendsInput: sendsInput,
-                                     capturesShortcuts: capturesShortcuts, swapsCommandAndControl: swapsKeys,
-                                     pasteModifier: host.isWindows ? .control : .command,
-                                     stickyModifiers: stickyModifiers, screenLabel: screenLabel,
-                                     onPaste: pasteThroughClipboard)
-        #endif
-    }
-
-    /// A PC follows its own "⌘ acts as Ctrl" (on unless turned off); a Mac, Settings' "Swap ⌘ and ⌃".
-    private var swapsKeys: Bool {
-        host.isWindows ? keyRemap.swapsCommandAndControl : swapsCommandAndControl
-    }
-
-    /// ⌘V on the Mac (Ctrl+V on a PC): something copied here since the last sync goes over
-    /// first, so the paste there has it (the host writes it before it posts the key).
-    private func pasteThroughClipboard() {
-        if let payload = ClipboardSync.changedPayload() { session.send(.clipboard(payload)) }
-    }
-
-    /// The first time the session connects: is its Mac this one? Then it starts in View Only,
-    /// since every move and key would come straight back through the host
-    /// (`-VantageAllowSelfControl 1` treats it as another Mac: input on, no banner, for tests and
-    /// screenshots).
-    func checkForThisMac() {
-        viewsThisMac = !MacSessionOptions.allowSelfControl && ThisMac.isHost(address: device.host, hostName: session.hostName)
-        guard !checkedThisMac else { return }
-        checkedThisMac = true
-        if viewsThisMac { isViewOnly = true }
-    }
-
-    var windowSubtitle: String {
-        switch session.state {
-        case .connected:
-            var parts: [String] = []
-            if let display = session.activeConfig?.display {
-                parts.append("\(Int(display.pointWidth)) × \(Int(display.pointHeight))")
-            }
-            if isViewOnly { parts.append("View Only") }
-            return parts.joined(separator: " · ")
-        case .connecting, .authenticating: return "Connecting…"
-        case .reconnecting, .suspended: return "Reconnecting…"
-        case .pairingRequired: return "Pairing"
-        case .failed: return "Not connected"
-        default: return ""
-        }
-    }
-
-    @ToolbarContentBuilder var macToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Toggle(isOn: $isViewOnly) {
-                Label("View Only", systemImage: "eye")
-            }
-            .help("Watch \(host.the) without sending the pointer or keys")
-            .accessibilityIdentifier("session.mac.viewOnly")
-            Toggle(isOn: $capturesShortcuts) {
-                Label("Send Keyboard Shortcuts", systemImage: "command")
-            }
-            .help(capturesShortcuts ? "⌘Q, ⌘W and other shortcuts go to \(host.the). ⌃⌥⌘ shortcuts stay with Casement."
-                                    : "⌘Q, ⌘W, ⌘H, ⌘M and ⌘, act on Casement")
-            .accessibilityIdentifier("session.mac.captureShortcuts")
-            Menu {
-                ForEach(HostShortcut.sessionMenu(for: hostPlatform)) { shortcut in
-                    Button { input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) } label: {
-                        Label(shortcut.label, systemImage: shortcut.symbol)
-                    }
-                }
-                Divider()
-                Button { sendHostCommand(.sleepDisplay) } label: { Label("Sleep Display", systemImage: "moon") }
-                Button { sendHostCommand(.lockScreen) } label: { Label("Lock \(host.name)", systemImage: "lock") }
-            } label: {
-                Label(host.name, systemImage: host.symbol)
-            }
-            .help("\(host.name) shortcuts")
-            .disabled(session.state != .connected)
-            Button { showFileImporter = true } label: {
-                Label("Send File", systemImage: StripItem.sendFile.symbol)
-            }
-            .help("Send files to \(device.name)'s Downloads folder")
-            .disabled(!canSendFiles)
-        }
-        // The way out stands apart from the controls.
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItem(placement: .primaryAction) {
-            Button(action: disconnect) {
-                Label("Disconnect", systemImage: "xmark.circle")
-            }
-            .help("Disconnect from \(device.name)")
-            .accessibilityIdentifier("session.toolbar.disconnect")
-        }
-    }
-
-    private func sendHostCommand(_ command: HostCommand) {
-        session.send(.hostCommand(HostCommandMessage(command: command)))
-    }
-
-    /// What the menu bar's Session, View and Mac menus act on while this window is focused.
-    var sessionCommands: SessionCommands {
-        SessionCommands(
-            macName: device.name,
-            host: host,
-            shortcuts: HostShortcut.sessionMenu(for: hostPlatform),
-            isConnected: session.state == .connected,
-            capturesShortcuts: capturesShortcuts,
-            toggleShortcutCapture: { capturesShortcuts.toggle() },
-            isViewOnly: isViewOnly,
-            toggleViewOnly: { isViewOnly.toggle() },
-            macAudioOn: wantsMacAudio && !macAudioFailed,
-            macAudioAvailable: session.state == .connected && session.hostOffersAudio,
-            toggleMacAudio: toggleMacAudio,
-            curtainOn: curtainToggle.isOn,
-            curtainAvailable: session.state == .connected && session.hostOffersCurtain,
-            toggleCurtain: toggleCurtain,
-            canSendFiles: canSendFiles,
-            sendFile: { showFileImporter = true },
-            showTransfers: { showTransfers = true },
-            sendClipboard: sendClipboard,
-            canTypePassword: !host.isWindows,
-            typePassword: sendPassword,
-            sendShortcut: { input.tapChord(keyCode: $0.keyCode, modifiers: $0.modifiers) },
-            hostCommand: sendHostCommand,
-            wake: wakeDisplay,
-            isDictating: isDictationListening,
-            toggleDictation: { handleDictationPress(.toggle) },
-            controlsHidden: controlsHidden,
-            toggleControls: { withAnimation(.smooth(duration: 0.3)) { controlsHidden.toggle() } },
-            actualSize: windowShape.actualSize,
-            toggleFullScreen: windowShape.toggleFullScreen,
-            isFullScreen: windowShape.isFullScreen,
-            customizeControls: { showStripEditor = true },
-            disconnect: disconnect)
-    }
-
-    #if DEBUG
-    /// `-VantageKeyProbe 1`: the keys sent lately, as `session.keyProbe`'s label.
-    @ViewBuilder var keyProbeElement: some View {
-        if MacSessionOptions.keyProbe {
-            Color.clear
-                .frame(width: 1, height: 1)
-                .accessibilityElement()
-                .accessibilityIdentifier("session.keyProbe")
-                // A label, not a value: macOS doesn't report a plain element's value to UI tests.
-                .accessibilityLabel(keyProbe.value)
-                .allowsHitTesting(false)
-        }
-    }
-    #endif
-}
-
-/// The session's Mac is the one Vantage runs on: say so, since the picture shows itself and the
-/// pointer comes straight back.
-private struct ThisMacBanner: View {
-    let isViewOnly: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("You're viewing this Mac from itself").font(.callout.weight(.semibold))
-                Text(isViewOnly ? "View Only is on, so the pointer and keys stay here."
-                                : "The pointer and keys go to this same Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .platformGlass(in: .capsule)
-        .frame(maxWidth: 520)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("session.thisMacBanner")
-    }
-}
-#endif
 
 #if canImport(UIKit)
 import UIKit
 #endif
-
-/// Explains why input may be ignored: the host is locked or a secure field has focus. A locked
-/// PC can't be unlocked from here (there's no saved password to type), so it says where to go.
-struct HostStatusBanner: View {
-    let status: HostStatus
-    var host = HostNoun.mac
-
-    private var text: String {
-        if host.isWindows {
-            if status.isScreenLocked { return "The PC is locked. Unlock it at the PC, or sign in with Remote Desktop." }
-            return status.message ?? "Typing is blocked by a Windows security prompt"
-        }
-        return status.message ?? (status.isScreenLocked ? "The Mac is locked" : "Typing is blocked by a secure field")
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: status.isScreenLocked ? "lock.fill" : "key.fill")
-                .accessibilityHidden(true)
-            Text(text)
-                .font(.callout)
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .platformGlass(in: .capsule)
-        .frame(maxWidth: 520)
-        .accessibilityElement(children: .combine)
-        .announcing(text)
-    }
-}
-
-/// The session's haptics (see `Haptic`): the strip landing in a corner, dictation's microphone
-/// opening and closing, a dropped or restored connection, and outcomes you'd otherwise have to
-/// look for. Pointer and touch gestures buzz from `RemoteInteractionView`.
-private struct SessionHaptics: ViewModifier {
-    let state: ClientSession.State
-    let pairingError: String?
-    let dock: ToolbarDock
-    let dictationPhase: DictationController.Phase?
-    let screenSharingTyping: ScreenSharingTypingState?
-    let screenSharingError: String?
-    @State private var connection = ConnectionHaptics()
-
-    func body(content: Content) -> some View {
-        content
-            .haptic(.snap, trigger: dock)
-            .haptic(trigger: dictationPhase, Self.dictation)
-            .haptic(trigger: pairingError, Self.failure)
-            .haptic(trigger: screenSharingTyping, Self.typed)
-            .haptic(trigger: screenSharingError, Self.failure)
-            .onChange(of: state) { old, new in
-                if let haptic = connection.haptic(from: old, to: new) { Haptics.play(haptic) }
-            }
-            #if DEBUG
-            .overlay(alignment: .bottomLeading) {
-                if ClientOptions.hapticProbe {
-                    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                        Color.clear
-                            .frame(width: 1, height: 1)
-                            .accessibilityElement()
-                            .accessibilityIdentifier("session.hapticProbe")
-                            .accessibilityValue(Haptics.played.map { "\($0)" }.joined(separator: " "))
-                    }
-                    .allowsHitTesting(false)
-                }
-            }
-            #endif
-    }
-
-    private static func dictation(_ old: DictationController.Phase?, _ new: DictationController.Phase?) -> Haptic? {
-        guard let old, let new else { return nil }
-        return DictationController.Phase.haptic(from: old, to: new)
-    }
-
-    /// An error message appeared: a rejected pairing code, a password Screen Sharing couldn't type.
-    private static func failure(_ old: String?, _ new: String?) -> Haptic? { new == nil ? nil : .error }
-
-    private static func typed(_ old: ScreenSharingTypingState?, _ new: ScreenSharingTypingState?) -> Haptic? {
-        new == .sent ? .success : nil
-    }
-}
-
-/// Why the Mac's sound stopped or didn't start; clears itself after a few seconds.
-private struct MacAudioNotice: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "speaker.slash")
-                .accessibilityHidden(true)
-            Text(message)
-        }
-        .font(.callout)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .platformGlass(in: .capsule)
-        .frame(maxWidth: 520)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("session.macAudioNotice")
-        .announcing(message)
-    }
-}
-
-/// Progress of a password typed through the Mac's Screen Sharing server.
-enum ScreenSharingTypingState: Equatable {
-    case typing, sent
-}
-
-private struct ScreenSharingTypingBadge: View {
-    let state: ScreenSharingTypingState
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if state == .typing {
-                ProgressView().controlSize(.small)
-                Text("Typing password with Screen Sharing…")
-            } else {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    .accessibilityHidden(true)
-                Text("Password sent")
-            }
-        }
-        .font(.callout)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .platformGlass(in: .capsule)
-        .accessibilityElement(children: .combine)
-        .announcing(state == .typing ? "Typing password with Screen Sharing" : "Password sent")
-    }
-}
-
-private extension View {
-    /// Reads `text` aloud when the view appears and whenever it changes: these notices show up
-    /// without VoiceOver's focus moving to them.
-    func announcing(_ text: String) -> some View {
-        onChange(of: text, initial: true) { _, text in
-            AccessibilityNotification.Announcement(text).post()
-        }
-    }
-}
-
-/// Why the key button couldn't just type the password.
-enum PasswordPrompt: String, Identifiable {
-    /// No password saved for this Mac yet — offer to save one without leaving the session.
-    case missing
-    /// macOS is blocking ordinary keystrokes; Screen Sharing can type it but needs the account name.
-    case needsAccount
-    var id: String { rawValue }
-}
-
-/// Saves a Mac's password (and the account name Screen Sharing needs) mid-session.
-private struct PasswordPromptSheet: View {
-    let prompt: PasswordPrompt
-    @Binding var password: String
-    @Binding var username: String
-    /// Called with true to save and type, false to just close.
-    let onFinish: (Bool) -> Void
-
-    private var canSave: Bool {
-        switch prompt {
-        case .missing: !password.isEmpty
-        case .needsAccount: !username.trimmingCharacters(in: .whitespaces).isEmpty
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if prompt == .needsAccount {
-                    Section {
-                        Label("macOS is blocking ordinary typing", systemImage: "lock.shield")
-                            .font(.headline)
-                    } footer: {
-                        Text("A password field, an authentication dialog, or the lock screen has focus, so macOS ignores keystrokes from apps. Casement can type the password through the Mac's own Screen Sharing instead. It signs in with your Mac account, so it needs the account name that goes with this password.")
-                    }
-                }
-                Section {
-                    TextField("Account name", text: $username)
-                        .textContentType(.username)
-                        #if !os(macOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .autocorrectionDisabled()
-                    if prompt == .missing {
-                        PasswordField(title: "Mac Password", text: $password)
-                    }
-                } footer: {
-                    Text(prompt == .missing
-                         ? "Casement keeps these in the Keychain and types the password when you \(LocalDevice.tap) the key button. The account name is optional; with it, the key button also works in password fields and on the lock screen."
-                         : "Your short account name or full name, as shown in System Settings → Users & Groups. Screen Sharing must be on for this account (System Settings → General → Sharing).")
-                }
-            }
-            .macGroupedForm()
-            .navigationTitle(prompt == .missing ? "Save Password" : "Mac Account")
-            #if !os(macOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onFinish(false) }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save & Type") { onFinish(true) }
-                        .disabled(!canSave)
-                }
-            }
-        }
-        #if os(macOS)
-        .frame(minWidth: 420, idealWidth: 460, minHeight: 260, idealHeight: 320)
-        #endif
-        .presentationDetents([.medium])
-    }
-}

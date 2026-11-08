@@ -54,15 +54,6 @@ extension View {
     }
 }
 
-/// Settings → Controls → Keyboard on the Mac, read by the session's keyboard capture.
-enum MacKeyboardSettings {
-    /// On (the default): while a session window is key, shortcuts go to the remote Mac, except
-    /// ⌃⌥⌘ chords, which always stay with Vantage.
-    static let captureShortcutsKey = "vantage.mac.captureShortcuts"
-    /// Sends ⌃ for ⌘ and ⌘ for ⌃.
-    static let swapCommandControlKey = "vantage.mac.swapCommandControl"
-}
-
 struct AppearanceSettings: View {
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
     var body: some View {

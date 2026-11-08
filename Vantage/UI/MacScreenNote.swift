@@ -5,12 +5,8 @@ import SwiftUI
 /// sends Wake, which also makes the host try capture again. Covers the Mac's screen (so a tap
 /// can't click something nobody can see) but not the strip.
 struct MacScreenNote: View {
-    enum Kind: Equatable {
-        /// The Mac's display is asleep.
-        case asleep
-        /// The display is awake, but the host has had no picture for a few seconds; it keeps trying.
-        case unavailable
-    }
+    /// Why there's no live picture (see `ScreenNote`).
+    typealias Kind = ScreenNote
 
     let kind: Kind
     /// "Mac" or "PC".

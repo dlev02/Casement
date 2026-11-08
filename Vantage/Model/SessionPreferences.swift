@@ -121,3 +121,12 @@ enum PencilAction: String, CaseIterable, Identifiable, Sendable {
         }
     }
 }
+
+/// Settings → Controls → Keyboard on the Mac, read by the session's keyboard capture.
+enum MacKeyboardSettings {
+    /// On (the default): while a session window is key, shortcuts go to the remote Mac, except
+    /// ⌃⌥⌘ chords, which always stay with Vantage.
+    static let captureShortcutsKey = "vantage.mac.captureShortcuts"
+    /// Sends ⌃ for ⌘ and ⌘ for ⌃.
+    static let swapCommandControlKey = "vantage.mac.swapCommandControl"
+}
