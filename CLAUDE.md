@@ -174,7 +174,9 @@ xcodebuild build -project Vantage.xcodeproj -scheme Vantage -destination 'platfo
 ```
 
 CI (`.github/workflows/ci.yml`) runs `scripts/check.sh` on GitHub's `xcode-27` runner with Xcode 27.2,
-unsigned (`check.sh` skips signing when `CI` is set), and the Windows host's tests on `windows-latest`.
+unsigned (`check.sh` skips signing when `CI` is set, and builds into `.deriveddata-unsigned` so a
+local `CI=1` run never leaves an unsigned Casement Host where tests launch hosts: an unsigned host
+asks for the Keychain), and the Windows host's tests on `windows-latest`.
 `scripts/lint.sh` checks the rules a script can (personal details, AI mentions in commit messages,
 pointer lock, `minimumIncompleteLength`, `tccutil`, `print`, …); `check.sh` and CI run it, and
 `scripts/install-git-hooks.sh` (once per clone) runs it before each commit and push, which also refuses
