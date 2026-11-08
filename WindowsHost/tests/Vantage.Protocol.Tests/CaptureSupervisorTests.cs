@@ -96,6 +96,30 @@ public class CaptureSupervisorTests
     }
 
     [Fact]
+    public void ASlowFailureDoesNotUseUpTheRetryWait()
+    {
+        var (supervisor, clock) = Running();
+        Assert.Empty(supervisor.FrameArrived());
+        Assert.Equal([new CaptureStep.SendStatus(Force: false)], supervisor.CaptureStopped("display gone"));
+        var lost = clock.GetUtcNow();
+        clock.Advance(CaptureSupervisor.FirstRetryDelay);
+        Assert.Equal([new CaptureStep.Start(SameDisplayKeepingItsCodec())], supervisor.Tick());
+
+        // Each target takes a second to fail, so the attempt is over at 2.5 s and the 1 s wait runs from there to 3.5 s.
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal([new CaptureStep.Start(s_select)], supervisor.StartFailed("still coming up"));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal([new CaptureStep.SendStatus(Force: false)], supervisor.StartFailed("still coming up"));
+        var retries = new List<double>();
+        while (clock.GetUtcNow() - lost < TimeSpan.FromSeconds(4))
+        {
+            clock.Advance(CaptureSupervisor.TickInterval);
+            if (supervisor.Tick().Any(step => step is CaptureStep.Start)) retries.Add((clock.GetUtcNow() - lost).TotalSeconds);
+        }
+        Assert.Equal([3.5], retries); // counting from when the attempt began would have retried at 2.75 s
+    }
+
+    [Fact]
     public void ACaptureThatNeverFramesCountsAsFailedAfterFiveSeconds()
     {
         var (supervisor, clock) = Running();

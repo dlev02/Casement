@@ -32,9 +32,10 @@ internal abstract record CaptureStep
 /// <summary>
 /// Keeps a picture coming for one screen session (the Mac's capture lifecycle in <c>HostSession</c>):
 /// what the device wants streamed, one start at a time with a pending takeover, display sleep and
-/// wake, the input-while-asleep rule, the retry backoff (0.5 s doubling to 5 s) with the 3 s
-/// "screen unavailable" notice, the 5 s no-frame rule, and which targets a restart tries (the
-/// display it was on, keeping its codec, then the device's original choice).
+/// wake, the input-while-asleep rule, the retry backoff (0.5 s doubling to 5 s, each wait counted
+/// from the end of the attempt before it, however long that took) with the 3 s "screen unavailable"
+/// notice, the 5 s no-frame rule, and which targets a restart tries (the display it was on, keeping
+/// its codec, then the device's original choice).
 /// </summary>
 /// <remarks>
 /// Events come in, <see cref="CaptureStep"/>s go out; the supervisor does no I/O itself. The session
@@ -82,6 +83,7 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
     private string _lossReason = "";
     private TimeSpan _retryDelay;
     private DateTimeOffset _nextRetry;
+    private bool _retrying;
     private bool _screenUnavailable;
     private bool _displayAsleep;
     private DateTimeOffset? _sleptAt;
@@ -125,6 +127,7 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         _codec = codec;
         _startedAt = time.GetUtcNow();
         _framed = false;
+        RetryAttemptEnded();
         return TakePending();
     }
 
@@ -137,6 +140,7 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         if (_pending is not null) return TakePending();
         if (_targets.TryDequeue(out var next)) return [new CaptureStep.Start(next)];
         _starting = false;
+        RetryAttemptEnded();
         return Unavailable();
     }
 
@@ -250,10 +254,22 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         }
         if (_capturing || _starting || now < _nextRetry) return steps;
         log.LogError("capture unavailable for {Seconds} s: {Reason}; trying again", seconds, _lossReason);
-        _retryDelay = TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks));
-        _nextRetry = now + _retryDelay;
+        _retrying = true; // the next wait is counted from when this attempt ends (RetryAttemptEnded)
         steps.AddRange(BeginStart(RestartTargets(), $"capture unavailable for {seconds} s"));
         return steps;
+    }
+
+    /// <summary>
+    /// A retry the clock started has run its course (its last target failed, or one started): the
+    /// next wait doubles and is counted from now, not from when the attempt began, so a start that
+    /// takes seconds to fail doesn't use the wait up.
+    /// </summary>
+    private void RetryAttemptEnded()
+    {
+        if (!_retrying) return;
+        _retrying = false;
+        _retryDelay = TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks));
+        _nextRetry = time.GetUtcNow() + _retryDelay;
     }
 
     /// <summary>
