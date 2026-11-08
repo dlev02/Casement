@@ -37,6 +37,18 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
 
+- **Admission** (`Host/SessionAdmission`, the Mac's `HostSession.handshake`): one module turns
+  `hello` + trust + pairing code + host identity into the `challenge` (`Challenge(peerTailnetName)`),
+  then the `authenticate` into an `AdmissionVerdict` (`Judge`: version, the signature over the
+  transcript the device chose, pairing accepted/incorrect/expired with `Delay` for the 1 s pause and
+  the five-miss burn in `PairingCodes`, then a `SessionKind`: availability check, files-only, or
+  screen, or `Denied` when capture isn't supported or a files-only hello takes no files) and writes
+  the `authResult{ok}` for what was admitted (`Accept(kind, token, displays)`: readiness, the
+  files-only capabilities, or the full set). `HostSessionCore.HandshakeAsync` only exchanges the
+  messages, does the whois and the display wake, and sets itself up as what it was admitted as.
+  Every message is built exactly as before: `GoldenVectorTests` and the interop suite hold it to
+  that. Tests: `SessionAdmissionTests` (a code that ran out), with `HostListenerTests` for pairing,
+  burning, probes, version mismatches, purpose binding and files-only over loopback.
 - **Capture lifecycle** (`Host/CaptureSupervisor`, the Mac's rules in `HostSession`): one module
   keeps a picture coming for a screen session. Events go in (`DeviceAsked`, `Started`,
   `StartFailed`, `CaptureStopped`, `FrameArrived`, `StatusChanged`, `SleepAsked`/`WakeAsked`,

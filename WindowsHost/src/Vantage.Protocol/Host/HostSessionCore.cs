@@ -182,164 +182,67 @@ public sealed class HostSessionCore
 
     // MARK: Handshake
 
+    /// <summary>
+    /// <see cref="SessionAdmission"/> decides; this exchanges its messages and sets the session up
+    /// as whatever it was admitted as. True when a session (files-only or screen) runs on.
+    /// </summary>
     private async Task<bool> HandshakeAsync(Hello hello, CancellationToken deadline)
     {
-        if (hello.ProtocolVersion != VantageProtocol.Version)
+        var admission = new SessionAdmission(_env, _listener.Pairing, hello);
+        if (admission.VersionRefusal is { } tooOld)
         {
-            await _connection.SendAsync(new AuthResult { Status = AuthStatus.VersionMismatch, Message = $"Protocol {VantageProtocol.Version} required" }).ConfigureAwait(false);
+            await _connection.SendAsync(tooOld).ConfigureAwait(false);
             return false;
         }
-        var identity = _env.Identity.LoadOrCreate();
-        var nonce = AuthTranscript.RandomNonce();
-        Fingerprint = AuthTranscript.Fingerprint(hello.ClientPublicKey);
+        Fingerprint = admission.Fingerprint;
         ClientName = hello.ClientName;
-        var isPaired = _env.Trust.IsTrusted(Fingerprint);
-        var lightweight = hello.IsReadinessProbe == true || hello.Features?.FilesOnly == true;
-        if (!lightweight) await LookUpPeerAsync(deadline).ConfigureAwait(false);
-        var tailnetName = _peer?.TailnetName;
-        // A client that sent a nonce wants proof this challenge comes from the holder of the host
-        // key, and signs the transcript that binds both nonces and the connection's purpose. One
-        // that didn't (an older Casement) signs the older transcript; the host still takes that.
-        var clientNonce = hello.ClientNonce is { Length: AuthTranscript.NonceLength } sent ? sent : null;
-        await _connection.SendAsync(new Challenge
-        {
-            HostName = _env.HostName,
-            HostVersion = VantageProtocol.HostVersion,
-            HostPublicKey = identity.PublicKey,
-            Nonce = nonce,
-            IsPaired = isPaired,
-            PeerTailnetName = tailnetName,
-            HostPlatform = _env.Platform,
-            HostSignature = clientNonce is null ? null
-                : _env.Ed25519.Sign(identity.Seed, AuthTranscript.HostBytes(clientNonce, nonce, identity.PublicKey, hello.ClientPublicKey)),
-        }).ConfigureAwait(false);
+        if (!admission.IsLightweight) await LookUpPeerAsync(deadline).ConfigureAwait(false);
+        await _connection.SendAsync(admission.Challenge(_peer?.TailnetName)).ConfigureAwait(false);
 
         if (await _connection.ReceiveAsync(deadline).ConfigureAwait(false) is not Authenticate auth)
         {
             _log.LogInformation("handshake ended before authenticate");
             return false;
         }
-        var signatureValid = clientNonce is null
-            ? AuthTranscript.Verify(_env.Ed25519, auth.Signature, nonce, identity.PublicKey, hello.ClientPublicKey)
-            : AuthTranscript.VerifyClient(_env.Ed25519, auth.Signature, clientNonce, nonce, identity.PublicKey, hello.ClientPublicKey,
-                                          AuthTranscript.Purpose(hello));
-        if (!signatureValid)
+        var verdict = admission.Judge(auth, _peer?.DeviceName);
+        if (verdict.PairedNow) _listener.RaisePaired(Fingerprint, ClientName);
+        if (verdict.Delay) await Task.Delay(TimeSpan.FromSeconds(1), _env.Time, CancellationToken.None).ConfigureAwait(false);
+        if (verdict.Refusal is { } refusal)
         {
-            await _connection.SendAsync(new AuthResult { Status = AuthStatus.BadSignature }).ConfigureAwait(false);
+            await _connection.SendAsync(refusal).ConfigureAwait(false);
             return false;
         }
-        if (!isPaired)
+
+        switch (verdict.Kind)
         {
-            if (auth.PairingCode is not { } code)
-            {
-                await _connection.SendAsync(new AuthResult { Status = AuthStatus.PairingRequired, Message = $"Enter the pairing code shown on the {HostNoun}" }).ConfigureAwait(false);
+            case SessionKind.AvailabilityCheck:
+                // Never enumerate displays, start capture, or touch the clipboard for a probe.
+                await _connection.SendAsync(admission.Accept(SessionKind.AvailabilityCheck, null, null)).ConfigureAwait(false);
                 return false;
-            }
-            switch (_listener.Pairing.Consume(code))
-            {
-                case PairingCheck.Accepted:
-                    break;
-                case PairingCheck.Incorrect:
-                    // Slow down guessing; the code also burns after five misses.
-                    await Task.Delay(TimeSpan.FromSeconds(1), _env.Time, CancellationToken.None).ConfigureAwait(false);
-                    await _connection.SendAsync(new AuthResult { Status = AuthStatus.BadPairingCode, Message = $"Incorrect pairing code. Try the code shown on the {HostNoun}." }).ConfigureAwait(false);
-                    return false;
-                default:
-                    await Task.Delay(TimeSpan.FromSeconds(1), _env.Time, CancellationToken.None).ConfigureAwait(false);
-                    await _connection.SendAsync(new AuthResult
-                    {
-                        Status = AuthStatus.BadPairingCode,
-                        Message = $"That pairing code has expired. On the {HostNoun}, choose Show Pairing Code and enter the new one.",
-                    }).ConfigureAwait(false);
-                    return false;
-            }
-            _env.Trust.Trust(Fingerprint, hello.ClientName, _peer?.DeviceName);
-            _listener.RaisePaired(Fingerprint, ClientName);
+            case SessionKind.FilesOnly:
+                _clientTakesFiles = true;
+                var token = _listener.AttachTokens.Issue(this, Peer);
+                State = SessionState.FilesOnly;
+                ConnectedAt = _env.Time.GetUtcNow();
+                await _connection.SendAsync(admission.Accept(SessionKind.FilesOnly, token, null)).ConfigureAwait(false);
+                _log.LogInformation("files-only session for {Client}", hello.ClientName);
+                return true;
+            default:
+                // A sleeping display may list nothing, so wake it before looking.
+                if (_env.Status.Current.IsDisplayAsleep) await WakeDisplayForStreamingAsync().ConfigureAwait(false);
+                var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
+                _clientTakesFiles = admission.ClientTakesFiles;
+                _clientTakesAudio = admission.ClientTakesAudio;
+                var sessionToken = _clientTakesFiles ? _listener.AttachTokens.Issue(this, Peer) : null;
+                State = SessionState.Streaming;
+                ConnectedAt = _env.Time.GetUtcNow();
+                await _connection.SendAsync(admission.Accept(SessionKind.Screen, sessionToken, displays)).ConfigureAwait(false);
+                _log.LogInformation("client authenticated: {Client}", hello.ClientName);
+                // A curtain left up by a session that ended: this one takes it on and can lower it.
+                if (admission.ClientKnowsCurtain && _env.Curtain?.Adopt(Id, _connection.Post) == true)
+                    _connection.Post(new CurtainStatus { IsUp = true });
+                return true;
         }
-
-        if (hello.IsReadinessProbe == true)
-        {
-            // Never enumerate displays, start capture, or touch the clipboard for a probe. Windows has no
-            // grants to report, but capture can still be unsupported (no Windows.Graphics.Capture, a
-            // service session): say so here, where the client's device list reads it, instead of
-            // answering "ready" and denying the stream request a moment later.
-            await _connection.SendAsync(new AuthResult
-            {
-                Status = AuthStatus.Ok,
-                Readiness = new HostReadiness { ScreenRecordingGranted = _env.Screen.IsCaptureSupported, AccessibilityGranted = true },
-            }).ConfigureAwait(false);
-            return false;
-        }
-
-        if (hello.Features?.FilesOnly == true)
-        {
-            if (hello.Features.FileTransfer != true)
-            {
-                await _connection.SendAsync(new AuthResult { Status = AuthStatus.Denied, Message = "Nothing to do on this connection." }).ConfigureAwait(false);
-                return false;
-            }
-            _clientTakesFiles = true;
-            var token = _listener.AttachTokens.Issue(this, Peer);
-            State = SessionState.FilesOnly;
-            ConnectedAt = _env.Time.GetUtcNow();
-            await _connection.SendAsync(new AuthResult
-            {
-                Status = AuthStatus.Ok,
-                SessionToken = token,
-                Capabilities = new HostCapabilities
-                {
-                    Codecs = [],
-                    CanManageVirtualDisplay = false,
-                    Clipboard = false,
-                    MaxFPS = 0,
-                    FileTransfer = true,
-                    FilesOnlySessions = true,
-                    Platform = _env.Platform,
-                },
-            }).ConfigureAwait(false);
-            _log.LogInformation("files-only session for {Client}", hello.ClientName);
-            return true;
-        }
-
-        if (!_env.Screen.IsCaptureSupported)
-        {
-            await _connection.SendAsync(new AuthResult { Status = AuthStatus.Denied, Message = _env.Screen.CaptureUnsupportedMessage }).ConfigureAwait(false);
-            return false;
-        }
-        // A sleeping display may list nothing, so wake it before looking.
-        if (_env.Status.Current.IsDisplayAsleep) await WakeDisplayForStreamingAsync().ConfigureAwait(false);
-        var displays = await _env.Screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
-        _clientTakesFiles = hello.Features?.FileTransfer == true;
-        _clientTakesAudio = hello.Features?.MacAudio == true;
-        var sessionToken = _clientTakesFiles ? _listener.AttachTokens.Issue(this, Peer) : null;
-        State = SessionState.Streaming;
-        ConnectedAt = _env.Time.GetUtcNow();
-        await _connection.SendAsync(new AuthResult
-        {
-            Status = AuthStatus.Ok,
-            SessionToken = sessionToken,
-            Displays = displays,
-            Capabilities = new HostCapabilities
-            {
-                Codecs = _env.Encoders.SupportedCodecs,
-                // No virtual displays on Windows: a fitter switches the shared display's mode instead.
-                CanManageVirtualDisplay = _env.DisplayFitter is { IsEnabled: true },
-                Clipboard = true,
-                MaxFPS = 60,
-                FileTransfer = _clientTakesFiles ? true : null,
-                FilesOnlySessions = _clientTakesFiles ? true : null,
-                Platform = _env.Platform,
-                CursorShapes = _env.Cursor is not null ? true : null,
-                // Like the Mac, offered to every client; only one that said macAudio is answered.
-                Audio = _env.Audio is { UnavailableReason: null } ? true : null,
-                Curtain = _env.Curtain is not null ? true : null,
-            },
-        }).ConfigureAwait(false);
-        _log.LogInformation("client authenticated: {Client}", hello.ClientName);
-        // A curtain left up by a session that ended: this one takes it on and can lower it.
-        if (hello.Features?.Curtain == true && _env.Curtain?.Adopt(Id, _connection.Post) == true)
-            _connection.Post(new CurtainStatus { IsUp = true });
-        return true;
     }
 
     /// <summary>Whois for the peer, once per session, within 2 s; the device name becomes <see cref="ClientName"/>.</summary>
