@@ -1,5 +1,6 @@
 # Builds and tests every push to main and every pull request.
 #
+# rules:   scripts/lint.sh on the files and the new commits' messages and added lines.
 # apple:   scripts/check.sh, the same script run before a pull request, on GitHub's
 #          Xcode 27 image. Builds go unsigned there (check.sh sees CI).
 # windows: the Windows host's tests, including the golden vectors it shares with
@@ -20,6 +21,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  rules:
+    # The repo rules a script can check (scripts/lint.sh), on the files and on the new commits.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Files
+        run: scripts/lint.sh
+      - name: New commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "No earlier commit to compare with."; exit 0
+          fi
+          scripts/lint.sh --commits "$BASE..$HEAD"
+
   apple:
     runs-on: xcode-27
     timeout-minutes: 60

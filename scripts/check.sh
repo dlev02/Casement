@@ -5,6 +5,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 # CI runners have no signing identity for the team, so builds there go unsigned.
 sign=()
 [[ -n ${CI:-} ]] && sign=(CODE_SIGNING_ALLOWED=NO)
+scripts/lint.sh
 xcrun swift test --package-path Packages/VantageCore
 xcrun swift test
 xcodebuild build -project Vantage.xcodeproj -scheme VantageHost -destination 'platform=macOS' -derivedDataPath .deriveddata "${sign[@]}"

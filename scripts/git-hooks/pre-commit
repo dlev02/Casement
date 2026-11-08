@@ -1,0 +1,3 @@
+#!/bin/bash
+# Checks what's staged against the repo rules a script can check (scripts/lint.sh).
+exec "$(git rev-parse --show-toplevel)/scripts/lint.sh" --cached
