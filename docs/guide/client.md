@@ -25,6 +25,35 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   instead of macOS's generic settings window for iOS apps.
   The list's Grid/List is its own toolbar button beside Sort, and Settings → Appearance →
   Computer List.
+- **Screen session model** (`ScreenSessionModel`, `Vantage/Model`): one `@Observable` object per
+  screen session owns the connection (`ClientSession`), the picture (`VideoStreamController`),
+  `InputController`, `DictationController` and `MacAudioPlayer`, and wires them together once
+  (`wire()`). It reads the saved computer's choices through `ScreenSessionStore` (`DeviceStore`
+  conforms; sound, Curtain, Natural Scrolling, ⌘ as Ctrl, control strip), reacts to the connection
+  in one place (`watch`, built on `Observations`: a lost connection resets the first frame,
+  dictation and sound; connecting records the platform and host identity; a refused Curtain clears
+  the saved choice and says why), owns the notices that clear themselves (`TimedNotice`: received
+  file, sound, Wake), the 250 ms feedback loop and the 400 ms viewport debounce, Type Password's
+  routing (`TypePasswordDecision`, pure, in `TypePassword.swift`), the Disconnect guard
+  (`disconnectWouldStopFiles`), and every action the control strip, session menu, Mac menu bar,
+  toolbar and visionOS ornament call. `start(viewport:)` and `stop()` are explicit and idempotent;
+  `end()` is Disconnect, which the layout answers by dismissing (`isEnded`). Settings that apply to
+  every session (touch mode, trackpad sensitivity, keyboard mode, dictation engine, the default
+  strip, Send Keyboard Shortcuts) are read from the defaults and refreshed on
+  `UserDefaults.didChangeNotification`, so a change in Settings applies mid-session; only a key
+  that changed since the last read is applied, because UI tests and screenshot launches pin keys
+  in the argument domain (`-vantage.toolbarDock bottomLeft`), which outranks every write. For the
+  same reason the strip's dock and collapsed state are `@State` seeded from the defaults and
+  written back on change, never `@AppStorage` (an `@AppStorage` strip can't move during a
+  pinned launch, which `testToolbarThrowsLandInTheIntendedCorner` catches). `RemoteSessionScreen` makes the model when it appears (a `@State`
+  initialiser can't see `device`, and making one per view init would make a connection per
+  re-render) and `RemoteSessionLayout` is layout over it: `RemoteSessionScreen+macOS.swift` holds
+  the Mac's surface, subtitle and toolbar; `SessionNotices.swift` the banners, haptics and the
+  password sheet, which owns its fields so the password never sits in session state; the strip's
+  `MacAudioToggle`/`CurtainToggle`/`SendFileAction`/`DictationPress` live in `StripActions.swift`.
+  The model compiles in the root package (`xcrun swift test`), so a collaborator it gains must be
+  added to `Package.swift`'s client sources. Tests: `ScreenSessionModelTests` (its own loopback
+  mock host: the Type Password table, the Disconnect guard, a refused Curtain, a reconnect).
 - **Control strip motion** (`ControlStrip`, `ToolbarPlacement` in `SessionPreferences.swift`): the
   pill and the full strip share one glass surface that resizes; don't go back to two
   `glassEffectID` shapes, which swapped in a single frame instead of morphing. Dragging uses

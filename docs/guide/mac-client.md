@@ -42,8 +42,10 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   Screen/Wake Display, Customize Control Strip…, Disconnect ⌃⌥⌘W); View adds Hide/Show Control Strip ⌃⌥⌘C,
   Actual Size ⌃⌥⌘0, Full Screen ⌃⌥⌘F, Sort Macs By; Help › Casement Help. Session shortcuts all
   hold ⌃⌥⌘, the one chord a capturing session leaves to Vantage. Items read
-  `@FocusedValue(\.sessionCommands)` (the session publishes `SessionCommands` with
-  `focusedSceneValue`, since its AppKit view holds focus) and `\.selectedMac` (the list); they're
+  `@FocusedValue(\.screenSession)`, the front window's `ScreenSessionModel` (published with
+  `focusedSceneValue`, since its AppKit view holds focus; the Session and View items are `View`s
+  of their own, `SessionMenuItems` and `SessionViewItems`, so they follow the model's state),
+  `\.sessionWindowShape` (Actual Size, Full Screen) and `\.selectedMac` (the list); they're
   dimmed when they don't apply, never hidden. `SidebarCommands`, `ToolbarCommands`.
 - **Session window**: `WindowAspectMatcher` (macOS) resets `contentAspectRatio` for the current
   width on every resize, with the toolbar's height added (the ratio covers the content view under
@@ -51,9 +53,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   point, or as large as `visibleFrame` allows; nothing in full screen. `SessionWindowShape`
   provides Actual Size and Full Screen. Title = the Mac's name, subtitle "W × H · View Only".
   Toolbar: View Only, Send Keyboard Shortcuts, a Mac menu (the shortcuts including App Switcher
-  ⌘Tab, Sleep Display, Lock Mac), Send File, Disconnect (`session.toolbar.disconnect`). The session
-  publishes `.focusedSceneValue(\.sessionCommands, …)`. It suspends on `NSWorkspace.willSleep`
-  and retries on `didWake`, never on scene background.
+  ⌘Tab, Sleep Display, Lock Mac), Send File, Disconnect (`session.toolbar.disconnect`). The layout
+  publishes its `ScreenSessionModel` and `SessionWindowShape` as focused scene values. It suspends
+  on `NSWorkspace.willSleep` and retries on `didWake`, never on scene background.
 - **Input** (`RemoteInteractionNSView`): hosts `video.displayLayer` (flipped, layer-backed,
   `acceptsFirstMouse` false) and overrides the raw mouse, drag and `scrollWheel` methods on
   purpose: recognizers don't give per-button downs, ups and drags, `clickCount`, or scroll
@@ -90,7 +92,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   starts from zero. Test: `ScrollTranslatorTests`.
 - **Same Mac**: every host-posted event carries `VantageProtocol.injectedEventMarker` in
   `.eventSourceUserData` (`InputInjector.post`) and the client drops those events
-  (`NSEvent.isFromVantageHost`). `ThisMac.isHost` (loopback, a local tailnet address, or the
+  (`NSEvent.isFromVantageHost`). `ThisMac.isHost` (`Mac/ThisMac.swift`; loopback, a local tailnet address, or the
   host's name equal to this Mac's computer name) shows the "You're viewing this Mac from itself"
   banner and starts in View Only; `-VantageAllowSelfControl 1` keeps input on. DEBUG hosts leave
   the client (`AudioCapture.clientBundleIDs`: `me.drewlevinson.casement`, and the old

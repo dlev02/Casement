@@ -547,7 +547,7 @@ struct FileTransferSessionTests {
     }
 
     /// Disconnect from an older Mac still takes the file channel down with the screen (and the
-    /// session screen asks first, see `RemoteSessionScreen.disconnect`).
+    /// session screen asks first, see `ScreenSessionModel.disconnect`).
     @Test @MainActor func olderMacsFileChannelEndsWithTheSession() async throws {
         let host = try await MockFileHost(keepsFiles: false)
         defer { host.stop() }
