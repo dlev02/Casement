@@ -16,6 +16,14 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
         var config: VideoConfig?
     }
 
+    /// What became of one frame handed to `encode`: an encoded frame, or nothing. Every frame
+    /// gets exactly one of these, so whoever counts encodes in flight never waits on a frame
+    /// VideoToolbox dropped (it does so under load, with a nil sample buffer and no error).
+    enum Outcome: Sendable {
+        case encoded(Output)
+        case dropped(String)
+    }
+
     struct Configuration {
         var codec: VideoCodec
         var width: Int
@@ -31,7 +39,7 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
     private var config: Configuration
     private var sequence: UInt64 = 0
     private var lastParameterSets: [Data] = []
-    private var onOutput: (@Sendable (Output) -> Void)?
+    private var onOutcome: (@Sendable (Outcome) -> Void)?
 
     init(configuration: Configuration) {
         self.config = configuration
@@ -39,9 +47,9 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
 
     var currentCodec: VideoCodec { config.codec }
 
-    func start(onOutput: @escaping @Sendable (Output) -> Void) throws {
+    func start(onOutcome: @escaping @Sendable (Outcome) -> Void) throws {
         try queue.sync {
-            self.onOutput = onOutput
+            self.onOutcome = onOutcome
             try createSession()
         }
     }
@@ -53,11 +61,13 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
                 VTCompressionSessionInvalidate(session)
             }
             session = nil
-            onOutput = nil
+            onOutcome = nil
         }
     }
 
     /// Encodes one frame. `forceKeyframe` requests an IDR (session start, loss, format change).
+    /// The outcome handler hears back once for every call, encoded or dropped, unless the encoder
+    /// was stopped first.
     func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64, forceKeyframe: Bool) {
         queue.async { [weak self] in
             guard let self, let session = self.session else { return }
@@ -70,15 +80,26 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
                 session, imageBuffer: pixelBuffer, presentationTimeStamp: pts,
                 duration: .invalid, frameProperties: properties as CFDictionary?,
                 infoFlagsOut: nil
-            ) { [weak self] status, _, sampleBuffer in
-                guard status == noErr, let sampleBuffer,
-                      CMSampleBufferGetDataBuffer(sampleBuffer) != nil else { return }
-                self?.handleEncoded(sampleBuffer, keyframe: Self.isKeyframe(sampleBuffer))
+            ) { [weak self] status, flags, sampleBuffer in
+                guard let self else { return }
+                guard status == noErr else { return self.report(.dropped("encoder error \(status)")) }
+                guard let sampleBuffer, CMSampleBufferGetDataBuffer(sampleBuffer) != nil else {
+                    return self.report(.dropped(flags.contains(.frameDropped) ? "frame dropped by the encoder" : "encoder returned no data"))
+                }
+                self.handleEncoded(sampleBuffer, keyframe: Self.isKeyframe(sampleBuffer))
             }
             if status != noErr {
                 self.log.error("encode frame failed: \(status)")
+                // The output handler isn't called for a frame EncodeFrame refused.
+                self.report(.dropped("encode call failed \(status)"))
             }
         }
+    }
+
+    private func report(_ outcome: Outcome) {
+        guard let onOutcome else { return }
+        if case .dropped(let reason) = outcome { log.error("frame dropped: \(reason, privacy: .public)") }
+        onOutcome(outcome)
     }
 
     /// Applies a new average bitrate mid-session (adaptive control loop).
@@ -159,12 +180,14 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
 
     // Called from the compression output handler block.
     private func handleEncoded(_ sampleBuffer: CMSampleBuffer, keyframe: Bool) {
-        guard let onOutput else { return }
-        guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        guard onOutcome != nil else { return }
+        guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return report(.dropped("encoder returned no data")) }
         var lengthAtOffset = 0
         var totalLength = 0
         var dataPointer: UnsafeMutablePointer<Int8>?
-        guard CMBlockBufferGetDataPointer(dataBuffer, atOffset: 0, lengthAtOffsetOut: &lengthAtOffset, totalLengthOut: &totalLength, dataPointerOut: &dataPointer) == noErr, let dataPointer else { return }
+        guard CMBlockBufferGetDataPointer(dataBuffer, atOffset: 0, lengthAtOffsetOut: &lengthAtOffset, totalLengthOut: &totalLength, dataPointerOut: &dataPointer) == noErr, let dataPointer else {
+            return report(.dropped("encoded data unreadable"))
+        }
         let payload = Data(bytes: dataPointer, count: totalLength)
 
         var videoConfig: VideoConfig?
@@ -182,7 +205,7 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
         let captureNanos = pts.isValid ? UInt64(max(0, pts.value)) : MonotonicClock.nanos()
         let frame = VideoFrame(sequence: sequence, captureNanos: captureNanos, isKeyframe: keyframe, width: UInt32(config.width), height: UInt32(config.height), data: payload)
         sequence &+= 1
-        onOutput(Output(frame: frame, config: videoConfig))
+        report(.encoded(Output(frame: frame, config: videoConfig)))
     }
 
     static func parameterSets(from formatDesc: CMFormatDescription, codec: VideoCodec) -> [Data] {

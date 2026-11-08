@@ -33,6 +33,8 @@ actor HostSession {
     private var displayInfo: DisplayInfo?
     private var pendingPixelBuffer: CVPixelBuffer?
     private var encodesInFlight = 0
+    /// When the encode in flight was handed over; past `encodeLimit` it counts as lost.
+    private var encodeStartedAt: ContinuousClock.Instant?
     private var needsKeyframe = true
     private var framesSent: UInt64 = 0
     /// Dictation audio waiting for `commit`. Only filled for clients that asked for dictation.
@@ -435,9 +437,9 @@ actor HostSession {
         adaptive = AdaptiveController(startBitrateKbps: bitrateForPixels(chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
         let encoder = VideoEncoder(configuration: .init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
-        try encoder.start { [weak self] output in
+        try encoder.start { [weak self] outcome in
             guard let self else { return }
-            Task { await self.emit(output) }
+            Task { await self.emit(outcome) }
         }
         self.encoder = encoder
 
@@ -491,27 +493,46 @@ actor HostSession {
 
         // Idle suppression: skip encoding a static frame (but always honor a pending keyframe).
         if frame.dirtyRatio <= 0.0001 && !needsKeyframe && framesSent > 0 { return }
+        // The encoder answers every frame, encoded or dropped; this is the net under that promise.
+        if encodesInFlight > 0, let encodeStartedAt, ContinuousClock.now - encodeStartedAt > Self.encodeLimit {
+            log.error("an encode has been in flight for over \(Self.encodeLimit.components.seconds, privacy: .public) s; giving up on it")
+            encodesInFlight = 0
+            needsKeyframe = true
+        }
         guard encodesInFlight < 1 else {
             pendingPixelBuffer = frame.pixelBuffer
             return
         }
-        encodesInFlight += 1
-        let force = needsKeyframe
-        needsKeyframe = false
-        encoder?.encode(frame.pixelBuffer, ptsNanos: frame.displayNanos, forceKeyframe: force)
+        encode(frame.pixelBuffer, ptsNanos: frame.displayNanos)
     }
 
-    private func emit(_ output: VideoEncoder.Output) {
+    /// Longer than this with no word from the encoder means the frame is lost, whatever it says later.
+    static let encodeLimit: Duration = .seconds(1)
+
+    private func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64) {
+        encodesInFlight += 1
+        encodeStartedAt = .now
+        let force = needsKeyframe
+        needsKeyframe = false
+        encoder?.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: force)
+    }
+
+    private func emit(_ outcome: VideoEncoder.Outcome) {
         encodesInFlight = max(0, encodesInFlight - 1)
-        if let config = output.config {
-            channel.sendDetached(.videoConfig(config))
+        switch outcome {
+        case .encoded(let output):
+            if let config = output.config {
+                channel.sendDetached(.videoConfig(config))
+            }
+            channel.sendDetached(.videoFrame(output.frame))
+            framesSent &+= 1
+        case .dropped:
+            // The client's decoder has a hole now; the next frame fills it.
+            needsKeyframe = true
         }
-        channel.sendDetached(.videoFrame(output.frame))
-        framesSent &+= 1
         if let pending = pendingPixelBuffer {
             pendingPixelBuffer = nil
-            encodesInFlight += 1
-            encoder?.encode(pending, ptsNanos: MonotonicClock.nanos(), forceKeyframe: false)
+            encode(pending, ptsNanos: MonotonicClock.nanos())
         }
     }
 
