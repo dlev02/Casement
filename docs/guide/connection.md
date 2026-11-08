@@ -71,13 +71,31 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `xcrun swift test`) drive the real session over loopback on the synthetic environment. A new
   platform dependency goes behind a protocol here, with a synthetic adapter, never straight into
   the session. Pairing and trust reach the session as `HostTrust` (`TrustStore` on a real host).
+- **Capture lifecycle** (`CaptureLifecycle`, `VantageHost/Engine`; the Windows host's session runs
+  the same machine): everything that keeps a picture coming for a screen session lives in one pure
+  module, events in and decisions out, with the caller's clock on every event. Events: the device
+  asked for a selection; a capture started, failed or stopped; a frame arrived; the status monitor
+  changed (lock, secure input, display sleep); Wake (also Retry) or Sleep Display; the displays
+  changed; a 250 ms tick. Decisions: start capture on these targets (the display it was on first,
+  keeping its codec, then the device's own choice; synthetic displays only the latter), stop it,
+  send a `HostStatus` (only when it differs from the last one sent, as the Windows host does), wake
+  or sleep the display, re-read the status, begin monitoring, request a keyframe (a wake with
+  capture still running), or log a note. It also answers whether input may reach the screen.
+  `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
+  while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
+  objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
+  `--capture-fails-for`. Rules below are the module's; `CaptureLifecycleTests` check them with a
+  fake clock and frame source, `HostSessionTests` over loopback.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
-  `HostPowerControl` and `HostStatusMonitor`): while the
+  `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture
   can't start (that was the reconnect loop): capture waits, `HostStatus.isDisplayAsleep` (optional;
   nil from older hosts) tells the client, and capture restarts with a keyframe when the display
-  wakes (NSWorkspace screensDid*, a 1 s poll, the controller's restart; one start at a time). The
+  wakes (NSWorkspace screensDid*, a 1 s poll, the controller's restart; one start at a time, a
+  request made meanwhile takes over afterwards; the asleep notice stops the capture at once rather
+  than waiting for ScreenCaptureKit, so nothing encoded before the sleep arrives after the wake,
+  and a wake that finds capture still running asks for a keyframe instead). The
   injector, power assertion, and status monitor live for the session, not the capture. Connecting
   wakes a sleeping display before listing displays; input while asleep wakes it (≤ 1/s) instead
   of being delivered (releases still are), except for 2 s after Sleep Display; the Wake command
@@ -85,14 +103,14 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   assertion id (Remote lights the display on macOS 27 too; a fresh id per call leaked an assertion
   every time). On Drew's Mac display sleep also posts `com.apple.screenIsLocked` + Secure Input
   even with screen lock off; both clear on wake. **Awake but no picture** (capture won't start;
-  once seen after a wake, when SCK listed no displays for 10+ s): a watchdog in `HostSession`
+  once seen after a wake, when SCK listed no displays for 10+ s): the lifecycle's watchdog
   retries (0.5 s doubling to 5 s) for the whole session, logs every attempt as "capture
-  unavailable for N s: <reason>; <panel state>; trying again" (category `session`), re-declares
-  local activity when CGDisplayIsAsleep or an empty active-display list says the panel is off
-  (IOKit has no display power state on Apple silicon), watches every capture start and treats one
-  with no frame in 5 s as failed (`HostSession.noFrameLimit`, armed on every start as the Windows
-  host does, not only after a failure), and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on the
-  first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
+  unavailable for N s: <reason>; trying again" with the panel state (category `session`),
+  re-declares local activity when CGDisplayIsAsleep or an empty active-display list says the panel
+  is off (IOKit has no display power state on Apple silicon), watches every capture start and
+  treats one with no frame in 5 s as failed (armed on every start as the Windows host does, not
+  only after a failure), and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on
+  the first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
   (last frame dimmed, glass note, Wake/Retry button, tap anywhere) shows "The Mac's display is
   asleep" or "Waiting for the Mac's screen…", never a frozen frame without a word; the lock
   banner hides only while asleep. `ClientSession`
@@ -103,8 +121,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   host never reads the real Mac's display power, so a test host on a Mac whose screen is off still
   behaves) and
   `--capture-fails-for <s>` (each session's capture fails that long from its first stream
-  request). Tests: `HostSessionTests` (the Mac session over loopback: sleep and wake, a missing
-  picture), `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
+  request). Tests: `CaptureLifecycleTests` (the rules on a fake clock), `HostSessionTests` (the
+  Mac session over loopback: sleep and wake, a missing picture), `DisplaySleepSessionTests`,
+  `HostStatusTests` (VantageCore),
   `SessionUITests.testSleepDisplayShowsAsleepStateAndWakes` (synthetic host with
   `--display-asleep`; `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST=127.0.0.1:<port>` and
   `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults),

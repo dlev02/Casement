@@ -273,7 +273,7 @@ public enum DisplaySelection: Codable, Sendable, Equatable {
     case fitViewport(Viewport)
 }
 
-public struct SelectDisplay: Codable, Sendable {
+public struct SelectDisplay: Codable, Sendable, Equatable {
     public var selection: DisplaySelection
     public var targetFPS: Int
     public var quality: QualityPreset
