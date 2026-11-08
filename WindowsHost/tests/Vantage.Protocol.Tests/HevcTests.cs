@@ -168,7 +168,7 @@ internal sealed class HevcEncoderFactory(Clip clip, bool hevcFails = false) : IV
 
         public void Start(IEncodedFrameSink sink) => _sink = sink;
 
-        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken)
+        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken)
         {
             var keyframe = forceKeyframe || !_started;
             _started = true;
@@ -184,7 +184,7 @@ internal sealed class HevcEncoderFactory(Clip clip, bool hevcFails = false) : IV
                 Height = settings.Height,
             };
             var sink = _sink;
-            _ = Task.Run(() => sink?.OnFrame(output), cancellationToken);
+            _ = Task.Run(() => sink?.OnFrame(encodeId, output), cancellationToken);
             return ValueTask.CompletedTask;
         }
 

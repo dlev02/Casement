@@ -78,9 +78,17 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   one-callback-per-encode rule is no longer load-bearing: an encode with no word back within 1 s
   (`EncodeStallLimit`, on the session's `TimeProvider`) is given up on and a keyframe forced, so a
   lost callback can't leave one frame "in flight" and the picture frozen for good (the Mac host had
-  that bug). `IVideoEncoder` is unchanged; the session only makes it and hands it over. Tests:
-  `VideoPipelineTests` (fake encoder that loses one callback, fake clock), with `HevcSessionTests`
-  and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…` over loopback.
+  that bug). Every `EncodeAsync` carries an `encodeId` and the sink call that answers it
+  (`OnFrame`, `OnFrameSkipped`) carries it back, so an answer from an encode already given up on
+  is dropped without touching the encode that replaced it, its timer or its keyframe (Media
+  Foundation reports an abandoned input as skipped about a second later, right when the
+  replacement is in flight), and an encode that never answers at all shifts nothing. A stall
+  timeout acts only when it was armed for the encode still in flight and that encode's deadline
+  has passed; one already queued behind the answer that finished its encode does nothing. The
+  session only makes the encoder and hands it over. Tests: `VideoPipelineTests` (scripted encoder
+  that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
+  answer), with `HevcSessionTests` and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
+  over loopback.
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the

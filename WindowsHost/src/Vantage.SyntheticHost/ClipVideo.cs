@@ -212,7 +212,7 @@ internal sealed class ClipEncoderFactory(Clip clip) : IVideoEncoderFactory
 
         public void Start(IEncodedFrameSink sink) => _sink = sink;
 
-        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken)
+        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken)
         {
             if (forceKeyframe) _next = clip.NextKeyframe(_next);
             var index = _next;
@@ -227,7 +227,7 @@ internal sealed class ClipEncoderFactory(Clip clip) : IVideoEncoderFactory
                 Height = Clip.Height,
             };
             var sink = _sink;
-            _ = Task.Run(() => sink?.OnFrame(output), cancellationToken);
+            _ = Task.Run(() => sink?.OnFrame(encodeId, output), cancellationToken);
             return ValueTask.CompletedTask;
         }
 

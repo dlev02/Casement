@@ -47,8 +47,8 @@ public sealed class DumpingEncoderFactory(IVideoEncoderFactory inner, string pat
             inner.Start(this);
         }
 
-        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken) =>
-            inner.EncodeAsync(frame, forceKeyframe, cancellationToken);
+        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken) =>
+            inner.EncodeAsync(frame, forceKeyframe, encodeId, cancellationToken);
 
         public void SetBitrate(int kbps) => inner.SetBitrate(kbps);
 
@@ -58,14 +58,14 @@ public sealed class DumpingEncoderFactory(IVideoEncoderFactory inner, string pat
 
         public ValueTask DisposeAsync() => inner.DisposeAsync();
 
-        public void OnFrame(EncodedFrame frame)
+        public void OnFrame(long encodeId, EncodedFrame frame)
         {
             try { owner.Append(frame); }
             catch (IOException) { }
-            _sink?.OnFrame(frame);
+            _sink?.OnFrame(encodeId, frame);
         }
 
-        public void OnFrameSkipped() => _sink?.OnFrameSkipped();
+        public void OnFrameSkipped(long encodeId) => _sink?.OnFrameSkipped(encodeId);
 
         public void OnError(Exception error) => _sink?.OnError(error);
     }

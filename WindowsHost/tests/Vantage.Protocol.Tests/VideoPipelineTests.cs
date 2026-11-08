@@ -21,16 +21,29 @@ public class VideoPipelineTests
         for (var i = 0; i < 3; i++) await queue.RunAsync(() => Task.CompletedTask);
     }
 
-    [Fact]
-    public async Task AnEncodeThatNeverReportsBackIsGivenUpOnAndAKeyframeForced()
+    private static (VideoPipeline Pipeline, ScriptedEncoder Encoder, RecordingLane Lane, SerialQueue Queue, FakeTimeProvider Clock) Started()
     {
         var clock = new FakeTimeProvider();
         var queue = new SerialQueue(NullLogger.Instance);
-        var encoder = new LosingEncoder { LoseEncode = 1 };
+        var encoder = new ScriptedEncoder();
         var lane = new RecordingLane();
         var pipeline = new VideoPipeline(encoder, new FakeCapture(), VideoCodec.H264, targetFps: 60, new AdaptiveController(20_000, clock), lane, queue, clock,
                                          firstSequence: 7, _ => Task.CompletedTask, NullLogger.Instance);
         pipeline.Start();
+        return (pipeline, encoder, lane, queue, clock);
+    }
+
+    private static async Task StopAsync(VideoPipeline pipeline, SerialQueue queue)
+    {
+        await queue.RunAsync(() => pipeline.DisposeAsync().AsTask());
+        queue.Complete();
+    }
+
+    [Fact]
+    public async Task AnEncodeThatNeverReportsBackIsGivenUpOnAndAKeyframeForced()
+    {
+        var (pipeline, encoder, lane, queue, clock) = Started();
+        encoder.Hold.Add(1);
         try
         {
             await queue.RunAsync(() => pipeline.IngestAsync(new Frame(1)));
@@ -64,26 +77,137 @@ public class VideoPipelineTests
         }
         finally
         {
-            await queue.RunAsync(() => pipeline.DisposeAsync().AsTask());
-            queue.Complete();
+            await StopAsync(pipeline, queue);
         }
     }
 
-    /// <summary>Reports every encode at once, except the one at <see cref="LoseEncode"/>, which it never reports.</summary>
-    private sealed class LosingEncoder : IVideoEncoder
+    [Fact]
+    public async Task ALateAnswerFromAnEncodeGivenUpOnLeavesItsReplacementAlone()
+    {
+        var (pipeline, encoder, lane, queue, clock) = Started();
+        encoder.Hold.Add(1); // A, which the encoder sits on
+        encoder.Hold.Add(2); // B, its replacement, still in flight when A answers late
+        try
+        {
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(1)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(2)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(3)));
+            await DrainAsync(queue);
+            clock.Advance(VideoPipeline.EncodeStallLimit);
+            await DrainAsync(queue);
+            Assert.Equal([true, false, true], encoder.Forced); // A given up on, B started as an IDR
+            Assert.Equal(2, lane.Posted.Count);
+
+            // A answers after all (Media Foundation reports an abandoned input about a second later): nothing moves.
+            encoder.Answer(1);
+            await DrainAsync(queue);
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(4)));
+            await DrainAsync(queue);
+            Assert.Equal(3, encoder.Forced.Count); // no third encode beside B
+            Assert.Equal(2, lane.Posted.Count); // A's late frame never reaches the wire
+
+            // B is still watched: with no answer of its own it is given up on in turn.
+            clock.Advance(VideoPipeline.EncodeStallLimit);
+            await DrainAsync(queue);
+            Assert.Equal([true, false, true, true], encoder.Forced);
+            Assert.Equal(3, lane.Posted.Count);
+            Assert.True(Assert.IsType<VideoFrame>(lane.Posted[^1]).IsKeyframe);
+        }
+        finally
+        {
+            await StopAsync(pipeline, queue);
+        }
+    }
+
+    [Fact]
+    public async Task AnEncodeThatNeverAnswersCostsOneStallAndNothingAfter()
+    {
+        var (pipeline, encoder, lane, queue, clock) = Started();
+        encoder.Hold.Add(1);
+        try
+        {
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(1)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(2)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(3)));
+            await DrainAsync(queue);
+            clock.Advance(VideoPipeline.EncodeStallLimit);
+            await DrainAsync(queue);
+            Assert.Equal([true, false, true], encoder.Forced);
+            Assert.Equal(3, lane.Posted.Count);
+
+            // Ten frames over several stall limits: each is encoded as it comes, none forced, no stall.
+            for (var i = 0; i < 10; i++)
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(400));
+                await queue.RunAsync(() => pipeline.IngestAsync(new Frame(10 + (ulong)i)));
+                await DrainAsync(queue);
+                Assert.Equal(4 + i, encoder.Forced.Count);
+                Assert.False(encoder.Forced[^1]);
+                Assert.Equal(4 + i, lane.Posted.Count);
+            }
+        }
+        finally
+        {
+            await StopAsync(pipeline, queue);
+        }
+    }
+
+    [Fact]
+    public async Task AStallTimeoutQueuedBehindTheAnswerDoesNotAbandonTheNextEncode()
+    {
+        var (pipeline, encoder, lane, queue, clock) = Started();
+        encoder.Hold.Add(1); // A
+        encoder.Hold.Add(2); // B
+        try
+        {
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(1)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(2)));
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(3)));
+            await DrainAsync(queue);
+            Assert.Equal([true, false], encoder.Forced);
+
+            // The session queue is busy: A's answer and then A's stall timeout line up behind it.
+            var busy = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            queue.Post(() => busy.Task);
+            clock.Advance(TimeSpan.FromMilliseconds(900));
+            encoder.Answer(1);
+            clock.Advance(TimeSpan.FromMilliseconds(100)); // A's timer fires at the limit, after the answer was already queued
+            busy.SetResult();
+            await DrainAsync(queue);
+
+            // A's frame went out and B started; the stale timeout left B alone.
+            Assert.Equal([true, false, false], encoder.Forced);
+            Assert.Equal(3, lane.Posted.Count);
+            clock.Advance(TimeSpan.FromMilliseconds(500));
+            await DrainAsync(queue);
+            Assert.Equal(3, encoder.Forced.Count);
+
+            // B keeps its own full limit, counted from when it started.
+            clock.Advance(TimeSpan.FromMilliseconds(500));
+            await DrainAsync(queue);
+            Assert.Equal([true, false, false, true], encoder.Forced);
+        }
+        finally
+        {
+            await StopAsync(pipeline, queue);
+        }
+    }
+
+    /// <summary>Answers every encode at once, except those whose index is in <see cref="Hold"/>, which wait for <see cref="Answer"/>.</summary>
+    private sealed class ScriptedEncoder : IVideoEncoder
     {
         private IEncodedFrameSink? _sink;
+        private readonly List<(long Id, EncodedFrame Output)> _encodes = [];
         public readonly List<bool> Forced = [];
-        public int LoseEncode = -1;
+        public readonly HashSet<int> Hold = [];
 
         public void Start(IEncodedFrameSink sink) => _sink = sink;
 
-        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken)
+        public ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken)
         {
             var index = Forced.Count;
             Forced.Add(forceKeyframe);
-            if (index == LoseEncode) return ValueTask.CompletedTask;
-            _sink!.OnFrame(new EncodedFrame
+            var output = new EncodedFrame
             {
                 Data = forceKeyframe ? AnnexB(s_sps, s_pps, s_idr) : AnnexB(s_slice),
                 Format = NalFormat.AnnexB,
@@ -91,9 +215,14 @@ public class VideoPipelineTests
                 CaptureNanos = frame.TimestampNanos,
                 Width = 64,
                 Height = 64,
-            });
+            };
+            _encodes.Add((encodeId, output));
+            if (!Hold.Contains(index)) Answer(index);
             return ValueTask.CompletedTask;
         }
+
+        /// <summary>Delivers the output of the encode at <paramref name="index"/> (in the order encodes were asked for).</summary>
+        public void Answer(int index) => _sink!.OnFrame(_encodes[index].Id, _encodes[index].Output);
 
         public void SetBitrate(int kbps)
         {

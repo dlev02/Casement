@@ -29,9 +29,10 @@ namespace Vantage.Host.Windows.Encode;
 /// 4K, as the Mac host's HEVC does. Output is Annex-B.
 /// </summary>
 /// <remarks>
-/// Every accepted <see cref="EncodeAsync"/> ends in one sink call. Outputs are matched to inputs by
-/// sample time; an input the MFT never answers within <see cref="StallLimit"/> is reported skipped
-/// and the next frame is forced to be an IDR (a lost P-frame would smear the client's picture).
+/// Every accepted <see cref="EncodeAsync"/> ends in one sink call carrying its encode id. Outputs are
+/// matched to inputs by sample time; an input the MFT never answers within <see cref="StallLimit"/>
+/// is reported skipped and the next frame is forced to be an IDR (a lost P-frame would smear the
+/// client's picture).
 /// </remarks>
 internal sealed class MfVideoEncoder : IVideoEncoder
 {
@@ -72,11 +73,12 @@ internal sealed class MfVideoEncoder : IVideoEncoder
     private long _framesOut;
     private bool _warnedAboutTimes;
 
-    private sealed class Pending(long sampleTime, ulong captureNanos, long queuedAt)
+    private sealed class Pending(long sampleTime, ulong captureNanos, long queuedAt, long encodeId)
     {
         public long SampleTime { get; } = sampleTime;
         public ulong CaptureNanos { get; } = captureNanos;
         public long QueuedAt { get; } = queuedAt;
+        public long EncodeId { get; } = encodeId;
         public bool Abandoned { get; set; }
     }
 
@@ -293,7 +295,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         _stallTimer.Change(TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
     }
 
-    public async ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, CancellationToken cancellationToken)
+    public async ValueTask EncodeAsync(ICapturedFrame frame, bool forceKeyframe, long encodeId, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_sink is null) throw new InvalidOperationException("Start the encoder first.");
@@ -319,7 +321,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         sample.SampleTime = sampleTime;
         sample.SampleDuration = TimeSpan.TicksPerSecond / _fps;
 
-        lock (_lock) _pending.Enqueue(new Pending(sampleTime, captured.TimestampNanos, Environment.TickCount64));
+        lock (_lock) _pending.Enqueue(new Pending(sampleTime, captured.TimestampNanos, Environment.TickCount64, encodeId));
 
         if (_isAsync)
         {
@@ -327,7 +329,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
             {
                 if (keyframe) ForceKeyframe();
                 var hr = ProcessInput(sample);
-                if (hr < 0) FailInput(hr);
+                if (hr < 0) FailInput(hr, encodeId);
             }
             finally
             {
@@ -342,7 +344,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
                 {
                     if (keyframe) ForceKeyframe();
                     var hr = ProcessInput(sample);
-                    if (hr < 0) FailInput(hr);
+                    if (hr < 0) FailInput(hr, encodeId);
                     else DrainSync();
                 }
                 catch (Exception ex)
@@ -580,7 +582,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         return fn(_transform.NativePointer, 0, sample.NativePointer, 0);
     }
 
-    private void FailInput(int hr)
+    private void FailInput(int hr, long encodeId)
     {
         // The frame never went in: answer it now so the core's one-in-flight accounting holds.
         lock (_lock)
@@ -593,7 +595,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         }
         _log.LogWarning("{Name}: ProcessInput failed (0x{Hr:X8}); frame skipped", _name, hr);
         if (hr == MF_E_NOTACCEPTING && _isAsync) _needInput.Release(); // it will ask again
-        _sink?.OnFrameSkipped();
+        _sink?.OnFrameSkipped(encodeId);
     }
 
     // ---- output ----
@@ -750,7 +752,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         if (isKeyframe && _sequenceHeader is { Length: > 0 } header && !NalUnits.Contains(data, NalUnits.SpsType(_codec), _codec))
             data = [.. header, .. data];
 
-        var skipped = 0;
+        List<long>? skipped = null;
         Pending? match = null;
         var rewroteTime = false;
         lock (_lock)
@@ -760,7 +762,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
                 while (_pending.Peek().SampleTime != sampleTime)
                 {
                     var gone = _pending.Dequeue();
-                    if (!gone.Abandoned) skipped++;
+                    if (!gone.Abandoned) (skipped ??= []).Add(gone.EncodeId);
                 }
                 match = _pending.Dequeue();
             }
@@ -770,14 +772,17 @@ internal sealed class MfVideoEncoder : IVideoEncoder
                 match = _pending.Dequeue();
                 rewroteTime = true;
             }
-            if (skipped > 0) _forceNextKeyframe = true;
+            if (skipped is not null) _forceNextKeyframe = true;
         }
         if (rewroteTime && !_warnedAboutTimes)
         {
             _warnedAboutTimes = true;
             _log.LogInformation("{Name} changes sample times; matching its output to input by order", _name);
         }
-        for (var i = 0; i < skipped; i++) _sink?.OnFrameSkipped();
+        if (skipped is not null)
+        {
+            foreach (var encodeId in skipped) _sink?.OnFrameSkipped(encodeId);
+        }
 
         if (match is null || match.Abandoned)
         {
@@ -789,7 +794,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
 
         if (Interlocked.Increment(ref _framesOut) == 1)
             _log.LogInformation("{Name}: first frame {Bytes} bytes, NAL types [{Types}]", _name, data.Length, string.Join(",", NalUnits.Types(data, _codec)));
-        _sink?.OnFrame(new EncodedFrame
+        _sink?.OnFrame(match.EncodeId, new EncodedFrame
         {
             Data = data,
             Format = NalFormat.AnnexB,
@@ -803,20 +808,20 @@ internal sealed class MfVideoEncoder : IVideoEncoder
     private void CheckForStall()
     {
         var now = Environment.TickCount64;
-        var abandoned = 0;
+        List<long>? abandoned = null;
         lock (_lock)
         {
             foreach (var pending in _pending)
             {
                 if (pending.Abandoned || now - pending.QueuedAt < StallLimit.TotalMilliseconds) continue;
                 pending.Abandoned = true;
-                abandoned++;
+                (abandoned ??= []).Add(pending.EncodeId);
             }
-            if (abandoned > 0) _forceNextKeyframe = true;
+            if (abandoned is not null) _forceNextKeyframe = true;
         }
-        if (abandoned == 0) return;
-        _log.LogWarning("{Name}: {Count} frame(s) got no output within {Limit} s; reported skipped", _name, abandoned, StallLimit.TotalSeconds);
-        for (var i = 0; i < abandoned; i++) _sink?.OnFrameSkipped();
+        if (abandoned is null) return;
+        _log.LogWarning("{Name}: {Count} frame(s) got no output within {Limit} s; reported skipped", _name, abandoned.Count, StallLimit.TotalSeconds);
+        foreach (var encodeId in abandoned) _sink?.OnFrameSkipped(encodeId);
     }
 
     private void ReportError(Exception error)

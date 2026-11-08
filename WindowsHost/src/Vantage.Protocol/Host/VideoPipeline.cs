@@ -19,8 +19,12 @@ namespace Vantage.Protocol.Host;
 /// The encoder's contract is that every accepted encode ends in one sink call, but the pipeline
 /// doesn't depend on it: an encode with no word back within <see cref="EncodeStallLimit"/> is given
 /// up on and a keyframe forced, so a lost callback can never leave the picture frozen with one
-/// frame "in flight" for good (which happened on the Mac). A late callback after that is just a
-/// frame; the in-flight count never goes below zero.
+/// frame "in flight" for good (which happened on the Mac). Every encode gets a number, and the sink
+/// call that answers it carries that number back, so an answer from an encode already given up on
+/// is recognised and dropped: it never clears the encode that replaced it, its stall timer or its
+/// keyframe, and a lost answer never shifts the accounting of the answers after it. A stall timeout
+/// acts only when it was armed for the encode still in flight and that encode's deadline has passed;
+/// one that was already queued when the encode finished does nothing.
 /// </remarks>
 internal sealed class VideoPipeline : IAsyncDisposable
 {
@@ -39,7 +43,10 @@ internal sealed class VideoPipeline : IAsyncDisposable
     private readonly ITimer _stall;
     private ICapturedFrame? _latest;
     private bool _pendingEncode;
-    private int _encodesInFlight;
+    private long _lastEncodeId;
+    private long? _inFlight;
+    private DateTimeOffset _inFlightDeadline;
+    private long _stallArmedFor;
     private bool _needsKeyframe = true;
     private bool _configSent;
     private byte[][]? _lastParameterSets;
@@ -79,7 +86,11 @@ internal sealed class VideoPipeline : IAsyncDisposable
         _log = log;
         _currentFps = targetFps;
         _currentMaxQP = adaptive.MaxQP;
-        _stall = time.CreateTimer(_ => _queue.Post(StallAsync), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _stall = time.CreateTimer(_ =>
+        {
+            var encodeId = Volatile.Read(ref _stallArmedFor);
+            _queue.Post(() => StallAsync(encodeId));
+        }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>The codec on the wire.</summary>
@@ -130,7 +141,7 @@ internal sealed class VideoPipeline : IAsyncDisposable
             _idleSkipped++;
             return;
         }
-        if (_encodesInFlight >= 1)
+        if (_inFlight is not null)
         {
             _pendingEncode = true;
             return;
@@ -142,13 +153,13 @@ internal sealed class VideoPipeline : IAsyncDisposable
     public async Task RequestKeyframeAsync()
     {
         _needsKeyframe = true;
-        if (_encodesInFlight == 0) await EncodeLatestAsync().ConfigureAwait(false);
+        if (_inFlight is null) await EncodeLatestAsync().ConfigureAwait(false);
     }
 
     /// <summary>The video lane emptied after refusing a frame: a due IDR can go now.</summary>
     public async Task LaneDrainedAsync()
     {
-        if (_needsKeyframe && _encodesInFlight == 0) await EncodeLatestAsync().ConfigureAwait(false);
+        if (_needsKeyframe && _inFlight is null) await EncodeLatestAsync().ConfigureAwait(false);
     }
 
     /// <summary>Input arrived: the adaptive controller holds motion rate for a moment.</summary>
@@ -181,7 +192,7 @@ internal sealed class VideoPipeline : IAsyncDisposable
     /// <summary>Encodes the newest frame (forcing an IDR when one is due). A due IDR waits while the video lane is backed up.</summary>
     private async Task EncodeLatestAsync()
     {
-        if (_disposed || _latest is not { } frame || _encodesInFlight > 0) return;
+        if (_disposed || _latest is not { } frame || _inFlight is not null) return;
         if (_needsKeyframe && _lane.IsVideoBacklogged)
         {
             _pendingEncode = true; // LaneDrainedAsync brings it back
@@ -190,42 +201,65 @@ internal sealed class VideoPipeline : IAsyncDisposable
         _pendingEncode = false;
         var force = _needsKeyframe;
         _needsKeyframe = false;
-        _encodesInFlight++;
+        var encodeId = ++_lastEncodeId;
+        _inFlight = encodeId;
+        _inFlightDeadline = _time.GetUtcNow() + EncodeStallLimit;
+        Volatile.Write(ref _stallArmedFor, encodeId);
         _stall.Change(EncodeStallLimit, Timeout.InfiniteTimeSpan);
         try
         {
-            await _encoder.EncodeAsync(frame, force, CancellationToken.None).ConfigureAwait(false);
+            await _encoder.EncodeAsync(frame, force, encodeId, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception error)
         {
-            Returned();
+            if (_inFlight == encodeId) Returned();
             if (force) _needsKeyframe = true;
             _log.LogError("encode failed: {Error}", error.Message);
         }
     }
 
-    /// <summary>One encode is done with (output, skipped, or given up on).</summary>
+    /// <summary>The encode in flight is done with (output, skipped, failed to queue, or given up on).</summary>
     private void Returned()
     {
-        _encodesInFlight = Math.Max(0, _encodesInFlight - 1);
-        if (_encodesInFlight == 0) _stall.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _inFlight = null;
+        _stall.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
-    private async Task EmitAsync(EncodedFrame? output)
+    /// <summary>The encoder answered encode <paramref name="encodeId"/>; only the encode in flight is listened to.</summary>
+    private async Task EmitAsync(long encodeId, EncodedFrame? output)
     {
         if (_disposed) return;
+        if (_inFlight != encodeId)
+        {
+            // An encode given up on (or one whose EncodeAsync threw) answered after all: the picture has
+            // moved on to a keyframe, so this frame is dropped and the current encode's state left alone.
+            _log.LogInformation("encode {Id} answered after it was given up on; {What} dropped", encodeId, output is null ? "the skip" : "its frame");
+            return;
+        }
         Returned();
         if (output is not null) Send(output);
         if (_pendingEncode || (_needsKeyframe && _latest is not null)) await EncodeLatestAsync().ConfigureAwait(false);
     }
 
-    /// <summary>The encoder took a frame and said nothing for <see cref="EncodeStallLimit"/>: start over with a keyframe.</summary>
-    private async Task StallAsync()
+    /// <summary>
+    /// The stall timer fired for encode <paramref name="encodeId"/>. When that encode is still in flight
+    /// and its <see cref="EncodeStallLimit"/> has really passed, it is given up on and the latest frame
+    /// re-encoded as a keyframe. A timeout queued behind the answer that finished its encode finds a
+    /// newer encode (or none) in flight and does nothing; one that ran early is armed again for the rest.
+    /// </summary>
+    private async Task StallAsync(long encodeId)
     {
-        if (_disposed || _encodesInFlight == 0) return;
+        if (_disposed || _inFlight != encodeId) return;
+        var remaining = _inFlightDeadline - _time.GetUtcNow();
+        if (remaining > TimeSpan.Zero)
+        {
+            _stall.Change(remaining, Timeout.InfiniteTimeSpan);
+            return;
+        }
         _stalls++;
-        _log.LogWarning("the encoder returned nothing for {Ms} ms ({Count} so far); forcing a keyframe", (int)EncodeStallLimit.TotalMilliseconds, _stalls);
-        _encodesInFlight = 0;
+        _log.LogWarning("encode {Id} returned nothing for {Ms} ms ({Count} stalls so far); giving up on it and forcing a keyframe",
+                        encodeId, (int)EncodeStallLimit.TotalMilliseconds, _stalls);
+        Returned();
         _needsKeyframe = true;
         await EncodeLatestAsync().ConfigureAwait(false);
     }
@@ -310,9 +344,9 @@ internal sealed class VideoPipeline : IAsyncDisposable
     /// <summary>Forwards encoder output onto the session queue; a replaced pipeline's late output is ignored there.</summary>
     private sealed class Sink(VideoPipeline pipeline) : IEncodedFrameSink
     {
-        public void OnFrame(EncodedFrame frame) => pipeline._queue.Post(() => pipeline.EmitAsync(frame));
+        public void OnFrame(long encodeId, EncodedFrame frame) => pipeline._queue.Post(() => pipeline.EmitAsync(encodeId, frame));
 
-        public void OnFrameSkipped() => pipeline._queue.Post(() => pipeline.EmitAsync(null));
+        public void OnFrameSkipped(long encodeId) => pipeline._queue.Post(() => pipeline.EmitAsync(encodeId, null));
 
         public void OnError(Exception error) => pipeline._queue.Post(async () =>
         {
