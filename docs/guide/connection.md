@@ -73,8 +73,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   retries (0.5 s doubling to 5 s) for the whole session, logs every attempt as "capture
   unavailable for N s: <reason>; <panel state>; trying again" (category `session`), re-declares
   local activity when CGDisplayIsAsleep or an empty active-display list says the panel is off
-  (IOKit has no display power state on Apple silicon), treats a started capture with no frame in
-  5 s as failed, and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on the
+  (IOKit has no display power state on Apple silicon), watches every capture start and treats one
+  with no frame in 5 s as failed (`HostSession.noFrameLimit`, armed on every start as the Windows
+  host does, not only after a failure), and after 3 s sets `HostStatus.isScreenUnavailable` (optional), cleared on the
   first frame back. Wake doubles as Retry (restarts capture at once). Client: `MacScreenNote`
   (last frame dimmed, glass note, Wake/Retry button, tap anywhere) shows "The Mac's display is
   asleep" or "Waiting for the Mac's screen…", never a frozen frame without a word; the lock

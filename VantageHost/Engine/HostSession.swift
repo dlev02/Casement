@@ -70,6 +70,8 @@ actor HostSession {
     private var streamStarting = false
     private var pendingStart: SelectDisplay?
     private var captureStartedAt: ContinuousClock.Instant?
+    /// The current capture has delivered at least one frame; until then the watchdog counts.
+    private var captureHasFramed = false
     // Awake but no picture: since when, why, the retry schedule, and whether the client knows.
     private var captureLostAt: ContinuousClock.Instant?
     private var captureLossReason = ""
@@ -468,6 +470,8 @@ actor HostSession {
         })
         self.capture = capture
         captureStartedAt = .now
+        captureHasFramed = false
+        armWatchdog() // a capture that never sends a frame counts as failed after 5 s
 
         clipboard.stop()
         clipboard.onLocalChange = { [weak self] payload in
@@ -486,6 +490,7 @@ actor HostSession {
     }
 
     private func ingest(_ frame: CapturedFrame) {
+        captureHasFramed = true
         if captureLostAt != nil { captureRecovered() }
         let (_, fps) = adaptive.observe(dirtyRatio: frame.dirtyRatio)
         capture?.updateFPS(fps)
@@ -843,6 +848,11 @@ actor HostSession {
             recoveryDelay = .milliseconds(500)
             nextRecoveryAttempt = .now + recoveryDelay
         }
+        armWatchdog()
+    }
+
+    /// Ticks every 250 ms while capture is missing or hasn't framed yet (`recoveryTick` says when it's done).
+    private func armWatchdog() {
         guard recoveryTask == nil else { return }
         recoveryTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -852,23 +862,35 @@ actor HostSession {
         }
     }
 
+    /// How long a started capture may go without a frame before it counts as failed.
+    static let noFrameLimit: Duration = .seconds(5)
+
     /// One watchdog tick; false once there's nothing left to recover.
     private func recoveryTick() async -> Bool {
-        guard state == .streaming, wantedSelection != nil, let lostAt = captureLostAt, !DisplayPower.isAsleep() else {
+        guard state == .streaming, wantedSelection != nil, !DisplayPower.isAsleep() else {
             recoveryTask = nil
             return false
         }
         let now = ContinuousClock.now
+        // A capture that started but never sent a frame counts as failed after 5 s.
+        if let capture, !captureHasFramed, let captureStartedAt, now - captureStartedAt > Self.noFrameLimit {
+            captureLossReason = "capture started but sent no frames"
+            await captureStopped(ObjectIdentifier(capture), reason: captureLossReason)
+            if captureLostAt == nil { captureLostAt = captureStartedAt }
+        }
+        guard let lostAt = captureLostAt else {
+            // Armed by a start: done once that capture has framed.
+            if capture != nil, captureHasFramed {
+                recoveryTask = nil
+                return false
+            }
+            return true
+        }
         let seconds = Int((now - lostAt).components.seconds)
         if seconds >= 3, !screenUnavailable {
             screenUnavailable = true
             log.error("capture unavailable for \(seconds, privacy: .public) s: \(self.captureLossReason, privacy: .public); telling the client")
             channel.sendDetached(.hostStatus(currentStatus()))
-        }
-        // A capture that started but never sent a frame counts as failed after 5 s.
-        if let capture, let captureStartedAt, now - captureStartedAt > .seconds(5) {
-            captureLossReason = "capture started but sent no frames"
-            await captureStopped(ObjectIdentifier(capture), reason: captureLossReason)
         }
         guard capture == nil, !streamStarting, now >= nextRecoveryAttempt else { return true }
         let panel = DisplayPower.panelDescription()
