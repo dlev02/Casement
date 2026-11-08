@@ -7,7 +7,7 @@ import os
 /// identity: any program this user runs can rewrite UserDefaults without a Screen Recording or
 /// Accessibility grant, and could have paired itself that way. Synthetic hosts keep their
 /// throwaway list in a defaults suite of their own.
-nonisolated final class TrustStore: @unchecked Sendable {
+nonisolated final class TrustStore: HostTrust, @unchecked Sendable {
     struct TrustedClient: Codable, Sendable, Identifiable {
         var fingerprint: String
         var name: String
@@ -38,8 +38,6 @@ nonisolated final class TrustStore: @unchecked Sendable {
     /// A code shown on the Mac stops working after ten minutes.
     static let pairingLifetime: TimeInterval = 10 * 60
 
-    enum PairingCheck: Sendable { case accepted, incorrect, unavailable }
-
     var onChange: (@Sendable () -> Void)?
     /// Called when a code stops being valid (used, expired, or burned by wrong guesses).
     var onPairingCodeCleared: (@Sendable () -> Void)?
@@ -60,9 +58,7 @@ nonisolated final class TrustStore: @unchecked Sendable {
     }
 
     /// What iOS and visionOS call every device, now that apps can't read the name its owner gave it.
-    static func isGenericName(_ name: String) -> Bool {
-        ["iPad", "iPhone", "iPod touch", "Apple Vision Pro"].contains(name)
-    }
+    static func isGenericName(_ name: String) -> Bool { HostSession.isGenericName(name) }
 
     func name(ofFingerprint fingerprint: String) -> String? {
         trustedClients().first { $0.fingerprint == fingerprint }?.name

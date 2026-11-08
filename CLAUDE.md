@@ -68,7 +68,9 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held
   keys/buttons on disconnect). `AdaptiveController` runs AIMD bitrate + text/motion fps from client
-  feedback. `HostSession` (actor) orchestrates one client; `HostController` owns the listener.
+  feedback. `HostSession` (actor) orchestrates one client through a `HostEnvironment` (real Mac or
+  synthetic adapters, chosen once in `HostController`, which owns the listener); see Host
+  environment in `docs/guide/connection.md`.
 - **Client pipeline**: `ClientSession` (handshake, reconnect with backoff) → `VideoStreamController`
   (`AVSampleBufferDisplayLayer.sampleBufferRenderer`, `DisplayImmediately`, flush + keyframe request
   on decode failure). `RemoteInteractionView` captures touch/trackpad/mouse/hardware-keyboard and

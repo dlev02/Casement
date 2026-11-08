@@ -18,6 +18,18 @@ Keychain it wasn't.
 
 ## Headless end-to-end testing (no permissions needed)
 
+Build the host for a test run with the plain `xcodebuild build … -scheme VantageHost` (team
+signing). A host built unsigned (`CODE_SIGNING_ALLOWED=NO`, what `CI=1 scripts/check.sh` does) is
+ad-hoc signed, so reading its identity from the login Keychain (`HostController.loadIdentity`,
+synthetic hosts included) raises a password prompt on the Mac and the process sits in
+`SecItemCopyMatching` forever, listening on nothing; never kill one (see Keychain experiments
+above), answer the prompt. `codesign -dv` on the app should say `TeamIdentifier=7BVMD7TA97`.
+
+The Mac session itself is also covered without a simulator: `HostSessionTests` (root `xcrun swift test`)
+run the real `HostSession` over loopback on the synthetic environment (pairing, the stream's first
+messages and keyframe, display sleep and wake, a missing picture), the way the Windows host's
+`HostListenerTests` run its session.
+
 The simulator cannot route to the Mac's Tailscale interface, so test over loopback (the host accepts
 loopback peers in addition to tailnet peers):
 
@@ -42,8 +54,11 @@ and run it: it floats an orange window at CG 400–700 × 300–500 and prints e
 receives; a tap in the simulator in Trackpad mode clicks at the display centre, inside that window.
 Drive the simulator with Axiom's `xcui tap -x -y` (the `--label` matcher does not resolve SwiftUI
 rows here). Host timing is logged as "stream setup took N ms" in the `session` category, and every
-click as "pointer down/up" in the `input` category. Synthetic mode
-disables real input, clipboard access, and host commands, and uses a separate trust store. Host synthetic
+click as "pointer down/up" in the `input` category. A synthetic host runs
+`HostSession` on `SyntheticHostEnvironment` (see Host environment in [connection.md](connection.md)):
+a pretend display, the test pattern and a chime, no input, clipboard, curtain, dictation or
+tailnet, nothing that reads the real Mac's display power or permissions, and a separate trust
+store. Host synthetic
 and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward, or launch it with `--exit-after <seconds>` (DEBUG) so it quits by itself. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows

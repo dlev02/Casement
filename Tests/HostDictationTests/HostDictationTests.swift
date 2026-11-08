@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import VantageCore
 @testable import VantageHostDictation
+@testable import VantageHostSession
 
 /// A throwaway directory with a fake `mw` that records its arguments and the WAV it was given.
 private struct StubMacWhisper {

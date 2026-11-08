@@ -59,7 +59,20 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   screen as a sheet for screenshots (AXe taps don't reach this app in the simulator; swipes do;
   `controlStripMac` edits the first saved Mac and `controlStripPC`/`editPC` the first PC, so pair
   them with `-VantageSeedSamples 1`, which includes one PC).
-- **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`): while the
+- **Host environment** (`HostEnvironment`, `VantageHost/Engine`): everything platform-specific a
+  `HostSession` needs (displays and capture, display power and status, input, clipboard, sound,
+  Curtain, dictation, tailnet names, the receive folder, a clock) comes through one struct of
+  protocols, chosen once in `HostController.makeEnvironment` (the composition root): the real Mac
+  (`MacHostEnvironment`: ScreenCaptureKit, `PowerManager`, `LockMonitor`, `InputInjector`,
+  `ClipboardBridge`, `ScreenCurtain`, `HostTranscriber`, `TailscaleCLI`) or the synthetic
+  stand-ins (`SyntheticHostEnvironment`: `FakeDisplay`, the test pattern, the chime, no input or
+  clipboard). The session never reads `HostOptions` or a singleton, so the Windows host's
+  `HostEnvironment` and the Mac's have the same shape, and `HostSessionTests` (root
+  `xcrun swift test`) drive the real session over loopback on the synthetic environment. A new
+  platform dependency goes behind a protocol here, with a synthetic adapter, never straight into
+  the session. Pairing and trust reach the session as `HostTrust` (`TrustStore` on a real host).
+- **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
+  `HostPowerControl` and `HostStatusMonitor`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
   "Failed to find any displays or windows to capture"). Never end a session because capture
   can't start (that was the reconnect loop): capture waits, `HostStatus.isDisplayAsleep` (optional;
@@ -84,10 +97,14 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   asleep" or "Waiting for the Mac's screen…", never a frozen frame without a word; the lock
   banner hides only while asleep. `ClientSession`
   resets its reconnect backoff only once the host answers the stream request or the connection
-  lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (a
-  pretend display that starts asleep; sleep/wake commands work on synthetic hosts too) and
+  lasted 10 s, and idle video never triggers a reconnect. Debug: host `--display-asleep` (with
+  `--synthetic-capture`: the pretend display, `FakeDisplay`, starts asleep; sleep and wake
+  commands flip it, and its capture stops when it sleeps as ScreenCaptureKit's does; a synthetic
+  host never reads the real Mac's display power, so a test host on a Mac whose screen is off still
+  behaves) and
   `--capture-fails-for <s>` (each session's capture fails that long from its first stream
-  request). Tests: `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
+  request). Tests: `HostSessionTests` (the Mac session over loopback: sleep and wake, a missing
+  picture), `DisplaySleepSessionTests`, `HostStatusTests` (VantageCore),
   `SessionUITests.testSleepDisplayShowsAsleepStateAndWakes` (synthetic host with
   `--display-asleep`; `TEST_RUNNER_VANTAGE_SYNTHETIC_HOST=127.0.0.1:<port>` and
   `TEST_RUNNER_VANTAGE_TEXT_SIZE=<content size category>` override the defaults),

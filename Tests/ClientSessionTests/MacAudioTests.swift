@@ -4,7 +4,7 @@ import Network
 import Testing
 import VantageCore
 @testable import VantageClientLogic
-@testable import VantageSynthetic
+@testable import VantageHostSession
 
 // MARK: Helpers
 

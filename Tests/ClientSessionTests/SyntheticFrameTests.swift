@@ -1,6 +1,6 @@
 import CoreVideo
 import Testing
-@testable import VantageSynthetic
+@testable import VantageHostSession
 
 /// Exercise simultaneous clocks/frames without AppKit's shared string-drawing state.
 @Test(.timeLimit(.minutes(1))) func concurrentSyntheticStreamsKeepRendering() async throws {

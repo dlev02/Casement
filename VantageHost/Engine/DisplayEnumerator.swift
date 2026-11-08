@@ -1,38 +1,12 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import ScreenCaptureKit
 import VantageCore
 
-/// Enumerates capturable displays and converts them to the shared `DisplayInfo` model.
+/// Enumerates capturable displays and converts them to the shared `DisplayInfo` model. Real
+/// displays only (needs the Screen Recording grant); a synthetic host's display lives in
+/// `SyntheticHostEnvironment`.
 nonisolated enum DisplayEnumerator {
-    /// A synthetic display used for headless testing (`--synthetic-capture`), sized to a 2x iPad.
-    static func syntheticDisplay(pointWidth: Int = 1470, pointHeight: Int = 956) -> DisplayInfo {
-        DisplayInfo(id: 1, name: "Vantage Synthetic Display",
-                    pixelWidth: pointWidth * 2, pixelHeight: pointHeight * 2,
-                    pointWidth: pointWidth, pointHeight: pointHeight, scale: 2,
-                    originX: 0, originY: 0, isMain: true, isBuiltIn: false, isVirtual: true, refreshRate: 60)
-    }
-
-    /// `--synthetic-image`, loaded once: what a synthetic host streams instead of its test pattern.
-    static let syntheticPicture: CGImage? = {
-        guard let path = HostOptions.shared.syntheticImage,
-              let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
-    }()
-
-    /// Displays available to stream, as `DisplayInfo`. Uses synthetic data in synthetic mode so
-    /// that listing never touches ScreenCaptureKit (which would require screen-recording TCC).
-    static func availableDisplays() async throws -> [DisplayInfo] {
-        if HostOptions.shared.syntheticCapture {
-            if let image = syntheticPicture {
-                return [syntheticDisplay(pointWidth: image.width / 2, pointHeight: image.height / 2)]
-            }
-            return [syntheticDisplay()]
-        }
-        return try await shareableDisplays().map(\.info)
-    }
-
     static func shareableDisplays() async throws -> [(display: SCDisplay, info: DisplayInfo)] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         let mainID = CGMainDisplayID()

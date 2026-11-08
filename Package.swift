@@ -17,23 +17,33 @@ let package = Package(
                     "Model/LocalDevice.swift", "Model/ClipboardSync.swift", "Audio/MacAudioPlayer.swift",
                     "Input/KeyTranslator.swift", "Input/KeyCapturePolicy.swift", "Input/ScrollTranslator.swift"],
                 swiftSettings: [.defaultIsolation(MainActor.self)]),
-        .target(name: "VantageSynthetic", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
-                path: "VantageHost/Engine", exclude: ["AdaptiveController.swift", "DisplayEnumerator.swift", "HostController.swift",
-                    "HostOptions.swift", "HostSession.swift", "ScreenCapture.swift", "VideoEncoder.swift", "AudioCapture.swift"],
-                // Also the host's audio path minus ScreenCaptureKit, so loopback tests can stream the synthetic chime.
-                sources: ["SyntheticFrameSource.swift", "FrameSource.swift", "MonotonicClock.swift",
-                          "AudioSource.swift", "SyntheticAudioSource.swift", "AudioEncoder.swift"]),
-        // Host dictation (clip buffering, WAV, MacWhisper `mw` and SpeechAnalyzer runners).
+        // The Mac host's session (`HostSession`) with the synthetic stand-ins it runs on in tests
+        // (`SyntheticHostEnvironment`: pretend display, test pattern, chime), its encoder and
+        // adaptive controller, and dictation clip buffering. Nothing here touches ScreenCaptureKit,
+        // the Keychain, launch options or a real display, so loopback tests can drive the same
+        // session code the app ships.
+        .target(name: "VantageHostSession", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
+                path: "VantageHost", exclude: ["en.lproj", "Assets.xcassets", "CasementHost.icon", "Info.plist", "VantageHost.entitlements"],
+                sources: ["Engine/HostSession.swift", "Engine/HostEnvironment.swift", "Engine/SyntheticHostEnvironment.swift",
+                          "Engine/SyntheticFrameSource.swift", "Engine/FrameSource.swift", "Engine/MonotonicClock.swift",
+                          "Engine/VideoEncoder.swift", "Engine/AdaptiveController.swift",
+                          "Engine/AudioSource.swift", "Engine/SyntheticAudioSource.swift", "Engine/AudioEncoder.swift",
+                          "Dictation/DictationClip.swift"]),
+        // Host dictation (WAV, MacWhisper `mw` and SpeechAnalyzer runners).
         .target(name: "VantageHostDictation", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
-                path: "VantageHost/Dictation"),
+                path: "VantageHost/Dictation", sources: ["HostTranscriber.swift", "WAVFile.swift"]),
         // Host keyboard sequencing and scroll momentum: the events the injector posts.
         .target(name: "VantageHostInput", dependencies: [.product(name: "VantageCore", package: "VantageCore")],
                 path: "VantageHost/Input", sources: ["KeyboardSequencer.swift", "ScrollMomentum.swift"]),
-        .testTarget(name: "ClientSessionTests", dependencies: ["VantageClientLogic", "VantageSynthetic", .product(name: "VantageCore", package: "VantageCore")],
+        .testTarget(name: "ClientSessionTests", dependencies: ["VantageClientLogic", "VantageHostSession", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/ClientSessionTests"),
+        // The Mac host's session over loopback with synthetic adapters: handshake, stream start,
+        // display sleep and wake, a missing picture.
+        .testTarget(name: "HostSessionTests", dependencies: ["VantageHostSession", .product(name: "VantageCore", package: "VantageCore")],
+                    path: "Tests/HostSessionTests"),
         .testTarget(name: "HostInputTests", dependencies: ["VantageHostInput", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/HostInputTests"),
-        .testTarget(name: "HostDictationTests", dependencies: ["VantageHostDictation", .product(name: "VantageCore", package: "VantageCore")],
+        .testTarget(name: "HostDictationTests", dependencies: ["VantageHostDictation", "VantageHostSession", .product(name: "VantageCore", package: "VantageCore")],
                     path: "Tests/HostDictationTests"),
         // What the host does when files arrive (settings, batching, auto-open safety, wording).
         .target(name: "VantageHostFiles", path: "VantageHost/Transfer",

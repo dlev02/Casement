@@ -1,13 +1,15 @@
-import AppKit
 import CoreGraphics
+import CoreVideo
 import Foundation
-import Network
 import Synchronization
 import VantageCore
 import os
 
 /// One authenticated client session: authenticates the peer, negotiates a display, then runs the
 /// capture → encode → send pipeline and applies incoming input, clipboard, and commands.
+///
+/// Everything platform-specific comes through its `HostEnvironment` (real Mac or synthetic), so
+/// the session never reads launch options or a singleton and can run over loopback in a test.
 ///
 /// A files-only session (`ClientFeatures.filesOnly`) stops after authenticating: it hands out a
 /// file channel token and answers pings, and never touches displays, capture, input, audio, the
@@ -18,7 +20,8 @@ actor HostSession {
     private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "session")
     private let channel: MessageChannel
     private let identity: DeviceIdentity
-    private let trust: TrustStore
+    private let trust: any HostTrust
+    private let env: HostEnvironment
     private let peerDescription: String
     private let onEnded: @Sendable (HostSession) -> Void
 
@@ -28,12 +31,14 @@ actor HostSession {
     /// Bumped by every `stopCapture`; frame and encoder callbacks carry the epoch they were made
     /// in, so a late one from a stopped capture or encoder can't touch its replacement's state.
     private var captureEpoch: UInt64 = 0
-    private var injector: InputInjector?
+    private var injector: (any InputSink)?
     private var adaptive = AdaptiveController()
-    private let power = PowerManager()
-    private let clipboard = ClipboardBridge()
-    private let lockMonitor = LockMonitor()
+    private let power: any HostPowerControl
+    private var clipboard: (any HostClipboard)?
+    private let lockMonitor: any HostStatusMonitor
     private var displayInfo: DisplayInfo?
+    /// The codec the stream started with, kept across capture restarts.
+    private var currentCodec: VideoCodec?
     private var pendingPixelBuffer: CVPixelBuffer?
     private var encodesInFlight = 0
     /// When the encode in flight was handed over; past `encodeLimit` it counts as lost.
@@ -80,7 +85,7 @@ actor HostSession {
     // Awake but no picture: since when, why, the retry schedule, and whether the client knows.
     private var captureLostAt: ContinuousClock.Instant?
     private var captureLossReason = ""
-    private var nextRecoveryAttempt = ContinuousClock.now
+    private var nextRecoveryAttempt: ContinuousClock.Instant
     private var recoveryDelay: Duration = .milliseconds(500)
     private var recoveryTask: Task<Void, Never>?
     private var screenUnavailable = false
@@ -88,20 +93,12 @@ actor HostSession {
     private var captureFailsUntil: ContinuousClock.Instant?
     private var monitoring = false
     private var displayAsleep = false
-    /// A client on this same Mac (loopback, DEBUG builds only) is left out of the picture, or its
-    /// window would show itself showing itself.
-    private var excludedFromPicture: [String] {
-        #if DEBUG
-        isLoopbackPeer ? AudioCapture.clientBundleIDs : []
-        #else
-        []
-        #endif
-    }
 
     /// When this session put the display to sleep; input in the next moment doesn't wake it.
     private var sleptAt: ContinuousClock.Instant?
 
-    init(channel: MessageChannel, identity: DeviceIdentity, trust: TrustStore, peerDescription: String, peerHost: String,
+    init(channel: MessageChannel, identity: DeviceIdentity, trust: any HostTrust, environment: HostEnvironment,
+         peerDescription: String, peerHost: String,
          attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
          onStreaming: @escaping @Sendable (HostSession, String, String, String) -> Void = { _, _, _, _ in },
          onAuthenticated: @escaping @Sendable (HostSession) -> Void = { _ in },
@@ -110,6 +107,10 @@ actor HostSession {
         self.onAuthenticated = onAuthenticated
         self.identity = identity
         self.trust = trust
+        self.env = environment
+        self.power = environment.makePower()
+        self.lockMonitor = environment.makeStatusMonitor()
+        self.nextRecoveryAttempt = environment.clock.now
         self.peerDescription = peerDescription
         self.peerHost = peerHost
         self.attachTokens = attachTokens
@@ -118,13 +119,15 @@ actor HostSession {
         self.onEnded = onEnded
     }
 
+    private var now: ContinuousClock.Instant { env.clock.now }
+
     /// Runs the session on a started channel whose first message, `hello`, the controller has
     /// already read (it reads one message to tell sessions from file channels).
     func run(hello: Hello) async {
         // A peer that says hello and then nothing (or never signs in) would otherwise hold a
         // session, and its buffers, open for as long as it liked; the whole handshake gets one limit.
-        let deadline = Task { [channel] in
-            do { try await Task.sleep(for: Self.handshakeLimit) } catch { return }
+        let deadline = Task { [channel, clock = env.clock] in
+            do { try await clock.sleep(for: Self.handshakeLimit) } catch { return }
             await channel.close()
         }
         do {
@@ -164,8 +167,9 @@ actor HostSession {
             try identity.sign(AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
                                                        clientPublicKey: hello.clientPublicKey))
         }
-        let challenge = Challenge(hostName: Host.current().localizedName ?? "Mac", hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired, peerTailnetName: lightweight ? nil : TailscaleCLI.whois(addr: peerDescription),
-                                  hostPlatform: HostOptions.shared.platform, hostSignature: hostSignature)
+        let challenge = Challenge(hostName: env.hostName, hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired,
+                                  peerTailnetName: lightweight ? nil : env.peers?.userName(ofPeer: peerDescription),
+                                  hostPlatform: env.platform, hostSignature: hostSignature)
         try await channel.send(.challenge(challenge))
 
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
@@ -189,11 +193,11 @@ actor HostSession {
                 break
             case .incorrect:
                 // Slow down guessing; the code is also burned after a few misses.
-                try? await Task.sleep(for: .seconds(1))
+                try? await env.clock.sleep(for: .seconds(1))
                 try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "Incorrect pairing code. Try the code shown on the Mac.")))
                 return false
             case .unavailable:
-                try? await Task.sleep(for: .seconds(1))
+                try? await env.clock.sleep(for: .seconds(1))
                 try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "That pairing code has expired. On the Mac, choose Show Pairing Code and enter the new one.")))
                 return false
             }
@@ -202,10 +206,9 @@ actor HostSession {
         if !lightweight { nameFromTailnet(DeviceIdentity.fingerprint(of: hello.clientPublicKey)) }
 
         if hello.isReadinessProbe == true {
-            let synthetic = HostOptions.shared.syntheticCapture
             try await channel.send(.authResult(AuthResult(status: .ok,
-                readiness: HostReadiness(screenRecordingGranted: synthetic || ScreenCapture.preflightPermission(),
-                                         accessibilityGranted: synthetic || InputInjector.hasPermission()))))
+                readiness: HostReadiness(screenRecordingGranted: env.screenRecordingGranted(),
+                                         accessibilityGranted: env.accessibilityGranted()))))
             return false // Never enumerate displays, start capture, or access the clipboard for a probe.
         }
 
@@ -221,23 +224,23 @@ actor HostSession {
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             let token = attachTokens.issue(for: self, peer: peerHost)
             let capabilities = HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: false, maxFPS: 0,
-                                                fileTransfer: true, filesOnlySessions: true, platform: HostOptions.shared.platform)
+                                                fileTransfer: true, filesOnlySessions: true, platform: env.platform)
             try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
             state = .filesOnly
             log.info("files-only session for \(hello.clientName)")
             return true
         }
 
-        if !HostOptions.shared.syntheticCapture, !ScreenCapture.preflightPermission() {
+        if !env.screenRecordingGranted() {
             try await channel.send(.authResult(AuthResult(status: .denied,
                 message: "On the Mac, grant Screen Recording to Casement Host in System Settings → Privacy & Security, then reopen Casement Host and retry.")))
             throw SessionError.authFailed
         }
         // A sleeping display lists no displays at all, so wake it before looking.
-        if DisplayPower.isAsleep() { await wakeDisplayForStreaming() }
-        let displays = try await DisplayEnumerator.availableDisplays()
+        if power.isDisplayAsleep { await wakeDisplayForStreaming() }
+        let displays = try await env.screen.displays()
         // Dictation kinds are new, so they're advertised only to a client that said it knows them.
-        if hello.features?.dictation == true { dictationEngines = await HostTranscriber.availableEngines() }
+        if hello.features?.dictation == true, let dictation = env.dictation { dictationEngines = await dictation.availableEngines() }
         clientTakesAudio = hello.features?.macAudio == true
         clientTakesFiles = hello.features?.fileTransfer == true
         clientName = hello.clientName
@@ -247,22 +250,22 @@ actor HostSession {
         let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
         // Audio rides on the Screen Recording grant checked above (synthetic mode sends a chime),
         // so a session that got this far can always offer it.
-        let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: VirtualDisplayManager().isAvailable, clipboard: true, maxFPS: 60,
+        let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: env.screen.canManageVirtualDisplay, clipboard: true, maxFPS: 60,
                                             dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
                                             audio: true, fileTransfer: clientTakesFiles ? true : nil,
-                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: HostOptions.shared.platform,
+                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: env.platform,
                                             curtain: true)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
         state = .streaming
         onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
         log.info("client authenticated: \(hello.clientName)")
-        if hello.features?.curtain == true, !HostOptions.shared.syntheticCapture {
+        if hello.features?.curtain == true, let curtain = env.curtain {
             let channel = self.channel
-            let adopted = await ScreenCurtain.shared.adopt(ObjectIdentifier(self)) { status in
+            let adopted = await curtain.adopt(ObjectIdentifier(self)) { status in
                 channel.sendDetached(.curtainStatus(status))
             }
             guard state == .streaming else { // removed while adopting
-                if adopted { await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self)) }
+                if adopted { await curtain.sessionEnded(ObjectIdentifier(self)) }
                 return false
             }
             if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
@@ -294,14 +297,14 @@ actor HostSession {
                 guard admitsInput(isRelease: false), let injector else { break }
                 // More than one key event's worth (a dictation, a paste from the iPad) is pasted:
                 // Chromium and Electron apps drop keys from a fast burst of typed text.
-                if input.text.utf16.count > 16, !HostOptions.shared.syntheticCapture {
+                if input.text.utf16.count > 16, let clipboard {
                     await clipboard.paste(input.text) { injector.pressPaste() }
                 } else {
                     injector.typeText(input.text)
                 }
             case .clipboard(let payload):
                 // Awaited, so a ⌘V the client sends right behind its clipboard pastes this one.
-                if !HostOptions.shared.syntheticCapture { await clipboard.apply(payload) }
+                if let clipboard { await clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
                 if let newBitrate = adaptive.apply(feedback: feedback) {
                     encoder?.setBitrate(kbps: newBitrate)
@@ -333,22 +336,18 @@ actor HostSession {
         }
     }
 
-    /// Raises or lowers the curtain and says how that went. Synthetic hosts only pretend: there's
-    /// no real desktop behind their picture. A client on this same Mac could never get it back.
+    /// Raises or lowers the curtain and says how that went. A host with no curtain (synthetic)
+    /// only pretends: there's no real desktop behind its picture.
     private func handleCurtain(_ enabled: Bool) async {
         var status = CurtainStatus(isUp: enabled)
-        if HostOptions.shared.syntheticCapture {
-            // Nothing to do beyond answering.
-        } else if enabled, isLoopbackPeer, !HostOptions.shared.allowsSelfCurtain {
-            status = CurtainStatus(isUp: false, unavailable: "Curtain can't cover the Mac you're using it from.")
-        } else {
+        if let curtain = env.curtain {
             let channel = self.channel
-            let problem = await ScreenCurtain.shared.set(enabled, for: ObjectIdentifier(self)) { status in
+            let problem = await curtain.set(enabled, for: ObjectIdentifier(self), fromThisComputer: isLoopbackPeer) { status in
                 channel.sendDetached(.curtainStatus(status))
             }
             guard state == .streaming else {
                 // The session ended while the curtain was going up: nobody's left to hold it.
-                await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self))
+                await curtain.sessionEnded(ObjectIdentifier(self))
                 return
             }
             if let problem { status = CurtainStatus(isUp: false, unavailable: problem) }
@@ -360,7 +359,7 @@ actor HostSession {
 
     /// The curtain's windows came or went: the capture's filter follows.
     func curtainWindowsChanged() async {
-        await (capture as? ScreenCapture)?.refreshFilter()
+        await capture?.refreshFilter()
     }
 
     private var isLoopbackPeer: Bool { peerHost == "::1" || peerHost.hasPrefix("127.") }
@@ -391,71 +390,13 @@ actor HostSession {
         defer { log.info("stream setup took \((MonotonicClock.nanos() - startedAt) / 1_000_000) ms") }
         await stopCapture()
         guard state == .streaming else { throw SessionError.closed }
-        // The pretend display fails the way ScreenCaptureKit does while the screen is off.
-        if DisplayPower.fake.isEnabled, DisplayPower.fake.isAsleep { throw CaptureError.displayNotFound }
-        if let captureFailsUntil, ContinuousClock.now < captureFailsUntil { throw CaptureError.displayNotFound }
-        let chosen: DisplayInfo
-        if HostOptions.shared.syntheticCapture {
-            switch select.selection {
-            case .fitViewport(let viewport):
-                if let picture = DisplayEnumerator.syntheticPicture {
-                    // A `--synthetic-image` display keeps the picture's shape, as a real Mac's
-                    // display does, so the client letterboxes or reshapes its window to it.
-                    chosen = DisplayEnumerator.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2)
-                } else {
-                    chosen = DisplayEnumerator.syntheticDisplay(pointWidth: max(640, Int(viewport.widthPoints)), pointHeight: max(480, Int(viewport.heightPoints)))
-                }
-            case .display:
-                chosen = DisplayEnumerator.syntheticDisplay()
-            }
-        } else {
-            let all = try await DisplayEnumerator.shareableDisplays()
-            let mainID = CGMainDisplayID()
-            if all.isEmpty { log.error("ScreenCaptureKit lists no displays (main \(mainID), asleep \(DisplayPower.isAsleep()))") }
-            switch select.selection {
-            case .display(let id):
-                guard let match = all.first(where: { $0.info.id == id }) else { throw CaptureError.displayNotFound }
-                chosen = match.info
-            case .fitViewport(let viewport):
-                // Only provision a virtual display when the client asked for one. The default
-                // path must never wait on BetterDisplay: it costs the whole connect time.
-                var virtualMatch: DisplayInfo?
-                if select.useVirtualDisplay == true {
-                    // A display that already matches the viewport (for example a BetterDisplay
-                    // screen the user set up by hand) is used as-is; only otherwise ask the CLI.
-                    let wantedWidth = viewport.pixelWidth / 2, wantedHeight = viewport.pixelHeight / 2
-                    if let existing = all.first(where: { !$0.info.isBuiltIn && $0.info.pointWidth == wantedWidth && $0.info.pointHeight == wantedHeight }) {
-                        virtualMatch = existing.info
-                        log.info("using existing display \(existing.info.id) that already matches the viewport")
-                    }
-                    let vdm = VirtualDisplayManager()
-                    if virtualMatch != nil {
-                        // Nothing to provision.
-                    } else if vdm.isAvailable {
-                        let started = MonotonicClock.nanos()
-                        if let virtualID = try? await vdm.provision(pointWidth: viewport.pixelWidth / 2, pointHeight: viewport.pixelHeight / 2),
-                           let match = try? await DisplayEnumerator.shareableDisplays().first(where: { $0.info.id == virtualID }) {
-                            virtualMatch = match.info
-                        } else {
-                            log.error("virtual display unavailable after \((MonotonicClock.nanos() - started) / 1_000_000) ms; using the main display")
-                        }
-                    } else {
-                        log.info("virtual display requested but BetterDisplay CLI is not installed; using the main display")
-                    }
-                }
-                if let virtualMatch {
-                    chosen = virtualMatch
-                } else if let match = all.first(where: { $0.info.id == mainID }) ?? all.first {
-                    chosen = match.info
-                } else {
-                    throw CaptureError.displayNotFound
-                }
-            }
-        }
+        if let captureFailsUntil, now < captureFailsUntil { throw CaptureError.displayNotFound }
+        let chosen = try await env.screen.resolve(select)
         guard state == .streaming else { throw SessionError.closed } // ended while displays were listed
         displayInfo = chosen
 
         let codec: VideoCodec = select.preferredCodec ?? .hevc
+        currentCodec = codec
         let startFPS = min(select.targetFPS, 60)
         adaptive = AdaptiveController(startBitrateKbps: bitrateForPixels(chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
@@ -469,18 +410,11 @@ actor HostSession {
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
         // The injector (and whatever keys it holds) survives capture restarts.
-        if !HostOptions.shared.syntheticCapture {
-            if let injector { injector.updateDisplayFrame(frame) } else { injector = InputInjector(displayFrame: frame) }
+        if let makeInputSink = env.makeInputSink {
+            if let injector { injector.updateDisplayFrame(frame) } else { injector = makeInputSink(frame) }
         }
-        #if DEBUG
-        InputEventLog.startIfRequested()
-        #endif
 
-        let capture: any FrameSource = HostOptions.shared.syntheticCapture
-            ? SyntheticFrameSource(pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
-                                   picture: DisplayEnumerator.syntheticPicture)
-            : ScreenCapture(displayID: chosen.id, pixelWidth: chosen.pixelWidth, pixelHeight: chosen.pixelHeight, fps: startFPS,
-                            excludingBundleIDs: excludedFromPicture)
+        let capture = env.screen.makeCapture(for: chosen, fps: startFPS, excludingClientOnThisComputer: isLoopbackPeer)
         let captureID = ObjectIdentifier(capture)
         // Known as the current capture before it starts, so a stop that fires while it's starting
         // (`captureStopped` checks the id) isn't lost.
@@ -506,17 +440,19 @@ actor HostSession {
             throw SessionError.closed
         }
         guard self.capture === capture else { throw CaptureError.stoppedWhileStarting }
-        captureStartedAt = .now
+        captureStartedAt = now
         captureHasFramed = false
         armWatchdog() // a capture that never sends a frame counts as failed after 5 s
 
-        clipboard.stop()
-        clipboard.onLocalChange = { [weak self] payload in
-            guard let self else { return }
-            Task { await self.sendClipboard(payload) }
-        }
-        if !HostOptions.shared.syntheticCapture {
+        clipboard?.stop()
+        if let makeClipboard = env.makeClipboard {
+            let clipboard = self.clipboard ?? makeClipboard()
+            clipboard.onLocalChange = { [weak self] payload in
+                guard let self else { return }
+                Task { await self.sendClipboard(payload) }
+            }
             clipboard.start()
+            self.clipboard = clipboard
             let initial = clipboard.currentPayload()
             if !initial.isEmpty { channel.sendDetached(.clipboard(initial)) }
         }
@@ -541,7 +477,7 @@ actor HostSession {
         // Idle suppression: skip encoding a static frame (but always honor a pending keyframe).
         if frame.dirtyRatio <= 0.0001 && !needsKeyframe && framesSent > 0 { return }
         // The encoder answers every frame, encoded or dropped; this is the net under that promise.
-        if encodesInFlight > 0, let encodeStartedAt, ContinuousClock.now - encodeStartedAt > Self.encodeLimit {
+        if encodesInFlight > 0, let encodeStartedAt, now - encodeStartedAt > Self.encodeLimit {
             log.error("an encode has been in flight for over \(Self.encodeLimit.components.seconds, privacy: .public) s; giving up on it")
             encodesInFlight = 0
             needsKeyframe = true
@@ -558,7 +494,7 @@ actor HostSession {
 
     private func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64) {
         encodesInFlight += 1
-        encodeStartedAt = .now
+        encodeStartedAt = now
         let force = needsKeyframe
         needsKeyframe = false
         encoder?.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: force)
@@ -589,43 +525,33 @@ actor HostSession {
     }
 
     private func handle(_ command: HostCommand) async {
-        // The pretend display (`--display-asleep`) sleeps and wakes on a synthetic host too.
-        let controlsDisplay = !HostOptions.shared.syntheticCapture || DisplayPower.fake.isEnabled
         switch command {
-        case .sleepDisplay where controlsDisplay:
-            sleptAt = .now
-            HostCommandRunner.sleepDisplay()
+        case .sleepDisplay:
+            sleptAt = now
+            power.sleepDisplay()
             lockMonitor.refresh()
-            return
         case .wakeDisplay:
-            if controlsDisplay {
-                sleptAt = nil
-                power.wakeDisplay(reason: "Wake command")
-                lockMonitor.refresh()
-            }
+            sleptAt = nil
+            power.wakeDisplay(reason: "Wake command", minimumInterval: .zero)
+            lockMonitor.refresh()
             await retryCaptureNow() // Wake doubles as Retry while the picture is missing
-            return
-        default:
-            break
-        }
-        guard !HostOptions.shared.syntheticCapture else { return }
-        switch command {
-        case .lockScreen: HostCommandRunner.lockScreen()
-        case .sleepDisplay, .wakeDisplay: break
-        case .releaseAllInput: injector?.releaseAll()
+        case .lockScreen:
+            power.lockScreen()
+        case .releaseAllInput:
+            injector?.releaseAll()
         case .refreshDisplays:
-            if let displays = try? await DisplayEnumerator.availableDisplays() {
+            if let displays = try? await env.screen.displays() {
                 channel.sendDetached(.displayList(DisplayList(displays: displays)))
             }
         case .restoreDisplays:
-            VirtualDisplayManager().disconnect()
+            await env.screen.restoreDisplays()
         }
     }
 
     // MARK: Dictation
 
     private func handleDictation(_ control: DictationControl) {
-        guard !dictationEngines.isEmpty else { return } // Never advertised, so never answer.
+        guard !dictationEngines.isEmpty, let dictation = env.dictation else { return } // Never advertised, so never answer.
         switch control.action {
         case .begin:
             dictationClips.begin(control)
@@ -640,12 +566,12 @@ actor HostSession {
             // Transcription takes seconds; run it off the session so input keeps flowing.
             Task.detached { [channel, log] in
                 let result: DictationResult
-                do {
-                    let output = try await HostTranscriber.live().transcribe(samples: clip.samples, requested: clip.engine, language: clip.language)
-                    result = DictationResult(id: control.id, text: output.text, engine: output.engine)
-                    log.debug("dictation result: \(output.text, privacy: .private)")
-                } catch {
-                    result = DictationResult(id: control.id, text: "", error: (error as? HostTranscriber.Failure)?.message ?? "Transcription failed on the Mac.")
+                switch await dictation.transcribe(samples: clip.samples, requested: clip.engine, language: clip.language) {
+                case .text(let text, let engine):
+                    result = DictationResult(id: control.id, text: text, engine: engine)
+                    log.debug("dictation result: \(text, privacy: .private)")
+                case .failed(let message):
+                    result = DictationResult(id: control.id, text: "", error: message)
                 }
                 channel.sendDetached(.dictationResult(result))
             }
@@ -665,8 +591,7 @@ actor HostSession {
             channel.sendDetached(.audioConfig(.unavailable("This Mac couldn't set up its audio encoder.")))
             return
         }
-        let synthetic = HostOptions.shared.syntheticCapture
-        let source: any AudioSource = synthetic ? SyntheticAudioSource() : AudioCapture()
+        let source = env.audio.makeSource()
         audioSource = source
         audioEncoder = encoder
         do {
@@ -676,7 +601,7 @@ actor HostSession {
                 Task { await self.audioStopped(source, reason: reason) }
             })
         } catch {
-            let reason = AudioCapture.message(for: error)
+            let reason = env.audio.message(for: error)
             log.error("audio didn't start: \(error.localizedDescription, privacy: .public)")
             if audioSource === source {
                 audioSource = nil
@@ -691,7 +616,7 @@ actor HostSession {
             return
         }
         audioStartedAt = MonotonicClock.nanos()
-        log.info("audio started (\(synthetic ? "synthetic chime" : "ScreenCaptureKit", privacy: .public)) in \((self.audioStartedAt - started) / 1_000_000, privacy: .public) ms")
+        log.info("audio started in \((self.audioStartedAt - started) / 1_000_000, privacy: .public) ms")
     }
 
     private func stopAudio() async {
@@ -722,33 +647,38 @@ actor HostSession {
             await fileChannel.close()
             return
         }
-        let store = HostFileStore.current
-        var configuration = store.configuration
+        let destination = env.fileDestination()
+        var configuration = destination.configuration
         // A file cut off earlier keeps writing to its partial, even if Settings → Files moved the
         // receive folder since.
         configuration.partialDirectory = { ResumeFolders.shared.folder(for: $0) }
         let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: configuration)
         fileEngine = engine
-        log.info("file channel attached; receiving into \(store.directory.path(percentEncoded: false), privacy: .public)")
-        let host = peerHost, fallback = clientName
+        log.info("file channel attached; receiving into \(destination.directory.path(percentEncoded: false), privacy: .public)")
+        let host = peerHost, fallback = clientName, peers = env.peers
         Task { await engine.run() }
         // The name it has under Paired Devices, unless that's still iOS's "iPad"; then the
         // tailnet's, which knows which iPad.
-        let chosen = trust.name(ofFingerprint: clientKey).flatMap { TrustStore.isGenericName($0) ? nil : $0 }
+        let chosen = trust.name(ofFingerprint: clientKey).flatMap { Self.isGenericName($0) ? nil : $0 }
         let name: String
-        if let chosen { name = chosen } else { name = await Task.detached { TailscaleCLI.deviceName(host: host) }.value ?? fallback }
+        if let chosen { name = chosen } else { name = await Task.detached { peers?.deviceName(ofPeer: host) }.value ?? fallback }
         onFileChannel(HostFileChannel(session: self, engine: engine, clientName: name, clientKey: clientKey,
-                                      receiveDirectory: store.directory, clientIsMac: clientModel.hasPrefix("Mac"),
+                                      receiveDirectory: destination.directory, clientIsMac: clientModel.hasPrefix("Mac"),
                                       isFilesOnly: state == .filesOnly))
+    }
+
+    /// What iOS and visionOS call every device, now that apps can't read the name its owner gave it.
+    nonisolated static func isGenericName(_ name: String) -> Bool {
+        ["iPad", "iPhone", "iPod touch", "Apple Vision Pro"].contains(name)
     }
 
     /// iOS tells every app the device is "iPad", so two iPads would pair under one name; ask the
     /// tailnet which one this is, off the handshake path.
     private func nameFromTailnet(_ fingerprint: String) {
-        guard let current = trust.name(ofFingerprint: fingerprint), TrustStore.isGenericName(current) else { return }
+        guard let peers = env.peers, let current = trust.name(ofFingerprint: fingerprint), Self.isGenericName(current) else { return }
         let host = peerHost, trust = trust
         Task.detached {
-            guard let name = TailscaleCLI.deviceName(host: host) else { return }
+            guard let name = peers.deviceName(ofPeer: host) else { return }
             trust.adoptTailnetName(name, fingerprint: fingerprint)
         }
     }
@@ -765,12 +695,12 @@ actor HostSession {
     /// capture comes back on its own. Ending the session here made the client reconnect in a loop.
     private func selectDisplay(_ select: SelectDisplay) async {
         wantedSelection = select
-        if captureFailsUntil == nil, let seconds = HostOptions.shared.captureFailsForSeconds {
-            captureFailsUntil = .now + .seconds(seconds)
-            log.info("--capture-fails-for: capture fails for \(seconds, privacy: .public) s")
+        if captureFailsUntil == nil, let failsFor = env.captureFailsFor {
+            captureFailsUntil = now + failsFor
+            log.info("--capture-fails-for: capture fails for \(failsFor.components.seconds, privacy: .public) s")
         }
         startMonitoring()
-        if DisplayPower.isAsleep() { await wakeDisplayForStreaming() }
+        if power.isDisplayAsleep { await wakeDisplayForStreaming() }
         guard state == .streaming else { return }
         if await startStream(select) == false { captureUnavailable() }
     }
@@ -786,7 +716,7 @@ actor HostSession {
     private func startMonitoring() {
         guard !monitoring else { return }
         monitoring = true
-        power.begin()
+        power.keepAwake()
         lockMonitor.onChange = { [weak self] _ in
             guard let self else { return }
             Task { await self.hostStatusChanged() }
@@ -816,8 +746,9 @@ actor HostSession {
             // The asleep state explains the missing picture; the clock restarts on wake.
             captureLostAt = nil
             screenUnavailable = false
-            // ScreenCaptureKit stops its stream by itself; the pretend display does the same.
-            if DisplayPower.fake.isEnabled, let capture { await captureStopped(ObjectIdentifier(capture), reason: "display asleep") }
+            // ScreenCaptureKit stops its stream by itself a moment later; stopping it now means
+            // nothing encoded before the sleep arrives after the wake, and the wake restarts cleanly.
+            if let capture { await captureStopped(ObjectIdentifier(capture), reason: "display asleep") }
         } else {
             log.info("display woke")
             sleptAt = nil
@@ -832,23 +763,20 @@ actor HostSession {
     private func admitsInput(isRelease: Bool) -> Bool {
         guard displayAsleep else { return true }
         if isRelease { return true }
-        if let sleptAt, ContinuousClock.now - sleptAt < .seconds(2) { return false }
+        if let sleptAt, now - sleptAt < .seconds(2) { return false }
         if power.wakeDisplay(reason: "input while asleep", minimumInterval: .seconds(1)) { lockMonitor.refresh() }
         return false
     }
 
     /// Wakes the display and waits (up to ~3 s) for ScreenCaptureKit to list it again.
     private func wakeDisplayForStreaming() async {
-        power.wakeDisplay(reason: "client connected")
-        let started = ContinuousClock.now
-        while ContinuousClock.now - started < .seconds(3) {
-            if !DisplayPower.isAsleep() {
-                if HostOptions.shared.syntheticCapture { break }
-                if let displays = try? await DisplayEnumerator.shareableDisplays(), !displays.isEmpty { break }
-            }
-            try? await Task.sleep(for: .milliseconds(150))
+        power.wakeDisplay(reason: "client connected", minimumInterval: .zero)
+        let started = now
+        while now - started < .seconds(3) {
+            if !power.isDisplayAsleep, let displays = try? await env.screen.displays(), !displays.isEmpty { break }
+            try? await env.clock.sleep(for: .milliseconds(150))
         }
-        log.info("display \(DisplayPower.isAsleep() ? "still asleep" : "awake", privacy: .public) after \((ContinuousClock.now - started).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+        log.info("display \(self.power.isDisplayAsleep ? "still asleep" : "awake", privacy: .public) after \((self.now - started).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }
 
     /// Starts or restarts the stream, one at a time. Nil means another start was running; it
@@ -870,7 +798,7 @@ actor HostSession {
             } catch {
                 started = false
                 captureLossReason = Self.describe(error)
-                log.error("capture didn't start: \(self.captureLossReason, privacy: .public)\(DisplayPower.isAsleep() ? " (display asleep)" : "", privacy: .public)")
+                log.error("capture didn't start: \(self.captureLossReason, privacy: .public)\(self.power.isDisplayAsleep ? " (display asleep)" : "", privacy: .public)")
             }
             next = pendingStart
         }
@@ -886,11 +814,11 @@ actor HostSession {
     private func captureUnavailable() {
         guard state == .streaming, wantedSelection != nil, capture == nil else { return }
         channel.sendDetached(.hostStatus(currentStatus()))
-        guard !DisplayPower.isAsleep() else { return }
+        guard !power.isDisplayAsleep else { return }
         if captureLostAt == nil {
-            captureLostAt = .now
+            captureLostAt = now
             recoveryDelay = .milliseconds(500)
-            nextRecoveryAttempt = .now + recoveryDelay
+            nextRecoveryAttempt = now + recoveryDelay
         }
         armWatchdog()
     }
@@ -898,9 +826,9 @@ actor HostSession {
     /// Ticks every 250 ms while capture is missing or hasn't framed yet (`recoveryTick` says when it's done).
     private func armWatchdog() {
         guard recoveryTask == nil else { return }
-        recoveryTask = Task { [weak self] in
+        recoveryTask = Task { [weak self, clock = env.clock] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                try? await clock.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled, let self, await self.recoveryTick() else { return }
             }
         }
@@ -911,11 +839,11 @@ actor HostSession {
 
     /// One watchdog tick; false once there's nothing left to recover.
     private func recoveryTick() async -> Bool {
-        guard state == .streaming, wantedSelection != nil, !DisplayPower.isAsleep() else {
+        guard state == .streaming, wantedSelection != nil, !power.isDisplayAsleep else {
             recoveryTask = nil
             return false
         }
-        let now = ContinuousClock.now
+        let now = self.now
         // A capture that started but never sent a frame counts as failed after 5 s.
         if let capture, !captureHasFramed, let captureStartedAt, now - captureStartedAt > Self.noFrameLimit {
             captureLossReason = "capture started but sent no frames"
@@ -937,14 +865,14 @@ actor HostSession {
             channel.sendDetached(.hostStatus(currentStatus()))
         }
         guard capture == nil, !streamStarting, now >= nextRecoveryAttempt else { return true }
-        let panel = DisplayPower.panelDescription()
+        let panel = power.panel
         log.error("capture unavailable for \(seconds, privacy: .public) s: \(self.captureLossReason, privacy: .public); \(panel.text, privacy: .public); trying again")
         if panel.isOff {
             power.wakeDisplay(reason: "capture unavailable, display still off", minimumInterval: .seconds(2))
         }
         await restartStream(reason: "capture unavailable for \(seconds) s")
         recoveryDelay = min(recoveryDelay * 2, .seconds(5))
-        nextRecoveryAttempt = .now + recoveryDelay
+        nextRecoveryAttempt = self.now + recoveryDelay
         return true
     }
 
@@ -954,7 +882,7 @@ actor HostSession {
         captureLostAt = nil
         recoveryTask?.cancel()
         recoveryTask = nil
-        log.info("capture back after \((ContinuousClock.now - lostAt).formatted(.units(allowed: [.seconds, .milliseconds])), privacy: .public)")
+        log.info("capture back after \((self.now - lostAt).formatted(.units(allowed: [.seconds, .milliseconds])), privacy: .public)")
         if screenUnavailable {
             screenUnavailable = false
             channel.sendDetached(.hostStatus(currentStatus()))
@@ -965,7 +893,7 @@ actor HostSession {
     private func retryCaptureNow() async {
         guard captureLostAt != nil, capture == nil else { return }
         recoveryDelay = .milliseconds(500)
-        nextRecoveryAttempt = .now + recoveryDelay
+        nextRecoveryAttempt = now + recoveryDelay
         log.info("capture retry asked for by the client")
         if !streamStarting { await restartStream(reason: "client asked to retry") }
     }
@@ -975,20 +903,20 @@ actor HostSession {
     /// session, input, and power state carry on; only capture waits.
     private func captureStopped(_ id: ObjectIdentifier, reason: String) async {
         guard let capture, ObjectIdentifier(capture) == id else { return }
-        self.capture = nil
-        pendingPixelBuffer = nil
+        // The encoder goes too (a late result from it would be a frame of a stopped capture);
+        // the restart makes a new one.
+        await stopCapture()
         needsKeyframe = true
-        await capture.stop()
-        log.info("capture stopped (\(reason, privacy: .public)); display \(DisplayPower.isAsleep() ? "asleep" : "awake", privacy: .public)")
+        log.info("capture stopped (\(reason, privacy: .public)); display \(self.power.isDisplayAsleep ? "asleep" : "awake", privacy: .public)")
         lockMonitor.refresh()
         captureUnavailable()
     }
 
     /// The controller saw the displays wake or change: rebuild capture so it follows.
     func restartCapture() async {
-        guard state == .streaming, wantedSelection != nil, !DisplayPower.isAsleep() else { return }
+        guard state == .streaming, wantedSelection != nil, !power.isDisplayAsleep else { return }
         // The wake notice just restarted it; don't do it twice.
-        if capture != nil, let captureStartedAt, ContinuousClock.now - captureStartedAt < .seconds(2) { return }
+        if capture != nil, let captureStartedAt, now - captureStartedAt < .seconds(2) { return }
         await restartStream(reason: "displays changed")
     }
 
@@ -1002,9 +930,9 @@ actor HostSession {
         needsKeyframe = true
         var targets: [SelectDisplay] = []
         // Synthetic displays are made to the viewport, so only the original request rebuilds one.
-        if let displayInfo, !HostOptions.shared.syntheticCapture {
+        if let displayInfo, env.screen.canRestartByDisplayID {
             targets.append(SelectDisplay(selection: .display(displayInfo.id), targetFPS: wanted.targetFPS, quality: wanted.quality,
-                                         preferredCodec: encoder?.currentCodec ?? wanted.preferredCodec))
+                                         preferredCodec: currentCodec ?? wanted.preferredCodec))
         }
         targets.append(wanted)
         for target in targets {
@@ -1034,9 +962,9 @@ actor HostSession {
         await stopCapture()
         injector?.releaseAll()
         injector = nil
-        clipboard.stop()
+        clipboard?.stop()
         lockMonitor.stop()
-        power.end()
+        power.releaseKeepAwake()
     }
 
     nonisolated private static func describe(_ error: any Error) -> String {
@@ -1059,8 +987,8 @@ actor HostSession {
         // The channel goes first, so a receive loop still running ends now and nothing it was
         // about to do (a curtain request, a display change, input) lands on a dead session.
         await channel.close()
-        if !HostOptions.shared.syntheticCapture {
-            await ScreenCurtain.shared.sessionEnded(ObjectIdentifier(self))
+        if let curtain = env.curtain {
+            await curtain.sessionEnded(ObjectIdentifier(self))
         }
         // The file channel, if any, carries on without the session (see `attachFileChannel`); a
         // files-only session never started anything else.
