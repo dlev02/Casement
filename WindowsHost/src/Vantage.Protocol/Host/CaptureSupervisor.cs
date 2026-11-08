@@ -175,7 +175,11 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         if (displayAsleep == _displayAsleep)
         {
             // Capture waiting on something else (a lock screen): try again now that things changed.
-            if (!displayAsleep && !_capturing && _wanted is not null && !_starting) steps.AddRange(BeginStart(RestartTargets(), "host state changed"));
+            if (!displayAsleep && !_capturing && _wanted is not null && !_starting)
+            {
+                _retrying = _lostAt is not null; // a recovery attempt: its wait counts from when it ends
+                steps.AddRange(BeginStart(RestartTargets(), "host state changed"));
+            }
             return steps;
         }
         _displayAsleep = displayAsleep;
@@ -205,7 +209,11 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         _retryDelay = FirstRetryDelay;
         _nextRetry = time.GetUtcNow() + _retryDelay;
         log.LogInformation("capture retry asked for by the client");
-        if (!_starting) steps.AddRange(BeginStart(RestartTargets(), "client asked to retry"));
+        if (!_starting)
+        {
+            _retrying = true; // the backoff starts over, counted from when this attempt ends
+            steps.AddRange(BeginStart(RestartTargets(), "client asked to retry"));
+        }
         return steps;
     }
 
@@ -254,21 +262,22 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         }
         if (_capturing || _starting || now < _nextRetry) return steps;
         log.LogError("capture unavailable for {Seconds} s: {Reason}; trying again", seconds, _lossReason);
-        _retrying = true; // the next wait is counted from when this attempt ends (RetryAttemptEnded)
+        _retryDelay = TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks));
+        _retrying = true; // the wait is counted from when this attempt ends (RetryAttemptEnded)
         steps.AddRange(BeginStart(RestartTargets(), $"capture unavailable for {seconds} s"));
         return steps;
     }
 
     /// <summary>
-    /// A retry the clock started has run its course (its last target failed, or one started): the
-    /// next wait doubles and is counted from now, not from when the attempt began, so a start that
-    /// takes seconds to fail doesn't use the wait up.
+    /// A recovery attempt has run its course (its last target failed, or one started): the next wait
+    /// (doubled by the clock's retries, reset by the client's, kept by a state change) is counted
+    /// from now, not from when the attempt began, so a start that takes seconds to fail doesn't use
+    /// the wait up.
     /// </summary>
     private void RetryAttemptEnded()
     {
         if (!_retrying) return;
         _retrying = false;
-        _retryDelay = TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks));
         _nextRetry = time.GetUtcNow() + _retryDelay;
     }
 

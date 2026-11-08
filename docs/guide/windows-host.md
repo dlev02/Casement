@@ -60,7 +60,8 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   input-while-asleep rule (releases go through; other input wakes the display at most once a second
   and is dropped, none of it in the 2 s after Sleep Display), the retry schedule (0.5 s doubling to
   5 s while the display is awake, each wait counted from the end of the attempt before it, so a
-  start that takes seconds to fail doesn't use the wait up; `isScreenUnavailable` after 3 s) and
+  start that takes seconds to fail doesn't use the wait up, whether the clock, Wake/Retry (which
+  starts the backoff over) or a change of host state began it; `isScreenUnavailable` after 3 s) and
   the 5 s no-frame rule.
   `WantsTicks` says when the session must tick it every 250 ms. A restart tries the display it was
   on first, **keeping the codec it streamed** (as the Mac does; it used to choose again), then the

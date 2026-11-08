@@ -589,7 +589,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
         {
             foreach (var pending in _pending)
             {
-                if (pending.SampleTime == _lastSampleTime) pending.Abandoned = true;
+                if (pending.EncodeId == encodeId) pending.Abandoned = true; // this input, not the newest
             }
             _forceNextKeyframe = true;
         }
