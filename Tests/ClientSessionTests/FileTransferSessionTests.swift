@@ -139,8 +139,8 @@ private final class MockFileHost: @unchecked Sendable {
         defer { lock.withLock { primariesClosed += 1 } }
         let identity = DeviceIdentity()
         let filesOnly = hello.features?.filesOnly == true && keepsFiles
-        try await channel.send(.challenge(MockHostAuth.challenge(for: hello, identity: identity, hostName: "Mock Mac",
-                                                                 isPaired: !(filesOnly && refusesFilesOnlyUnpaired))))
+        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: identity, hostName: "Mock Mac",
+                                                             isPaired: !(filesOnly && refusesFilesOnlyUnpaired)).0))
         guard case .authenticate? = try await channel.receive() else { throw ChannelError.closed }
         if filesOnly && refusesFilesOnlyUnpaired {
             try await channel.send(.authResult(AuthResult(status: .pairingRequired)))

@@ -16,6 +16,15 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   a nonce (older builds) still signs the older `vantage-auth-v1` transcript, which hosts accept; a
   host without a signature (older Casement Host) is refused with "Update Casement Host". Any change
   here updates the Swift and C# sides and the golden vectors (`helloProbe`, `challengeSigned`).
+  The host side of all this (version check, the transcript the device's build signs, signature
+  checks, the pairing code's accepted/wrong/run-out answers and the second each miss costs, the
+  availability check, files-only sessions, the Screen Recording refusal, and the capabilities to
+  advertise) is one module, `SessionAdmission` (VantageCore `Identity`): `begin(hello:)` makes the
+  challenge, `Pending.finish` judges the answer into a session kind or a refusal, and the pairing
+  code's own rules are `PairingCodes` beside it. `HostSession` only sends what it says, and the
+  client tests' mock hosts (`MockHost` in `ClientSessionTests`) run the same module, so there is
+  one copy of the host's rules in Swift; `SessionAdmissionTests` cover pairing, the five-miss burn,
+  purpose binding, older clients and files-only sessions. Trust reaches it as `PairingAuthority`.
   First connection needs a 6-digit pairing code shown on the Mac; after
   that the key is trusted. The Mac keeps trusted keys in the Keychain (`TrustStore`, moved once from
   `vantage.trustedClients` in defaults), since any program this user runs can rewrite defaults;
@@ -23,7 +32,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   called that takes its tailnet machine name (`TrustStore.adoptTailnetName`; iOS peers report
   Hostname "localhost", so `TailscaleCLI.deviceName` uses ComputedName, e.g. "drew-ipad-pro"),
   and Casement Host → Settings → Devices can rename it (`TrustStore.rename`). A pairing code expires after 10 minutes and is burned after 5 wrong
-  guesses (`TrustStore.consumePairingCode`); each miss also costs the peer a second. The listener
+  guesses (`PairingCodes`, kept by `TrustStore`); each miss also costs the peer a second. The listener
   rejects any peer outside Tailscale's CGNAT/ULA ranges; loopback is accepted only in DEBUG builds.
   Revoking a device (`HostController.revoke`) also ends whatever it has open: each of its sessions
   sends `disconnect` ("This device was removed from the Mac.") and tears down

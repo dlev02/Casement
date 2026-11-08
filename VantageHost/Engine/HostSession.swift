@@ -125,127 +125,86 @@ actor HostSession {
 
     // MARK: Handshake
 
+    /// `SessionAdmission` judges the hello and the device's answer; this sends what it says and
+    /// sets up the kind of session it admitted.
     private func handshake(_ hello: Hello) async throws -> Bool {
-        guard hello.protocolVersion == VantageProtocol.version else {
-            try await channel.send(.authResult(AuthResult(status: .versionMismatch, message: "Protocol \(VantageProtocol.version) required")))
+        let begin = try SessionAdmission.begin(hello: hello, identity: identity, hostName: env.hostName, platform: env.platform,
+                                               isPaired: trust.isTrusted(hello.clientPublicKey),
+                                               peerTailnetName: { env.peers?.userName(ofPeer: peerDescription) })
+        guard case .challenged(let challenge, let pending) = begin else {
+            if case .refused(let result) = begin { try await channel.send(.authResult(result)) }
             throw SessionError.versionMismatch
         }
-
-        let nonce = AuthTranscript.randomNonce()
-        let isPaired = trust.isTrusted(hello.clientPublicKey)
-        let lightweight = hello.isReadinessProbe == true || hello.features?.filesOnly == true
-        // A client that sent a nonce wants proof this challenge comes from the holder of the host
-        // key, and signs the transcript that binds both nonces and the connection's purpose. One
-        // that didn't (an older Casement) signs the older transcript; the host still takes that.
-        let clientNonce = hello.clientNonce.flatMap { $0.count == AuthTranscript.nonceLength ? $0 : nil }
-        let hostSignature = try clientNonce.map { clientNonce in
-            try identity.sign(AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
-                                                       clientPublicKey: hello.clientPublicKey))
-        }
-        let challenge = Challenge(hostName: env.hostName, hostVersion: "1.0", hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired,
-                                  peerTailnetName: lightweight ? nil : env.peers?.userName(ofPeer: peerDescription),
-                                  hostPlatform: env.platform, hostSignature: hostSignature)
         try await channel.send(.challenge(challenge))
-
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
-        let signatureValid = if let clientNonce {
-            AuthTranscript.verifyClient(signature: auth.signature, clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
-                                        clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello))
-        } else {
-            AuthTranscript.verify(signature: auth.signature, nonce: nonce, hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
-        }
-        guard signatureValid else {
-            try await channel.send(.authResult(AuthResult(status: .badSignature)))
+        let kind: SessionAdmission.Kind
+        switch pending.finish(auth, pairing: trust) {
+        case .refused(let result, let delay):
+            if delay > .zero { try? await env.clock.sleep(for: delay) }
+            try await channel.send(.authResult(result))
+            if result.status == .pairingRequired || result.status == .badPairingCode { return false }
             throw SessionError.authFailed
+        case .admitted(let admitted, _):
+            kind = admitted
         }
-        if !isPaired {
-            guard let code = auth.pairingCode else {
-                try await channel.send(.authResult(AuthResult(status: .pairingRequired, message: "Enter the pairing code shown on the Mac")))
-                return false
-            }
-            switch trust.consumePairingCode(code) {
-            case .accepted:
-                break
-            case .incorrect:
-                // Slow down guessing; the code is also burned after a few misses.
-                try? await env.clock.sleep(for: .seconds(1))
-                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "Incorrect pairing code. Try the code shown on the Mac.")))
-                return false
-            case .unavailable:
-                try? await env.clock.sleep(for: .seconds(1))
-                try await channel.send(.authResult(AuthResult(status: .badPairingCode, message: "That pairing code has expired. On the Mac, choose Show Pairing Code and enter the new one.")))
-                return false
-            }
-            trust.trust(hello.clientPublicKey, name: hello.clientName, model: hello.deviceModel)
-        }
-        if !lightweight { nameFromTailnet(DeviceIdentity.fingerprint(of: hello.clientPublicKey)) }
+        if kind != .availabilityCheck { nameFromTailnet(DeviceIdentity.fingerprint(of: hello.clientPublicKey)) }
+        // Dictation kinds are new, so they're advertised only to a client that said it knows them.
+        if kind == .screen, hello.features?.dictation == true, let dictation = env.dictation { dictationEngines = await dictation.availableEngines() }
+        let abilities = SessionAdmission.HostAbilities(platform: env.platform, screenRecordingGranted: env.screenRecordingGranted(),
+                                                       accessibilityGranted: env.accessibilityGranted(),
+                                                       canManageVirtualDisplay: env.screen.canManageVirtualDisplay, dictationEngines: dictationEngines)
 
-        if hello.isReadinessProbe == true {
-            try await channel.send(.authResult(AuthResult(status: .ok,
-                readiness: HostReadiness(screenRecordingGranted: env.screenRecordingGranted(),
-                                         accessibilityGranted: env.accessibilityGranted()))))
+        switch kind {
+        case .availabilityCheck:
+            try await channel.send(.authResult(SessionAdmission.availabilityResult(host: abilities)))
             return false // Never enumerate displays, start capture, or access the clipboard for a probe.
-        }
 
-        if hello.features?.filesOnly == true {
+        case .filesOnly:
             // Files need no Screen Recording grant and no display: just the file channel's ticket.
-            guard hello.features?.fileTransfer == true else {
-                try await channel.send(.authResult(AuthResult(status: .denied, message: "Nothing to do on this connection.")))
-                throw SessionError.authFailed
-            }
             clientTakesFiles = true
             clientName = hello.clientName
             clientModel = hello.deviceModel
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             let token = attachTokens.issue(for: self, peer: peerHost)
-            let capabilities = HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: false, maxFPS: 0,
-                                                fileTransfer: true, filesOnlySessions: true, platform: env.platform)
-            try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
+            try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token,
+                                                          capabilities: SessionAdmission.capabilities(for: .filesOnly, hello: hello, host: abilities))))
             state = .filesOnly
             log.info("files-only session for \(hello.clientName)")
             return true
-        }
 
-        if !env.screenRecordingGranted() {
-            try await channel.send(.authResult(AuthResult(status: .denied,
-                message: "On the Mac, grant Screen Recording to Casement Host in System Settings → Privacy & Security, then reopen Casement Host and retry.")))
-            throw SessionError.authFailed
-        }
-        // A sleeping display lists no displays at all, so wake it before looking.
-        if power.isDisplayAsleep { await wakeDisplayForStreaming() }
-        let displays = try await env.screen.displays()
-        // Dictation kinds are new, so they're advertised only to a client that said it knows them.
-        if hello.features?.dictation == true, let dictation = env.dictation { dictationEngines = await dictation.availableEngines() }
-        clientTakesAudio = hello.features?.macAudio == true
-        clientTakesFiles = hello.features?.fileTransfer == true
-        clientName = hello.clientName
-        clientModel = hello.deviceModel
-        clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
-        // The file channel's ticket in: single use, from this address only, gone with the session.
-        let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
-        // Audio rides on the Screen Recording grant checked above (synthetic mode sends a chime),
-        // so a session that got this far can always offer it.
-        let capabilities = HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: env.screen.canManageVirtualDisplay, clipboard: true, maxFPS: 60,
-                                            dictationEngines: hello.features?.dictation == true ? dictationEngines : nil,
-                                            audio: true, fileTransfer: clientTakesFiles ? true : nil,
-                                            filesOnlySessions: clientTakesFiles ? true : nil, platform: env.platform,
-                                            curtain: true)
-        try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays, capabilities: capabilities)))
-        state = .streaming
-        onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
-        log.info("client authenticated: \(hello.clientName)")
-        if hello.features?.curtain == true, let curtain = env.curtain {
-            let channel = self.channel
-            let adopted = await curtain.adopt(ObjectIdentifier(self)) { status in
-                channel.sendDetached(.curtainStatus(status))
+        case .screen:
+            if let refusal = SessionAdmission.screenRefusal(host: abilities) {
+                try await channel.send(.authResult(refusal))
+                throw SessionError.authFailed
             }
-            guard state == .streaming else { // removed while adopting
-                if adopted { await curtain.sessionEnded(ObjectIdentifier(self)) }
-                return false
+            // A sleeping display lists no displays at all, so wake it before looking.
+            if power.isDisplayAsleep { await wakeDisplayForStreaming() }
+            let displays = try await env.screen.displays()
+            clientTakesAudio = hello.features?.macAudio == true
+            clientTakesFiles = hello.features?.fileTransfer == true
+            clientName = hello.clientName
+            clientModel = hello.deviceModel
+            clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
+            // The file channel's ticket in: single use, from this address only, gone with the session.
+            let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
+            try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays,
+                                                          capabilities: SessionAdmission.capabilities(for: .screen, hello: hello, host: abilities))))
+            state = .streaming
+            onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
+            log.info("client authenticated: \(hello.clientName)")
+            if hello.features?.curtain == true, let curtain = env.curtain {
+                let channel = self.channel
+                let adopted = await curtain.adopt(ObjectIdentifier(self)) { status in
+                    channel.sendDetached(.curtainStatus(status))
+                }
+                guard state == .streaming else { // removed while adopting
+                    if adopted { await curtain.sessionEnded(ObjectIdentifier(self)) }
+                    return false
+                }
+                if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
             }
-            if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
+            return true
         }
-        return true
     }
 
     // MARK: Message loop

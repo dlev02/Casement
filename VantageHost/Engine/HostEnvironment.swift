@@ -158,17 +158,13 @@ nonisolated struct FileDestination: Sendable {
     var configuration: FileTransferConfiguration
 }
 
-/// Paired devices and the pairing code, as the handshake uses them (`TrustStore` on a real host).
-nonisolated protocol HostTrust: AnyObject, Sendable {
-    func isTrusted(_ publicKey: Data) -> Bool
-    func consumePairingCode(_ code: String) -> PairingCheck
-    func trust(_ publicKey: Data, name: String, model: String?)
+/// Paired devices and the pairing code as `SessionAdmission` consults them (`PairingAuthority`),
+/// plus the names the session shows (`TrustStore` on a real host).
+nonisolated protocol HostTrust: PairingAuthority {
     func name(ofFingerprint fingerprint: String) -> String?
     /// Swaps a generic "iPad" for the device's tailnet name; a name someone chose stays.
     func adoptTailnetName(_ name: String, fingerprint: String)
 }
-
-nonisolated enum PairingCheck: Sendable { case accepted, incorrect, unavailable }
 
 /// The session's clock, so tests can run its timers without waiting.
 nonisolated protocol HostClock: Sendable {
