@@ -2,10 +2,13 @@ import Foundation
 import VantageCore
 
 /// Keeps a picture coming for one screen session: what the device asked to stream, one capture
-/// start at a time (a request made meanwhile takes over afterwards), the display sleeping and
+/// start at a time (a request made meanwhile takes over afterwards; a start replaces whatever was
+/// running, so nothing counts as running until it reports back), the display sleeping and
 /// waking, which input a sleeping display admits, the watchdog that brings a missing picture
-/// back (0.5 s doubling to 5 s, a "capture started but sent no frames" rule at 5 s, the
-/// "screen unavailable" notice at 3 s), and what `HostStatus` the device hears, once per change.
+/// back (0.5 s doubling to 5 s, each wait counted from when the attempt before it ended, a
+/// "capture started but sent no frames" rule at 5 s that also credits a frame delivered while
+/// the start was still under way, the "screen unavailable" notice at 3 s), and what `HostStatus`
+/// the device hears, once per change.
 ///
 /// Pure: events in, decisions out, and the caller's clock (`now`) on every event, so a test
 /// drives it with a fake clock and a fake frame source. `HostSession` executes the decisions.
@@ -95,6 +98,8 @@ nonisolated struct CaptureLifecycle: Sendable {
 
     private(set) var wanted: SelectDisplay?
     private var starting = false
+    /// A frame arrived from the capture being started, before the start reported back.
+    private var framedWhileStarting = false
     private var pendingStart: SelectDisplay?
     private var running: Running?
     /// The display and codec of the last capture, which a restart goes back to.
@@ -104,6 +109,9 @@ nonisolated struct CaptureLifecycle: Sendable {
     private var lossReason = ""
     private var nextRetry: ContinuousClock.Instant?
     private var retryDelay: Duration
+    /// A watchdog retry is under way: its wait is counted from when it ends (`retryAttemptEnded`),
+    /// so a start that takes seconds to fail doesn't use the wait up.
+    private var retrying = false
     private var screenUnavailable = false
     private var monitoring = false
     private var displayAsleep = false
@@ -162,16 +170,21 @@ nonisolated struct CaptureLifecycle: Sendable {
 
         case .captureStarted(let display, let codec):
             starting = false
-            running = Running(display: display, codec: codec, startedAt: now)
+            running = Running(display: display, codec: codec, startedAt: now, hasFramed: framedWhileStarting)
+            framedWhileStarting = false
             lastDisplay = display
             lastCodec = codec
+            retryAttemptEnded(now: now)
             return startPendingIfAny()
 
         case .captureFailed(let reason):
             starting = false
+            framedWhileStarting = false
             lossReason = reason
             let pending = startPendingIfAny()
-            return pending.isEmpty ? unavailable(now: now) : pending
+            if !pending.isEmpty { return pending }
+            retryAttemptEnded(now: now)
+            return unavailable(now: now)
 
         case .captureStopped(let reason):
             guard running != nil else { return [] }
@@ -180,6 +193,9 @@ nonisolated struct CaptureLifecycle: Sendable {
             return [.refreshStatus] + unavailable(now: now)
 
         case .frameArrived:
+            // From the capture being started (the session fences frames of a stopped one), or the
+            // running one.
+            if starting, running == nil { framedWhileStarting = true }
             running?.hasFramed = true
             return recovered(now: now)
 
@@ -191,6 +207,7 @@ nonisolated struct CaptureLifecycle: Sendable {
                 // Capture waiting on something else (a lock screen lists no displays either): try
                 // again now that the Mac changed, rather than at the next backoff step.
                 if !asleep, running == nil, wanted != nil, !starting {
+                    retrying = lostAt != nil // a recovery attempt: its wait counts from when it ends
                     decisions += start(targets: restartTargets(), reason: "Mac state changed")
                 }
                 return decisions
@@ -228,6 +245,7 @@ nonisolated struct CaptureLifecycle: Sendable {
                 retryDelay = timing.firstRetry
                 nextRetry = now + retryDelay
                 decisions.append(.note("capture retry asked for by the client"))
+                if !starting { retrying = true } // the backoff starts over, counted from when this attempt ends
                 decisions += start(targets: restartTargets(), reason: "client asked to retry")
             }
             return decisions
@@ -250,7 +268,10 @@ nonisolated struct CaptureLifecycle: Sendable {
     // MARK: Starting
 
     /// Asks for a start unless one is under way; a request that must not be dropped waits as
-    /// `pendingIfBusy` and goes out once the current start reports back.
+    /// `pendingIfBusy` and goes out once the current start reports back. The start replaces the
+    /// running capture (the session stops it first), so from here nothing is running until the
+    /// start reports back: a start whose every target fails then enters recovery like any other
+    /// lost picture, instead of hiding behind a capture that is already gone.
     private mutating func start(targets: [SelectDisplay], reason: String, wakesSleepingDisplay: Bool = false,
                                 wakesDarkPanel: Bool = false, pendingIfBusy: SelectDisplay? = nil) -> [Decision] {
         guard wanted != nil else { return [] }
@@ -259,8 +280,18 @@ nonisolated struct CaptureLifecycle: Sendable {
             return []
         }
         starting = true
+        running = nil
+        framedWhileStarting = false
         return [.startCapture(StartRequest(targets: targets, reason: reason, wakesSleepingDisplay: wakesSleepingDisplay,
                                            wakesDarkPanel: wakesDarkPanel))]
+    }
+
+    /// A watchdog retry has run its course (its last target failed, or one started): the next
+    /// wait is counted from now, not from when the attempt began.
+    private mutating func retryAttemptEnded(now: ContinuousClock.Instant) {
+        guard retrying else { return }
+        retrying = false
+        nextRetry = now + retryDelay
     }
 
     private mutating func startPendingIfAny() -> [Decision] {
@@ -317,9 +348,9 @@ nonisolated struct CaptureLifecycle: Sendable {
         }
         guard running == nil, !starting, let nextRetry, now >= nextRetry else { return decisions }
         decisions.append(.note("capture unavailable for \(seconds) s: \(lossReason); trying again"))
-        decisions += start(targets: restartTargets(), reason: "capture unavailable for \(seconds) s", wakesDarkPanel: true)
         retryDelay = min(retryDelay * 2, timing.maxRetry)
-        self.nextRetry = now + retryDelay
+        retrying = true // the wait is counted from when this attempt ends (retryAttemptEnded)
+        decisions += start(targets: restartTargets(), reason: "capture unavailable for \(seconds) s", wakesDarkPanel: true)
         return decisions
     }
 

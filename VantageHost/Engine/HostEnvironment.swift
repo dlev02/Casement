@@ -38,6 +38,9 @@ nonisolated struct HostEnvironment: Sendable {
     var peers: (any PeerDirectory)?
     /// Where files from the device land, read when a file channel attaches (Settings can change it).
     var fileDestination: @Sendable () -> FileDestination
+    /// Where a file cut off mid-receive left its partial (`ResumeFolders` on a running host), so a
+    /// later channel keeps writing to it; nil means the receive folder.
+    var resumeFolder: @Sendable (UUID) -> URL?
     /// DEBUG `--capture-fails-for`: each session's capture fails this long from its first stream request.
     var captureFailsFor: Duration?
     /// The session's clock: `now` for its timers, and `sleep` for its waits.

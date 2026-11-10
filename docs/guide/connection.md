@@ -2,7 +2,8 @@
 
 Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout and repo rules this assumes.
 
-- **Auth**: Ed25519 device identities in Keychain, both ways. The client's `hello` carries a
+- **Auth**: Ed25519 device identities in Keychain, both ways (a synthetic host's lives in a key
+  file of its own instead: Headless end-to-end testing in [testing.md](testing.md)). The client's `hello` carries a
   nonce; the host answers a challenge with its own nonce and `hostSignature` over both nonces and
   both keys (`AuthTranscript.hostBytes`), and the client checks it before signing anything or
   sending a pairing code (`HostIdentityCheck`): the host must prove it holds the key it names, and
@@ -93,8 +94,31 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
   while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
   objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
-  `--capture-fails-for`. Rules below are the module's; `CaptureLifecycleTests` check them with a
+  `--capture-fails-for`. A start replaces whatever was running: from the moment the lifecycle asks
+  for one, nothing counts as running until it reports back, so a restart whose every target fails
+  (the displays changed, the old capture is gone) enters the watchdog like any other lost picture
+  rather than hiding behind a capture that no longer exists, and each watchdog wait is counted from
+  when the attempt before it ended, not began (a start that takes seconds to fail doesn't use the
+  wait up). A frame that arrives while a start is still under way is credited to that start, so a
+  capture of a still screen that framed before `start` returned isn't stopped by the no-frame rule.
+  In the session, `stopCapture` detaches the capture, encoder and pacer before it awaits the
+  capture's stop (a ScreenCaptureKit stop can take a while), so a replacement started meanwhile (a
+  wake during Sleep Display's stop) is never cleared by the older stop, which stops only what it
+  detached; frame, encoder and stall callbacks carry the capture epoch they were made in and are
+  ignored after it. Rules below are the module's; `CaptureLifecycleTests` check them with a
   fake clock and frame source, `HostSessionTests` over loopback.
+- **Keeping the picture moving** (`VideoPacer`, `VantageHost/Engine`; the Windows host's
+  `VideoPipeline` is the same design): one encode in flight and the latest frame wins, a still frame
+  is skipped unless a keyframe is due, and the encoder's answer to every frame keeps the count
+  honest. Every encode carries a number and the encoder's answer carries it back: an answer from an
+  encode already written off (silent for over a second) is dropped, picture and accounting alike,
+  so it can't free the slot of the encode that replaced it or put a stale frame on the wire. The
+  write-off doesn't wait for the next changed frame (still frames and ScreenCaptureKit's idle
+  callbacks never reach the encoder): the pacer names the encode in flight and its deadline
+  (`outstanding`), the session's stall watch calls `encodeTimedOut` then, and a timeout for an
+  encode already answered does nothing. A changed frame waiting behind an encode stays pending
+  through still frames that follow it; they refresh the picture, not the need to send it.
+  `VideoPacerTests` cover these on a fake encoder.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
   `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,

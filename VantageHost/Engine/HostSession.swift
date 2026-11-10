@@ -28,13 +28,17 @@ actor HostSession {
     private var state: State = .handshaking
     private var capture: (any FrameSource)?
     private var encoder: VideoEncoder?
-    /// Bumped by every `stopCapture`; frame and encoder callbacks carry the epoch they were made
-    /// in, so a late one from a stopped capture or encoder can't touch its replacement's state.
+    /// Bumped by every `stopCapture`; frame, encoder and stall callbacks carry the epoch they were
+    /// made in, so a late one from a stopped capture or encoder can't touch its replacement's state.
     private var captureEpoch: UInt64 = 0
     private var injector: (any InputSink)?
     /// From captured frames to wire frames: one encode in flight, the latest frame wins, idle
     /// suppression, keyframes on demand, the adaptive rate and bitrate. One per capture.
     private var pacer: VideoPacer?
+    /// Wakes the pacer when the encode in flight reaches its deadline (`VideoPacer.outstanding`),
+    /// so a lost encoder answer is written off even while the screen is still. One task per
+    /// capture, alive only while the encoder owes an answer (`watchStall`).
+    private var stallWatch: Task<Void, Never>?
     private let power: any HostPowerControl
     private var clipboard: (any HostClipboard)?
     private let lockMonitor: any HostStatusMonitor
@@ -246,12 +250,12 @@ actor HostSession {
             case .qualityFeedback(let feedback):
                 pacer?.apply(feedback: feedback)
             case .requestKeyframe:
-                pacer?.requestKeyframe(now: now)
+                requestKeyframe()
             case .hostCommand(let command):
                 await handle(command.command)
             case .viewportChanged:
                 // Geometry is immutable for the life of a connection; a viewport change forces a keyframe.
-                pacer?.requestKeyframe(now: now)
+                requestKeyframe()
             case .ping(let ping):
                 channel.sendDetached(.pong(Pong(echoNanos: ping.sentAtNanos)))
             case .dictationControl(let control):
@@ -344,6 +348,7 @@ actor HostSession {
         }
         self.encoder = encoder
         pacer = VideoPacer(encoder: encoder, adaptive: adaptive, fps: startFPS) { [channel] message in channel.sendDetached(message) }
+        // A frame may arrive before `start` returns; the lifecycle credits it to this start.
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
         // The injector (and whatever keys it holds) survives capture restarts.
@@ -370,10 +375,7 @@ actor HostSession {
             throw error
         }
         guard state == .streaming else { // ended while capture was starting: nothing may keep running
-            await capture.stop()
-            if self.capture === capture { self.capture = nil }
-            encoder.stop()
-            self.encoder = nil
+            if self.capture === capture { await stopCapture() } // else teardown already stopped it
             throw SessionError.closed
         }
         guard self.capture === capture else { throw CaptureError.stoppedWhileStarting }
@@ -402,11 +404,52 @@ actor HostSession {
         if !decisions.isEmpty { Task { await self.apply(decisions) } }
         if !lifecycle.wantsTicks { syncTicker() }
         if let fps = pacer?.ingest(frame, now: now) { capture?.updateFPS(fps) }
+        watchStall()
     }
 
     private func emit(_ outcome: VideoEncoder.Outcome, epoch: UInt64) {
         guard epoch == captureEpoch else { return } // a stopped encoder's late word
         pacer?.encoderReported(outcome, now: now)
+        watchStall()
+    }
+
+    private func requestKeyframe() {
+        pacer?.requestKeyframe(now: now)
+        watchStall()
+    }
+
+    /// Keeps one timer on the encode the pacer is waiting for. The watch sleeps until the deadline
+    /// of the encode in flight and names it when it fires, so a timeout that lands after that
+    /// encode was answered does nothing (the pacer checks the id and the deadline); it then
+    /// sleeps for the next encode, and ends once the pacer owes nothing. Nothing is made per
+    /// frame: one task serves every encode of a capture.
+    private func watchStall() {
+        guard pacer?.outstanding != nil, stallWatch == nil else { return }
+        let epoch = captureEpoch
+        stallWatch = Task { [weak self, clock = env.clock] in
+            while !Task.isCancelled {
+                guard let self, let watch = await self.encodeToWatch(epoch: epoch) else { return }
+                try? await clock.sleep(for: watch.deadline - clock.now)
+                guard !Task.isCancelled else { return }
+                await self.encodeTimedOut(watch.encodeID, epoch: epoch)
+            }
+        }
+    }
+
+    /// The encode the watch should wait on next; nil ends the watch, and lets the next encode start
+    /// a new one (no await between the two, so no encode slips through unwatched).
+    private func encodeToWatch(epoch: UInt64) -> (encodeID: UInt64, deadline: ContinuousClock.Instant)? {
+        guard epoch == captureEpoch else { return nil } // a stopped capture's watch
+        guard let outstanding = pacer?.outstanding else {
+            stallWatch = nil
+            return nil
+        }
+        return outstanding
+    }
+
+    private func encodeTimedOut(_ encodeID: UInt64, epoch: UInt64) {
+        guard epoch == captureEpoch else { return } // a stopped capture's timer
+        pacer?.encodeTimedOut(encodeID, now: now)
     }
 
     private func sendClipboard(_ payload: ClipboardPayload) {
@@ -535,7 +578,7 @@ actor HostSession {
         var configuration = destination.configuration
         // A file cut off earlier keeps writing to its partial, even if Settings → Files moved the
         // receive folder since.
-        configuration.partialDirectory = { ResumeFolders.shared.folder(for: $0) }
+        configuration.partialDirectory = env.resumeFolder
         let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: configuration)
         fileEngine = engine
         log.info("file channel attached; receiving into \(destination.directory.path(percentEncoded: false), privacy: .public)")
@@ -603,7 +646,7 @@ actor HostSession {
                 lockMonitor.start()
                 await dispatch(.statusChanged(lockMonitor.currentStatus()))
             case .requestKeyframe:
-                pacer?.requestKeyframe(now: now)
+                requestKeyframe()
             case .note(let text):
                 log.info("\(text, privacy: .public)")
             }
@@ -613,6 +656,9 @@ actor HostSession {
     /// One capture start: the targets in order until one comes up, then the lifecycle hears
     /// which display and codec it got, or that every target failed.
     private func execute(_ request: CaptureLifecycle.StartRequest) async {
+        // The lifecycle counts nothing as running from here on; the old capture goes before the
+        // wait for the display, so none of its frames can pass for the new capture's first.
+        await stopCapture()
         if request.wakesSleepingDisplay, power.isDisplayAsleep { await wakeDisplayForStreaming() }
         if request.wakesDarkPanel {
             let panel = power.panel
@@ -698,14 +744,20 @@ actor HostSession {
         await dispatch(.displaysChanged)
     }
 
-    /// Stops capture and encoding only; input, power, and status monitoring stay.
+    /// Stops capture and encoding only; input, power, and status monitoring stay. The capture,
+    /// encoder and pacer leave the session's state before anything is awaited: a replacement
+    /// started while the old capture is still stopping (a wake during a slow stop) is then never
+    /// mistaken for it, and only the detached objects are stopped.
     private func stopCapture() async {
         captureEpoch &+= 1
-        await capture?.stop()
-        capture = nil
-        encoder?.stop()
-        encoder = nil
+        let capture = self.capture, encoder = self.encoder
+        self.capture = nil
+        self.encoder = nil
         pacer = nil
+        stallWatch?.cancel()
+        stallWatch = nil
+        encoder?.stop()
+        await capture?.stop()
     }
 
     private func stopStreaming() async {

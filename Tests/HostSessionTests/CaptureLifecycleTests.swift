@@ -155,4 +155,52 @@ struct CaptureLifecycleTests {
         #expect(starts(lifecycle.handle(.displaysChanged, now: t0 + .seconds(1))).isEmpty)
         #expect(starts(lifecycle.handle(.displaysChanged, now: t0 + .seconds(3))).first?.reason == "displays changed")
     }
+
+    @Test func aRestartWhoseEveryTargetFailsEntersRecoveryAfterSuccessfulStreaming() {
+        // Streaming, then the displays change: the restart stops the real capture, and every
+        // replacement target fails. The old capture is gone, so recovery must run as if the
+        // picture were lost: retries with backoff, and the device told after three seconds.
+        var lifecycle = streaming()
+        let restart = lifecycle.handle(.displaysChanged, now: t0 + .seconds(3))
+        #expect(starts(restart).first?.reason == "displays changed")
+        #expect(!lifecycle.isCapturing) // the start replaces it; nothing is running meanwhile
+        _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0 + .seconds(3))
+        #expect(lifecycle.wantsTicks && !lifecycle.isCapturing)
+        var now = t0 + .seconds(3)
+        var retries: [Duration] = []
+        var told: [Duration] = []
+        while now - t0 < .seconds(23) {
+            now += .milliseconds(250)
+            let decisions = lifecycle.handle(.tick, now: now)
+            if !starts(decisions).isEmpty {
+                retries.append(now - t0 - .seconds(3))
+                _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: now)
+            }
+            if statuses(decisions).contains(where: { $0.isScreenUnavailable == true }) { told.append(now - t0 - .seconds(3)) }
+        }
+        #expect(retries.prefix(3) == [.milliseconds(500), .milliseconds(1500), .milliseconds(3500)])
+        #expect(told == [.seconds(3)])
+    }
+
+    @Test func aFrameDeliveredWhileTheStartIsUnderWayCountsForTheWatchdog() {
+        // The source delivers its first frame before the start reports back (ScreenCaptureKit
+        // can, and so can the stream config send). On a still screen no second frame follows,
+        // so forgetting it would have the watchdog stop a working capture at 5 s.
+        var lifecycle = CaptureLifecycle(restartsByDisplayID: true)
+        _ = lifecycle.handle(.selectionRequested(select), now: t0)
+        _ = lifecycle.handle(.statusChanged(awake), now: t0)
+        #expect(lifecycle.isStarting)
+        _ = lifecycle.handle(.frameArrived, now: t0 + .milliseconds(100))
+        _ = lifecycle.handle(.captureStarted(display: display, codec: .h264), now: t0 + .milliseconds(200))
+        #expect(lifecycle.isCapturing && !lifecycle.wantsTicks)
+        #expect(lifecycle.handle(.tick, now: t0 + .milliseconds(5500)).isEmpty)
+        #expect(lifecycle.isCapturing)
+        // A frame before a start that then fails says nothing about the next start.
+        _ = lifecycle.handle(.displaysChanged, now: t0 + .seconds(10))
+        _ = lifecycle.handle(.frameArrived, now: t0 + .seconds(10))
+        _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0 + .seconds(10))
+        _ = lifecycle.handle(.tick, now: t0 + .milliseconds(10500))
+        _ = lifecycle.handle(.captureStarted(display: display, codec: .h264), now: t0 + .milliseconds(10600))
+        #expect(lifecycle.wantsTicks)
+    }
 }

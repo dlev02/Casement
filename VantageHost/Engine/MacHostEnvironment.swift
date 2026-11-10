@@ -26,7 +26,8 @@ nonisolated enum MacHostEnvironment {
                         makeClipboard: { ClipboardBridge() },
                         audio: MacAudio(), curtain: MacCurtain(allowsSelfCurtain: allowsSelfCurtain),
                         dictation: MacDictation(), peers: TailscalePeers(),
-                        fileDestination: fileDestination, captureFailsFor: captureFailsFor, clock: SystemHostClock())
+                        fileDestination: fileDestination, resumeFolder: { ResumeFolders.shared.folder(for: $0) },
+                        captureFailsFor: captureFailsFor, clock: SystemHostClock())
     }
 }
 

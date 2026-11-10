@@ -89,7 +89,8 @@ final class HostController {
             return SyntheticHostEnvironment.make(hostName: hostName, platform: options.platform,
                                                  display: FakeDisplay(asleep: options.fakeDisplaySleep),
                                                  picture: SyntheticHostEnvironment.loadPicture(atPath: options.syntheticImage),
-                                                 fileDestination: files, captureFailsFor: captureFailsFor)
+                                                 fileDestination: files, resumeFolder: { ResumeFolders.shared.folder(for: $0) },
+                                                 captureFailsFor: captureFailsFor)
         }
         return MacHostEnvironment.make(hostName: hostName, platform: options.platform, allowsSelfCurtain: options.allowsSelfCurtain,
                                        fileDestination: files, captureFailsFor: captureFailsFor)
@@ -132,6 +133,9 @@ final class HostController {
         #if DEBUG
         // An update test host is signed for the test and replaces itself: it stays out of the Keychain.
         if (HostOptions.shared.syntheticCapture && HostOptions.shared.updateFeed != nil) || HostOptions.shared.allowsSelfCurtain { return DeviceIdentity() }
+        // A synthetic host never touches the Keychain: an unsigned build would raise a prompt and
+        // hang on it. Its key lives in a file of its own, the same across launches.
+        if HostOptions.shared.syntheticCapture { return SyntheticHostEnvironment.loadOrCreateIdentity() }
         #endif
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.host")
         return (try? keychain.loadOrCreateIdentity()) ?? DeviceIdentity()

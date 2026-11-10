@@ -2,14 +2,17 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import VantageCore
+import os
 
 /// The stand-ins a synthetic host (`--synthetic-capture`) runs on: a pretend display that sleeps
 /// and wakes on command, a rendered test pattern (or `--synthetic-image`), a chime for sound, no
-/// input, clipboard, curtain, dictation or tailnet, and nothing that touches the real Mac's
-/// displays, keyboard or permissions. Tests build one with a fake clock and a temp folder.
+/// input, clipboard, curtain, dictation or tailnet, an identity in a key file of its own rather
+/// than the Keychain, and nothing that touches the real Mac's displays, keyboard or permissions.
+/// Tests build one with a fake clock and a temp folder.
 nonisolated enum SyntheticHostEnvironment {
     static func make(hostName: String = "Synthetic Mac", platform: HostPlatform = .macOS, display: FakeDisplay = FakeDisplay(),
                      picture: CGImage? = nil, fileDestination: @escaping @Sendable () -> FileDestination,
+                     resumeFolder: @escaping @Sendable (UUID) -> URL? = { _ in nil },
                      captureFailsFor: Duration? = nil, clock: any HostClock = SystemHostClock()) -> HostEnvironment {
         HostEnvironment(hostName: hostName, platform: platform,
                         screen: SyntheticScreen(display: display, picture: picture),
@@ -18,7 +21,38 @@ nonisolated enum SyntheticHostEnvironment {
                         makeStatusMonitor: { SyntheticStatusMonitor(display: display) },
                         makeInputSink: nil, makeClipboard: nil,
                         audio: SyntheticAudio(), curtain: nil, dictation: nil, peers: nil,
-                        fileDestination: fileDestination, captureFailsFor: captureFailsFor, clock: clock)
+                        fileDestination: fileDestination, resumeFolder: resumeFolder, captureFailsFor: captureFailsFor, clock: clock)
+    }
+
+    /// Where a synthetic host keeps what is its own (its identity), beside the real host's folder
+    /// but never in it: `~/Library/Application Support/Vantage Host/Synthetic`.
+    static var stateDirectory: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support", directoryHint: .isDirectory)
+        return support.appending(path: "Vantage Host/Synthetic", directoryHint: .isDirectory)
+    }
+
+    /// The synthetic host's identity: a key file private to the user (0600) in `stateDirectory`,
+    /// never the login Keychain, so an unsigned build raises no Keychain prompt (and can't hang
+    /// on one), and the same key on every launch, so a device that saved this host keeps matching
+    /// it. A file that can't be read or written means a fresh identity for this launch.
+    static func loadOrCreateIdentity(in directory: URL = stateDirectory) -> DeviceIdentity {
+        let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "controller")
+        let file = directory.appending(path: "device-identity")
+        if let raw = try? Data(contentsOf: file), let identity = try? DeviceIdentity(rawRepresentation: raw) { return identity }
+        let identity = DeviceIdentity()
+        do {
+            // The folder is the user's alone (0700) before the key is written into it (0600).
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            guard FileManager.default.createFile(atPath: file.path(percentEncoded: false), contents: identity.rawRepresentation,
+                                                 attributes: [.posixPermissions: 0o600]) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            log.info("synthetic identity \(identity.fingerprint, privacy: .public) written to \(file.path(percentEncoded: false), privacy: .public)")
+        } catch {
+            log.error("couldn't keep the synthetic identity at \(file.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public); using a new one this launch")
+        }
+        return identity
     }
 
     /// A synthetic display sized to a 2x iPad by default.
