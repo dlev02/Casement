@@ -99,6 +99,18 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   detached; frame, encoder and stall callbacks carry the capture epoch they were made in and are
   ignored after it. Rules below are the module's; `CaptureLifecycleTests` check them with a
   fake clock and frame source, `HostSessionTests` over loopback.
+- **Keeping the picture moving** (`VideoPacer`, `VantageHost/Engine`; the Windows host's
+  `VideoPipeline` is the same design): one encode in flight and the latest frame wins, a still frame
+  is skipped unless a keyframe is due, and the encoder's answer to every frame keeps the count
+  honest. Every encode carries a number and the encoder's answer carries it back: an answer from an
+  encode already written off (silent for over a second) is dropped, picture and accounting alike,
+  so it can't free the slot of the encode that replaced it or put a stale frame on the wire. The
+  write-off doesn't wait for the next changed frame (still frames and ScreenCaptureKit's idle
+  callbacks never reach the encoder): the pacer names the encode in flight and its deadline
+  (`outstanding`), the session's stall watch calls `encodeTimedOut` then, and a timeout for an
+  encode already answered does nothing. A changed frame waiting behind an encode stays pending
+  through still frames that follow it; they refresh the picture, not the need to send it.
+  `VideoPacerTests` cover these on a fake encoder.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
   `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
