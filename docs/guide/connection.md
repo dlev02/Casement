@@ -2,7 +2,8 @@
 
 Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout and repo rules this assumes.
 
-- **Auth**: Ed25519 device identities in Keychain, both ways. The client's `hello` carries a
+- **Auth**: Ed25519 device identities in Keychain, both ways (a synthetic host's lives in a key
+  file of its own instead: Headless end-to-end testing in [testing.md](testing.md)). The client's `hello` carries a
   nonce; the host answers a challenge with its own nonce and `hostSignature` over both nonces and
   both keys (`AuthTranscript.hostBytes`), and the client checks it before signing anything or
   sending a pairing code (`HostIdentityCheck`): the host must prove it holds the key it names, and
