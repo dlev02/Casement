@@ -89,7 +89,8 @@ final class HostController {
             return SyntheticHostEnvironment.make(hostName: hostName, platform: options.platform,
                                                  display: FakeDisplay(asleep: options.fakeDisplaySleep),
                                                  picture: SyntheticHostEnvironment.loadPicture(atPath: options.syntheticImage),
-                                                 fileDestination: files, captureFailsFor: captureFailsFor)
+                                                 fileDestination: files, resumeFolder: { ResumeFolders.shared.folder(for: $0) },
+                                                 captureFailsFor: captureFailsFor)
         }
         return MacHostEnvironment.make(hostName: hostName, platform: options.platform, allowsSelfCurtain: options.allowsSelfCurtain,
                                        fileDestination: files, captureFailsFor: captureFailsFor)

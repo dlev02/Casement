@@ -10,6 +10,7 @@ import VantageCore
 nonisolated enum SyntheticHostEnvironment {
     static func make(hostName: String = "Synthetic Mac", platform: HostPlatform = .macOS, display: FakeDisplay = FakeDisplay(),
                      picture: CGImage? = nil, fileDestination: @escaping @Sendable () -> FileDestination,
+                     resumeFolder: @escaping @Sendable (UUID) -> URL? = { _ in nil },
                      captureFailsFor: Duration? = nil, clock: any HostClock = SystemHostClock()) -> HostEnvironment {
         HostEnvironment(hostName: hostName, platform: platform,
                         screen: SyntheticScreen(display: display, picture: picture),
@@ -18,7 +19,7 @@ nonisolated enum SyntheticHostEnvironment {
                         makeStatusMonitor: { SyntheticStatusMonitor(display: display) },
                         makeInputSink: nil, makeClipboard: nil,
                         audio: SyntheticAudio(), curtain: nil, dictation: nil, peers: nil,
-                        fileDestination: fileDestination, captureFailsFor: captureFailsFor, clock: clock)
+                        fileDestination: fileDestination, resumeFolder: resumeFolder, captureFailsFor: captureFailsFor, clock: clock)
     }
 
     /// A synthetic display sized to a 2x iPad by default.

@@ -578,7 +578,7 @@ actor HostSession {
         var configuration = destination.configuration
         // A file cut off earlier keeps writing to its partial, even if Settings → Files moved the
         // receive folder since.
-        configuration.partialDirectory = { ResumeFolders.shared.folder(for: $0) }
+        configuration.partialDirectory = env.resumeFolder
         let engine = FileTransferEngine(channel: fileChannel, role: .host, configuration: configuration)
         fileEngine = engine
         log.info("file channel attached; receiving into \(destination.directory.path(percentEncoded: false), privacy: .public)")
