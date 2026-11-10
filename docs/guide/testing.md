@@ -30,7 +30,9 @@ run the real `HostSession` over loopback on the synthetic environment (pairing, 
 messages and keyframe, display sleep and wake, a missing picture), the way the Windows host's
 `HostListenerTests` run its session; `CaptureLifecycleTests` and `VideoPacerTests` check the two
 modules behind it on a fake clock, frame source and encoder (the retry backoff, the no-frame
-rule, a dropped frame, a keyframe on a still screen) in milliseconds.
+rule, a dropped frame, a keyframe on a still screen) in milliseconds; `HostSessionTests` also runs
+the slow-stop race (`TestHost(stopDelay:)`: a capture whose first stop takes a while, as a real
+ScreenCaptureKit stop can, with a wake meanwhile) to show the replacement capture survives.
 
 The simulator cannot route to the Mac's Tailscale interface, so test over loopback (the host accepts
 loopback peers in addition to tailnet peers):

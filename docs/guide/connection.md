@@ -93,7 +93,11 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
   while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
   objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
-  `--capture-fails-for`. Rules below are the module's; `CaptureLifecycleTests` check them with a
+  `--capture-fails-for`.   In the session, `stopCapture` detaches the capture, encoder and pacer before it awaits the
+  capture's stop (a ScreenCaptureKit stop can take a while), so a replacement started meanwhile (a
+  wake during Sleep Display's stop) is never cleared by the older stop, which stops only what it
+  detached; frame, encoder and stall callbacks carry the capture epoch they were made in and are
+  ignored after it. Rules below are the module's; `CaptureLifecycleTests` check them with a
   fake clock and frame source, `HostSessionTests` over loopback.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
   `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the

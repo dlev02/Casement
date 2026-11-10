@@ -370,10 +370,7 @@ actor HostSession {
             throw error
         }
         guard state == .streaming else { // ended while capture was starting: nothing may keep running
-            await capture.stop()
-            if self.capture === capture { self.capture = nil }
-            encoder.stop()
-            self.encoder = nil
+            if self.capture === capture { await stopCapture() } // else teardown already stopped it
             throw SessionError.closed
         }
         guard self.capture === capture else { throw CaptureError.stoppedWhileStarting }
@@ -698,14 +695,18 @@ actor HostSession {
         await dispatch(.displaysChanged)
     }
 
-    /// Stops capture and encoding only; input, power, and status monitoring stay.
+    /// Stops capture and encoding only; input, power, and status monitoring stay. The capture,
+    /// encoder and pacer leave the session's state before anything is awaited: a replacement
+    /// started while the old capture is still stopping (a wake during a slow stop) is then never
+    /// mistaken for it, and only the detached objects are stopped.
     private func stopCapture() async {
         captureEpoch &+= 1
-        await capture?.stop()
-        capture = nil
-        encoder?.stop()
-        encoder = nil
+        let capture = self.capture, encoder = self.encoder
+        self.capture = nil
+        self.encoder = nil
         pacer = nil
+        encoder?.stop()
+        await capture?.stop()
     }
 
     private func stopStreaming() async {
