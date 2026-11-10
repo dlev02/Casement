@@ -336,14 +336,17 @@ private struct LockCurtain: UIViewRepresentable {
             case .light: .light
             case .dark: .dark
             }
+            let others = (window.windowScene?.windows ?? []).filter { $0 !== window }
+            // VoiceOver stays on the lock: the session and the list live on underneath it.
+            for other in others { other.accessibilityElementsHidden = isLocked }
             if isLocked {
                 // The keyboard would otherwise float over the lock screen. Typed text stays in
                 // its field; only the focus goes.
-                for other in window.windowScene?.windows ?? [] where other !== window { other.endEditing(true) }
+                for other in others { other.endEditing(true) }
                 window.makeKeyAndVisible()
             } else if !window.isHidden {
                 window.isHidden = true
-                window.windowScene?.windows.first { $0 !== window && !$0.isHidden }?.makeKey()
+                others.first { !$0.isHidden }?.makeKey()
             }
         }
     }
