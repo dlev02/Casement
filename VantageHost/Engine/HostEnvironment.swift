@@ -14,6 +14,9 @@ nonisolated struct HostEnvironment: Sendable {
     var platform: HostPlatform
     /// Displays, display fitting, and frames.
     var screen: any HostScreen
+    /// One per capture: the encoder its frames go through (VideoToolbox on a real or synthetic
+    /// host; a test wraps it to lose an answer).
+    var makeVideoEncoder: @Sendable (VideoEncoder.Configuration) -> any VideoEncoding = { VideoEncoder(configuration: $0) }
     /// Whether the grants a screen session needs are in place (always true on a synthetic host).
     var screenRecordingGranted: @Sendable () -> Bool
     var accessibilityGranted: @Sendable () -> Bool

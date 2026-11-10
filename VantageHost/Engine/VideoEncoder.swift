@@ -12,7 +12,9 @@ import os
 nonisolated final class VideoEncoder: @unchecked Sendable {
     struct Output: Sendable {
         var frame: VideoFrame
-        /// Present only on the first frame and whenever the parameter sets change.
+        /// On every keyframe: what a decoder needs to start from it. Whoever sends the frames
+        /// (`VideoPacer`) sends it only when it differs from what the device already has, so an
+        /// encode that was written off can't take the only copy with it.
         var config: VideoConfig?
     }
 
@@ -46,7 +48,6 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
     private var session: VTCompressionSession?
     private var config: Configuration
     private var sequence: UInt64 = 0
-    private var lastParameterSets: [Data] = []
     private var onOutcome: (@Sendable (Outcome) -> Void)?
 
     init(configuration: Configuration) {
@@ -201,10 +202,7 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
         var videoConfig: VideoConfig?
         if keyframe, let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
             let sets = Self.parameterSets(from: formatDesc, codec: config.codec)
-            if !sets.isEmpty, sets != lastParameterSets {
-                lastParameterSets = sets
-                videoConfig = VideoConfig(codec: config.codec, width: config.width, height: config.height, parameterSets: sets, nalLengthSize: 4, fps: config.fps)
-            } else if sequence == 0 {
+            if !sets.isEmpty {
                 videoConfig = VideoConfig(codec: config.codec, width: config.width, height: config.height, parameterSets: sets, nalLengthSize: 4, fps: config.fps)
             }
         }

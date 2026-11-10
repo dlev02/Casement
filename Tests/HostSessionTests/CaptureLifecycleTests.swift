@@ -203,4 +203,47 @@ struct CaptureLifecycleTests {
         _ = lifecycle.handle(.captureStarted(display: display, codec: .h264), now: t0 + .milliseconds(10600))
         #expect(lifecycle.wantsTicks)
     }
+
+    @Test func aFrameFromATargetThatThenFailsIsNoCreditToTheTargetAfterIt() {
+        // A restart tries two targets. The first delivers a frame and then throws (the stream
+        // config didn't send, the display went away); the second comes up and never frames. The
+        // credit for that frame belongs to the first target alone: the second must still be
+        // watched, and given up on at 5 s, or a capture with no picture runs for good.
+        var lifecycle = streaming()
+        let restart = lifecycle.handle(.displaysChanged, now: t0 + .seconds(3))
+        #expect(starts(restart).first?.targets.count == 2)
+        _ = lifecycle.handle(.captureAttemptBegan, now: t0 + .seconds(3))
+        _ = lifecycle.handle(.frameArrived, now: t0 + .milliseconds(3100))
+        _ = lifecycle.handle(.captureAttemptBegan, now: t0 + .milliseconds(3200)) // the first target failed; the next is tried
+        _ = lifecycle.handle(.captureStarted(display: display, codec: .h264), now: t0 + .milliseconds(3300))
+        #expect(lifecycle.isCapturing && lifecycle.wantsTicks)
+        let gaveUp = lifecycle.handle(.tick, now: t0 + .milliseconds(8600))
+        #expect(gaveUp.contains(.stopCapture(reason: "capture started but sent no frames")))
+        #expect(!lifecycle.isCapturing)
+    }
+
+    @Test func aRestartDuringRecoveryCountsItsWaitFromItsOwnEnd() {
+        // Capture failed at 0 (the first retry is due at 0.5 s). The displays change at 0.25 s and
+        // the start that triggers takes until 3 s to fail. The next retry waits its 0.5 s from
+        // then (a displays-changed start keeps the current delay, as a state change does),
+        // not from the deadline the failure at 0 set, which would retry at once at 3 s.
+        var lifecycle = CaptureLifecycle(restartsByDisplayID: true)
+        _ = lifecycle.handle(.selectionRequested(select), now: t0)
+        _ = lifecycle.handle(.statusChanged(awake), now: t0)
+        _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0)
+        #expect(starts(lifecycle.handle(.displaysChanged, now: t0 + .milliseconds(250))).first?.reason == "displays changed")
+        #expect(starts(lifecycle.handle(.tick, now: t0 + .milliseconds(500))).isEmpty) // one start at a time
+        _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0 + .seconds(3))
+        #expect(starts(lifecycle.handle(.tick, now: t0 + .seconds(3))).isEmpty)
+        #expect(starts(lifecycle.handle(.tick, now: t0 + .milliseconds(3250))).isEmpty)
+        #expect(!starts(lifecycle.handle(.tick, now: t0 + .milliseconds(3500))).isEmpty)
+        // A device's own request that waited behind a start (the pending takeover) is a recovery
+        // attempt too: its wait is counted from when it ends.
+        _ = lifecycle.handle(.selectionRequested(select), now: t0 + .milliseconds(3600))
+        let took = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0 + .seconds(4))
+        #expect(starts(took).first?.reason == "device asked for a display")
+        _ = lifecycle.handle(.captureFailed(reason: "no displays"), now: t0 + .seconds(7))
+        #expect(starts(lifecycle.handle(.tick, now: t0 + .seconds(7))).isEmpty)
+        #expect(!starts(lifecycle.handle(.tick, now: t0 + .seconds(8))).isEmpty)
+    }
 }

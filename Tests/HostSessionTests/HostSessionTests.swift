@@ -1,3 +1,4 @@
+import CoreVideo
 import Foundation
 import Network
 import Synchronization
@@ -155,6 +156,51 @@ struct HostSessionTests {
         #expect(host.captures.made == 2 && host.captures.unstopped == 0)
     }
 
+    @Test func aCaptureStillStartingWhenTheDeviceIsRemovedIsStopped() async throws {
+        // The device is removed while its capture is still starting. The teardown's stop finds
+        // nothing to stop yet (ScreenCaptureKit has a stream only once `startCapture` returns),
+        // so when the start then finishes, the capture must be stopped then, not left running
+        // for a session that is gone.
+        let host = try await TestHost(startDelay: .milliseconds(1500))
+        defer { host.stop() }
+        host.trust.trusted.insert(DeviceIdentity.fingerprint(of: TestClient.shared.identity.publicKeyData))
+        let (connection, _) = try await TestClient.shared.connect(to: host.port, pairingCode: nil)
+        try await connection.send(.selectDisplay(SelectDisplay(selection: .display(1), targetFPS: 30, quality: .auto, preferredCodec: .h264)))
+        try await host.captures.wait(until: { $0.made == 1 }, for: .seconds(3))
+        await host.removeDevice(DeviceIdentity.fingerprint(of: TestClient.shared.identity.publicKeyData))
+        guard case .disconnect = try await next(.disconnect, on: connection) else { throw Failure.unexpected }
+        #expect(host.captures.prematureStops == 1 && host.captures.running == 0) // the stop came before the capture existed
+        // The start finishes meanwhile; the capture it made is stopped once it does.
+        try? await host.captures.wait(until: { $0.started == 1 }, for: .seconds(3))
+        try? await host.captures.wait(until: { $0.running == 0 }, for: .seconds(2))
+        #expect(host.captures.made == 1 && host.captures.started == 1)
+        #expect(host.captures.running == 0, "the capture that finished starting after the device was removed is still running")
+        await connection.close()
+    }
+
+    @Test func aLostEncoderAnswerIsWrittenOffByTheSessionsWatchOnAStillScreen() async throws {
+        // The capture delivers two frames and then nothing (a still screen), and the encoder's
+        // answer to the second never comes. No later frame can notice the stall, so only the
+        // session's watch on the encode in flight (`watchStall`) can write it off; it must, and
+        // the picture resumes with an IDR within a moment of the one-second limit.
+        let host = try await TestHost(frameLimit: 2, lostAnswer: 2)
+        defer { host.stop() }
+        host.trust.trusted.insert(DeviceIdentity.fingerprint(of: TestClient.shared.identity.publicKeyData))
+        let (connection, _) = try await TestClient.shared.connect(to: host.port, pairingCode: nil)
+        try await connection.send(.selectDisplay(SelectDisplay(selection: .display(1), targetFPS: 30, quality: .auto, preferredCodec: .h264)))
+        guard case .videoFrame(let first) = try await next(.videoFrame, on: connection) else { throw Failure.unexpected }
+        #expect(first.isKeyframe)
+        let closer = Task { try? await Task.sleep(for: .seconds(4)); await connection.close() }
+        defer { closer.cancel() }
+        var resumed: VideoFrame?
+        while resumed == nil, let message = try? await connection.receive() {
+            if case .videoFrame(let frame) = message { resumed = frame }
+        }
+        let frame = try #require(resumed, "the picture froze: the lost answer was never written off")
+        #expect(frame.isKeyframe)
+        await connection.close()
+    }
+
     /// The next message of that kind; anything else in between is skipped.
     private func next(_ kind: MessageKind, on connection: MessageChannel) async throws -> Message {
         while let message = try await connection.receive() {
@@ -163,7 +209,7 @@ struct HostSessionTests {
         throw Failure.closed
     }
 
-    enum Failure: Error { case unexpected, closed }
+    enum Failure: Error { case unexpected, closed, timedOut }
 }
 
 /// A listener that runs one `HostSession` per connection on a synthetic environment.
@@ -172,20 +218,28 @@ final class TestHost: Sendable {
     let display: FakeDisplay
     let identity = DeviceIdentity()
     let port: UInt16
-    /// The captures the session asked for, and whether each was stopped (`stopDelay` hosts only).
+    /// The captures the session asked for, and what became of each (shaped hosts only).
     let captures = CaptureLedger()
     private let listener: NWListener
     private let sessions = SessionKeeper()
 
-    /// `stopDelay`: every capture's first `stop` takes this long, as a real ScreenCaptureKit stop can.
-    init(displayAsleep: Bool = false, captureFailsFor: Duration? = nil, stopDelay: Duration? = nil) async throws {
+    /// `stopDelay`: every capture's first `stop` takes this long, as a real ScreenCaptureKit stop
+    /// can. `startDelay`: every capture's `start` takes this long, and a stop before it finishes
+    /// finds nothing to stop, as ScreenCaptureKit's does. `frameLimit`: each capture delivers that
+    /// many frames and then goes quiet, a still screen. `lostAnswer`: the encoder's answer to the
+    /// encode with that number never arrives.
+    init(displayAsleep: Bool = false, captureFailsFor: Duration? = nil, stopDelay: Duration? = nil, startDelay: Duration? = nil,
+         frameLimit: Int? = nil, lostAnswer: UInt64? = nil) async throws {
         let display = FakeDisplay(asleep: displayAsleep)
         self.display = display
         let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "HostSessionTests-\(UUID().uuidString)")
         var made = SyntheticHostEnvironment.make(hostName: "Test Mac", display: display, fileDestination: {
             FileDestination(directory: folder, configuration: FileTransferConfiguration(receiveDirectory: folder))
         }, captureFailsFor: captureFailsFor)
-        if let stopDelay { made.screen = SlowStopScreen(inner: made.screen, delay: stopDelay, ledger: captures) }
+        if stopDelay != nil || startDelay != nil || frameLimit != nil {
+            made.screen = TestScreen(inner: made.screen, stopDelay: stopDelay, startDelay: startDelay, frameLimit: frameLimit, ledger: captures)
+        }
+        if let lostAnswer { made.makeVideoEncoder = { LosingEncoder(inner: VideoEncoder(configuration: $0), lostEncodeID: lostAnswer) } }
         let environment = made
         let listener = try NWListener(using: VantageNetwork.tcpParameters(), on: .any)
         let identity = self.identity, trust = self.trust, sessions = self.sessions
@@ -226,15 +280,23 @@ final class TestHost: Sendable {
     func stop() {
         listener.cancel()
     }
+
+    /// The device was removed from the Mac (`HostController.revoke`): its sessions end.
+    func removeDevice(_ key: String) async {
+        for session in sessions.all { await session.endIfClient(key) }
+    }
 }
 
-
-/// A screen whose captures take a while to stop the first time (a later stop of the same capture
-/// returns at once, as ScreenCaptureKit's does), and which don't stop themselves when the pretend
-/// display sleeps, so only the session's own stop ends them.
-nonisolated struct SlowStopScreen: HostScreen {
+/// A screen whose captures behave like ScreenCaptureKit's in the ways a test needs: a start that
+/// takes a while (and a stop before it finishes that finds nothing to stop), a first stop that
+/// takes a while (a later stop of the same capture returns at once), a capture that delivers so
+/// many frames and then goes quiet. Its captures don't stop themselves when the pretend display
+/// sleeps, so only the session's own stop ends them.
+nonisolated struct TestScreen: HostScreen {
     let inner: any HostScreen
-    let delay: Duration
+    var stopDelay: Duration?
+    var startDelay: Duration?
+    var frameLimit: Int?
     let ledger: CaptureLedger
 
     var canRestartByDisplayID: Bool { inner.canRestartByDisplayID }
@@ -244,22 +306,26 @@ nonisolated struct SlowStopScreen: HostScreen {
     func restoreDisplays() async { await inner.restoreDisplays() }
 
     func makeCapture(for display: DisplayInfo, fps: Int, excludingClientOnThisComputer: Bool) -> any FrameSource {
-        let source = SlowStopFrameSource(source: SyntheticFrameSource(pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight, fps: fps),
-                                         delay: delay, ledger: ledger)
+        let source = TestFrameSource(source: SyntheticFrameSource(pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight, fps: fps),
+                                     stopDelay: stopDelay, startDelay: startDelay, frameLimit: frameLimit, ledger: ledger)
         ledger.record(source)
         return source
     }
 }
 
-nonisolated final class SlowStopFrameSource: FrameSource, @unchecked Sendable {
+nonisolated final class TestFrameSource: FrameSource, @unchecked Sendable {
     private let source: SyntheticFrameSource
-    private let delay: Duration
+    private let stopDelay: Duration?
+    private let startDelay: Duration?
+    private let frameLimit: Int?
     private let ledger: CaptureLedger
-    private let stops = Mutex(0)
+    private let state = Mutex<(started: Bool, stops: Int, frames: Int)>((false, 0, 0))
 
-    init(source: SyntheticFrameSource, delay: Duration, ledger: CaptureLedger) {
+    init(source: SyntheticFrameSource, stopDelay: Duration?, startDelay: Duration?, frameLimit: Int?, ledger: CaptureLedger) {
         self.source = source
-        self.delay = delay
+        self.stopDelay = stopDelay
+        self.startDelay = startDelay
+        self.frameLimit = frameLimit
         self.ledger = ledger
     }
 
@@ -267,32 +333,99 @@ nonisolated final class SlowStopFrameSource: FrameSource, @unchecked Sendable {
     var pixelHeight: Int { source.pixelHeight }
 
     func start(onFrame: @escaping @Sendable (CapturedFrame) -> Void, onStop: @escaping @Sendable ((any Error)?) -> Void) async throws {
-        try await source.start(onFrame: onFrame, onStop: onStop)
+        if let startDelay { try await Task.sleep(for: startDelay) }
+        try await source.start(onFrame: { [self] frame in
+            let delivered = state.withLock { $0.frames += 1; return $0.frames }
+            if let frameLimit, delivered > frameLimit { return }
+            onFrame(frame)
+        }, onStop: onStop)
+        state.withLock { $0.started = true }
+        ledger.started(self)
     }
 
     func updateFPS(_ fps: Int) { source.updateFPS(fps) }
     func refreshFilter() async {}
 
     func stop() async {
-        let first = stops.withLock { $0 += 1; return $0 == 1 }
-        if first { try? await Task.sleep(for: delay) }
+        let (started, first): (Bool, Bool) = state.withLock { counts in
+            guard counts.started else { return (false, false) }
+            counts.stops += 1
+            return (true, counts.stops == 1)
+        }
+        guard started else { // nothing exists to stop yet, as with ScreenCaptureKit before `startCapture` returns
+            ledger.prematureStop(self)
+            return
+        }
+        if first, let stopDelay { try? await Task.sleep(for: stopDelay) }
         await source.stop()
         ledger.stopped(self)
     }
 }
 
-/// Which captures a test host made and which the session has stopped.
+/// An encoder whose answer to one encode is lost, as a VideoToolbox callback can be under load.
+nonisolated final class LosingEncoder: VideoEncoding {
+    private let inner: VideoEncoder
+    private let lostEncodeID: UInt64
+
+    init(inner: VideoEncoder, lostEncodeID: UInt64) {
+        self.inner = inner
+        self.lostEncodeID = lostEncodeID
+    }
+
+    func start(onOutcome: @escaping @Sendable (VideoEncoder.Outcome) -> Void) throws {
+        let lost = lostEncodeID
+        try inner.start { outcome in
+            guard outcome.encodeID != lost else { return }
+            onOutcome(outcome)
+        }
+    }
+
+    func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64, forceKeyframe: Bool, encodeID: UInt64) {
+        inner.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: forceKeyframe, encodeID: encodeID)
+    }
+    func setBitrate(kbps: Int) { inner.setBitrate(kbps: kbps) }
+    func setExpectedFrameRate(_ fps: Int) { inner.setExpectedFrameRate(fps) }
+    func stop() { inner.stop() }
+}
+
+/// Which captures a test host made, which finished starting, which the session stopped, and how
+/// many stops came before the capture existed.
 nonisolated final class CaptureLedger: Sendable {
-    private let state = Mutex<(made: Int, stopped: Set<ObjectIdentifier>)>((0, []))
+    struct Counts: Equatable {
+        var made = 0
+        var started = 0
+        var stopped: Set<ObjectIdentifier> = []
+        var prematureStops = 0
+        var unstopped: Int { made - stopped.count }
+        /// Captures that finished starting and haven't been stopped since.
+        var running: Int { started - stopped.count }
+    }
+
+    private let state = Mutex(Counts())
     var made: Int { state.withLock { $0.made } }
-    var unstopped: Int { state.withLock { $0.made - $0.stopped.count } }
+    var started: Int { state.withLock { $0.started } }
+    var unstopped: Int { state.withLock { $0.unstopped } }
+    var running: Int { state.withLock { $0.running } }
+    var prematureStops: Int { state.withLock { $0.prematureStops } }
     func record(_ source: AnyObject) { state.withLock { $0.made += 1 } }
+    func started(_ source: AnyObject) { state.withLock { $0.started += 1 } }
     func stopped(_ source: AnyObject) { state.withLock { _ = $0.stopped.insert(ObjectIdentifier(source)) } }
+    func prematureStop(_ source: AnyObject) { state.withLock { $0.prematureStops += 1 } }
+
+    /// Polls until the counts satisfy `condition`; throws when they don't within `limit`.
+    func wait(until condition: @Sendable (Counts) -> Bool, for limit: Duration) async throws {
+        let deadline = ContinuousClock.now + limit
+        while !state.withLock({ condition($0) }) {
+            guard ContinuousClock.now < deadline else { throw HostSessionTests.Failure.timedOut }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
 }
 
 /// Keeps the sessions alive while the test runs.
 nonisolated final class SessionKeeper: Sendable {
     private let sessions = Mutex<[HostSession]>([])
+    var all: [HostSession] { sessions.withLock { $0 } }
     func add(_ session: HostSession) { sessions.withLock { $0.append(session) } }
     func remove(_ session: HostSession) { sessions.withLock { $0.removeAll { $0 === session } } }
 }

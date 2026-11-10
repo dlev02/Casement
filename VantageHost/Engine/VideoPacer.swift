@@ -2,12 +2,16 @@ import CoreVideo
 import Foundation
 import VantageCore
 
-/// What the pacer drives: `VideoEncoder` on a real or synthetic host, a recorder in tests. Every
-/// encode carries the pacer's number for it, and the encoder's answer carries it back.
+/// What the pacer drives: `VideoEncoder` on a real or synthetic host (`HostEnvironment.makeVideoEncoder`),
+/// a recorder or a wrapper that loses an answer in tests. Every encode carries the pacer's number
+/// for it, and the encoder's answer carries it back.
 nonisolated protocol VideoEncoding: AnyObject, Sendable {
+    /// Starts the encoder; every `encode` is answered through `onOutcome` until `stop`.
+    func start(onOutcome: @escaping @Sendable (VideoEncoder.Outcome) -> Void) throws
     func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64, forceKeyframe: Bool, encodeID: UInt64)
     func setBitrate(kbps: Int)
     func setExpectedFrameRate(_ fps: Int)
+    func stop()
 }
 
 extension VideoEncoder: VideoEncoding {}
@@ -16,9 +20,11 @@ extension VideoEncoder: VideoEncoding {}
 /// frame wins, a static frame is skipped unless a keyframe is due, a keyframe request on a still
 /// screen re-encodes the last frame at once (the protocol's rule, as the Windows host does), the
 /// adaptive controller's frame rate and bitrate reach the encoder (and the capture, through the
-/// caller) only when they change, `videoConfig` goes out before the IDR that needs it, and the
-/// encoder's answer to every frame, encoded or dropped, keeps the in-flight count honest: a
-/// drop forces the next keyframe, and an encode silent for over a second is written off.
+/// caller) only when they change, `videoConfig` goes out before the first IDR and before any IDR
+/// whose parameter sets differ from the ones the device was last sent (the encoder puts them on
+/// every keyframe, so a written-off encode can't take the only copy), and the encoder's answer to
+/// every frame, encoded or dropped, keeps the in-flight count honest: a drop forces the next
+/// keyframe, and an encode silent for over a second is written off.
 ///
 /// Every encode gets a number, and the encoder's answer carries it back, so an answer from an
 /// encode already written off is recognised and dropped: it never frees the slot of the encode
@@ -50,6 +56,8 @@ nonisolated struct VideoPacer {
     /// The encode awaiting the encoder's answer, and when it is written off if still unanswered.
     private var inFlight: (encodeID: UInt64, deadline: ContinuousClock.Instant)?
     private var needsKeyframe = true
+    /// The parameter sets in the last `videoConfig` sent: what the device's decoder is set up for.
+    private var sentParameterSets: [Data]?
     private(set) var framesSent: UInt64 = 0
     /// The frame rate the encoder was last told; it and the capture hear only changes.
     private var currentFPS: Int
@@ -110,7 +118,10 @@ nonisolated struct VideoPacer {
         inFlight = nil
         switch outcome {
         case .encoded(let output, _):
-            if let config = output.config { send(.videoConfig(config)) }
+            if let config = output.config, config.parameterSets != sentParameterSets {
+                send(.videoConfig(config))
+                sentParameterSets = config.parameterSets
+            }
             send(.videoFrame(output.frame))
             framesSent &+= 1
         case .dropped:

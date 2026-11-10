@@ -27,7 +27,7 @@ actor HostSession {
 
     private var state: State = .handshaking
     private var capture: (any FrameSource)?
-    private var encoder: VideoEncoder?
+    private var encoder: (any VideoEncoding)?
     /// Bumped by every `stopCapture`; frame, encoder and stall callbacks carry the epoch they were
     /// made in, so a late one from a stopped capture or encoder can't touch its replacement's state.
     private var captureEpoch: UInt64 = 0
@@ -332,6 +332,9 @@ actor HostSession {
         defer { log.info("stream setup took \((MonotonicClock.nanos() - startedAt) / 1_000_000) ms") }
         await stopCapture()
         guard state == .streaming else { throw SessionError.closed }
+        // From here every frame is this target's: a frame from a target before it (which failed)
+        // is no credit to this one.
+        _ = lifecycle.handle(.captureAttemptBegan, now: now)
         if let captureFailsUntil, now < captureFailsUntil { throw CaptureError.displayNotFound }
         let chosen = try await env.screen.resolve(select)
         guard state == .streaming else { throw SessionError.closed } // ended while displays were listed
@@ -341,7 +344,7 @@ actor HostSession {
         let adaptive = AdaptiveController(startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
         let epoch = captureEpoch
-        let encoder = VideoEncoder(configuration: .init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
+        let encoder = env.makeVideoEncoder(.init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
         try encoder.start { [weak self] outcome in
             guard let self else { return }
             Task { await self.emit(outcome, epoch: epoch) }
@@ -374,11 +377,18 @@ actor HostSession {
             if self.capture === capture { self.capture = nil }
             throw error
         }
-        guard state == .streaming else { // ended while capture was starting: nothing may keep running
-            if self.capture === capture { await stopCapture() } // else teardown already stopped it
+        // Ended, or detached (`stopCapture` by a teardown, a sleep notice or the stream's own
+        // stop), while the capture was starting: the stop that detached it ran before the capture
+        // existed (ScreenCaptureKit has a stream to stop only once `startCapture` returns), so it
+        // is stopped here, now that it does; a replacement's fields are left alone.
+        guard state == .streaming else {
+            if self.capture === capture { await stopCapture() } else { await capture.stop() }
             throw SessionError.closed
         }
-        guard self.capture === capture else { throw CaptureError.stoppedWhileStarting }
+        guard self.capture === capture else {
+            await capture.stop()
+            throw CaptureError.stoppedWhileStarting
+        }
 
         clipboard?.stop()
         if let makeClipboard = env.makeClipboard {
