@@ -114,6 +114,16 @@ nonisolated enum SyntheticHostEnvironment {
     /// A Curve25519 private key's raw bytes.
     private static let identityLength: off_t = 32
 
+    /// The identity in a key file that needs no repair: a regular file of this user's, mode 600,
+    /// a key's length, that decodes. Nothing is changed.
+    private static func soundIdentity(at path: String) -> DeviceIdentity? {
+        var info = stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(),
+              info.st_mode & 0o777 == 0o600, info.st_size == identityLength,
+              let raw = FileManager.default.contents(atPath: path) else { return nil }
+        return try? DeviceIdentity(rawRepresentation: raw)
+    }
+
     /// Writes the key to a private temporary file and links it into place, so the key file is
     /// never seen half-written and never overwrites one another launch got there with first; in
     /// that case this returns the winner's identity instead.
@@ -131,9 +141,9 @@ nonisolated enum SyntheticHostEnvironment {
         guard written else { throw POSIXError(POSIXError.Code(rawValue: writeErrno) ?? .EIO) }
         guard link(temp, path) == 0 else {
             let linkErrno = errno
-            if linkErrno == EEXIST, let raw = FileManager.default.contents(atPath: path), let winner = try? DeviceIdentity(rawRepresentation: raw) {
-                return winner
-            }
+            // Another launch got there first, or a file that failed its checks couldn't be removed:
+            // only a file that passes them as it stands is a winner.
+            if linkErrno == EEXIST, let winner = soundIdentity(at: path) { return winner }
             throw POSIXError(POSIXError.Code(rawValue: linkErrno) ?? .EIO)
         }
         return nil
