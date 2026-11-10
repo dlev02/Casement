@@ -9,7 +9,7 @@ enum HostAvailability: Equatable, Sendable {
         switch self {
         case .checking: "Checking…"
         case .ready: "Available"
-        case .online: "Host online"
+        case .online: "Online"
         case .pairingRequired: "Pair to connect"
         case .needsPermission: "Mac permission needed"
         case .unavailable: "Unavailable"

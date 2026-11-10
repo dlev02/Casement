@@ -4,6 +4,8 @@
 #
 # Only the repository name and issue number leave this workflow; the issue
 # text is never put in a shell command or sent in the request.
+# Issues Drew opens himself (specs, tickets and maps from the agent skills in
+# docs/agents/) aren't sent; add `fix-this` to send one.
 # Re-run on any issue by adding the `fix-this` label (needs triage access).
 
 name: Issue fix
@@ -23,6 +25,7 @@ jobs:
     if: >-
       (github.event.action == 'opened'
         && github.event.issue.user.type != 'Bot'
+        && github.event.issue.author_association != 'OWNER'
         && !endsWith(github.event.issue.user.login, '[bot]')
         && !contains(github.event.issue.labels.*.name, 'fix-this'))
       || (github.event.action == 'labeled' && github.event.label.name == 'fix-this')

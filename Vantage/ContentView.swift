@@ -59,14 +59,10 @@ struct ContentView: View {
         }
         #else
         .fullScreenCover(item: $selectedDevice) { device in
-            Group {
-                if lock.isLocked {
-                    LockOverlay(errorMessage: lock.errorMessage) { lock.authenticate() }
-                } else {
-                    RemoteSessionScreen(device: device).environment(store)
-                }
-            }
-            .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
+            // The session stays up under the lock, as on the Mac: `LockCurtain` covers it (and
+            // takes every touch and key) until Face ID clears, then it's there, already connected.
+            RemoteSessionScreen(device: device).environment(store)
+                .preferredColorScheme(appearance == .automatic ? nil : (appearance == .light ? .light : .dark))
         }
         #endif
         #if os(iOS)
@@ -279,7 +275,7 @@ struct SessionWindow: View {
             RemoteSessionScreen(device: device).environment(store)
         } else {
             ContentUnavailableView("Mac Not Found", systemImage: "display.trianglebadge.exclamationmark",
-                                   description: Text("This Mac is no longer in your device list."))
+                                   description: Text("This Mac is no longer in your list of computers."))
                 #if os(visionOS) // the session window is plain
                 .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
                 #endif
@@ -340,14 +336,17 @@ private struct LockCurtain: UIViewRepresentable {
             case .light: .light
             case .dark: .dark
             }
+            let others = (window.windowScene?.windows ?? []).filter { $0 !== window }
+            // VoiceOver stays on the lock: the session and the list live on underneath it.
+            for other in others { other.accessibilityElementsHidden = isLocked }
             if isLocked {
                 // The keyboard would otherwise float over the lock screen. Typed text stays in
                 // its field; only the focus goes.
-                for other in window.windowScene?.windows ?? [] where other !== window { other.endEditing(true) }
+                for other in others { other.endEditing(true) }
                 window.makeKeyAndVisible()
             } else if !window.isHidden {
                 window.isHidden = true
-                window.windowScene?.windows.first { $0 !== window && !$0.isHidden }?.makeKey()
+                others.first { !$0.isHidden }?.makeKey()
             }
         }
     }

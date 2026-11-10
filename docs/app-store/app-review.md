@@ -48,7 +48,7 @@ I'm happy to answer questions or walk through a live session on a call.
 
 Before pasting, confirm that every link loads signed out: the repo is private today, and all four
 GitHub URLs return 404 (checked 2026-10-11). Also confirm the Releases page has a notarized
-Casement Host build. The Mac self-connection paragraph rests on `ThisMac.isHost` (CLAUDE.md,
+Casement Host build. The Mac self-connection paragraph rests on `ThisMac.isHost` (`docs/guide/mac-client.md`,
 "Same Mac") and hasn't been tried with a Release build. Check it once, or delete the paragraph.
 
 ## Guideline 4.2.7 (Remote Desktop Clients)
@@ -113,7 +113,7 @@ front so the reviewer doesn't go looking for them.
    tells App Store users "The device list itself waits on an App Store build — this copy of
    Casement isn't signed for iCloud storage." On an App Store build without the iCloud key-value
    entitlement, that reads as unfinished and points at a future build. Add the iCloud Key-Value
-   Storage capability (CLAUDE.md, iCloud sync) or reword it. The README the About › Source Code
+   Storage capability (`docs/guide/client.md`, iCloud sync) or reword it. The README the About › Source Code
    link opens says "Casement is in **beta**" and "For now you build it yourself". Update it before
    the repo goes public.
 8. **3.1.1: donation links one tap away.** The app has no Ko-fi link (grep: no hits). The README
@@ -121,7 +121,7 @@ front so the reviewer doesn't go looking for them.
    About › Website opens drewlevinson.me (no donation link found there on 2026-10-11). Since
    May 2025, 3.1.1(a) no longer bans external purchase links in the **US** storefront, and a
    source-code link that happens to show a sponsor badge is common for open-source apps, so this
-   is low risk. Keep Ko-fi out of the app and the metadata, as CLAUDE.md says. The drafted
+   is low risk. Keep Ko-fi out of the app and the metadata, as `docs/guide/releases.md` says. The drafted
    metadata contains no donation link.
 9. **4.1 / 2.3: name versus bundle on the Mac.** The Mac App Store installs `Vantage.app`
    (`PRODUCT_NAME = $(TARGET_NAME)`, `project.pbxproj:476, 528`). The menu bar says Casement

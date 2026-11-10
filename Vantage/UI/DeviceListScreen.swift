@@ -31,7 +31,7 @@ struct DeviceListScreen: View {
             #if os(iOS)
             .modifier(MacHostedListBar())
             #endif
-            .searchable(text: $store.searchText, prompt: "Search devices")
+            .searchable(text: $store.searchText, prompt: "Search computers")
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .top) { TailscaleBanner() }
             .deviceActionPresentations(actions)
@@ -312,7 +312,7 @@ struct AddDeviceMenu: View {
             Button { actions.showTailscaleDevices = true } label: { Label("Add from Tailscale…", systemImage: "network") }
             Button { actions.showAddDevice = true } label: { Label("Add Manually…", systemImage: "keyboard") }
         } label: {
-            Label("Add Device", systemImage: "plus")
+            Label("Add Computer", systemImage: "plus")
         }
     }
 }

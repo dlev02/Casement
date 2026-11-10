@@ -377,7 +377,7 @@ nonisolated final class SessionUITests: XCTestCase {
         }
     }
 
-    /// Customize Controls… in the session menu gives this Mac its own strip, and the strip behind
+    /// Customize Control Strip… in the session menu gives this Mac its own strip, and the strip behind
     /// the sheet follows each edit.
     @MainActor func testCustomizeControlsFromTheSession() {
         let app = XCUIApplication()
@@ -415,7 +415,7 @@ nonisolated final class SessionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-VantageOpenScreen", "controlStrip", "-vantage.requireBiometrics", "NO"]
         app.launch()
-        XCTAssertTrue(app.otherElements["Preview of the session controls"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.otherElements["Preview of the control strip"].waitForExistence(timeout: 15), app.debugDescription)
         resetDefaultLayout(app)
         XCTAssertTrue(app.buttons["Remove Escape"].waitForExistence(timeout: 3))
         screenshot("Editor", app)
@@ -540,7 +540,7 @@ nonisolated final class SessionUITests: XCTestCase {
         let menu = app.buttons["Session Options"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
-        let item = app.buttons["Customize Controls…"]
+        let item = app.buttons["Customize Control Strip…"]
         XCTAssertTrue(item.waitForExistence(timeout: 3), app.debugDescription)
         item.tap()
     }

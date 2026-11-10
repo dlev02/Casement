@@ -1,0 +1,17 @@
+#!/bin/bash
+# Commits read as Drew's own: his GitHub identity, and no AI attribution (the project guide,
+# "Never name Claude"). `git commit --no-verify` skips this when a change really needs it.
+set -euo pipefail
+message="$(grep -v '^#' "$1" || true)"
+if grep -iqE 'co-authored-by|generated (with|by)|claude|anthropic' <<< "$message"; then
+  echo "commit-msg: no AI attribution in commit messages, and call CLAUDE.md \"the project guide\"." >&2
+  printf '%s\n' "$message" | grep -inE 'co-authored-by|generated (with|by)|claude|anthropic' >&2
+  exit 1
+fi
+expected='49005290+dlev02@users.noreply.github.com'
+for who in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+  if ! grep -qF "<$expected>" <<< "$(git var "$who")"; then
+    echo "commit-msg: $who is \"$(git var "$who" | sed 's/>.*/>/')\"; commit as dlev <$expected>." >&2
+    exit 1
+  fi
+done

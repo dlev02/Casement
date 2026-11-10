@@ -42,20 +42,6 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
     public bool IsEnabled => _enabled();
 
     /// <inheritdoc />
-    public bool WouldChange(Guid owner, DisplayInfo display, Viewport viewport)
-    {
-        lock (_lock)
-        {
-            if (!IsEnabled) return false;
-            var hold = _holds.GetValueOrDefault(display.Id);
-            if (hold is not null && hold.Owner != owner) return false;
-            if (Plan(display, viewport, hold) is not { } plan) return false;
-            return plan.Choice != plan.Current
-                || (DisplayScales.Read(plan.GdiName) is { } scale && scale.Percent != Math.Min(plan.Percent, scale.MaximumPercent));
-        }
-    }
-
-    /// <inheritdoc />
     public DisplayFitResult Fit(Guid owner, DisplayInfo display, Viewport viewport)
     {
         lock (_lock)

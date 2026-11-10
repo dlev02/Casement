@@ -1,0 +1,3 @@
+# English only until Casement is out and its wording settles
+
+Casement, Casement Host (Mac and Windows) and the App Store listing stay English-only until Casement is released on the App Store and its interface wording has settled. Copy still changes often, and every translated string that changes later has to be translated again, so translating now buys rework. Strings are still written to be localisable (String Catalogs are on through `LOCALIZATION_PREFERS_STRING_CATALOGS` and `SWIFT_EMIT_LOC_STRINGS`), so adding languages later is a translation job rather than a code change; what waits is adding languages, translated catalogs and localised store metadata. Decided by Drew on 2026-11-07.

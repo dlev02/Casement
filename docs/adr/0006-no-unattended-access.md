@@ -1,0 +1,3 @@
+# No unattended access: Casement Host runs as the signed-in user
+
+Casement Host runs as an ordinary app in the signed-in user's session on both Mac and Windows, so it can't show or control the Mac login window's capture, FileVault's pre-boot screen, or Windows' secure desktop (the lock screen and administrator prompts' dimmed desktop). Reaching those needs a privileged helper or a SYSTEM service, a much larger security surface and its own install and review story, which was left out of v1 on purpose. The gaps are covered where possible instead: Restart Safely, start at login, Log In with Screen Sharing through Apple's `screensharingd`, and a lock-screen banner. Lifting this needs Drew's decision first; see `docs/research/secure-input-and-reboot.md`.

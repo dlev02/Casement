@@ -20,7 +20,7 @@ to 30 seconds at the device's preview resolution, with landscape for Mac and vis
 ## Staging: the shared setup
 
 Everything below uses Debug builds (the flags don't exist in Release) and made-up desktops, never
-a real one (CLAUDE.md, "Headless end-to-end testing").
+a real one (`docs/guide/testing.md`, "Headless end-to-end testing").
 
 ```sh
 # 1. Render the made-up desktops at the target's size (examples).
@@ -50,7 +50,7 @@ Other flags: `-VantageSeedSamples 1` (My Mac, Office Mac, MacBook Air, Drew's PC
 to keep a transfer moving on screen. Use the appearance and text size the shot calls for:
 `TEST_RUNNER_…` variables exist for UI tests; for manual shots, use `xcrun simctl ui <sim>
 appearance dark|light`. On the Mac, add `-VantageAllowSelfControl 1`, or a session against a
-loopback host shows "You're viewing this Mac from itself" (`RemoteSessionScreen.swift:145, 946`).
+loopback host shows "You're viewing this Mac from itself" (`ScreenSessionModel.checkForThisMac`).
 Also add `-ApplePersistenceIgnoreState YES -VantageReadOnlyDevices 1` so Drew's real saved list
 is never overwritten.
 
@@ -121,7 +121,7 @@ place it on a 2880 × 1800 neutral or desktop-colored canvas. The README's `mac-
 
 ## Apple Vision Pro 3840 × 2160 (4 shots)
 
-The simulator can't take input from AXe or XCUITest (CLAUDE.md, visionOS), so launch with flags
+The simulator can't take input from AXe or XCUITest (`docs/guide/client.md`, visionOS), so launch with flags
 that open what you need, and place windows with the simulator's own controls.
 
 | # | Caption | Screen | Staging |

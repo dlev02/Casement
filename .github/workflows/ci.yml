@@ -1,0 +1,72 @@
+# Builds and tests every push to main and every pull request.
+#
+# rules:   scripts/lint.sh on the files and the new commits' messages and added lines.
+# apple:   scripts/check.sh, the same script run before a pull request, on GitHub's
+#          Xcode 27 image. Builds go unsigned there (check.sh sees CI).
+# windows: the Windows host's tests, including the golden vectors it shares with
+#          the Swift side, on Windows, where its platform tests belong.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules:
+    # The repo rules a script can check (scripts/lint.sh), on the files and on the new commits.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Files
+        run: scripts/lint.sh
+      - name: New commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "No earlier commit to compare with."; exit 0
+          fi
+          scripts/lint.sh --commits "$BASE..$HEAD"
+
+  apple:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # The image's default is 27.1; the project builds with 27.2.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the toolchain
+        run: xcodebuild -version
+      - name: Test and build
+        run: scripts/check.sh
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    defaults:
+      run:
+        working-directory: WindowsHost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: WindowsHost/global.json
+      - name: Test
+        run: dotnet test --solution Vantage.Windows.slnx

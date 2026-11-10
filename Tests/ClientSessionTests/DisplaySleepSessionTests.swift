@@ -33,7 +33,7 @@ struct DisplaySleepSessionTests {
     private static func acceptStreamRequest(_ channel: MessageChannel) async throws {
         try await channel.start()
         guard case .hello(let hello)? = try await channel.receive() else { throw Failure.unexpected }
-        try await channel.send(.challenge(MockHostAuth.challenge(for: hello, identity: DeviceIdentity(), hostName: "Test Mac", isPaired: true)))
+        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Test Mac", isPaired: true).0))
         guard case .authenticate? = try await channel.receive() else { throw Failure.unexpected }
         try await channel.send(.authResult(AuthResult(status: .ok)))
         guard case .selectDisplay? = try await channel.receive() else { throw Failure.unexpected }

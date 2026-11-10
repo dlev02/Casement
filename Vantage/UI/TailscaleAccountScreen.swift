@@ -38,7 +38,7 @@ struct TailscaleAccountScreen: View {
                 } header: {
                     Text("Tailscale")
                 } footer: {
-                    Text("Casement only reads the device list. It never changes your tailnet.")
+                    Text("Casement only reads your tailnet's device list. It never changes your tailnet.")
                 }
                 Section {
                     Button("Sign Out", role: .destructive) {

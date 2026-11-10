@@ -17,6 +17,10 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
     let pixelWidth: Int
     let pixelHeight: Int
     private var fps: Int
+    /// `updateFPS` coalesces: the rate wanted, whether an update is applying one, under `fpsLock`.
+    private let fpsLock = NSLock()
+    private var wantedFPS: Int
+    private var fpsUpdateRunning = false
     private var onFrame: (@Sendable (Frame) -> Void)?
     private var onStop: (@Sendable ((any Error)?) -> Void)?
     /// Apps left out of the picture (the Vantage client when it runs on this Mac).
@@ -27,6 +31,7 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.fps = fps
+        self.wantedFPS = fps
         self.excludedBundleIDs = excludingBundleIDs
     }
 
@@ -42,7 +47,7 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
             throw CaptureError.displayNotFound
         }
         let filter = makeFilter(display: display, content: content)
-        let config = makeConfiguration()
+        let config = makeConfiguration(fps: fps)
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
         try await stream.startCapture()
@@ -74,11 +79,34 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
         }
     }
 
+    /// Changes the stream's frame rate. Called for every change the adaptive controller makes,
+    /// so at most one `updateConfiguration` runs at a time and it always ends at the latest rate.
     func updateFPS(_ fps: Int) {
-        self.fps = fps
-        guard let stream else { return }
-        let config = makeConfiguration()
-        Task { try? await stream.updateConfiguration(config) }
+        fpsLock.lock()
+        wantedFPS = fps
+        guard let stream, fps != self.fps, !fpsUpdateRunning else {
+            fpsLock.unlock()
+            return
+        }
+        fpsUpdateRunning = true
+        fpsLock.unlock()
+        Task { await applyWantedFPS(to: stream) }
+    }
+
+    private func applyWantedFPS(to stream: SCStream) async {
+        while true {
+            let target: Int? = fpsLock.withLock {
+                if wantedFPS == fps { fpsUpdateRunning = false; return nil }
+                return wantedFPS
+            }
+            guard let target else { return }
+            do {
+                try await stream.updateConfiguration(makeConfiguration(fps: target))
+            } catch {
+                log.error("couldn't change the capture frame rate to \(target): \(error.localizedDescription, privacy: .public)")
+            }
+            fpsLock.withLock { fps = target } // a failed update isn't retried until the rate changes again
+        }
     }
 
     func stop() async {
@@ -87,7 +115,7 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
         try? await stream.stopCapture()
     }
 
-    private func makeConfiguration() -> SCStreamConfiguration {
+    private func makeConfiguration(fps: Int) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
         config.width = pixelWidth
         config.height = pixelHeight
@@ -145,6 +173,3 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
     }
 }
 
-enum CaptureError: Error {
-    case displayNotFound
-}

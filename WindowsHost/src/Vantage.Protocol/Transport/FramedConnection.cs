@@ -60,7 +60,7 @@ public sealed record UndecodableMessage(MessageKind MessageKind, Exception Error
 /// nothing to wait behind one, while behind video or file chunks it would arrive in bursts the
 /// client's buffer has to cut.
 /// </summary>
-public sealed class FramedConnection : IAsyncDisposable
+public sealed class FramedConnection : IAsyncDisposable, IVideoLane
 {
     private readonly Socket _socket;
     private readonly FramedConnectionOptions _options;

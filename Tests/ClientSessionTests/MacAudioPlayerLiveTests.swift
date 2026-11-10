@@ -3,7 +3,7 @@ import Foundation
 import Testing
 import VantageCore
 @testable import VantageClientLogic
-@testable import VantageSynthetic
+@testable import VantageHostSession
 
 /// `MacAudioPlayer` on the Mac client, through this Mac's real output device: the synthetic
 /// chime, Opus-encoded like the host does, decoded and played for a few seconds. It makes sound,

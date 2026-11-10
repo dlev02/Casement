@@ -4,8 +4,14 @@ import SwiftUI
 import VantageCore
 
 extension FocusedValues {
-    /// The session in the key window; `RemoteSessionScreen` publishes it with `focusedSceneValue`.
-    @Entry var sessionCommands: SessionCommands?
+    /// The screen session in the key window; `RemoteSessionLayout` publishes its model with
+    /// `focusedSceneValue`. A scene value rather than a plain focused value: during a session an
+    /// AppKit view (`RemoteInteractionNSView`) holds the keyboard focus, which SwiftUI's view
+    /// focus doesn't see. Nil when no session window is focused, so the menus' items show
+    /// disabled rather than disappearing.
+    @Entry var screenSession: ScreenSessionModel?
+    /// That window's shape (Actual Size, Full Screen).
+    @Entry var sessionWindowShape: SessionWindowShape?
     /// The Mac selected in the device list window.
     @Entry var selectedMac: SavedDevice?
 }
@@ -16,7 +22,8 @@ extension FocusedValues {
 /// they work while every other shortcut goes to the Mac being controlled. Items that don't apply
 /// right now are dimmed, never hidden.
 struct MacCommands: Commands {
-    @FocusedValue(\.sessionCommands) private var session
+    @FocusedValue(\.screenSession) private var session
+    @FocusedValue(\.sessionWindowShape) private var windowShape
     @FocusedValue(\.selectedMac) private var selectedMac
     @Environment(\.openWindow) private var openWindow
     private let actions = DeviceActions.shared
@@ -48,22 +55,11 @@ struct MacCommands: Commands {
                 .disabled(selectedMac == nil)
         }
 
-        CommandMenu("Session") { sessionMenu }
+        CommandMenu("Session") { SessionMenuItems(session: session) }
 
         CommandGroup(after: .toolbar) {
             Divider()
-            Button(session?.controlsHidden == true ? "Show Controls" : "Hide Controls") { session?.toggleControls() }
-                .keyboardShortcut("c", modifiers: Self.vantageChord)
-                .disabled(session == nil)
-            Button("Actual Size") { session?.actualSize() }
-                .keyboardShortcut("0", modifiers: Self.vantageChord)
-                .disabled(session == nil)
-            // In place of AppKit's own item (see `VantageApp.init`), so there's one, and its
-            // ⌃⌥⌘F still works while a session sends ⌃⌘F to the Mac.
-            Button(session?.isFullScreen == true ? "Exit Full Screen" : "Enter Full Screen") {
-                if let session { session.toggleFullScreen() } else { NSApp.keyWindow?.toggleFullScreen(nil) }
-            }
-            .keyboardShortcut("f", modifiers: Self.vantageChord)
+            SessionViewItems(session: session, windowShape: windowShape)
             Divider()
             Picker("Sort Macs By", selection: Binding(get: { store.sort }, set: { store.sort = $0 })) {
                 ForEach(DeviceSort.allCases) { sort in Text(sort.label).tag(sort) }
@@ -76,58 +72,70 @@ struct MacCommands: Commands {
         }
     }
 
-    @ViewBuilder private var sessionMenu: some View {
+    /// Brings the device list forward (it may be closed, or behind a session) before a sheet opens on it.
+    private func showDeviceList(then present: () -> Void) {
+        openWindow(id: MacRootView.sceneID)
+        present()
+    }
+}
+
+/// The Session menu's items, reading the focused screen session (a view of its own, so the
+/// items follow the model's state while the window stays focused).
+private struct SessionMenuItems: View {
+    let session: ScreenSessionModel?
+
+    var body: some View {
         let connected = session?.isConnected == true
         let canType = connected && session?.isViewOnly != true
 
-        Toggle("Send Keyboard Shortcuts to \(hostName)", isOn: toggle(\.capturesShortcuts) { $0.toggleShortcutCapture() })
-            .keyboardShortcut("k", modifiers: Self.vantageChord)
+        Toggle("Send Keyboard Shortcuts to \(hostName)", isOn: toggle(\.capturesShortcuts) { $0.capturesShortcuts.toggle() })
+            .keyboardShortcut("k", modifiers: MacCommands.vantageChord)
             .disabled(session == nil)
-        Toggle("View Only", isOn: toggle(\.isViewOnly) { $0.toggleViewOnly() })
+        Toggle("View Only", isOn: toggle(\.isViewOnly) { $0.isViewOnly.toggle() })
             .disabled(session == nil)
         Divider()
-        Toggle("\(hostName) Audio", isOn: toggle(\.macAudioOn) { $0.toggleMacAudio() })
-            .keyboardShortcut("a", modifiers: Self.vantageChord)
-            .disabled(session?.macAudioAvailable != true)
-        Toggle("Curtain", isOn: toggle(\.curtainOn) { $0.toggleCurtain() })
-            .keyboardShortcut("b", modifiers: Self.vantageChord)
-            .disabled(session?.curtainAvailable != true)
-        Button(session?.isDictating == true ? "Stop Dictating" : "Dictate") { session?.toggleDictation() }
-            .keyboardShortcut("d", modifiers: Self.vantageChord)
+        Toggle("\(hostName) Audio", isOn: toggle(\.isMacAudioOn) { $0.toggleMacAudio() })
+            .keyboardShortcut("a", modifiers: MacCommands.vantageChord)
+            .disabled(session?.isMacAudioAvailable != true)
+        Toggle("Curtain", isOn: toggle(\.isCurtainOn) { $0.toggleCurtain() })
+            .keyboardShortcut("b", modifiers: MacCommands.vantageChord)
+            .disabled(session?.isCurtainAvailable != true)
+        Button(session?.dictation.isListening == true ? "Stop Dictating" : "Dictate") { session?.dictationPressed(.toggle) }
+            .keyboardShortcut("d", modifiers: MacCommands.vantageChord)
             .disabled(!canType)
         Divider()
-        Button("Send File…") { session?.sendFile() }
-            .keyboardShortcut("u", modifiers: Self.vantageChord)
+        Button("Send File…") { session?.isPickingFiles = true }
+            .keyboardShortcut("u", modifiers: MacCommands.vantageChord)
             .disabled(session?.canSendFiles != true)
-        Button("Transfers…") { session?.showTransfers() }
-            .keyboardShortcut("t", modifiers: Self.vantageChord)
+        Button("Transfers…") { session?.isShowingTransfers = true }
+            .keyboardShortcut("t", modifiers: MacCommands.vantageChord)
             .disabled(session == nil)
         Button("Send Clipboard") { session?.sendClipboard() }
-            .keyboardShortcut("v", modifiers: Self.vantageChord)
+            .keyboardShortcut("v", modifiers: MacCommands.vantageChord)
             .disabled(!canType)
         Button("Type Password") { session?.typePassword() }
-            .keyboardShortcut("p", modifiers: Self.vantageChord)
-            .disabled(!canType || session?.canTypePassword != true)
+            .keyboardShortcut("p", modifiers: MacCommands.vantageChord)
+            .disabled(!canType || session?.host.isWindows != false) // a PC has no saved password to type
         Menu(hostName) {
-            ForEach(session?.shortcuts ?? HostShortcut.sessionMenu) { shortcut in
+            ForEach(session.map { HostShortcut.sessionMenu(for: $0.hostPlatform) } ?? HostShortcut.sessionMenu) { shortcut in
                 Button(shortcut.label) { session?.sendShortcut(shortcut) }
             }
             .disabled(!canType)
             Divider()
-            Button("Sleep Display") { session?.hostCommand(.sleepDisplay) }
+            Button("Sleep Display") { session?.sendHostCommand(.sleepDisplay) }
                 .disabled(!connected)
-            Button("Lock Screen") { session?.hostCommand(.lockScreen) }
+            Button("Lock Screen") { session?.sendHostCommand(.lockScreen) }
                 .disabled(!connected)
-            Button("Wake Display") { session?.wake() }
+            Button("Wake Display") { session?.wakeDisplay() }
                 .disabled(!connected)
         }
         .disabled(session == nil)
         Divider()
-        Button("Customize Controls…") { session?.customizeControls() }
+        Button("Customize Control Strip…") { session?.isEditingControls = true }
             .disabled(session == nil)
         Divider()
         Button("Disconnect") { session?.disconnect() }
-            .keyboardShortcut("w", modifiers: Self.vantageChord)
+            .keyboardShortcut("w", modifiers: MacCommands.vantageChord)
             .disabled(session == nil)
     }
 
@@ -135,16 +143,33 @@ struct MacCommands: Commands {
     private var hostName: String { (session?.host ?? .mac).name }
 
     /// A menu checkbox for one of the session's switches.
-    private func toggle(_ value: KeyPath<SessionCommands, Bool>, _ flip: @escaping (SessionCommands) -> Void) -> Binding<Bool> {
+    private func toggle(_ value: KeyPath<ScreenSessionModel, Bool>, _ flip: @escaping (ScreenSessionModel) -> Void) -> Binding<Bool> {
         let session = session
         return Binding(get: { session?[keyPath: value] ?? false },
                        set: { _ in if let session { flip(session) } })
     }
+}
 
-    /// Brings the device list forward (it may be closed, or behind a session) before a sheet opens on it.
-    private func showDeviceList(then present: () -> Void) {
-        openWindow(id: MacRootView.sceneID)
-        present()
+/// The View menu's session items: the control strip, and the window's size.
+private struct SessionViewItems: View {
+    let session: ScreenSessionModel?
+    let windowShape: SessionWindowShape?
+
+    var body: some View {
+        Button(session?.areControlsHidden == true ? "Show Control Strip" : "Hide Control Strip") {
+            withAnimation(.smooth(duration: 0.3)) { session?.areControlsHidden.toggle() }
+        }
+        .keyboardShortcut("c", modifiers: MacCommands.vantageChord)
+        .disabled(session == nil)
+        Button("Actual Size") { windowShape?.actualSize() }
+            .keyboardShortcut("0", modifiers: MacCommands.vantageChord)
+            .disabled(windowShape == nil)
+        // In place of AppKit's own item (see `VantageApp.init`), so there's one, and its
+        // ⌃⌥⌘F still works while a session sends ⌃⌘F to the Mac.
+        Button(windowShape?.isFullScreen == true ? "Exit Full Screen" : "Enter Full Screen") {
+            if let windowShape { windowShape.toggleFullScreen() } else { NSApp.keyWindow?.toggleFullScreen(nil) }
+        }
+        .keyboardShortcut("f", modifiers: MacCommands.vantageChord)
     }
 }
 #endif

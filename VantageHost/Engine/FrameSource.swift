@@ -18,5 +18,14 @@ nonisolated protocol FrameSource: AnyObject, Sendable {
 
     func start(onFrame: @escaping @Sendable (CapturedFrame) -> Void, onStop: @escaping @Sendable ((any Error)?) -> Void) async throws
     func updateFPS(_ fps: Int)
+    /// The windows to leave out of the picture changed (the curtain came or went).
+    func refreshFilter() async
     func stop() async
+}
+
+enum CaptureError: Error {
+    /// Nothing to capture: the display is gone, or asleep (ScreenCaptureKit then lists none).
+    case displayNotFound
+    /// The stream reported itself stopped before `start` returned.
+    case stoppedWhileStarting
 }

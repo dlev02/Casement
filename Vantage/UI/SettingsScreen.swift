@@ -54,15 +54,6 @@ extension View {
     }
 }
 
-/// Settings → Controls → Keyboard on the Mac, read by the session's keyboard capture.
-enum MacKeyboardSettings {
-    /// On (the default): while a session window is key, shortcuts go to the remote Mac, except
-    /// ⌃⌥⌘ chords, which always stay with Vantage.
-    static let captureShortcutsKey = "vantage.mac.captureShortcuts"
-    /// Sends ⌃ for ⌘ and ⌘ for ⌃.
-    static let swapCommandControlKey = "vantage.mac.swapCommandControl"
-}
-
 struct AppearanceSettings: View {
     @AppStorage("vantage.appearance") private var appearance = AppAppearance.automatic
     var body: some View {
@@ -90,8 +81,8 @@ private struct DeviceListLayoutSection: View {
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
-        Section("Device List") {
-            Picker("Show Devices As", selection: Binding(get: { store.isGridLayout }, set: { store.isGridLayout = $0 })) {
+        Section("Computer List") {
+            Picker("Show Computers As", selection: Binding(get: { store.isGridLayout }, set: { store.isGridLayout = $0 })) {
                 Label("Grid", systemImage: "square.grid.2x2").tag(true)
                 Label("List", systemImage: "list.bullet").tag(false)
             }
@@ -131,7 +122,7 @@ struct ControlSettings: View {
                 }
                 Toggle("Start Collapsed", isOn: $collapsed)
             } header: {
-                Text("Session Controls")
+                Text("Control Strip")
             } footer: {
                 Text("Choose which controls float over a session and in what order. A Mac or PC can have its own set, from its settings or the Session menu. You can also drag the controls to any corner of the window.")
             }
@@ -180,7 +171,7 @@ struct ControlSettings: View {
             } header: {
                 Text("Keyboard")
             } footer: {
-                Text("Unicode Text sends exactly what you type, including accents, emoji, and dictation. Keystrokes sends real key presses using the Mac's US layout, which some apps, games, terminals, and virtual machines require. Holding ⌘, ⌥, or ⌃ in the session controls always sends keystrokes, so ⌘C works from either mode. Hardware keyboards always send keystrokes.")
+                Text("Unicode Text sends exactly what you type, including accents, emoji, and dictation. Keystrokes sends real key presses using the Mac's US layout, which some apps, games, terminals, and virtual machines require. Holding ⌘, ⌥, or ⌃ in the control strip always sends keystrokes, so ⌘C works from either mode. Hardware keyboards always send keystrokes.")
             }
 
             dictationSection
@@ -190,7 +181,7 @@ struct ControlSettings: View {
                 customizeLink
                 Toggle("Start Collapsed", isOn: $collapsed)
             } header: {
-                Text("Session Controls")
+                Text("Control Strip")
             } footer: {
                 Text("The controls sit below the session window. Choose which ones show, and give a Mac its own set from its settings.")
             }
@@ -204,7 +195,7 @@ struct ControlSettings: View {
                 }
                 Toggle("Start Collapsed", isOn: $collapsed)
             } header: {
-                Text("Session Controls")
+                Text("Control Strip")
             } footer: {
                 Text("Choose which controls show and in what order. A Mac or PC can have its own set, from its settings or the session menu. You can also drag the controls to any corner during a session.")
             }
@@ -269,9 +260,9 @@ struct ControlSettings: View {
             Text("Dictation")
         } footer: {
             #if os(macOS)
-            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the session controls to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
+            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the control strip to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
             #else
-            Text("Hold the microphone button in the session controls to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
+            Text("Hold the microphone button in the control strip to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
             #endif
         }
     }
@@ -293,7 +284,7 @@ struct ControlSettings: View {
 
     private var customizeLink: some View {
         NavigationLink { ControlStripEditor() } label: {
-            Text("Customize Controls")
+            Text("Customize Control Strip")
         }
     }
 }
@@ -358,7 +349,7 @@ struct ConnectionSettings: View {
             Section {
                 Toggle("Check Availability", isOn: $availabilityChecks)
             } header: {
-                Text("Device List")
+                Text("Computer List")
             } footer: {
                 Text("Shows whether each saved Mac is reachable and ready while the list is open. Nothing from the Mac's screen is captured for this.")
             }
@@ -531,7 +522,7 @@ struct HelpScreen: View {
             FAQEntry("What do I need on the Mac?",
                      "Install Casement Host (from the Casement page on GitHub), then grant it Screen Recording and Accessibility in System Settings → Privacy & Security. The host's menu-bar icon has a button for each. Tailscale has to be running on the Mac and on this device."),
             FAQEntry("Can I control a Windows PC?",
-                     "Yes, with Casement Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the session controls offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. With Casement Host 1.3 or later the PC also sends its sound (PC Audio in the session controls) and can fit its display to \(LocalDevice.this) (Fit the PC's display in its settings). Type Password is Mac-only."),
+                     "Yes, with Casement Host for Windows running on the PC and Tailscale on both devices. A PC shows up in Add from Tailscale next to your Macs and pairs the same way. In a session, your keyboard's ⌘ presses Ctrl (turn off ⌘ Acts as Ctrl in the PC's settings to send the Windows key instead), and the control strip offer Start, Search, Task View and Task Manager, with Ctrl, Alt and Win keys. With Casement Host 1.3 or later the PC also sends its sound (PC Audio in the control strip) and can fit its display to \(LocalDevice.this) (Fit the PC's display in its settings). Type Password is Mac-only."),
             FAQEntry("Why did it ask me to pair?",
                      "Every device gets its own signing key. The first time you connect, Casement Host on the Mac or PC shows a six-digit code to prove it's really you; after that the host remembers this device and connects straight away. A code works for ten minutes and stops working after five wrong tries, so if it's rejected, show a fresh one on the host. Each code works once; Done withdraws it."),
             siriEntry,
@@ -542,15 +533,15 @@ struct HelpScreen: View {
         ]),
         FAQSection("Windows PCs", [
             FAQEntry("Why can't I control Task Manager or administrator apps?",
-                     "Windows blocks input from a normal host into administrator apps. In Casement Host on the PC, turn on General → Control apps running as administrator only if needed. Windows asks for permission at the PC and the host restarts. This creates an elevated launch task that other programs running as you could also use without another prompt. It does not allow control of UAC prompts or the Windows lock screen."),
+                     "Windows blocks input from ordinary apps, Casement Host included, into apps running as administrator. In Casement Host on the PC, turn on General → Control apps running as administrator only if needed. Windows asks for permission at the PC and Casement Host restarts. This creates an elevated launch task that other programs running as you could also use without another prompt. It does not allow control of UAC prompts or the Windows lock screen."),
             FAQEntry("Does turning administrator access off remove it?",
-                     "In the updated Windows host, turning it off deletes the elevated launch task and closes the host if it is running as administrator, releasing those rights. Reopen Casement Host from Start to run normally. Earlier hosts kept their current administrator rights until you quit and reopened them. If Windows cannot remove the task, the updated host restores the switch and shows an error."),
+                     "In the updated Casement Host for Windows, turning it off deletes the elevated launch task and closes Casement Host if it is running as administrator, releasing those rights. Reopen Casement Host from Start to run normally. Earlier versions kept their administrator rights until you quit and reopened them. If Windows cannot remove the task, Casement Host restores the switch and shows an error."),
             FAQEntry("Why is my iPad called localhost on the PC?",
-                     "Older Windows hosts used the generic name reported by Tailscale on some iPads. The updated host uses the tailnet name instead. For an existing pairing, open Casement Host → Devices → the three dots → Rename device. The label changes on that host only, without re-pairing."),
+                     "Older versions of Casement Host for Windows used the generic name reported by Tailscale on some iPads. The updated one uses the tailnet name instead. For an existing pairing, open Casement Host → Devices → the three dots → Rename device. The label changes on that PC only, without re-pairing."),
             FAQEntry("Can I unlock Windows or connect after a restart?",
                      "Casement cannot control the Windows secure desktop, including sign-in, the lock screen and UAC prompts. Type Password is Mac-only. After a restart, someone must sign in at the PC before Casement Host starts at login."),
-            FAQEntry("Where is help for the Windows host?",
-                     "The updated Windows host includes Help & FAQ in its settings sidebar, covering pairing, devices, administrator access, files, audio, display fitting and updates. About offers logs and Report a problem."),
+            FAQEntry("Where is help for Casement Host for Windows?",
+                     "The updated Casement Host for Windows includes Help & FAQ in its settings sidebar, covering pairing, devices, administrator access, files, audio, display fitting and updates. About offers logs and Report a problem."),
         ]),
         FAQSection("Controlling the Mac", controllingTheMac),
         FAQSection("Video & Displays", [
@@ -587,7 +578,7 @@ struct HelpScreen: View {
             FAQEntry("Where do files end up?",
                      "On a Mac, in Downloads, or the folder chosen in Casement Host's Settings → Files; the Mac can show them in Finder or open them as they arrive. On a PC, in Downloads or the folder chosen in Casement Host's settings. Files from the computer land \(receivedFilesPlace). A transfer cut off by a dropped connection picks up where it stopped, and a file only appears once it has arrived whole."),
             FAQEntry("Can I hear the Mac's or PC's sound?",
-                     "Yes. Turn on Mac Audio (PC Audio for a PC) in the session controls or the session menu, and the computer's sound plays on \(LocalDevice.this) while you're connected (the computer keeps playing it too). Casement remembers the choice for each Mac and PC, and you can set it ahead of time in a computer's settings. A PC sends its sound with Casement Host 1.3 or later; an older one dims the button and says why."),
+                     "Yes. Turn on Mac Audio (PC Audio for a PC) in the control strip or the session menu, and the computer's sound plays on \(LocalDevice.this) while you're connected (the computer keeps playing it too). Casement remembers the choice for each Mac and PC, and you can set it ahead of time in a computer's settings. A PC sends its sound with Casement Host 1.3 or later; an older one dims the button and says why."),
             FAQEntry("How does the clipboard work?",
                      clipboardAnswer),
         ]),
@@ -599,9 +590,9 @@ struct HelpScreen: View {
             FAQEntry("Does Casement Host connect to anything else?",
                      "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face."),
             FAQEntry("Can someone else connect to my Mac or PC?",
-                     "Only a device on your tailnet that you've paired, using a key the host has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
+                     "Only a device on your tailnet that you've paired, using a key the computer has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Casement store on this device?",
-                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a device forgets its saved secrets too."),
+                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a computer forgets its saved secrets too."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
@@ -627,17 +618,17 @@ extension HelpScreen {
         FAQEntry("Which shortcuts go to the Mac?",
                  "While a session window is in front, almost all of them: ⌘Q, ⌘W, ⌘C and the rest act on the Mac you're controlling, not on Casement. Hold ⌃⌥⌘ with a key to reach Casement instead, for example ⌃⌥⌘W to disconnect. Turn this off in Settings → Controls to keep the usual shortcuts for Casement."),
         FAQEntry("How do I send ⌘Tab or ⌘Space?",
-                 "macOS keeps those for itself, so Casement can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the session controls."),
+                 "macOS keeps those for itself, so Casement can't pass them along from the keyboard. Choose them from the Session menu's Mac submenu, or put Spotlight in the control strip."),
         FAQEntry("How do I right-click or scroll?",
                  "The same way as on this Mac: your mouse and trackpad buttons, gestures, and scrolling go straight through, and the other Mac's pointer follows yours inside the window."),
         FAQEntry("Why can't I type into a password box?",
                  "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Casement shows a banner. Your saved password still gets through: choose Type Password in the Session menu (⌃⌥⌘P) and Casement types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
         FAQEntry("How does Type Password get into password fields?",
                  "Save the Mac's account name and password in its settings in Casement. When macOS is blocking ordinary typing, Casement signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
-        FAQEntry("Can I change the buttons in the session controls?",
-                 "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Controls… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
+        FAQEntry("Can I change the buttons in the control strip?",
+                 "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Control Strip… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the session controls, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #else
     #if os(visionOS)
@@ -655,14 +646,14 @@ extension HelpScreen {
     private static let receivedFilesPlace = "in the Files app, under On My iPad (or On My iPhone) › Casement › Received"
     private static let listMenuGesture = "long-press"
     #endif
-    private static let sendFilesAnswer = "Use Send File in the session controls, drop files onto the computer's screen, or choose Send Files… when you \(listMenuGesture) a computer in the list, without opening its screen at all. You can also pick Casement from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Casement partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
-    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the session controls or session menu; Casement never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
+    private static let sendFilesAnswer = "Use Send File in the control strip, drop files onto the computer's screen, or choose Send Files… when you \(listMenuGesture) a computer in the list, without opening its screen at all. You can also pick Casement from Open In or the share sheet in another app. Transfers keep going after you disconnect, and if you leave Casement partway through, anything that pauses picks up where it stopped when you come back. Transfers in the session menu shows their progress."
+    private static let clipboardAnswer = "What you copy on the computer arrives on this device by itself. To send this device's clipboard, use Send Clipboard in the control strip or session menu; Casement never reads your clipboard without you asking. Text, rich text, and images are supported; files go through Send File instead."
     #if os(visionOS) // look and pinch always points absolutely
     private static let touchEntries: [FAQEntry] = []
     #else
     private static let touchEntries: [FAQEntry] = [
                 FAQEntry("Trackpad or Direct Touch?",
-                         "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the session controls or in Settings → Controls."),
+                         "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the control strip or in Settings → Controls."),
                 FAQEntry("How do I right-click or middle-click?",
                          "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
     ]
@@ -676,10 +667,10 @@ extension HelpScreen {
                          "macOS turns on Secure Event Input whenever a password field has focus, at the lock screen, or when Terminal's Secure Keyboard Entry is on. While it's on, macOS drops keystrokes from apps, and Casement shows a banner. Your saved password still gets through: tap the key button and Casement types it using the Mac's own Screen Sharing, which macOS allows. Anything else you type waits until the field loses focus."),
                 FAQEntry("How does the key button type into password fields?",
                          "Save your Mac's account name and password in the Mac's settings in Casement. When macOS is blocking ordinary typing, the key button signs in to the Mac's built-in Screen Sharing over Tailscale, types the password and Return, then disconnects — the same way Screens does it. Turn on Screen Sharing in System Settings → General → Sharing and allow your account. The Mac may briefly show that someone is sharing its screen."),
-                FAQEntry("Can I change the buttons in the session controls?",
-                         "Yes. Go to Settings → Controls → Customize Controls to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Controls… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
+                FAQEntry("Can I change the buttons in the control strip?",
+                         "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Control Strip… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the session controls, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
     ]
     #endif
 }

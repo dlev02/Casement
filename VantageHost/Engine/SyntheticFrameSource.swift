@@ -46,6 +46,8 @@ nonisolated final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         }
     }
 
+    func refreshFilter() async {}
+
     func stop() async {
         queue.sync {
             timer?.cancel()
