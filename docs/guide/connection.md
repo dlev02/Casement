@@ -93,7 +93,14 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
   while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
   objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
-  `--capture-fails-for`.   In the session, `stopCapture` detaches the capture, encoder and pacer before it awaits the
+  `--capture-fails-for`. A start replaces whatever was running: from the moment the lifecycle asks
+  for one, nothing counts as running until it reports back, so a restart whose every target fails
+  (the displays changed, the old capture is gone) enters the watchdog like any other lost picture
+  rather than hiding behind a capture that no longer exists, and each watchdog wait is counted from
+  when the attempt before it ended, not began (a start that takes seconds to fail doesn't use the
+  wait up). A frame that arrives while a start is still under way is credited to that start, so a
+  capture of a still screen that framed before `start` returned isn't stopped by the no-frame rule.
+  In the session, `stopCapture` detaches the capture, encoder and pacer before it awaits the
   capture's stop (a ScreenCaptureKit stop can take a while), so a replacement started meanwhile (a
   wake during Sleep Display's stop) is never cleared by the older stop, which stops only what it
   detached; frame, encoder and stall callbacks carry the capture epoch they were made in and are

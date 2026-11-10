@@ -348,6 +348,7 @@ actor HostSession {
         }
         self.encoder = encoder
         pacer = VideoPacer(encoder: encoder, adaptive: adaptive, fps: startFPS) { [channel] message in channel.sendDetached(message) }
+        // A frame may arrive before `start` returns; the lifecycle credits it to this start.
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
         // The injector (and whatever keys it holds) survives capture restarts.
@@ -655,6 +656,9 @@ actor HostSession {
     /// One capture start: the targets in order until one comes up, then the lifecycle hears
     /// which display and codec it got, or that every target failed.
     private func execute(_ request: CaptureLifecycle.StartRequest) async {
+        // The lifecycle counts nothing as running from here on; the old capture goes before the
+        // wait for the display, so none of its frames can pass for the new capture's first.
+        await stopCapture()
         if request.wakesSleepingDisplay, power.isDisplayAsleep { await wakeDisplayForStreaming() }
         if request.wakesDarkPanel {
             let panel = power.panel
