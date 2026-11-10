@@ -38,6 +38,7 @@ changed" until that saved identity is gone: choose Forget Identity on the saved 
 Computer), or uninstall Casement from that simulator (`xcrun simctl uninstall <sim>
 me.drewlevinson.casement`, which the UI tests reinstall) so its saved devices go with it.
 `codesign -dv` on a host that will run for real should say `TeamIdentifier=7BVMD7TA97`.
+The file tests expect the host's `--send-file-on-connect` file to be named `Quarterly Report.pdf`.
 Only the host is ever built unsigned: the simulator app keeps its device identity in the
 simulator's Keychain, which an unsigned app can't use, so every launch would be a new, unpaired
 device and the tests would fail with "Incorrect pairing code"; run `xcodebuild test -scheme
