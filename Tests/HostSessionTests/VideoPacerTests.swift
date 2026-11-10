@@ -18,7 +18,14 @@ struct VideoPacerTests {
         var encodes: [(forceKeyframe: Bool, ptsNanos: UInt64, id: UInt64)] { lock.withLock { _encodes } }
         var bitrates: [Int] { lock.withLock { _bitrates } }
         var frameRates: [Int] { lock.withLock { _frameRates } }
+        /// The `index`th encode, or nil when there haven't been that many (for `#require`).
+        func encode(at index: Int) -> (forceKeyframe: Bool, ptsNanos: UInt64, id: UInt64)? {
+            let encodes = encodes
+            return index < encodes.count ? encodes[index] : nil
+        }
 
+        func start(onOutcome: @escaping @Sendable (VideoEncoder.Outcome) -> Void) throws {}
+        func stop() {}
         func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64, forceKeyframe: Bool, encodeID: UInt64) {
             lock.withLock { _encodes.append((forceKeyframe, ptsNanos, encodeID)) }
         }
@@ -32,14 +39,14 @@ struct VideoPacerTests {
         var kinds: [MessageKind] { messages.withLock { $0.map(\.kind) } }
     }
 
-    private static func pixelBuffer() -> CVPixelBuffer {
+    private static func pixelBuffer(width: Int = 16, height: Int = 16) -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
-        CVPixelBufferCreate(kCFAllocatorDefault, 16, 16, kCVPixelFormatType_32BGRA, nil, &buffer)
+        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
         return buffer!
     }
 
-    private func frame(dirty: Double = 0.2, at nanos: UInt64 = 1) -> CapturedFrame {
-        CapturedFrame(pixelBuffer: Self.pixelBuffer(), displayNanos: nanos, dirtyRatio: dirty)
+    private func frame(dirty: Double = 0.2, at nanos: UInt64 = 1, width: Int = 16, height: Int = 16) -> CapturedFrame {
+        CapturedFrame(pixelBuffer: Self.pixelBuffer(width: width, height: height), displayNanos: nanos, dirtyRatio: dirty)
     }
 
     /// The encoder's answer to its `index`th encode (ids start at 1, in order).
@@ -49,7 +56,7 @@ struct VideoPacerTests {
         return .encoded(VideoEncoder.Output(frame: frame, config: config), encodeID: UInt64((index ?? Int(sequence)) + 1))
     }
 
-    private func pacer(_ encoder: FakeEncoder, _ wire: Wire, fps: Int = 60) -> VideoPacer {
+    private func pacer(_ encoder: any VideoEncoding, _ wire: Wire, fps: Int = 60) -> VideoPacer {
         VideoPacer(encoder: encoder, adaptive: AdaptiveController(startBitrateKbps: 20_000), fps: fps) { wire.append($0) }
     }
 
@@ -140,7 +147,7 @@ struct VideoPacerTests {
         #expect(VideoPacer.startingBitrateKbps(pixels: 5120 * 2880, fps: 60) == 60_000) // the ceiling
     }
 
-    @Test func aStalledEncodeIsWrittenOffEvenWhenOnlyStillFramesFollow() {
+    @Test func aStalledEncodeIsWrittenOffEvenWhenOnlyStillFramesFollow() throws {
         let encoder = FakeEncoder(), wire = Wire()
         var pacer = pacer(encoder, wire)
         _ = pacer.ingest(frame(at: 1), now: t0)
@@ -153,24 +160,57 @@ struct VideoPacerTests {
         #expect(encoder.encodes.count == 2)
         // A keyframe request after the limit is answered now, as an IDR, not never.
         pacer.requestKeyframe(now: t0 + .seconds(2))
-        #expect(encoder.encodes.count == 3 && encoder.encodes[2].forceKeyframe == true)
+        let third = try #require(encoder.encode(at: 2))
+        #expect(encoder.encodes.count == 3 && third.forceKeyframe)
         // The deadline is also kept without any request or frame: the owner's timer, bound to
         // the encode and its deadline. One that fires early waits; one for an encode already
         // answered does nothing.
-        let stalled = try? #require(pacer.outstanding)
-        #expect(stalled?.encodeID == encoder.encodes[2].id && stalled?.deadline == t0 + .seconds(3))
-        pacer.encodeTimedOut(encoder.encodes[2].id, now: t0 + .milliseconds(2500))
+        let stalled = try #require(pacer.outstanding)
+        #expect(stalled.encodeID == third.id && stalled.deadline == t0 + .seconds(3))
+        pacer.encodeTimedOut(third.id, now: t0 + .milliseconds(2500))
         #expect(encoder.encodes.count == 3)
-        pacer.encodeTimedOut(encoder.encodes[2].id, now: t0 + .seconds(3))
-        #expect(encoder.encodes.count == 4 && encoder.encodes[3].forceKeyframe == true)
+        pacer.encodeTimedOut(third.id, now: t0 + .seconds(3))
+        let fourth = try #require(encoder.encode(at: 3))
+        #expect(encoder.encodes.count == 4 && fourth.forceKeyframe)
         pacer.encoderReported(encoded(sequence: 1, keyframe: true, index: 3), now: t0 + .milliseconds(3100))
         #expect(pacer.outstanding == nil)
-        pacer.encodeTimedOut(encoder.encodes[3].id, now: t0 + .seconds(5))
+        pacer.encodeTimedOut(fourth.id, now: t0 + .seconds(5))
         #expect(encoder.encodes.count == 4) // a timeout queued behind the answer changes nothing
         // An unchanged frame that arrives past the deadline is the net too: it goes out as an IDR.
         _ = pacer.ingest(frame(at: 5), now: t0 + .seconds(6))
         _ = pacer.ingest(frame(dirty: 0, at: 6), now: t0 + .milliseconds(7500))
-        #expect(encoder.encodes.count == 6 && encoder.encodes[5].forceKeyframe == true)
+        #expect(encoder.encodes.count == 6 && encoder.encode(at: 5)?.forceKeyframe == true)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func theDecoderConfigurationReachesTheWireEvenWhenTheFirstEncodeWasWrittenOff() async throws {
+        // The real VideoToolbox encoder: its first IDR carries the parameter sets. The pacer
+        // writes that encode off before the answer arrives (the answer is late) and re-encodes as
+        // an IDR; the device never saw the first answer, so the replacement must still bring the
+        // configuration, or the device can't decode anything. Unchanged sets are then not sent again.
+        let encoder = VideoEncoder(configuration: .init(codec: .h264, width: 320, height: 240, fps: 30, bitrateKbps: 2_000, maxQP: nil))
+        let (outcomes, answers) = AsyncStream<VideoEncoder.Outcome>.makeStream()
+        try encoder.start { answers.yield($0) }
+        defer { encoder.stop() }
+        var iterator = outcomes.makeAsyncIterator()
+        let wire = Wire()
+        var pacer = pacer(encoder, wire, fps: 30)
+
+        _ = pacer.ingest(frame(at: 1, width: 320, height: 240), now: t0)
+        let first = try #require(await iterator.next())
+        #expect(first.encodeID == 1)
+        // Before that answer is handed over, the limit passes and the next frame goes in as an IDR.
+        _ = pacer.ingest(frame(at: 2, width: 320, height: 240), now: t0 + .milliseconds(1200))
+        pacer.encoderReported(first, now: t0 + .milliseconds(1250))
+        #expect(wire.kinds.isEmpty) // the written-off encode's answer stays off the wire
+        let second = try #require(await iterator.next())
+        #expect(second.encodeID == 2)
+        pacer.encoderReported(second, now: t0 + .milliseconds(1300))
+        #expect(wire.kinds == [.videoConfig, .videoFrame])
+        // A keyframe asked for later: the same sets, so only the frame goes out.
+        pacer.requestKeyframe(now: t0 + .seconds(2))
+        let third = try #require(await iterator.next())
+        pacer.encoderReported(third, now: t0 + .milliseconds(2100))
+        #expect(wire.kinds == [.videoConfig, .videoFrame, .videoFrame])
     }
 
     @Test func aStillFrameDoesNotCancelTheChangedFrameWaitingBehindAnEncode() {

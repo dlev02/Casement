@@ -40,7 +40,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (`HostSession.endIfClient`), as the Windows host's `RevokeAsync` does. Teardown closes the
   connection first, and everything the receive loop awaits (a curtain request, a display change, a
   capture start) checks the session is still streaming afterwards, so a request in flight when the
-  device was removed can't leave a curtain holder or a capture behind for a dead session; the client shows "The Mac
+  device was removed can't leave a curtain holder or a capture behind for a dead session (a start
+  that finishes after the teardown stops the capture it made itself: the teardown's stop ran
+  before ScreenCaptureKit had a stream to stop); the client shows "The Mac
   ended the session." and doesn't reconnect.
   The host names its OS in `Challenge.hostPlatform` and `HostCapabilities.platform` (`HostPlatform`,
   a string wrapper: `macos`, `windows`, unknown values still decode; nil from older hosts means a
@@ -70,8 +72,8 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `controlStripMac` edits the first saved Mac and `controlStripPC`/`editPC` the first PC, so pair
   them with `-VantageSeedSamples 1`, which includes one PC).
 - **Host environment** (`HostEnvironment`, `VantageHost/Engine`): everything platform-specific a
-  `HostSession` needs (displays and capture, display power and status, input, clipboard, sound,
-  Curtain, dictation, tailnet names, the receive folder, a clock) comes through one struct of
+  `HostSession` needs (displays and capture, the video encoder, display power and status, input,
+  clipboard, sound, Curtain, dictation, tailnet names, the receive folder, a clock) comes through one struct of
   protocols, chosen once in `HostController.makeEnvironment` (the composition root): the real Mac
   (`MacHostEnvironment`: ScreenCaptureKit, `PowerManager`, `LockMonitor`, `InputInjector`,
   `ClipboardBridge`, `ScreenCurtain`, `HostTranscriber`, `TailscaleCLI`) or the synthetic
@@ -97,20 +99,31 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `--capture-fails-for`. A start replaces whatever was running: from the moment the lifecycle asks
   for one, nothing counts as running until it reports back, so a restart whose every target fails
   (the displays changed, the old capture is gone) enters the watchdog like any other lost picture
-  rather than hiding behind a capture that no longer exists, and each watchdog wait is counted from
-  when the attempt before it ended, not began (a start that takes seconds to fail doesn't use the
-  wait up). A frame that arrives while a start is still under way is credited to that start, so a
-  capture of a still screen that framed before `start` returned isn't stopped by the no-frame rule.
+  rather than hiding behind a capture that no longer exists, and while the picture is lost every
+  start is a recovery attempt, whoever asked for it (the clock, Wake/Retry, a state or display
+  change, a request that waited behind a start): the next wait is counted from when that attempt
+  ended, not began (a start that takes seconds to fail doesn't use the wait up, and a deadline set
+  before it can't retry the moment it fails), with each kind's own delay rule (the clock doubles
+  it, Wake/Retry starts it over, a state or display change keeps it). A frame that arrives while a
+  start is still under way is credited to the target being tried (`captureAttemptBegan` marks each
+  one), so a capture of a still screen that framed before `start` returned isn't stopped by the
+  no-frame rule, and a frame from a target that then failed is no credit to the one tried next.
   In the session, `stopCapture` detaches the capture, encoder and pacer before it awaits the
   capture's stop (a ScreenCaptureKit stop can take a while), so a replacement started meanwhile (a
   wake during Sleep Display's stop) is never cleared by the older stop, which stops only what it
   detached; frame, encoder and stall callbacks carry the capture epoch they were made in and are
-  ignored after it. Rules below are the module's; `CaptureLifecycleTests` check them with a
+  ignored after it. A start that finds itself detached, or the session closed, once its capture
+  comes up stops that capture itself (the stop that detached it found no stream yet) and leaves
+  a replacement's fields alone. Rules below are the module's; `CaptureLifecycleTests` check them with a
   fake clock and frame source, `HostSessionTests` over loopback.
 - **Keeping the picture moving** (`VideoPacer`, `VantageHost/Engine`; the Windows host's
   `VideoPipeline` is the same design): one encode in flight and the latest frame wins, a still frame
   is skipped unless a keyframe is due, and the encoder's answer to every frame keeps the count
-  honest. Every encode carries a number and the encoder's answer carries it back: an answer from an
+  honest. The encoder (`VideoEncoder`, made through `HostEnvironment.makeVideoEncoder`) puts the
+  parameter sets on every keyframe, and the pacer sends `videoConfig` only when they differ from
+  the ones it last sent, so the configuration follows what the device actually received: an
+  encode written off before its answer came can't take the only copy with it, as the Windows
+  pipeline's `_configSent` check guarantees there. Every encode carries a number and the encoder's answer carries it back: an answer from an
   encode already written off (silent for over a second) is dropped, picture and accounting alike,
   so it can't free the slot of the encode that replaced it or put a stale frame on the wire. The
   write-off doesn't wait for the next changed frame (still frames and ScreenCaptureKit's idle

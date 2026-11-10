@@ -5,10 +5,10 @@ import VantageCore
 /// start at a time (a request made meanwhile takes over afterwards; a start replaces whatever was
 /// running, so nothing counts as running until it reports back), the display sleeping and
 /// waking, which input a sleeping display admits, the watchdog that brings a missing picture
-/// back (0.5 s doubling to 5 s, each wait counted from when the attempt before it ended, a
-/// "capture started but sent no frames" rule at 5 s that also credits a frame delivered while
-/// the start was still under way, the "screen unavailable" notice at 3 s), and what `HostStatus`
-/// the device hears, once per change.
+/// back (0.5 s doubling to 5 s, each wait counted from when the attempt before it ended, whatever
+/// asked for that attempt, a "capture started but sent no frames" rule at 5 s that also credits a
+/// frame delivered while the start was still under way, to the target it came from, the "screen
+/// unavailable" notice at 3 s), and what `HostStatus` the device hears, once per change.
 ///
 /// Pure: events in, decisions out, and the caller's clock (`now`) on every event, so a test
 /// drives it with a fake clock and a fake frame source. `HostSession` executes the decisions.
@@ -26,6 +26,9 @@ nonisolated struct CaptureLifecycle: Sendable {
     enum Event: Sendable {
         /// The device asked to stream this.
         case selectionRequested(SelectDisplay)
+        /// The session is about to try the next target of a start the lifecycle asked for; frames
+        /// from the targets before it (which failed) are no credit to this one.
+        case captureAttemptBegan
         /// A start the lifecycle asked for came up on this display with this codec.
         case captureStarted(display: DisplayInfo, codec: VideoCodec)
         /// Every target of a start the lifecycle asked for failed.
@@ -98,7 +101,8 @@ nonisolated struct CaptureLifecycle: Sendable {
 
     private(set) var wanted: SelectDisplay?
     private var starting = false
-    /// A frame arrived from the capture being started, before the start reported back.
+    /// A frame arrived from the target being started, before the start reported back. Reset for
+    /// each target the start tries: a frame from one that then failed says nothing about the next.
     private var framedWhileStarting = false
     private var pendingStart: SelectDisplay?
     private var running: Running?
@@ -109,8 +113,9 @@ nonisolated struct CaptureLifecycle: Sendable {
     private var lossReason = ""
     private var nextRetry: ContinuousClock.Instant?
     private var retryDelay: Duration
-    /// A watchdog retry is under way: its wait is counted from when it ends (`retryAttemptEnded`),
-    /// so a start that takes seconds to fail doesn't use the wait up.
+    /// A recovery attempt (any start while the picture is lost, whatever asked for it) is under
+    /// way: its wait is counted from when it ends (`retryAttemptEnded`), so a start that takes
+    /// seconds to fail doesn't use the wait up, and a deadline set before it can't retry at once.
     private var retrying = false
     private var screenUnavailable = false
     private var monitoring = false
@@ -168,6 +173,10 @@ nonisolated struct CaptureLifecycle: Sendable {
             decisions += start(targets: [select], reason: "device asked for a display", wakesSleepingDisplay: true, pendingIfBusy: select)
             return decisions
 
+        case .captureAttemptBegan:
+            framedWhileStarting = false
+            return []
+
         case .captureStarted(let display, let codec):
             starting = false
             running = Running(display: display, codec: codec, startedAt: now, hasFramed: framedWhileStarting)
@@ -207,8 +216,7 @@ nonisolated struct CaptureLifecycle: Sendable {
                 // Capture waiting on something else (a lock screen lists no displays either): try
                 // again now that the Mac changed, rather than at the next backoff step.
                 if !asleep, running == nil, wanted != nil, !starting {
-                    retrying = lostAt != nil // a recovery attempt: its wait counts from when it ends
-                    decisions += start(targets: restartTargets(), reason: "Mac state changed")
+                    decisions += start(targets: restartTargets(), reason: "Mac state changed") // keeps the current delay
                 }
                 return decisions
             }
@@ -240,12 +248,12 @@ nonisolated struct CaptureLifecycle: Sendable {
         case .wakeRequested:
             sleptAt = nil
             var decisions: [Decision] = [.wakeDisplay(reason: "Wake command"), .refreshStatus]
-            // Wake doubles as Retry while the picture is missing: try again now, from a short backoff.
+            // Wake doubles as Retry while the picture is missing: try again now, and the backoff
+            // starts over (counted from when this attempt ends).
             if lostAt != nil, running == nil {
                 retryDelay = timing.firstRetry
                 nextRetry = now + retryDelay
                 decisions.append(.note("capture retry asked for by the client"))
-                if !starting { retrying = true } // the backoff starts over, counted from when this attempt ends
                 decisions += start(targets: restartTargets(), reason: "client asked to retry")
             }
             return decisions
@@ -271,7 +279,9 @@ nonisolated struct CaptureLifecycle: Sendable {
     /// `pendingIfBusy` and goes out once the current start reports back. The start replaces the
     /// running capture (the session stops it first), so from here nothing is running until the
     /// start reports back: a start whose every target fails then enters recovery like any other
-    /// lost picture, instead of hiding behind a capture that is already gone.
+    /// lost picture, instead of hiding behind a capture that is already gone. While the picture is
+    /// lost, every start is a recovery attempt, whoever asked for it (the clock, the device, a
+    /// display or state change, a request that waited): the next wait is counted from when it ends.
     private mutating func start(targets: [SelectDisplay], reason: String, wakesSleepingDisplay: Bool = false,
                                 wakesDarkPanel: Bool = false, pendingIfBusy: SelectDisplay? = nil) -> [Decision] {
         guard wanted != nil else { return [] }
@@ -282,12 +292,14 @@ nonisolated struct CaptureLifecycle: Sendable {
         starting = true
         running = nil
         framedWhileStarting = false
+        if lostAt != nil { retrying = true }
         return [.startCapture(StartRequest(targets: targets, reason: reason, wakesSleepingDisplay: wakesSleepingDisplay,
                                            wakesDarkPanel: wakesDarkPanel))]
     }
 
-    /// A watchdog retry has run its course (its last target failed, or one started): the next
-    /// wait is counted from now, not from when the attempt began.
+    /// A recovery attempt has run its course (its last target failed, or one started): the next
+    /// wait (doubled by the clock's retries, reset by the device's, kept by a state or display
+    /// change) is counted from now, not from when the attempt began.
     private mutating func retryAttemptEnded(now: ContinuousClock.Instant) {
         guard retrying else { return }
         retrying = false
@@ -349,7 +361,6 @@ nonisolated struct CaptureLifecycle: Sendable {
         guard running == nil, !starting, let nextRetry, now >= nextRetry else { return decisions }
         decisions.append(.note("capture unavailable for \(seconds) s: \(lossReason); trying again"))
         retryDelay = min(retryDelay * 2, timing.maxRetry)
-        retrying = true // the wait is counted from when this attempt ends (retryAttemptEnded)
         decisions += start(targets: restartTargets(), reason: "capture unavailable for \(seconds) s", wakesDarkPanel: true)
         return decisions
     }
