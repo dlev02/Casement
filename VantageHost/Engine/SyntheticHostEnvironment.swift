@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import VantageCore
@@ -35,24 +36,107 @@ nonisolated enum SyntheticHostEnvironment {
     /// The synthetic host's identity: a key file private to the user (0600) in `stateDirectory`,
     /// never the login Keychain, so an unsigned build raises no Keychain prompt (and can't hang
     /// on one), and the same key on every launch, so a device that saved this host keeps matching
-    /// it. A file that can't be read or written means a fresh identity for this launch.
+    /// it. Several synthetic hosts launched together (the UI tests start a few) take turns through
+    /// a lock file beside it, and the key is written to a temporary file and linked into place, so
+    /// they all come up with the one identity and no launch overwrites another's. An existing file
+    /// is checked before it is trusted: a regular file of the user's, 32 bytes, mode 0600 (a mode
+    /// that drifted is put back; anything else is replaced, and the log says which). A file that
+    /// can't be read or written means a fresh identity for this launch.
     static func loadOrCreateIdentity(in directory: URL = stateDirectory) -> DeviceIdentity {
         let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "controller")
         let file = directory.appending(path: "device-identity")
-        if let raw = try? Data(contentsOf: file), let identity = try? DeviceIdentity(rawRepresentation: raw) { return identity }
-        let identity = DeviceIdentity()
+        let path = file.path(percentEncoded: false)
         do {
             // The folder is the user's alone (0700) before the key is written into it (0600).
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            guard FileManager.default.createFile(atPath: file.path(percentEncoded: false), contents: identity.rawRepresentation,
-                                                 attributes: [.posixPermissions: 0o600]) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            log.info("synthetic identity \(identity.fingerprint, privacy: .public) written to \(file.path(percentEncoded: false), privacy: .public)")
         } catch {
-            log.error("couldn't keep the synthetic identity at \(file.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public); using a new one this launch")
+            log.error("couldn't make the synthetic host's folder \(directory.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public); using a new identity this launch")
+            return DeviceIdentity()
+        }
+        // One launch at a time from here: the lock is released with the descriptor.
+        let lock = open(directory.appending(path: "device-identity.lock").path(percentEncoded: false), O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        if lock < 0 || flock(lock, LOCK_EX) != 0 {
+            log.error("couldn't take the synthetic identity lock (errno \(errno, privacy: .public)); going on without it")
+        }
+        defer { if lock >= 0 { close(lock) } }
+        if let identity = existingIdentity(at: path, log: log) { return identity }
+        let identity = DeviceIdentity()
+        do {
+            if let winner = try keep(identity, at: path, in: directory) {
+                log.info("synthetic identity \(winner.fingerprint, privacy: .public) was written by another launch meanwhile; using it")
+                return winner
+            }
+            log.info("synthetic identity \(identity.fingerprint, privacy: .public) written to \(path, privacy: .public)")
+        } catch {
+            log.error("couldn't keep the synthetic identity at \(path, privacy: .public): \(error.localizedDescription, privacy: .public); using a new one this launch")
         }
         return identity
+    }
+
+    /// The identity in an existing key file that passes its checks, after a drifted mode is put
+    /// back. Nil when there is none, or when the file is replaced because it isn't a regular file
+    /// of this user's with a key's length, or doesn't decode.
+    private static func existingIdentity(at path: String, log: Logger) -> DeviceIdentity? {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return nil }
+        let problem: String?
+        if info.st_mode & S_IFMT != S_IFREG {
+            problem = "not a regular file"
+        } else if info.st_uid != getuid() {
+            problem = "owned by uid \(info.st_uid)"
+        } else if info.st_size != Self.identityLength {
+            problem = "\(info.st_size) bytes, not \(Self.identityLength)"
+        } else {
+            problem = nil
+        }
+        if let problem {
+            log.error("synthetic identity file \(path, privacy: .public) is \(problem, privacy: .public); replacing it")
+            unlink(path)
+            return nil
+        }
+        if info.st_mode & 0o777 != 0o600 {
+            if chmod(path, 0o600) == 0 {
+                log.error("synthetic identity file \(path, privacy: .public) had mode \(String(info.st_mode & 0o777, radix: 8), privacy: .public); set back to 600")
+            } else {
+                log.error("synthetic identity file \(path, privacy: .public) has mode \(String(info.st_mode & 0o777, radix: 8), privacy: .public) and chmod failed (errno \(errno, privacy: .public)); replacing it")
+                unlink(path)
+                return nil
+            }
+        }
+        guard let raw = FileManager.default.contents(atPath: path), let identity = try? DeviceIdentity(rawRepresentation: raw) else {
+            log.error("synthetic identity file \(path, privacy: .public) doesn't hold a key; replacing it")
+            unlink(path)
+            return nil
+        }
+        return identity
+    }
+
+    /// A Curve25519 private key's raw bytes.
+    private static let identityLength: off_t = 32
+
+    /// Writes the key to a private temporary file and links it into place, so the key file is
+    /// never seen half-written and never overwrites one another launch got there with first; in
+    /// that case this returns the winner's identity instead.
+    private static func keep(_ identity: DeviceIdentity, at path: String, in directory: URL) throws -> DeviceIdentity? {
+        let temp = directory.appending(path: "device-identity.\(getpid()).tmp").path(percentEncoded: false)
+        unlink(temp) // a launch that died mid-write
+        let fd = open(temp, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXError.Code(rawValue: errno) ?? .EIO) }
+        defer { unlink(temp) }
+        let written: Bool = identity.rawRepresentation.withUnsafeBytes { bytes in
+            Darwin.write(fd, bytes.baseAddress, bytes.count) == bytes.count && fsync(fd) == 0
+        }
+        let writeErrno = errno
+        close(fd)
+        guard written else { throw POSIXError(POSIXError.Code(rawValue: writeErrno) ?? .EIO) }
+        guard link(temp, path) == 0 else {
+            let linkErrno = errno
+            if linkErrno == EEXIST, let raw = FileManager.default.contents(atPath: path), let winner = try? DeviceIdentity(rawRepresentation: raw) {
+                return winner
+            }
+            throw POSIXError(POSIXError.Code(rawValue: linkErrno) ?? .EIO)
+        }
+        return nil
     }
 
     /// A synthetic display sized to a 2x iPad by default.

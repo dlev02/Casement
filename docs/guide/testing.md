@@ -27,23 +27,41 @@ above), answer the prompt. A synthetic host never touches the Keychain: its iden
 of its own, `~/Library/Application Support/Vantage Host/Synthetic/device-identity`
 (`SyntheticHostEnvironment.loadOrCreateIdentity`, mode 0600 in a 0700 folder, made on the first
 launch and kept, so a device that saved a synthetic host keeps matching it; delete the file to give
-it a new identity), so an unsigned synthetic host streams with no prompt. Synthetic hosts used
-the real host's Keychain identity before (2026-11-09), so a simulator that connected to one
-earlier refuses once with "identity has changed": uninstall Casement from that simulator
-(`xcrun simctl uninstall <sim> me.drewlevinson.casement`, which the UI tests reinstall) or choose
-Forget Identity on the saved computer. `codesign -dv` on a host that will run for real should say
-`TeamIdentifier=7BVMD7TA97`.
+it a new identity), so an unsigned synthetic host streams with no prompt. Hosts launched together
+(the UI tests start several) take turns through `device-identity.lock` beside it and link a
+privately written temporary file into place, so they all come up with the one identity and none
+overwrites another's; an existing file is checked before it's trusted (a regular file of the
+user's, 32 bytes, mode 0600: a drifted mode is put back, anything else replaced, and the
+`controller` log says which). Synthetic hosts used the real host's Keychain identity before
+(2026-11-09), so a simulator that connected to one earlier keeps refusing with "identity has
+changed" until that saved identity is gone: choose Forget Identity on the saved computer (Edit
+Computer), or uninstall Casement from that simulator (`xcrun simctl uninstall <sim>
+me.drewlevinson.casement`, which the UI tests reinstall) so its saved devices go with it.
+`codesign -dv` on a host that will run for real should say `TeamIdentifier=7BVMD7TA97`.
+Only the host is ever built unsigned: the simulator app keeps its device identity in the
+simulator's Keychain, which an unsigned app can't use, so every launch would be a new, unpaired
+device and the tests would fail with "Incorrect pairing code"; run `xcodebuild test -scheme
+VantageUITests` without `CODE_SIGNING_ALLOWED=NO` (simulator signing is ad hoc and never touches
+the Mac's Keychain), uninstall the app from the simulator first, and start fresh hosts, since a
+fixed pairing code is used up by one pairing.
 
 The Mac session itself is also covered without a simulator: `HostSessionTests` (root `xcrun swift test`)
 run the real `HostSession` over loopback on the synthetic environment (pairing, the stream's first
 messages and keyframe, display sleep and wake, a missing picture), the way the Windows host's
 `HostListenerTests` run its session; `CaptureLifecycleTests` and `VideoPacerTests` check the two
 modules behind it on a fake clock, frame source and encoder (the retry backoff, the no-frame
-rule, a restart whose targets all fail, a frame delivered during a start, a dropped frame, a
+rule, a restart whose targets all fail, a frame delivered during a start and one from a target
+that then failed, a restart during recovery that takes its time to fail, a dropped frame, a
 keyframe on a still screen, a stalled encode under still frames, a late answer from a written-off
-encode, a pending frame kept through still frames) in milliseconds; `HostSessionTests` also runs
-the slow-stop race (`TestHost(stopDelay:)`: a capture whose first stop takes a while, as a real
-ScreenCaptureKit stop can, with a wake meanwhile) to show the replacement capture survives.
+encode, a pending frame kept through still frames) in milliseconds, and `VideoPacerTests` runs the
+real VideoToolbox encoder once, to show the decoder configuration still reaches the device when
+the first encode was written off; `HostSessionTests` also shapes the synthetic screen like
+ScreenCaptureKit where a race needs it (`TestHost(stopDelay:)`: a capture whose first stop takes
+a while, with a wake meanwhile, to show the replacement survives; `startDelay:`: a capture still
+starting when the device is removed, to show it is stopped once it exists; `frameLimit:` with
+`lostAnswer:`: a still screen and an encoder answer that never comes, to show the session's stall
+watch alone brings the picture back). `SyntheticIdentityFileTests` launch the identity file's
+read-or-create 32 times at once and check the repairs above.
 
 The simulator cannot route to the Mac's Tailscale interface, so test over loopback (the host accepts
 loopback peers in addition to tailnet peers):
