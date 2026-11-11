@@ -43,7 +43,7 @@ pushed to App Store Connect as drafts (nothing submitted).
 | Field | Value |
 | --- | --- |
 | Name | `Casement: Remote Desktop` (24 of 30) |
-| Subtitle | `Control Mac & PC, privately` (27 of 30) |
+| Subtitle | `Control computers, privately` (28 of 30; was `Control Mac & PC, privately` until App Review's 5.2.5 rejection on 2026-11-11) |
 | Keywords | `screen,sharing,computer,access,viewer,anywhere,keyboard,mouse,trackpad,file,transfer,private,laptop` (99 of 100 bytes) |
 | Category | Utilities, then Productivity |
 | Price | Free (USD 0, base territory United States), no IAP |

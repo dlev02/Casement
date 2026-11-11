@@ -55,15 +55,18 @@ most heavily weighted field, so neither is repeated in the subtitle or keywords.
 
 ## Subtitle
 
-**`Control Mac & PC, privately`** (27 of 30). No word from the name (casement, remote, desktop).
-It indexes "control", "mac", and "pc", and says the pitch (private, your own network). It's
+**`Control computers, privately`** (28 of 30). No word from the name (casement, remote, desktop).
+It indexes "control" and "computers", and says the pitch (private, your own network). It's
 app-level, so it shows on the iPhone, iPad, Mac, and Vision Pro listings alike: that's why it names
-what you control (Mac & PC) rather than the device you control it from ("from iPhone" would be
-wrong on the Mac App Store).
+what you control rather than the device you control it from.
 
-Alternatives, all counted by `check-lengths.py`: `Your Mac & PC, privately` (24),
-`Private access to Mac & PC` (26). The brief's example "Private, from iPhone to Mac & PC" is 32
-characters, over the limit, and names one device.
+It used to be `Control Mac & PC, privately`. App Review rejected visionOS 1.1 (build 7) on
+2026-11-11 under Guideline 5.2.5 for "terms for Mac in the app subtitle in an inappropriate
+manner", although macOS 1.0 had passed with it. Keep Apple product names (Mac, iPad, iPhone,
+Vision Pro) out of the name, subtitle and keywords; the description can say what it runs on and
+connects to.
+
+Alternative, counted by `check-lengths.py`: `Your computers, privately` (25).
 
 ## Promotional text (170)
 

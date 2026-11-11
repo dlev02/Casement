@@ -24,8 +24,7 @@ limits = [
 
 # Alternative subtitles and What's New live in metadata.md; keep them here so they're counted too.
 extra = {
-    "alt subtitle 1": "Your Mac & PC, privately",
-    "alt subtitle 2": "Private access to Mac & PC",
+    "alt subtitle 1": "Your computers, privately",
     "whatsNew (1.0.1+)": "Welcome to Casement. Control your Mac or Windows PC from iPhone, iPad, Mac, and Apple Vision Pro, privately over your own Tailscale network.",
 }
 for label, text in extra.items():
