@@ -1,0 +1,15 @@
+Casement 1.2 (8) — iPhone, iPad, Mac, and Apple Vision Pro
+
+A PC THAT FILLS YOUR MAC
+In Full Screen the toolbar now hides until you point at the top of the screen, so a PC fills a MacBook's display edge to edge. With Fit Display on, the window resizes freely and the PC follows its shape. View > Actual Size still snaps the window to the PC's own resolution.
+
+FIT DISPLAY, WHENEVER YOU WANT
+Fit Display (Virtual Display for a Mac) is now a switch in the Session menu, the session menu on iPhone and iPad, and the device pane on the Mac. It takes effect right away, without reconnecting.
+
+WHAT TO TEST
+• On a Mac, connect to a PC with Fit Display on and enter Full Screen: the picture should fill the screen with no black bars and no toolbar until you hover at the top.
+• Resize the window: the PC should change shape to match within a moment.
+• Turn Fit Display off mid-session: the PC's own resolution and scale should come back. Turn it on again: it should fit again.
+• On iPhone and iPad, flip the same switch from the session menu.
+
+Report a problem from Settings/About and include diagnostics. Host downloads: https://github.com/dlev02/Casement/releases
