@@ -42,8 +42,9 @@ struct RemoteSessionLayout: View {
     @Environment(DeviceStore.self) private var store
 
     @State private var showKeyboard = false
-    /// The whole screen, under the safe area.
-    @State private var screenSize = CGSize(width: 1210, height: 834)
+    /// The whole screen, under the safe area; nil until the first layout pass measures it so the
+    /// initial connect sends the real viewport instead of a hardcoded iPad size.
+    @State private var screenSize: CGSize?
     @State private var screenInsets = EdgeInsets()
     /// An iPhone Duo set up like a laptop: the picture above the fold, keyboard and trackpad below.
     @State private var foldedLikeALaptop: TabletopLayout?
@@ -89,7 +90,10 @@ struct RemoteSessionLayout: View {
     var host: HostNoun { model.host }
     /// What the host fits its picture to: the screen, or the half above the fold in tabletop (so a
     /// virtual display takes that shape and fills it).
-    private var viewportSize: CGSize { tabletop?.picture.size ?? screenSize }
+    private var viewportSize: CGSize? { tabletop?.picture.size ?? screenSize }
+    private var measuredViewport: Viewport? {
+        viewportSize.map { Viewport(widthPoints: Double($0.width), heightPoints: Double($0.height), scale: Double(displayScale)) }
+    }
     #if os(visionOS)
     /// The Mac display's width over its height (16:10 until the host says which display).
     private var visionPictureAspect: CGFloat {
@@ -224,7 +228,7 @@ struct RemoteSessionLayout: View {
         .background {
             WindowAspectMatcher(displaySize: session.activeConfig.map {
                 CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
-            })
+            }, fitsViewport: model.isFittingDisplay)
         }
         // The window is plain; glass backs it only while there's no picture to show.
         .glassBackgroundEffect(in: .rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous),
@@ -233,11 +237,15 @@ struct RemoteSessionLayout: View {
         .background {
             WindowAspectMatcher(displaySize: session.activeConfig.map {
                 CGSize(width: $0.display.pointWidth, height: $0.display.pointHeight)
-            }, shape: windowShape)
+            }, fitsViewport: model.isFittingDisplay, shape: windowShape)
         }
         .navigationTitle(device.name)
         .navigationSubtitle(windowSubtitle)
         .toolbar { macToolbar }
+        // Hide the toolbar in full screen until hovered so the picture fills a 16:10 MacBook
+        // display edge to edge instead of leaving a permanent top bar that also squeezes the
+        // viewport toward 16:9.
+        .windowToolbarFullScreenVisibility(.onHover)
         .focusedSceneValue(\.screenSession, model)
         .focusedSceneValue(\.sessionWindowShape, windowShape)
         .animation(.smooth(duration: 0.3), value: model.viewsThisMac && model.isConnected)
@@ -270,9 +278,14 @@ struct RemoteSessionLayout: View {
             #else
             return proxy.size
             #endif
-        } action: { screenSize = $0 }
-        // A fold, rotation, or resize: the model asks the host once it has settled.
-        .onChange(of: viewportSize) { _, _ in model.viewportChanged(currentViewport()) }
+        } action: { size in
+            guard size.width > 0, size.height > 0 else { return }
+            screenSize = size
+        }
+        // A fold, rotation, display scale change, or resize: the model asks the host once it has settled.
+        .onChange(of: measuredViewport) { _, viewport in
+            if let viewport { model.viewportChanged(viewport) }
+        }
         .onChange(of: toolbarCollapsed) { _, value in UserDefaults.standard.set(value, forKey: "vantage.toolbarCollapsed") }
         .onChange(of: toolbarDock) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "vantage.toolbarDock") }
         .onChange(of: voiceOverEnabled, initial: true) { _, on in model.usesVoiceOver = on }
@@ -354,7 +367,9 @@ struct RemoteSessionLayout: View {
         } message: {
             Text(model.screenSharingError ?? "")
         }
-        .task { model.start(viewport: currentViewport()) }
+        .task(id: screenSize != nil) {
+            if let viewport = measuredViewport { model.start(viewport: viewport) }
+        }
         .onDisappear { model.stop() }
     }
 
@@ -379,6 +394,7 @@ struct RemoteSessionLayout: View {
             onCustomize: { model.isEditingControls = true },
             macAudio: model.macAudioToggle,
             curtain: model.curtainToggle,
+            fitDisplay: model.fitDisplayToggle,
             files: model.sendFileAction,
             host: model.hostPlatform
         )
@@ -483,7 +499,7 @@ struct RemoteSessionLayout: View {
     /// How far the bottom of the safe area sits below the picture: the deck's share in tabletop,
     /// so banners and notes stay on the half that stands up.
     private var belowPicture: CGFloat {
-        guard let tabletop else { return 0 }
+        guard let tabletop, let screenSize else { return 0 }
         return max(0, screenSize.height - screenInsets.bottom - tabletop.picture.maxY)
     }
 
@@ -642,10 +658,6 @@ struct RemoteSessionLayout: View {
         case .none, .rightClick, .middleClick:
             break // handled where the pointer is
         }
-    }
-
-    private func currentViewport() -> Viewport {
-        Viewport(widthPoints: Double(viewportSize.width), heightPoints: Double(viewportSize.height), scale: Double(displayScale))
     }
 }
 

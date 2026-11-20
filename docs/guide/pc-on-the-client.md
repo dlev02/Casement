@@ -26,10 +26,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   host advertises, not its platform: a PC (Casement Host 1.3+) sends `HostCapabilities.audio` and
   answers `audioRequest` like a Mac, so the strip item, session menu and Mac menu bar show "PC
   Audio" (`label(for:)`; dimmed with `MacAudioToggle.unavailableReason` on a host without audio),
-  and the Mac client's detail pane has Play PC Audio (`SavedDevice.playMacAudio`). The Edit sheet's
-  `useVirtualDisplay` toggle shows for a PC as "Fit the PC's display to this screen": the same
-  `SelectDisplay.useVirtualDisplay` + `fitViewport`, which the Windows host answers by switching the
-  display mode (`canManageVirtualDisplay`) and restoring it afterwards. **Mac-only features** a PC
+  and the Mac client's detail pane has Play PC Audio (`SavedDevice.playMacAudio`) and Fit Display
+  (`SavedDevice.useVirtualDisplay`). Fit Display is also toggleable live from the session menu and
+  the Mac's Session menu (and edited in the Edit sheet as "Fit the PC's display to this screen"):
+  turning it on sends `SelectDisplay.useVirtualDisplay = true` + `fitViewport`, and turning it off
+  sends `selectDisplay(useVirtualDisplay: false)` (a PC restores mode and scale on that alone,
+  without an extra `restoreDisplays`), gated on `canManageVirtualDisplay`. **Mac-only features** a PC
   hides: Type Password and saved passwords, Log In with Screen Sharing
   (`ScreenSharingPassword.canLogIn`), home address, codec choice; dictation on the PC falls back to
   this device since a PC advertises no `dictationEngines`. Sleep Display and Lock stay. **⌘ acts as Ctrl** (`SavedDevice.commandSendsControl`, nil = on; Edit sheet toggle

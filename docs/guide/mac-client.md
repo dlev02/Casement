@@ -22,7 +22,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   drops its orange on the accent fill via `backgroundProminence`; `DeviceTransferBadge`; drops go
   through `FileDropDelegate`), `.contextMenu(forSelectionType:primaryAction:)` so double-click and
   Return connect. Detail `MacDeviceDetail`: Connect (`.glassProminent`, default action), Send
-  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac Audio, what's saved. Selection is
+  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac/PC Audio, Fit Display / Virtual Display, what's saved. Selection is
   `@SceneStorage`. Availability checks run while the list is open (none at all, not "Checking…",
   while Settings › Connection turns them off). `DeviceActions` (in `DeviceListScreen.swift`) holds
   every sheet, picker, and confirmation the list can raise, shared by the iOS list and the Mac
@@ -35,7 +35,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   (`MacApp`; Settings and sessions are scenes of their own and `ConnectionSettings` crashes
   without it), appearance, the lock curtain, and the pending-connection watch.
 - **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
-  Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Dictate
+  Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Curtain ⌃⌥⌘B,
+  Fit Display / Virtual Display, Dictate
   ⌃⌥⌘D, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)
@@ -50,7 +51,14 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Session window**: `WindowAspectMatcher` (macOS) resets `contentAspectRatio` for the current
   width on every resize, with the toolbar's height added (the ratio covers the content view under
   the toolbar); the first time a display is known it fits the window to the display point for
-  point, or as large as `visibleFrame` allows; nothing in full screen. `SessionWindowShape`
+  point, or as large as `visibleFrame` allows. While Fit Display / Virtual Display is active on a
+  host that supports it (`fitsViewport`), `WindowAspectMatcher` leaves the window freely resizable
+  (`resizeIncrements = 1×1`) and skips auto-refitting so the user can reshape the window and let
+  the host match it (a PC with discrete modes may letterbox in windowed mode; View › Actual Size
+  `⌃⌥⌘0` snaps to the chosen mode on demand). Full screen uses
+  `.windowToolbarFullScreenVisibility(.onHover)` so the toolbar stays hidden until hovered, the
+  picture fills the Mac's screen edge to edge, and a 16:10 MacBook's viewport isn't squeezed toward
+  16:9 by a permanent top bar. `SessionWindowShape`
   provides Actual Size and Full Screen. Title = the Mac's name, subtitle "W × H · View Only".
   Toolbar: View Only, Send Keyboard Shortcuts, a Mac menu (the shortcuts including App Switcher
   ⌘Tab, Sleep Display, Lock Mac), Send File, Disconnect (`session.toolbar.disconnect`). The layout

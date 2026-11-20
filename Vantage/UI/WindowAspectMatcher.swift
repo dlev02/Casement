@@ -12,26 +12,40 @@ enum VisionSessionPicture {
     static let cornerRadius: CGFloat = 16
 }
 
-/// Shapes the session window like the Mac's display so the stream fills it edge to edge, then
-/// keeps that shape while the user resizes it. Place it in the session view's background.
+/// Shapes the session window like the host's display so the stream fills it edge to edge, then
+/// keeps that shape while the user resizes it. While the host is fitting its display to the window
+/// (`fitsViewport`), resizing stays freeform so the user can pick any shape. Place it in the
+/// session view's background.
 struct WindowAspectMatcher: UIViewRepresentable {
-    /// The Mac display's size in points, once the host has said which display it's streaming.
+    /// The host display's size in points, once the host has said which display it's streaming.
     let displaySize: CGSize?
+    /// True while the host is fitting its display to this window (Fit Display / Virtual Display).
+    let fitsViewport: Bool
 
     func makeUIView(context: Context) -> AspectMatchingView {
         AspectMatchingView()
     }
 
     func updateUIView(_ view: AspectMatchingView, context: Context) {
+        view.fitsViewport = fitsViewport
         view.displaySize = displaySize
     }
 
     final class AspectMatchingView: UIView {
         private static let log = Logger(subsystem: "com.benjaminlevinson.vantage", category: "window")
         private var appliedSize: CGSize?
+        private var appliedFreeform = false
 
         var displaySize: CGSize? {
             didSet { matchWindow() }
+        }
+
+        var fitsViewport = false {
+            didSet {
+                guard fitsViewport != oldValue else { return }
+                if !fitsViewport { appliedSize = nil }
+                matchWindow()
+            }
         }
 
         override init(frame: CGRect) {
@@ -46,16 +60,27 @@ struct WindowAspectMatcher: UIViewRepresentable {
             matchWindow()
         }
 
-        /// Keeps the window's current width and fits the height to the Mac, with uniform resizing
-        /// so dragging a corner scales the whole window instead of letterboxing the video.
+        /// Keeps the window's current width and fits the height to the host, with uniform resizing
+        /// so dragging a corner scales the whole window instead of letterboxing the video; or
+        /// unlocks freeform resizing while the host fits its display to the window.
         private func matchWindow() {
-            guard let displaySize, displaySize.width > 0, displaySize.height > 0, displaySize != appliedSize,
-                  let window, let scene = window.windowScene, window.bounds.width > 0 else { return }
+            guard let window, let scene = window.windowScene, window.bounds.width > 0 else { return }
+            if fitsViewport {
+                guard !appliedFreeform else { return }
+                appliedFreeform = true
+                appliedSize = nil
+                scene.requestGeometryUpdate(.Vision(resizingRestrictions: .freeform)) { error in
+                    Self.log.error("Couldn't unlock freeform resizing: \(error.localizedDescription, privacy: .public)")
+                }
+                return
+            }
+            appliedFreeform = false
+            guard let displaySize, displaySize.width > 0, displaySize.height > 0, displaySize != appliedSize else { return }
             appliedSize = displaySize
             let width = window.bounds.width
             let size = CGSize(width: width, height: (width * displaySize.height / displaySize.width).rounded())
             scene.requestGeometryUpdate(.Vision(size: size, resizingRestrictions: .uniform)) { error in
-                Self.log.error("Couldn't fit the window to the Mac: \(error.localizedDescription, privacy: .public)")
+                Self.log.error("Couldn't fit the window to the host: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
@@ -80,17 +105,22 @@ final class SessionWindowShape {
     func toggleFullScreen() { matcher?.window?.toggleFullScreen(nil) }
 }
 
-/// Shapes the Mac client's session window like the Mac's display, so the picture fills it with
+/// Shapes the Mac client's session window like the host's display, so the picture fills it with
 /// no black bars, and keeps that shape while the window is resized. The first time a display is
 /// known the window is sized to show it point for point, or as large as the screen allows.
-/// Full screen is left alone (the picture is letterboxed there; its edges still map to the Mac's).
+/// While `fitsViewport` is true (Fit Display / Virtual Display), the host fits its display to the
+/// window instead, so the window stays free to resize to any shape and isn't reshaped behind the
+/// user's back. Full screen is left alone (its toolbar hides until hovered via
+/// `.windowToolbarFullScreenVisibility(.onHover)` so the picture fills the display edge to edge).
 ///
 /// `contentAspectRatio` covers the whole content view, which runs under the title bar and
 /// toolbar while the picture sits below them, so the ratio is worked out again for the current
 /// width on every resize, with the toolbar's height added.
 struct WindowAspectMatcher: NSViewRepresentable {
-    /// The Mac display's size in points, once the host has said which display it's streaming.
+    /// The host display's size in points, once the host has said which display it's streaming.
     let displaySize: CGSize?
+    /// True while the host is fitting its display to this window (Fit Display / Virtual Display).
+    let fitsViewport: Bool
     let shape: SessionWindowShape
 
     func makeNSView(context: Context) -> AspectMatchingView {
@@ -103,6 +133,7 @@ struct WindowAspectMatcher: NSViewRepresentable {
     func updateNSView(_ view: AspectMatchingView, context: Context) {
         shape.matcher = view
         view.shape = shape
+        view.fitsViewport = fitsViewport
         view.displaySize = displaySize
     }
 
@@ -122,19 +153,27 @@ struct WindowAspectMatcher: NSViewRepresentable {
             }
         }
 
+        var fitsViewport = false {
+            didSet {
+                guard fitsViewport != oldValue else { return }
+                matchWindow(refit: !fitsViewport)
+            }
+        }
+
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             stopObserving()
             guard let window else { return }
+            let center = NotificationCenter.default
             for name in [NSWindow.didResizeNotification, NSWindow.didExitFullScreenNotification] {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.matchWindow(refit: false) }
                 })
             }
             for (name, entering) in [(NSWindow.willEnterFullScreenNotification, true), (NSWindow.didExitFullScreenNotification, false)] {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.shape?.isFullScreen = entering }
                 })
             }
@@ -155,11 +194,19 @@ struct WindowAspectMatcher: NSViewRepresentable {
             return max(0, content.bounds.height - window.contentLayoutRect.height)
         }
 
-        /// Sets the ratio for the current width. `refit`: a new display, so fit the window to it
-        /// the first time, or square its height up to the new shape after that.
+        /// Sets the ratio for the current width. `refit`: a new display (or Fit Display turned
+        /// off), so fit the window to it the first time, or square its height up to the new shape
+        /// after that.
         private func matchWindow(refit: Bool) {
-            guard let displaySize, displaySize.width > 0, displaySize.height > 0,
-                  let window, !isFullScreen else { return }
+            guard let window, !isFullScreen else { return }
+            if fitsViewport {
+                // `resizeIncrements` clears `contentAspectRatio` in AppKit so the user can drag to
+                // any shape and let the host refit to it.
+                window.resizeIncrements = NSSize(width: 1, height: 1)
+                if displaySize != nil { hasFitted = true }
+                return
+            }
+            guard let displaySize, displaySize.width > 0, displaySize.height > 0 else { return }
             let width = window.contentLayoutRect.width
             guard width > 0 else { return }
             window.contentAspectRatio = NSSize(width: width, height: width * displaySize.height / displaySize.width + chromeHeight(of: window))

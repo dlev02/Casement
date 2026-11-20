@@ -244,8 +244,9 @@ private struct MacDeviceDetail: View {
                 Section {
                     Toggle("Play PC Audio", isOn: Binding(get: { device.playMacAudio ?? false },
                                                          set: { store.setPlayMacAudio($0, for: device.id) }))
+                    Toggle("Fit Display", isOn: Binding(get: { device.useVirtualDisplay == true },
+                                                        set: { store.setUseVirtualDisplay($0, for: device.id) }))
                     LabeledContent("⌘ Acts as Ctrl", value: device.keyRemap.swapsCommandAndControl ? "On" : "Off")
-                    LabeledContent("Fit Display", value: device.useVirtualDisplay == true ? "On" : "Off")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                 } header: {
                     Text("Session")
@@ -256,8 +257,9 @@ private struct MacDeviceDetail: View {
                 Section {
                     Toggle("Play Mac Audio", isOn: Binding(get: { device.playMacAudio ?? false },
                                                           set: { store.setPlayMacAudio($0, for: device.id) }))
+                    Toggle("Virtual Display", isOn: Binding(get: { device.useVirtualDisplay == true },
+                                                            set: { store.setUseVirtualDisplay($0, for: device.id) }))
                     LabeledContent("Video", value: (device.preferredCodec ?? .hevc) == .hevc ? "HEVC" : "H.264")
-                    LabeledContent("Virtual Display", value: device.useVirtualDisplay == true ? "On" : "Off")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                     LabeledContent("Mac Sign-In", value: DeviceSecrets.password(for: device) == nil ? "Not Saved" : "Saved")
                 } header: {

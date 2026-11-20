@@ -6,13 +6,14 @@ import VantageCore
 /// What a screen session reads and records about its saved computer. `DeviceStore` is the app's;
 /// tests use one in memory.
 protocol ScreenSessionStore: AnyObject {
-    /// The saved computer as it is now (edits and what the host said arrive here).
+    /// The saved computer as it is now (edits and what the host said arrive through the store).
     func savedDevice(_ id: UUID) -> SavedDevice?
     func markConnected(_ device: SavedDevice)
     func recordPlatform(_ platform: HostPlatform, for id: UUID)
     func recordHostKey(_ key: Data, for id: UUID)
     func setPlayMacAudio(_ on: Bool, for id: UUID)
     func setCurtain(_ on: Bool, for id: UUID)
+    func setUseVirtualDisplay(_ on: Bool, for id: UUID)
 }
 
 /// Why there's no live picture, if the computer has said.
@@ -259,11 +260,13 @@ final class ScreenSessionModel {
         connect(pairingCode: ClientOptions.pairingCode)
     }
 
-    /// The saved computer's sound and Curtain choices, applied to the player and the connection.
+    /// The saved computer's sound, Curtain and display-fitting choices, applied to the player and
+    /// the connection.
     private func applySavedChoices() {
         macAudio.setWanted(wantsMacAudio)
         session.setMacAudio(wantsMacAudio)
         session.setCurtain(wantsCurtain)
+        session.setFitDisplay(wantsFitDisplay)
     }
 
     func submitPairingCode(_ code: String) { connect(pairingCode: code) }
@@ -480,6 +483,31 @@ final class ScreenSessionModel {
         session.setCurtain(on)
     }
 
+    var wantsFitDisplay: Bool { savedDevice.useVirtualDisplay == true }
+    var isFitDisplayAvailable: Bool { isConnected && session.hostOffersDisplayFitting }
+    /// The host is fitting its display to this window, so the window shouldn't lock itself to the
+    /// host's aspect ratio.
+    var isFittingDisplay: Bool { wantsFitDisplay && session.hostOffersDisplayFitting }
+    var fitDisplayLabel: String { host.isWindows ? "Fit Display" : "Virtual Display" }
+
+    var fitDisplayToggle: FitDisplayToggle {
+        FitDisplayToggle(
+            isOn: wantsFitDisplay,
+            isAvailable: isFitDisplayAvailable,
+            unavailableReason: isConnected && !session.hostOffersDisplayFitting
+                ? (host.isWindows
+                    ? "Turn on \"Let devices change this PC's display mode\" in Casement Host on \(device.name)."
+                    : "Install BetterDisplay on \(device.name) to use a virtual display.")
+                : nil,
+            onToggle: { [weak self] in self?.toggleFitDisplay() })
+    }
+
+    func toggleFitDisplay() {
+        let on = !wantsFitDisplay
+        store.setUseVirtualDisplay(on, for: device.id)
+        session.setFitDisplay(on)
+    }
+
     // MARK: Dictation
 
     /// The computer (MacWhisper, Parakeet) when the host advertised it and Settings allows it;
@@ -552,6 +580,7 @@ final class ScreenSessionModel {
         }
         watch({ $0.keyRemap }) { model, remap in model.input.keyRemap = remap }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
+        watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
         // Files opened in Casement from other apps join this session's queue once approved.
         watch({ _ in SharedFileInbox.shared.pending.count }, initial: true) { model, count in
             guard count > 0 else { return }

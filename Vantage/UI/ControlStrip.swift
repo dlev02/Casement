@@ -29,6 +29,7 @@ struct ControlStrip: View {
     /// The Mac Audio toggle (the session owns the player and the per-Mac setting).
     var macAudio = MacAudioToggle()
     var curtain = CurtainToggle()
+    var fitDisplay = FitDisplayToggle()
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
     /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
@@ -446,6 +447,7 @@ struct ControlStrip: View {
                 Label("Files & Clipboard", systemImage: "doc.on.clipboard")
             }
             Menu {
+                fitDisplayRow
                 if !noun.isWindows { passwordRow }
                 hostRows
             } label: {
@@ -477,6 +479,7 @@ struct ControlStrip: View {
 
         Section {
             audioAndCurtainRows
+            fitDisplayRow
             fileRows
             if !noun.isWindows { passwordRow }
         }
@@ -500,6 +503,15 @@ struct ControlStrip: View {
         }
         .disabled(curtain.unavailableReason != nil)
         .accessibilityIdentifier("session.menu.curtain")
+    }
+
+    private var fitDisplayRow: some View {
+        Toggle(isOn: Binding(get: { fitDisplay.isOn }, set: { _ in fitDisplay.onToggle() })) {
+            Label(noun.isWindows ? "Fit Display" : "Virtual Display", systemImage: "aspectratio")
+        }
+        .disabled(!fitDisplay.isAvailable)
+        .accessibilityHint(fitDisplay.unavailableReason ?? "")
+        .accessibilityIdentifier("session.menu.fitDisplay")
     }
 
     @ViewBuilder private var fileRows: some View {

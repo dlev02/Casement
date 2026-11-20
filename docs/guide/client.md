@@ -31,7 +31,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   screen session owns the connection (`ClientSession`), the picture (`VideoStreamController`),
   `InputController`, `DictationController` and `MacAudioPlayer`, and wires them together once
   (`wire()`). It reads the saved computer's choices through `ScreenSessionStore` (`DeviceStore`
-  conforms; sound, Curtain, Natural Scrolling, ⌘ as Ctrl, control strip), reacts to the connection
+  conforms; sound, Curtain, Fit Display / Virtual Display, Natural Scrolling, ⌘ as Ctrl, control strip), reacts to the connection
   in one place (`watch`, built on `Observations`: a lost connection resets the first frame,
   dictation and sound; connecting records the platform and host identity; a refused Curtain clears
   the saved choice and says why), owns the notices that clear themselves (`TimedNotice`: received
@@ -49,10 +49,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   written back on change, never `@AppStorage` (an `@AppStorage` strip can't move during a
   pinned launch, which `testToolbarThrowsLandInTheIntendedCorner` catches). `RemoteSessionScreen` makes the model when it appears (a `@State`
   initialiser can't see `device`, and making one per view init would make a connection per
-  re-render) and `RemoteSessionLayout` is layout over it: `RemoteSessionScreen+macOS.swift` holds
+  re-render) and `RemoteSessionLayout` is layout over it, waiting for the first non-zero layout
+  geometry before calling `model.start(viewport:)` (and watching both viewport size and display
+  scale): `RemoteSessionScreen+macOS.swift` holds
   the Mac's surface, subtitle and toolbar; `SessionNotices.swift` the banners, haptics and the
   password sheet, which owns its fields so the password never sits in session state; the strip's
-  `MacAudioToggle`/`CurtainToggle`/`SendFileAction`/`DictationPress` live in `StripActions.swift`.
+  `MacAudioToggle`/`CurtainToggle`/`FitDisplayToggle`/`SendFileAction`/`DictationPress` live in `StripActions.swift`.
   The model compiles in the root package (`xcrun swift test`), so a collaborator it gains must be
   added to `Package.swift`'s client sources. Tests: `ScreenSessionModelTests` (its own loopback
   mock host: the Type Password table, the Disconnect guard, a refused Curtain, a reconnect).
@@ -83,7 +85,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   description folded into the label made it "Reorder Escape, Esc key" on iOS 27. Tests:
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
-- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸, Controls ▸, Disconnect. The rows are shared. One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
+- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display right under Audio and Curtain). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
 - **iPhone Duo tabletop** (`TabletopDeck.swift`, iOS 27.1): half-folded with the fold running
   across (the inner display in portrait; open flat in landscape the fold runs top to bottom), the
   session splits at the fold. `TabletopLayout` comes from the division reserved region

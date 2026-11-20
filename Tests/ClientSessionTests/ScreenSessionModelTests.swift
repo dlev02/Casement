@@ -28,17 +28,29 @@ private final class MockScreenHost: @unchecked Sendable {
     private let behaviour: ScreenBehaviour
     /// Answer every `curtainRequest` with this (nil: the curtain goes up as asked).
     private let curtainRefusal: String?
+    private let canManageVirtualDisplay: Bool
+    private let platform: HostPlatform?
+    enum DisplayEvent: Equatable, Sendable {
+        case select(SelectDisplay)
+        case restoreDisplays
+    }
+
     private var screens = 0
     private var dropped = false
     private var engines: [FileTransferEngine] = []
+    private var displayEvents: [DisplayEvent] = []
 
     var port: UInt16 { listener.port!.rawValue }
     var screenCount: Int { lock.withLock { screens } }
+    var receivedDisplayEvents: [DisplayEvent] { lock.withLock { displayEvents } }
 
-    init(keepsFiles: Bool, behaviour: ScreenBehaviour = .stay, curtainRefusal: String? = nil) async throws {
+    init(keepsFiles: Bool, behaviour: ScreenBehaviour = .stay, curtainRefusal: String? = nil,
+         canManageVirtualDisplay: Bool = false, platform: HostPlatform? = nil) async throws {
         self.keepsFiles = keepsFiles
         self.behaviour = behaviour
         self.curtainRefusal = curtainRefusal
+        self.canManageVirtualDisplay = canManageVirtualDisplay
+        self.platform = platform
         directory = FileManager.default.temporaryDirectory.appending(path: "screen-mock-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         listener = try NWListener(using: VantageNetwork.tcpParameters(), on: .any)
@@ -85,20 +97,29 @@ private final class MockScreenHost: @unchecked Sendable {
 
     private func screen(_ channel: MessageChannel, hello: Hello, peer: String) async throws {
         let number = lock.withLock { screens += 1; return screens }
-        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Mock Mac", isPaired: true).0))
+        try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Mock Mac", isPaired: true,
+                                                             hostPlatform: platform).0))
         guard case .authenticate? = try await channel.receive() else { throw ChannelError.closed }
         let owner = MockOwner()
         let token = registry.issue(for: owner, peer: peer)
-        let capabilities = HostCapabilities(codecs: [.hevc], canManageVirtualDisplay: false, clipboard: true, maxFPS: 60,
-                                            fileTransfer: true, filesOnlySessions: keepsFiles ? true : nil, curtain: true)
+        let capabilities = HostCapabilities(codecs: [.hevc], canManageVirtualDisplay: canManageVirtualDisplay, clipboard: true, maxFPS: 60,
+                                            fileTransfer: true, filesOnlySessions: keepsFiles ? true : nil, platform: platform, curtain: true)
         try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, capabilities: capabilities)))
-        guard case .selectDisplay? = try await channel.receive() else { throw ChannelError.closed }
+        guard case .selectDisplay(let initial)? = try await channel.receive() else { throw ChannelError.closed }
+        lock.withLock { displayEvents.append(.select(initial)) }
         var received = 0
         while let message = try await channel.receive() {
             received += 1
-            if case .curtainRequest(let request) = message {
+            switch message {
+            case .curtainRequest(let request):
                 let status = curtainRefusal.map { CurtainStatus(isUp: false, unavailable: $0) } ?? CurtainStatus(isUp: request.enabled)
                 try await channel.send(.curtainStatus(status))
+            case .selectDisplay(let select):
+                lock.withLock { displayEvents.append(.select(select)) }
+            case .hostCommand(let command) where command.command == .restoreDisplays:
+                lock.withLock { displayEvents.append(.restoreDisplays) }
+            default:
+                break
             }
             if case .dropAfter(let count) = behaviour, number == 1, received >= count, !lock.withLock({ dropped }) {
                 lock.withLock { dropped = true }
@@ -131,6 +152,7 @@ private final class MockScreenHost: @unchecked Sendable {
     func recordHostKey(_ key: Data, for id: UUID) { device.hostPublicKey = key }
     func setPlayMacAudio(_ on: Bool, for id: UUID) { device.playMacAudio = on }
     func setCurtain(_ on: Bool, for id: UUID) { device.curtain = on }
+    func setUseVirtualDisplay(_ on: Bool, for id: UUID) { device.useVirtualDisplay = on }
 }
 
 private enum Failure: Error { case timedOut(String) }
@@ -270,5 +292,72 @@ struct ScreenSessionModelTests {
         model.stop()
         #expect(model.phase == .stopped && !model.isEnded, "stopping isn't Disconnect")
         #expect(model.dictation.phase == .idle, "closing the screen drops the clip, so the mic can't open later")
+    }
+
+    /// Toggling Fit Display / Virtual Display live updates the saved device, asks the host to fit
+    /// or restore in the right order (a PC restores on `selectDisplay(useVirtualDisplay: false)`
+    /// alone; a Mac switches capture back to the main display first and then sends
+    /// `restoreDisplays`), and gates whether later viewport changes resend `selectDisplay`.
+    @Test @MainActor func fitDisplayTogglesLiveAndGatesViewportRefits() async throws {
+        // PC host: Fit Display on -> viewport refit -> Fit Display off (no `restoreDisplays`).
+        do {
+            let host = try await MockScreenHost(keepsFiles: true, canManageVirtualDisplay: true, platform: .windows)
+            defer { host.stop() }
+            let store = FakeStore(device: SavedDevice(name: "Desk PC", host: "127.0.0.1", port: host.port, os: "Windows"))
+            let model = try makeModel(host: host, store: store)
+            #expect(!model.isFitDisplayAvailable && !model.fitDisplayToggle.isAvailable, "disabled before connect")
+            model.start(viewport: viewport)
+            try await waitUntil("connected") { model.isConnected && host.receivedDisplayEvents.count == 1 }
+            #expect(model.isFitDisplayAvailable && model.fitDisplayToggle.isAvailable && !model.isFittingDisplay)
+            guard case .select(let initial) = host.receivedDisplayEvents[0] else { Issue.record("expected initial select"); return }
+            #expect(initial.useVirtualDisplay == false)
+
+            model.toggleFitDisplay()
+            try await waitUntil("fit requested") { host.receivedDisplayEvents.count == 2 }
+            #expect(store.device.useVirtualDisplay == true && model.isFittingDisplay)
+            guard case .select(let turnedOn) = host.receivedDisplayEvents[1] else { Issue.record("expected select on"); return }
+            #expect(turnedOn.useVirtualDisplay == true)
+
+            let fullScreen = Viewport(widthPoints: 1728, heightPoints: 1080, scale: 2)
+            model.viewportChanged(fullScreen)
+            try await waitUntil("refit sent") { host.receivedDisplayEvents.count == 3 }
+            guard case .select(let refit) = host.receivedDisplayEvents[2] else { Issue.record("expected refit"); return }
+            #expect(refit.selection == .fitViewport(fullScreen) && refit.useVirtualDisplay == true)
+
+            model.toggleFitDisplay()
+            try await waitUntil("fit turned off") { host.receivedDisplayEvents.count == 4 }
+            #expect(store.device.useVirtualDisplay == false && !model.isFittingDisplay)
+            guard case .select(let turnedOff) = host.receivedDisplayEvents[3] else { Issue.record("expected select off"); return }
+            #expect(turnedOff.useVirtualDisplay == false)
+
+            // Later resizes while off stay quiet (`session.updateViewport` directly avoids a debounce sleep).
+            model.session.updateViewport(Viewport(widthPoints: 1280, heightPoints: 800, scale: 2))
+            model.stop()
+            #expect(host.receivedDisplayEvents.count == 4)
+        }
+
+        // Mac host: turning Virtual Display off switches capture back to the main display BEFORE
+        // sending `restoreDisplays` to disconnect the virtual display.
+        do {
+            let host = try await MockScreenHost(keepsFiles: true, canManageVirtualDisplay: true, platform: .macOS)
+            defer { host.stop() }
+            var device = SavedDevice(name: "Studio Mac", host: "127.0.0.1", port: host.port, os: "macOS")
+            device.useVirtualDisplay = true
+            let store = FakeStore(device: device)
+            let model = try makeModel(host: host, store: store)
+            model.start(viewport: viewport)
+            try await waitUntil("connected") { model.isConnected && host.receivedDisplayEvents.count == 1 }
+            #expect(model.isFittingDisplay)
+
+            model.toggleFitDisplay()
+            try await waitUntil("select off then restoreDisplays") { host.receivedDisplayEvents.count == 3 }
+            guard case .select(let switchedToMain) = host.receivedDisplayEvents[1] else {
+                Issue.record("expected selectDisplay before restoreDisplays, got \(host.receivedDisplayEvents)")
+                return
+            }
+            #expect(switchedToMain.useVirtualDisplay == false)
+            #expect(host.receivedDisplayEvents[2] == .restoreDisplays)
+            model.stop()
+        }
     }
 }

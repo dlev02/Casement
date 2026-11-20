@@ -49,11 +49,16 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   Mac). The client keeps it as `ClientSession.hostPlatform` (from the challenge, then the
   capabilities) and `HostAvailabilityStore.platforms`. DEBUG host `--platform windows|macos`
   overrides what it sends, to try the client against a pretend PC.
-- **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual screen sized to
-  the iPad viewport (behind a protocol so `CGVirtualDisplay` can replace it later). It is opt-in
-  per saved device (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`; a PC
-  gets the same toggle as "Fit the PC's display to this screen", and its host switches display
-  mode instead). The
+- **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual display sized to
+  the client's viewport in points (`viewport.widthPoints × heightPoints`, so 1× and 3× displays get
+  the right logical size on iPad, iPhone, Mac, Vision Pro, and Full Screen; behind a protocol so
+  `CGVirtualDisplay` can replace it later). It is opt-in per saved device
+  (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`; toggleable live from the
+  session menu, the Mac's Session menu and detail pane, and the Edit sheet, where a PC shows it as
+  "Fit the PC's display to this screen"). Turning it off mid-session sends
+  `selectDisplay(useVirtualDisplay: false)` first (switching capture back to the main display; a PC
+  restores its mode and scale on that alone) and on a Mac host follows with `restoreDisplays` to
+  disconnect the virtual display. The
   default path streams the main display immediately; never put BetterDisplay's CLI back on the
   connect path unconditionally — on Drew's Mac it answers "Failed." to everything and the old
   15 s poll made every connect take 16 s. When the toggle is on, a connected non-built-in display

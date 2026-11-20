@@ -32,6 +32,16 @@ struct CurtainToggle {
     var onToggle: () -> Void = {}
 }
 
+/// What the session menu needs to draw and flip Fit Display (PC) / Virtual Display (Mac).
+struct FitDisplayToggle {
+    var isOn = false
+    /// Connected to a host that can fit its display to this device (matches the Mac Session menu).
+    var isAvailable = false
+    /// Why the toggle is dimmed while connected to a host that can't fit its display.
+    var unavailableReason: String?
+    var onToggle: () -> Void = {}
+}
+
 /// What the strip needs for Send File and the Transfers list.
 struct SendFileAction {
     /// Nil when the Mac can take files; otherwise why Send File is dimmed.

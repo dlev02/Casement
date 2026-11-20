@@ -100,6 +100,8 @@ private struct SessionMenuItems: View {
         Toggle("Curtain", isOn: toggle(\.isCurtainOn) { $0.toggleCurtain() })
             .keyboardShortcut("b", modifiers: MacCommands.vantageChord)
             .disabled(session?.isCurtainAvailable != true)
+        Toggle(session?.fitDisplayLabel ?? "Fit Display", isOn: toggle(\.wantsFitDisplay) { $0.toggleFitDisplay() })
+            .disabled(session?.isFitDisplayAvailable != true)
         Button(session?.dictation.isListening == true ? "Stop Dictating" : "Dictate") { session?.dictationPressed(.toggle) }
             .keyboardShortcut("d", modifiers: MacCommands.vantageChord)
             .disabled(!canType)

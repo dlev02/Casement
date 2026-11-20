@@ -190,16 +190,41 @@ final class ClientSession {
     }
 
     /// The session view changed size: an iPhone Duo folding or unfolding, a rotation, Split View,
-    /// a resized window. Reconnects use the new size, and a Mac that streams a virtual display
-    /// sized to this view is asked for one in the new shape, so the picture fills the screen
-    /// again instead of keeping the old one's shape inside black bars. A Mac's own display has
+    /// a resized window. Reconnects use the new size, and a host that is fitting its display to
+    /// this view is asked for one in the new shape, so the picture fills the screen again instead
+    /// of keeping the old one's shape inside black bars. A host streaming its fixed display has
     /// its own shape whatever this view's is, so nothing is sent for it.
     func updateViewport(_ viewport: Viewport) {
         guard viewport != self.viewport else { return }
         self.viewport = viewport
-        guard state == .connected, let device, device.useVirtualDisplay == true else { return }
+        guard state == .connected, wantsFitDisplay, hostOffersDisplayFitting else { return }
         send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: .auto,
-                                          preferredCodec: device.preferredCodec, useVirtualDisplay: true)))
+                                          preferredCodec: device?.preferredCodec, useVirtualDisplay: true)))
+    }
+
+    /// The host can fit its display to this device's screen (BetterDisplay on a Mac, mode and
+    /// scale fitting on a PC).
+    var hostOffersDisplayFitting: Bool { capabilities?.canManageVirtualDisplay == true }
+    /// Whether this session wants the host's display fitted to this view. Survives reconnects,
+    /// like `wantsMacAudio` and `wantsCurtain`; nil falls back to the saved device's choice.
+    private var fitDisplayOverride: Bool?
+    var wantsFitDisplay: Bool { fitDisplayOverride ?? (device?.useVirtualDisplay == true) }
+
+    /// Turns display fitting on or off for this session (and every reconnect). On a live session
+    /// whose host supports it, asks the host to fit to the current viewport or put its own display
+    /// back right away.
+    func setFitDisplay(_ enabled: Bool) {
+        let changed = wantsFitDisplay != enabled
+        fitDisplayOverride = enabled
+        guard changed, state == .connected, hostOffersDisplayFitting else { return }
+        send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: .auto,
+                                          preferredCodec: device?.preferredCodec, useVirtualDisplay: enabled)))
+        // On a Mac host, switch capture back to the main display first, then disconnect the now-
+        // unused virtual display so capture isn't yanked out from under itself. A PC restores its
+        // display mode and scale on `selectDisplay(useVirtualDisplay: false)` alone.
+        if !enabled, hostPlatform != .windows {
+            send(.hostCommand(HostCommandMessage(command: .restoreDisplays)))
+        }
     }
 
     func selectDisplay(_ selection: DisplaySelection, targetFPS: Int, quality: QualityPreset) {
@@ -295,7 +320,7 @@ final class ClientSession {
                 // Every new connection needs its own stream request, including reconnects.
                 try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
                     targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
-                    useVirtualDisplay: device.useVirtualDisplay == true)))
+                    useVirtualDisplay: wantsFitDisplay)))
                 if wantsMacAudio, hostOffersAudio {
                     try await channel.send(.audioRequest(AudioRequest(enabled: true)))
                 }
