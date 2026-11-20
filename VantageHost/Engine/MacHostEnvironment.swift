@@ -57,7 +57,7 @@ nonisolated struct MacScreen: HostScreen {
             if select.useVirtualDisplay == true {
                 // A display that already matches the viewport (for example a BetterDisplay screen
                 // the user set up by hand) is used as-is; only otherwise ask the CLI.
-                let wantedWidth = viewport.pixelWidth / 2, wantedHeight = viewport.pixelHeight / 2
+                let wantedWidth = Int(viewport.widthPoints.rounded()), wantedHeight = Int(viewport.heightPoints.rounded())
                 if let existing = all.first(where: { !$0.info.isBuiltIn && $0.info.pointWidth == wantedWidth && $0.info.pointHeight == wantedHeight }) {
                     virtualMatch = existing.info
                     Self.log.info("using existing display \(existing.info.id) that already matches the viewport")
@@ -67,7 +67,7 @@ nonisolated struct MacScreen: HostScreen {
                     // Nothing to provision.
                 } else if vdm.isAvailable {
                     let started = MonotonicClock.nanos()
-                    if let virtualID = try? await vdm.provision(pointWidth: viewport.pixelWidth / 2, pointHeight: viewport.pixelHeight / 2),
+                    if let virtualID = try? await vdm.provision(pointWidth: wantedWidth, pointHeight: wantedHeight),
                        let match = try? await DisplayEnumerator.shareableDisplays().first(where: { $0.info.id == virtualID }) {
                         virtualMatch = match.info
                     } else {
