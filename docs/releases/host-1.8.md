@@ -8,6 +8,8 @@ Host 1.8 goes with Casement 1.2 (9). Most of that build's new features need it.
   mind mid-session without the stream restarting.
 - **Text sharpens when the screen stops.** A still screen used to keep whatever softness the last
   moving frame left. Now, a moment after things stop, the host sends one more, sharper pass.
+  On a PC with an NVIDIA graphics card this pass changes nothing yet: its encoder ignores the
+  setting. Macs are unaffected.
 - **Fit Display settles first.** The host waits for the fitted mode before sending the picture, and
   a PC keeps the fitted mode through a brief reconnect instead of switching back and forth.
 
