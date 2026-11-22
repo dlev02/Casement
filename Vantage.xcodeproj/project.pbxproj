@@ -466,7 +466,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network, and over your local network when you turn that on.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
@@ -523,7 +523,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network, and over your local network when you turn that on.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
@@ -577,6 +577,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement Host lets your paired devices connect over this network when you turn on Local network connections.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -611,6 +612,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement Host lets your paired devices connect over this network when you turn on Local network connections.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

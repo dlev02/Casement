@@ -42,6 +42,10 @@ final class InputController {
     var mode: TouchMode = .trackpad
     var trackpadSensitivity: Double = 1.5
     var naturalScroll = true
+    /// An input-only session: there's no picture, so this device can't know where the computer's
+    /// pointer is. Moves go as `moveBy` deltas (with acceleration, so a phone-sized pad still
+    /// crosses a big display) and the host clicks wherever its pointer is.
+    var relativeOnly = false
     /// "⌘ acts as Ctrl" for a PC. Applies to the hardware keyboard only: callers pass modifiers
     /// already remapped (`keyRemap.modifiers`) with the strip's sticky ones added as they are.
     var keyRemap = KeyRemap.none
@@ -91,10 +95,22 @@ final class InputController {
 
     /// Relative move (trackpad mode).
     func moveRelative(translation: CGSize, action: PointerAction = .move, button: PointerButton = .left, modifiers: KeyModifiers = []) {
+        if relativeOnly, action == .move {
+            let gain = Self.acceleratedGain(sensitivity: trackpadSensitivity, step: hypot(translation.width, translation.height))
+            send?(.pointerEvent(PointerEvent(action: .moveBy, button: button, x: Float(translation.width * gain), y: Float(translation.height * gain),
+                                             modifiers: modifiers)))
+            return
+        }
         let scale = trackpadSensitivity
         cursorPoint.x = (cursorPoint.x + translation.width * scale).clamped(0, displayPointSize.width - 1)
         cursorPoint.y = (cursorPoint.y + translation.height * scale).clamped(0, displayPointSize.height - 1)
         emitPointer(action: action, button: button, clickCount: 1, modifiers: modifiers)
+    }
+
+    /// The pointer's gain for one step of a finger (points since the last update): the sensitivity
+    /// for slow, careful moves, rising to four times it for a flick across the pad.
+    nonisolated static func acceleratedGain(sensitivity: Double, step: Double) -> Double {
+        sensitivity * min(1 + 0.15 * max(step - 1, 0), 4)
     }
 
     /// Lets go of `button` where the pointer already is.
@@ -110,6 +126,21 @@ final class InputController {
     private func emitPointer(action: PointerAction, button: PointerButton, clickCount: Int, modifiers: KeyModifiers) {
         send?(.pointerEvent(PointerEvent(action: action, button: button, x: Float(cursorPoint.x), y: Float(cursorPoint.y), clickCount: UInt8(max(1, clickCount)), modifiers: modifiers)))
         if localCursor != nil { onLocalCursorChange?() }
+    }
+
+    // MARK: Apple Pencil
+
+    /// The host takes the Pencil as a pen tablet (`HostCapabilities.stylus`): pressure and tilt
+    /// go with every sample instead of plain clicks and drags.
+    var stylusEnabled = false
+
+    /// One Pencil sample at a point in the client view, mapped like every absolute position.
+    func stylus(viewPoint: CGPoint, phase: StylusPhase, pressure: Double, altitude: Double, azimuth: Double, clickCount: Int = 1,
+                modifiers: KeyModifiers = []) {
+        guard let point = pointerMapping.displayPoint(forViewPoint: viewPoint) else { return }
+        cursorPoint = point
+        send?(.stylusEvent(StylusEvent(phase: phase, x: Float(point.x), y: Float(point.y), pressure: Float(pressure), altitude: Float(altitude),
+                                       azimuth: Float(azimuth), clickCount: UInt8(clamping: max(1, clickCount)), modifiers: modifiers)))
     }
 
     // MARK: Scroll

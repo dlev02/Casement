@@ -47,6 +47,16 @@
 	<array>
 		<string>me.drewlevinson.casement.transfers.*</string>
 	</array>
+	<!-- Local network connections: computers running Casement Host with Local Network
+	     Connections on advertise this service; the device matches them by key fingerprint. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_casement._tcp</string>
+	</array>
+	<!-- ProMotion iPhones hold apps to 60 Hz without this, and touches (pointer moves) are
+	     delivered once a frame: the pointer would move at half the rate an iPad's does. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Casement uses the microphone when you dictate text to your computer.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

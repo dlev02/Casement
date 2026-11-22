@@ -83,6 +83,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   the trailing edge, and a button names what it does in the current state (Allow…, Turn On…,
   Show Them…, Settings…; Screen Recording/Accessibility say Allowed or offer Allow…; Remote
   Login/Screen Sharing say On or offer Turn On…). Removing a paired device asks first.
+  General → Local network connections (off by default) restarts the listener with or without the
+  Bonjour advertisement; sessions already open carry on (Local network in [connection.md](connection.md)).
+- **Virtual HID probe** (DEBUG `--virtual-hid`, `VirtualHIDProbe`): creates a CoreHID virtual
+  touchscreen and gamepad at launch and logs `created` or `refused`; nothing feeds them yet. It is
+  the check that `com.apple.developer.hid.virtual.device` reached the profile. Plan and the
+  entitlement request: [docs/research/virtual-hid.md](../research/virtual-hid.md).
 - **Host updates** (`VantageHost/Updates`; Sparkle 2, linked into the host target only, never the client):
   the Windows host's rules on Sparkle's machinery. `UpdatePolicy` (pure, `HostUpdateTests`): first check 2 min
   after launch, then every 24 h, an hour after a failure, none at all while Install Updates Automatically

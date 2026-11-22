@@ -14,6 +14,8 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
     var pencilSqueeze: PencilAction = .collapseControls
     var pencilDoubleTap: PencilAction = .rightClick
     var onPencilAction: (PencilAction) -> Void = { _ in }
+    /// The host takes Pencil pressure and tilt (`HostCapabilities.stylus`).
+    var stylus = false
 
     func makeUIViewController(context: Context) -> RemoteSessionViewController {
         RemoteSessionViewController(input: input, video: video)
@@ -26,6 +28,7 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
         view.pencilSqueezeAction = pencilSqueeze
         view.pencilDoubleTapAction = pencilDoubleTap
         view.onPencilAction = onPencilAction
+        view.stylusEnabled = stylus
     }
 }
 
@@ -63,9 +66,13 @@ final class RemoteSessionViewController: UIViewController {
 struct TrackpadSurface: UIViewRepresentable {
     let input: InputController
     let stickyModifiers: KeyModifiers
+    /// Keys from a hardware keyboard go to the computer through this pad (Trackpad & Keyboard).
+    var takesHardwareKeyboard = false
 
     func makeUIView(context: Context) -> RemoteInteractionView {
-        RemoteInteractionView(input: input, displayLayer: nil)
+        let view = RemoteInteractionView(input: input, displayLayer: nil)
+        if takesHardwareKeyboard { DispatchQueue.main.async { view.becomeFirstResponder() } }
+        return view
     }
 
     func updateUIView(_ view: RemoteInteractionView, context: Context) {

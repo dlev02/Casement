@@ -10,6 +10,8 @@ import AppKit
 /// a parent re-rendering never makes a second connection or Keychain identity.
 struct RemoteSessionScreen: View {
     let device: SavedDevice
+    /// Trackpad & Keyboard: the computer's input, with no picture.
+    var inputOnly = false
     @Environment(DeviceStore.self) private var store
     @State private var model: ScreenSessionModel?
 
@@ -19,7 +21,7 @@ struct RemoteSessionScreen: View {
         } else {
             placeholder.onAppear {
                 // Takes this computer's shared `FileLink`, so files keep moving after the screen closes.
-                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device))
+                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device), inputOnly: inputOnly)
             }
         }
     }
@@ -116,24 +118,30 @@ struct RemoteSessionLayout: View {
             Color.black.ignoresSafeArea()
             #endif
 
-            #if canImport(UIKit)
+            #if os(iOS)
+            if model.isInputOnly {
+                if model.isConnected { inputOnlyDeck }
+            } else if model.isConnected {
+                RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
+                                           screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
+                                           onPencilAction: performPencilAction, stylus: session.capabilities?.stylus == true)
+                    .overlay { pictureCover }
+                    // The half above the fold in tabletop; nil sizes fill the screen as always.
+                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+            }
+            #elseif canImport(UIKit) // visionOS
             if model.isConnected {
                 RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
                     .overlay { pictureCover }
-                    #if os(visionOS)
                     // Exactly the Mac's shape, so a window that's a little off never shows black
                     // bars (see `VisionSessionPicture`).
                     .background(.black)
                     .aspectRatio(visionPictureAspect, contentMode: .fit)
                     .clipShape(.rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
-                    #else
-                    // The half above the fold in tabletop; nil sizes fill the screen as always.
-                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea()
-                    #endif
             }
             #elseif os(macOS)
             if model.isConnected {
@@ -210,11 +218,11 @@ struct RemoteSessionLayout: View {
             }
             #else
             #if os(iOS)
-            if model.isConnected, let tabletop {
+            if model.isConnected, let tabletop, !model.isInputOnly {
                 tabletopDeck(tabletop)
             }
             #endif
-            if model.isConnected && tabletop == nil && (!model.areControlsHidden || model.dictation.isActive) {
+            if model.isConnected && tabletop == nil && !model.isInputOnly && (!model.areControlsHidden || model.dictation.isActive) {
                 floatingControls
             }
             #endif
@@ -531,6 +539,24 @@ struct RemoteSessionLayout: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
+        .transition(.opacity)
+    }
+    #endif
+
+    #if os(iOS)
+    /// Trackpad & Keyboard: the deck a folded iPhone Duo puts on the desk, filling the screen,
+    /// with dictation's panel over it. A hardware keyboard types on the computer too.
+    private var inputOnlyDeck: some View {
+        VStack(spacing: 12) {
+            dictationPanel
+                .frame(maxWidth: 520)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
+            TabletopDeck(input: model.input, stickyModifiers: $model.stickyModifiers, host: model.hostPlatform, takesHardwareKeyboard: true,
+                         onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
+                if !model.areControlsHidden { controlStrip }
+            }
+        }
+        .padding(16)
         .transition(.opacity)
     }
     #endif

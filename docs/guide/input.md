@@ -39,6 +39,37 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   UIKit; it also needs `GCMouse` deltas the simulator can't produce and a full-screen scene. Don't
   add `prefersPointerLocked = true` back: if SwiftUI ever honoured it, UIKit hover stops and no
   mouse would move the Mac's pointer.
+- **Trackpad & Keyboard** (input-only session; the Mac's menu in the list, iOS only, Macs only):
+  `ClientFeatures.inputOnly` → `SessionAdmission.Kind.inputOnly` (signed as `.screen`, so an older
+  host sees a screen session waiting for a display and the client hangs up when
+  `HostCapabilities.inputOnlySessions` is missing). The host needs only Accessibility: no display
+  list, capture, video, audio or curtain (`selectDisplay`, `audioRequest`, `curtainRequest` are
+  ignored), but input, text, dictation and the clipboard work, and input wakes a sleeping display.
+  Its injector `followPointer()`s: clicks and scrolls land where the Mac's pointer is, and
+  `PointerAction.moveBy` (3) moves it by deltas across every display (`clampToScreens`; within a
+  gesture it counts from its own last position, after a 100 ms pause from the system's). The client
+  shows `TabletopDeck` full screen (trackpad, on-screen Mac keyboard, or both; the strip on top), its
+  `TrackpadSurface` takes the hardware keyboard, and `InputController.relativeOnly` sends `moveBy`
+  with `acceleratedGain` (sensitivity up to 4× for fast flicks). An iPad's own trackpad or mouse
+  doesn't drive it (that needs pointer lock, see above).
+- **Apple Pencil canvas** (`stylusEvent` 125, gated on `HostCapabilities.stylus`): with a host that
+  offers it, `RemoteInteractionView.stylusEnabled` takes the Pencil off the tap, pan and long-press
+  recognizers and sends every coalesced touch (`event.coalescedTouches`, up to 240 Hz) as a
+  `StylusEvent`: phase (hover/down/move/up/leave), display point, `force / maximumPossibleForce`,
+  `altitudeAngle`, `azimuthAngle(in:)` and the tap count (double-tap still double-clicks). Hover
+  comes from the Pencil hover recognizer; a stroke's end, or hover ending, sends `leave` 0.4 s later
+  unless the Pencil comes back. The host (`InputInjector.injectStylus`) posts a tablet proximity
+  event on entry, then mouse events with subtype tablet point, `mouseEventPressure`,
+  `tabletEventPointPressure`, `tabletEventTiltX/Y` (`StylusEvent.tilt`: lean × cos/sin azimuth) and
+  one device ID, and proximity exit on `leave` or `releaseAll`. Squeeze and double-tap actions are
+  unchanged. Needs a check with a real Pencil and drawing apps (Photoshop, Affinity, Krita):
+  whether they need tablet x/y fields or vendor proximity fields too, and the tilt signs.
+- **120 Hz** (audited 2026-11-22): pointer updates go out as each pan/hover/touch callback fires,
+  one `sendDetached` per event, `TCP_NODELAY` on, no throttle on either side; the host's injector
+  posts from its own user-interactive queue, off the session actor. ProMotion iPhones ran the app at
+  60 Hz until `CADisableMinimumFrameDurationOnPhone` (Info.plist), which halves pointer update rate
+  there; iPads are 120 Hz anyway. The Pencil sends its coalesced samples; fingers and trackpads send
+  the latest position per frame, which is what the Mac shows.
 - **Mac shortcuts and password**: `HostShortcut` (`Vantage/Model/HostShortcut.swift`; `MacShortcut`
   is a typealias) sends system-default chords; for a Mac (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with

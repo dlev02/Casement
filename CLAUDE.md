@@ -22,7 +22,7 @@ app's bundle identifier uses the new one. New user-facing text says Casement; th
 says Vantage when it means the code. The GitHub repo is `dlev02/Casement`.
 
 Vantage is a native Apple remote-desktop app: an iPadOS client controls a macOS host over
-Tailscale only. It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
+Tailscale, or (opt-in, already-paired devices) the local network ([ADR-0001](docs/adr/0001-tailscale-only.md)). It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
 project is `Vantage.xcodeproj` (hand-maintained pbxproj, objectVersion 77, file-system-synchronized
 groups). Read this before working here.
 
@@ -63,7 +63,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   for a large minimum: on a Mac with a content filter (Little Snitch), non-loopback connections run
   through Network.framework's `ne_filter`, which silently dropped stream chunks whenever a receive
   waited for ≥ 16 KB (4K keyframes from a PC arrived with holes, then `badMagic`). Loopback and
-  BSD sockets never showed it, so loopback tests can't catch it.
+  BSD sockets never showed it, so loopback tests can't catch it. Off the tailnet the channel
+  seals every frame after the challenge (`SessionCrypto`; Local network in `docs/guide/connection.md`).
 - **Host pipeline**: `ScreenCapture` (ScreenCaptureKit, `'420v'`, sRGB, dirty-rect ratio) →
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held

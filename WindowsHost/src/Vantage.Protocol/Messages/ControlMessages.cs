@@ -119,6 +119,12 @@ public sealed record ClientFeatures
     [JsonPropertyName("localCursor")] public bool? LocalCursor { get; init; }
     /// <summary>The client understands <c>curtainStatus</c>, so it hears of a curtain already up.</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
+    /// <summary>
+    /// An input-only session: the device is the computer's trackpad and keyboard, no picture. Signed
+    /// as a screen session. This host doesn't offer <see cref="HostCapabilities.InputOnlySessions"/>,
+    /// so the client hangs up.
+    /// </summary>
+    [JsonPropertyName("inputOnly")] public bool? InputOnly { get; init; }
 }
 
 public sealed record Hello : IMessage
@@ -142,6 +148,11 @@ public sealed record Hello : IMessage
     /// predate host authentication, which sign the older transcript.
     /// </summary>
     [JsonPropertyName("clientNonce")] public byte[]? ClientNonce { get; init; }
+    /// <summary>
+    /// The client's X25519 share for an encrypted connection outside Tailscale (the Mac host's
+    /// local-network mode). This host takes tailnet peers only and never answers it.
+    /// </summary>
+    [JsonPropertyName("clientKeyShare")] public byte[]? ClientKeyShare { get; init; }
 }
 
 public sealed record Challenge : IMessage
@@ -163,6 +174,11 @@ public sealed record Challenge : IMessage
     /// key it names. Sent whenever the hello carried a nonce; the client refuses a host without it.
     /// </summary>
     [JsonPropertyName("hostSignature")] public byte[]? HostSignature { get; init; }
+    /// <summary>
+    /// The host's X25519 share answering <see cref="Hello.ClientKeyShare"/>; then the signature
+    /// covers both shares and every later frame is a sealed record. Never sent by this host.
+    /// </summary>
+    [JsonPropertyName("hostKeyShare")] public byte[]? HostKeyShare { get; init; }
 }
 
 public sealed record Authenticate : IMessage
@@ -205,6 +221,10 @@ public sealed record HostCapabilities
     /// PC whose host isn't elevated, where Windows drops it. Null from Macs and older hosts.
     /// </summary>
     [JsonPropertyName("canControlAdminApps")] public bool? CanControlAdminApps { get; init; }
+    /// <summary>Input-only sessions and <see cref="PointerAction.MoveBy"/> (the Mac host only).</summary>
+    [JsonPropertyName("inputOnlySessions")] public bool? InputOnlySessions { get; init; }
+    /// <summary>The host takes <see cref="StylusEvent"/> (the Mac host only).</summary>
+    [JsonPropertyName("stylus")] public bool? Stylus { get; init; }
 }
 
 public sealed record HostReadiness

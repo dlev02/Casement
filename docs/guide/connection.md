@@ -49,6 +49,41 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   Mac). The client keeps it as `ClientSession.hostPlatform` (from the challenge, then the
   capabilities) and `HostAvailabilityStore.platforms`. DEBUG host `--platform windows|macos`
   overrides what it sends, to try the client against a pretend PC.
+- **Local network** ([ADR-0001](../adr/0001-tailscale-only.md); `SessionCrypto`, `PeerReach`,
+  `TailscaleListener`, `LocalDiscovery`/`HostRoute`): with Casement Host → Settings → General →
+  Local network connections on (`HostController.localNetworkEnabled`, defaults
+  `vantage.localNetwork`; DEBUG `--local-network` without writing it) the listener also takes
+  private and link-local peers (`VantageNetwork.isLocalNetworkAddress`: 10/8, 172.16/12,
+  192.168/16, 169.254/16, fe80::/10, fc00::/7 minus Tailscale's ULA; never public addresses) and
+  advertises `_casement._tcp` with TXT `fp` (the host key's `DeviceIdentity.fingerprint`), `pv`
+  (protocol version) and `os`. The listener tags each connection with its `PeerReach` (tailnet,
+  localNetwork, loopback in DEBUG) and `SessionAdmission.begin(peer:)` decides: a local peer must
+  offer `Hello.clientKeyShare` and already be paired (else `denied`, pairing happens over
+  Tailscale), and the challenge answers with `Challenge.hostKeyShare`; a tailnet peer's share is
+  ignored (WireGuard already seals it; no double encryption), loopback's is answered so tests run
+  the sealed path. Both signatures then cover both shares (`vantage-host-auth-v2`,
+  `vantage-auth-v3` with the shares appended), and HKDF-SHA256 over the X25519 secret, salted with
+  a hash of the whole handshake, gives a ChaCha20-Poly1305 key per direction. `MessageChannel`
+  switches at the challenge (`send(_:thenEncryptWith:)` on the host, `encrypt(with:)` on the device
+  before `authenticate`): every frame after is a record (`'E' 0 0 0 | len | sealed frame | tag`,
+  counter nonces), a sealed record that arrives before this side has keys waits for them, and a
+  plain frame after the switch ends the channel (`plaintextAfterEncryption`). The file channel
+  sends `attachMedia` plain, then both sides seal it with `SessionKeys.fileChannelKeys(token:)`
+  (host: `HostSession.attachFileChannel`). The device side is `ClientHandshake` (VantageCore),
+  shared by the screen, probe, files-only and input-only connections. Settings → Connection → Local
+  Network (`LocalDiscovery.enabledKey`, off by default; browsing raises iOS's Local Network prompt)
+  runs an `NWBrowser` while the app is in front; `HostRoute.candidates` puts a saved computer's
+  Bonjour service first when its fingerprint matches the saved `hostPublicKey` (so a renamed or
+  readdressed Mac is found), then the saved address. Any failure on the local route (gone, refused,
+  can't prove the key, `HostIdentityCheck.Failure.unencrypted`) falls through to Tailscale at once
+  (local routes get 4 s). A saved address that is itself private (a LAN IP) also requires
+  encryption. The file channel goes to the session's resolved remote endpoint, since its token is
+  bound to the peer address. Tests: `SessionEncryptionTests` (VantageCore: sealed traffic both ways
+  over loopback TCP, tamper, replay, downgrade, a swapped share, local refusals, file keys).
+  Verified end to end against a built synthetic host over loopback (sealed handshake, video, a 3 MB
+  file over the sealed file channel, an input-only session). Not yet checked on a real network:
+  Bonjour advertising and browsing (and the Local Network prompts on both ends), a USB-C link, and
+  a Windows host (which stays tailnet-only and ignores the share).
 - **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual display sized to
   the client's viewport in points (`viewport.widthPoints × heightPoints`, so 1× and 3× displays get
   the right logical size on iPad, iPhone, Mac, Vision Pro, and Full Screen; behind a protocol so

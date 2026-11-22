@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Advertised only while Settings → General → Local network connections is on. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_casement._tcp</string>
+	</array>
 	<key>SUFeedURL</key>
 	<string>https://github.com/dlev02/Casement/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
