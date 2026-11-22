@@ -103,6 +103,8 @@ extension Message {
     private static let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dataEncodingStrategy = .base64
+        // The same message always encodes to the same bytes (the golden vectors stay put).
+        encoder.outputFormatting = .sortedKeys
         return encoder
     }()
 

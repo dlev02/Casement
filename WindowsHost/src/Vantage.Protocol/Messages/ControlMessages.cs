@@ -119,11 +119,6 @@ public sealed record ClientFeatures
     [JsonPropertyName("localCursor")] public bool? LocalCursor { get; init; }
     /// <summary>The client understands <c>curtainStatus</c>, so it hears of a curtain already up.</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
-    /// <summary>
-    /// The computer's own Natural Scrolling setting, which a device copies into that computer's
-    /// toggle. Only Macs send it; this host leaves it out.
-    /// </summary>
-    [JsonPropertyName("naturalScroll")] public bool? NaturalScroll { get; init; }
 }
 
 public sealed record Hello : IMessage
@@ -200,6 +195,11 @@ public sealed record HostCapabilities
     [JsonPropertyName("cursorShapes")] public bool? CursorShapes { get; init; }
     /// <summary>The host can black out its own screen (<c>curtainRequest</c>).</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
+    /// <summary>
+    /// The computer's own Natural Scrolling setting, which a device copies into that computer's
+    /// toggle. Only Macs send it; this host leaves it out.
+    /// </summary>
+    [JsonPropertyName("naturalScroll")] public bool? NaturalScroll { get; init; }
 }
 
 public sealed record HostReadiness
