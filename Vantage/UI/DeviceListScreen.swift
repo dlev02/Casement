@@ -101,12 +101,9 @@ struct DeviceListScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .listLeading) {
-            #if os(macOS)
-            // The Mac's settings are the Settings window (⌘,), never the iPad's pushed list.
-            SettingsLink { Label("Settings", systemImage: "gearshape") }
-            #else
-            NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
-            #endif
+            // A sheet over the list on every device, rather than a page that replaces it.
+            Button { actions.showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                .accessibilityIdentifier("deviceList.settings")
         }
         ToolbarItemGroup(placement: .listTrailing) {
             // Layout is its own button, not an item tucked under Sort: it shows what a click
@@ -155,6 +152,7 @@ final class DeviceActions {
     #endif
 
     var showAddDevice = false
+    var showSettings = false
     var showTailscaleDevices = false
     var editingDevice: SavedDevice?
     var deviceToDelete: SavedDevice?
@@ -212,6 +210,13 @@ private struct DeviceActionPresentations: ViewModifier {
         content
             .sheet(isPresented: $actions.showAddDevice) {
                 AddDeviceSheet().appLockCurtain()
+            }
+            .sheet(isPresented: $actions.showSettings) {
+                #if os(macOS)
+                MacSettingsSheet().appLockCurtain()
+                #else
+                SettingsSheet().appLockCurtain()
+                #endif
             }
             .sheet(isPresented: $actions.showTailscaleDevices) {
                 TailscaleDevicesSheet().appLockCurtain()

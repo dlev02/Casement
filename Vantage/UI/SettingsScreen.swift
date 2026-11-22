@@ -913,3 +913,24 @@ private struct OnDeviceParakeetSection: View {
     }
 }
 #endif
+
+#if !os(macOS)
+/// Settings in a sheet with Done: from the list's gear button, and from Casement › Settings… (⌘,)
+/// when the iPad app runs on a Mac. The Mac's own sheet is `MacSettingsSheet`.
+struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SettingsScreen()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("settings.done")
+                    }
+                }
+        }
+    }
+}
+#endif

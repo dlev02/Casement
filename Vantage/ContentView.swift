@@ -67,7 +67,7 @@ struct ContentView: View {
         #endif
         #if os(iOS)
         .sheet(isPresented: Bindable(MacHostedSettingsRequest.shared).isPresented) {
-            MacHostedSettingsSheet()
+            SettingsSheet()
                 .environment(store)
                 .environment(reachability)
                 .environment(tailscaleAccount)

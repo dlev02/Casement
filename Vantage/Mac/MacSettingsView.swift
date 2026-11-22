@@ -12,23 +12,81 @@ struct MacSettingsView: View {
     }
 
     var body: some View {
+        MacSettingsTabs(tab: $tab)
+            .frame(width: 560)
+            .macWindowRoot()
+            .accessibilityIdentifier("settings")
+    }
+}
+
+/// The same pages in a sheet over the device list, from its gear button: Settings without
+/// leaving the window. ⌘, still opens the Settings window, which works from any window.
+///
+/// A segmented control picks the page rather than a `TabView`: outside a Settings scene a Mac
+/// `TabView` puts its tabs in the window's toolbar, and a sheet has none.
+struct MacSettingsSheet: View {
+    @AppStorage("vantage.mac.settingsTab") private var tab = MacSettingsView.Tab.general
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Settings", selection: $tab) {
+                Text("General").tag(MacSettingsView.Tab.general)
+                Text("Controls").tag(MacSettingsView.Tab.controls)
+                Text("Connection").tag(MacSettingsView.Tab.connection)
+                Text("Privacy & Security").tag(MacSettingsView.Tab.security)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 6)
+            .accessibilityIdentifier("settings.sheet.tabs")
+
+            Group {
+                switch tab {
+                case .general: SettingsPage(content: MacGeneralSettings())
+                case .controls: SettingsPage(content: ControlSettings())
+                case .connection: SettingsPage(content: ConnectionSettings())
+                case .security: SettingsPage(content: SecuritySettings())
+                }
+            }
+            .id(tab) // each page measures its own height
+
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("settings.done")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 580)
+        .onExitCommand { dismiss() }
+        .accessibilityIdentifier("settings.sheet")
+    }
+}
+
+private struct MacSettingsTabs: View {
+    @Binding var tab: MacSettingsView.Tab
+
+    var body: some View {
         TabView(selection: $tab) {
-            SwiftUI.Tab("General", systemImage: "gearshape", value: Tab.general) {
+            SwiftUI.Tab("General", systemImage: "gearshape", value: MacSettingsView.Tab.general) {
                 page { MacGeneralSettings() }
             }
-            SwiftUI.Tab("Controls", systemImage: "keyboard", value: Tab.controls) {
+            SwiftUI.Tab("Controls", systemImage: "keyboard", value: MacSettingsView.Tab.controls) {
                 page { ControlSettings() }
             }
-            SwiftUI.Tab("Connection", systemImage: "network", value: Tab.connection) {
+            SwiftUI.Tab("Connection", systemImage: "network", value: MacSettingsView.Tab.connection) {
                 page { ConnectionSettings() }
             }
-            SwiftUI.Tab("Privacy & Security", systemImage: "hand.raised", value: Tab.security) {
+            SwiftUI.Tab("Privacy & Security", systemImage: "hand.raised", value: MacSettingsView.Tab.security) {
                 page { SecuritySettings() }
             }
         }
-        .frame(width: 560)
-        .macWindowRoot()
-        .accessibilityIdentifier("settings")
     }
 
     /// Each tab can drill in (Customize Controls, the Tailscale account), so each has a stack.
