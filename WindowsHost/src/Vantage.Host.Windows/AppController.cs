@@ -10,6 +10,7 @@ using Microsoft.Windows.AppNotifications.Builder;
 using Microsoft.Windows.Storage.Pickers;
 using Vantage.Host.Windows.Composition;
 using Vantage.Host.Windows.Files;
+using Vantage.Host.Windows.DesktopHelper;
 using Vantage.Host.Windows.Input;
 using Vantage.Host.Windows.Logging;
 using Vantage.Host.Windows.Startup;
@@ -344,6 +345,7 @@ public sealed class AppController
         Runtime.WindowsSessionEnded += kind => RunOnUi(() => _ = QuitAsync());
         Runtime.Environment.Trust.Changed += () => RunOnUi(Refresh);
         if (Runtime.Input is { } input) input.ElevatedWindowBlocked += window => RunOnUi(() => OnElevatedWindowBlocked(window));
+        if (Runtime.Helper is { } helper) helper.Changed += () => RunOnUi(Refresh);
         _log.LogInformation("running {Mode}", ElevatedWindows.ThisProcessIsElevated ? "as administrator" : "without administrator rights");
         if (!options.Synthetic) TurnOnStartAtLoginOnce();
         if (!options.Synthetic && !DebugBuild)
@@ -522,33 +524,50 @@ public sealed class AppController
     /// <summary>Whether this copy runs as administrator (so it can control administrator apps).</summary>
     public static bool IsElevated => ElevatedWindows.ThisProcessIsElevated;
 
-    /// <summary>"Control apps running as administrator" is on.</summary>
-    public bool ControlsAdminApps => Runtime?.Settings.Current.ControlAdminApps ?? false;
+    /// <summary>
+    /// "Control administrator prompts and apps" is on: Casement Host Service is installed, or (from
+    /// before it existed) the elevated launch task is.
+    /// </summary>
+    public bool ControlsAdminApps => HelperInstall.IsInstalled || UsesLegacyAdminTask;
+
+    /// <summary>The old way is on: an elevated launch task that any program running as you could start.</summary>
+    public bool UsesLegacyAdminTask => (Runtime?.Settings.Current.ControlAdminApps ?? false) && !HelperInstall.IsInstalled;
+
+    /// <summary>The desktop helper is connected (the service is installed and running in this session).</summary>
+    public bool HelperConnected => Runtime?.Helper?.IsConnected == true;
 
     /// <summary>
-    /// Turns "Control apps running as administrator" on (registers the elevated task, which Windows
-    /// asks permission for, then restarts through it, back on General) or off (deletes the task; this
-    /// elevated copy closes immediately). False when Windows' prompt was declined or failed.
+    /// Turns "Control administrator prompts and apps" on (installs Casement Host Service, which
+    /// Windows asks permission for; it also removes the old elevated task) or off (removes the
+    /// service, or the old task, closing an elevated copy). False when Windows' prompt was declined
+    /// or it failed.
     /// </summary>
     public async Task<bool> SetControlsAdminAppsAsync(bool on)
     {
         if (Runtime is null) return false;
-        if (!(on ? await AdminLaunch.RegisterAsync(ExecutablePath) : await AdminLaunch.UnregisterAsync()))
+        var folder = Path.GetDirectoryName(ExecutablePath)!;
+        if (on || HelperInstall.IsInstalled)
         {
-            _log.LogWarning("couldn't {Action} the administrator task", on ? "register" : "delete");
+            if (!await HelperInstall.RunElevatedAsync(folder, install: on))
+            {
+                _log.LogWarning("couldn't {Action} Casement Host Service", on ? "install" : "remove");
+                return false;
+            }
+            // Installing removed the old task; uninstalling leaves nothing behind.
+            Runtime.Settings.Update(s => s with { ControlAdminApps = false });
+            _log.LogInformation("Casement Host Service {State}", on ? "installed" : "removed");
+            Refresh();
+            return true;
+        }
+
+        if (!await AdminLaunch.UnregisterAsync())
+        {
+            _log.LogWarning("couldn't delete the administrator task");
             return false;
         }
-        Runtime.Settings.Update(s => s with { ControlAdminApps = on });
-        _log.LogInformation("control of administrator apps turned {State}", on ? "on" : "off");
-        if (on && !IsElevated)
-        {
-            await QuitAsync(afterStop: async () =>
-            {
-                WriteOpenOnLaunch("general");
-                if (!await AdminLaunch.RunAsync()) _log.LogError("the administrator task didn't start");
-            });
-        }
-        else if (!on && IsElevated)
+        Runtime.Settings.Update(s => s with { ControlAdminApps = false });
+        _log.LogInformation("the old administrator task was removed");
+        if (IsElevated)
         {
             // A process cannot shed its elevated token. Stop hosting rather than leave an
             // elevated input injector alive behind a switch that says Off.
@@ -751,7 +770,7 @@ public sealed class AppController
         if (!Sessions.Any(s => !s.IsFilesOnly)) return;
         Notify(new AppNotificationBuilder()
             .AddText($"{window.Name} runs as administrator")
-            .AddText("To use it from Casement, turn on Control apps running as administrator in Casement Host's settings.")
+            .AddText("To use it from Casement, turn on Control administrator prompts and apps in Casement Host's settings.")
             .AddArgument("action", "general")
             .AddButton(new AppNotificationButton("Settings").AddArgument("action", "general")));
     }

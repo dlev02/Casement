@@ -25,7 +25,7 @@ namespace Vantage.Host.Windows.Capture;
 /// asleep, exclusive fullscreen, mode change), a size change or a lost device end the stream
 /// through <c>onStopped</c>; the core restarts capture.
 /// </summary>
-internal sealed class WgcCaptureStream : ICaptureStream
+internal sealed class WgcCaptureStream : IGpuCaptureStream
 {
     private const int PoolBuffers = 3;
     private static readonly long s_throttleSlackTicks = TimeSpan.FromMilliseconds(2).Ticks;
@@ -139,6 +139,12 @@ internal sealed class WgcCaptureStream : ICaptureStream
             try { _session.MinUpdateInterval = TimeSpan.FromTicks(ticks); }
             catch (Exception ex) { _log.LogDebug("MinUpdateInterval change failed: {Message}", ex.Message); }
         }
+    }
+
+    /// <summary>Ends the stream (the core restarts capture): the secure desktop took the input.</summary>
+    public void Stop(string reason)
+    {
+        lock (_gate) StopLocked(reason);
     }
 
     public ValueTask DisposeAsync()

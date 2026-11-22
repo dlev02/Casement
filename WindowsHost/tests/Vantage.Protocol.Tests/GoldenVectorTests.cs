@@ -64,7 +64,7 @@ public class GoldenVectorTests
             Capabilities = new HostCapabilities
             {
                 Codecs = [VideoCodec.H264], CanManageVirtualDisplay = false, Clipboard = true, MaxFPS = 60,
-                FileTransfer = true, FilesOnlySessions = true, Platform = "windows",
+                FileTransfer = true, FilesOnlySessions = true, Platform = "windows", CanControlAdminApps = false,
             },
         }),
         ("authResultPairing", new AuthResult { Status = AuthStatus.PairingRequired, Message = "Enter the pairing code shown on the PC" }),
@@ -102,6 +102,15 @@ public class GoldenVectorTests
         {
             IsScreenLocked = true, IsSecureInputActive = false, InputPath = HostInputPath.Native, Message = "The PC is locked",
             IsDisplayAsleep = false, IsScreenUnavailable = false,
+        }),
+        ("hostStatusAdminApp", new HostStatus
+        {
+            IsScreenLocked = false, IsSecureInputActive = false, InputPath = HostInputPath.Native, BlockedAdminApp = "Task Manager",
+        }),
+        ("hostStatusSecureDesktop", new HostStatus
+        {
+            IsScreenLocked = true, IsSecureInputActive = false, InputPath = HostInputPath.Native, Message = "The PC is locked",
+            ControlsSecureDesktop = true,
         }),
         ("fileOffer", new FileOffer
         {

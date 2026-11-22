@@ -210,10 +210,13 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// The host can black out its own screen (`curtainRequest`). Nil from older hosts, which would
     /// drop the session on that kind.
     public var curtain: Bool?
+    /// Whether input reaches apps that run as administrator (Task Manager, installers): false from a
+    /// PC whose host isn't elevated, where Windows drops it. Nil from Macs and older hosts.
+    public var canControlAdminApps: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
                 audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil,
-                curtain: Bool? = nil) {
+                curtain: Bool? = nil, canControlAdminApps: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -225,6 +228,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.curtain = curtain
         self.platform = platform
         self.cursorShapes = cursorShapes
+        self.canControlAdminApps = canControlAdminApps
     }
 }
 
@@ -390,15 +394,26 @@ public struct HostStatus: Codable, Sendable, Equatable {
     /// The display is awake but the host has had no picture of it for a few seconds (capture
     /// won't start); it keeps trying. Nil from hosts that predate it.
     public var isScreenUnavailable: Bool?
+    /// A PC's host isn't elevated and the device's latest click or key press went to an app that
+    /// runs as administrator, so Windows dropped it: that app's window title ("Task Manager").
+    /// Nil once a press reaches an ordinary window, and from Macs and older hosts.
+    public var blockedAdminApp: String?
+    /// The PC's Casement Host Service shows and controls Windows' secure desktop (the lock screen,
+    /// administrator prompts, Ctrl+Alt+Del), so a locked PC can be unlocked from here and
+    /// `isSecureInputActive` stays false. Nil from Macs, older hosts and PCs without it.
+    public var controlsSecureDesktop: Bool?
 
     public init(isScreenLocked: Bool, isSecureInputActive: Bool, inputPath: HostInputPath, message: String? = nil,
-                isDisplayAsleep: Bool? = nil, isScreenUnavailable: Bool? = nil) {
+                isDisplayAsleep: Bool? = nil, isScreenUnavailable: Bool? = nil, blockedAdminApp: String? = nil,
+                controlsSecureDesktop: Bool? = nil) {
         self.isScreenLocked = isScreenLocked
         self.isSecureInputActive = isSecureInputActive
         self.inputPath = inputPath
         self.message = message
         self.isDisplayAsleep = isDisplayAsleep
         self.isScreenUnavailable = isScreenUnavailable
+        self.blockedAdminApp = blockedAdminApp
+        self.controlsSecureDesktop = controlsSecureDesktop
     }
 }
 

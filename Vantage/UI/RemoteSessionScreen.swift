@@ -159,7 +159,8 @@ struct RemoteSessionLayout: View {
                 }
                 #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
-                if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
+                if let status = session.hostStatus, !session.isDisplayAsleep,
+                   HostStatusBanner.isShown(for: status) {
                     HostStatusBanner(status: status, host: host)
                         .padding(.top, 12)
                         .transition(bannerTransition)
@@ -361,6 +362,7 @@ struct RemoteSessionLayout: View {
             .environment(store)
             .appLockCurtain()
         }
+        .modifier(AdminShortcutConfirmation(model: model))
         .alert("Couldn't Type the Password", isPresented: Binding(get: { model.screenSharingError != nil },
                                                                 set: { if !$0 { model.screenSharingError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -382,6 +384,7 @@ struct RemoteSessionLayout: View {
             stickyModifiers: $model.stickyModifiers,
             touchMode: $model.touchMode,
             onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) },
+            onShortcut: { model.sendShortcut($0) },
             onShowKeyboard: { showKeyboard.toggle() },
             onSendClipboard: { model.sendClipboard() },
             onSendPassword: { model.typePassword() },

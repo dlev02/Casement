@@ -191,6 +191,7 @@ internal sealed class SessionAdmission
                 // Like the Mac, offered to every client; only one that said macAudio is answered.
                 Audio = _env.Audio is { UnavailableReason: null } ? true : null,
                 Curtain = _env.Curtain is not null ? true : null,
+                CanControlAdminApps = _env.ControlsAdminApps?.Invoke(),
             },
         },
     };

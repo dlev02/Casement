@@ -129,3 +129,14 @@ SetProcessShutdownParameters
 SHGetKnownFolderPath
 FOLDERID_Downloads
 CoTaskMemFree
+
+// Casement Host Service and its SYSTEM desktop helper (secure desktop, administrator apps)
+WTSGetActiveConsoleSessionId
+WTSQueryUserToken
+GetNamedPipeClientSessionId
+SetThreadDesktop
+GetCurrentProcess
+DuplicateTokenEx
+SetTokenInformation
+CreateProcessAsUserW
+GetNamedPipeClientProcessId

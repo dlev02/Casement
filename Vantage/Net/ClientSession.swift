@@ -86,6 +86,9 @@ final class ClientSession {
     var files: FileTransferController { fileLink.files }
     /// The host can take a file channel. False for hosts that predate file transfer.
     var hostOffersFiles: Bool { capabilities?.fileTransfer == true }
+    /// The host said Windows drops its input to apps running as administrator (it isn't elevated).
+    /// False for Macs and hosts that don't say.
+    var hostBlocksAdminApps: Bool { capabilities?.canControlAdminApps == false }
 
     init(identity: DeviceIdentity? = nil, files: FileTransferController? = nil) {
         let keychain = KeychainStore(service: "com.benjaminlevinson.vantage.client")

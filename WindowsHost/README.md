@@ -74,13 +74,14 @@ straight away.
   while a device is connected, signing out, restarting or shutting down the PC, Windows Update's
   restarts included, stops on Windows' restart screen, which names Casement Host and the device,
   so someone at the PC can cancel or go ahead; a forced restart can't be stopped, and when the
-  PC does go, the device reconnects by itself once Casement Host is back after sign-in), and **Control apps running as administrator**. Windows ignores clicks and typing that a normal app sends to
-  an app running as administrator, and Task Manager always runs that way, so turn this on to use
-  those apps from Casement. Windows asks for permission once, and only at the PC itself; after
-  that Casement Host starts as administrator through a Task Scheduler task named Casement Host,
-  without asking again. While it's off, Casement Host shows a notification on the PC when a click
-  lands on such an app. Any program running as you could use that task to get administrator rights without
-  a prompt, so turn this on only if you need it.
+  PC does go, the device reconnects by itself once Casement Host is back after sign-in), and **Control administrator prompts and apps**. Windows keeps administrator (UAC) prompts, the
+  lock screen and apps that run as administrator, such as Task Manager, out of reach of a normal app,
+  so turn this on to use them from Casement. Windows asks for permission once, and only at the PC
+  itself, to install Casement Host Service, which runs as SYSTEM, starts with Windows and helps
+  Casement Host only while you're signed in (it can't sign in after a restart). Any program running as
+  you could also answer administrator prompts through it, so turn this on only if you need it; turning
+  it off, or uninstalling Casement Host, removes it. While it's off, Casement Host shows a notification
+  on the PC, and the device a banner, when a click lands on such an app.
   **Updates** shows the version and **Check for updates**, with **Install updates automatically**
   beside it (on by default).
 - **Devices**: **Show pairing code**, who's connected now, and the devices you've paired. Removing

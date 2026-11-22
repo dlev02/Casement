@@ -195,6 +195,11 @@ public sealed record HostCapabilities
     [JsonPropertyName("cursorShapes")] public bool? CursorShapes { get; init; }
     /// <summary>The host can black out its own screen (<c>curtainRequest</c>).</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
+    /// <summary>
+    /// Whether input reaches apps that run as administrator (Task Manager, installers): false on a
+    /// PC whose host isn't elevated, where Windows drops it. Null from Macs and older hosts.
+    /// </summary>
+    [JsonPropertyName("canControlAdminApps")] public bool? CanControlAdminApps { get; init; }
 }
 
 public sealed record HostReadiness
@@ -328,6 +333,18 @@ public sealed record HostStatus : IMessage
     [JsonPropertyName("message")] public string? Message { get; init; }
     [JsonPropertyName("isDisplayAsleep")] public bool? IsDisplayAsleep { get; init; }
     [JsonPropertyName("isScreenUnavailable")] public bool? IsScreenUnavailable { get; init; }
+    /// <summary>
+    /// The app that the device's last click or key press went to runs as administrator and Windows
+    /// dropped the input (its window title, "Task Manager"); null once a press reaches an ordinary
+    /// window, and from hosts that can control such apps.
+    /// </summary>
+    [JsonPropertyName("blockedAdminApp")] public string? BlockedAdminApp { get; init; }
+    /// <summary>
+    /// The PC's Casement Host Service shows and controls Windows' secure desktop (the lock screen,
+    /// administrator prompts, Ctrl+Alt+Del), so a locked PC can be unlocked from the device and
+    /// <c>isSecureInputActive</c> stays false. Null from Macs, older hosts and PCs without it.
+    /// </summary>
+    [JsonPropertyName("controlsSecureDesktop")] public bool? ControlsSecureDesktop { get; init; }
 }
 
 public sealed record HostCommandMessage : IMessage

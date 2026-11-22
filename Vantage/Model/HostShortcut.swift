@@ -58,6 +58,10 @@ nonisolated struct HostShortcut: Identifiable, Hashable, Sendable {
 
     static let pcMenuOrder: [HostShortcut] = [start, search, taskView, switchApps, pcShowDesktop, taskManager]
 
+    /// Opens an app that always runs as administrator (Task Manager, on Windows 11), which a PC
+    /// whose host isn't elevated can show but not control: Windows drops the clicks and keys.
+    var opensAdminApp: Bool { id == HostShortcut.taskManager.id }
+
     // MARK: Lookup
 
     /// The shortcut a strip control sends to this host; nil for controls that aren't shortcuts,

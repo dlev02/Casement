@@ -78,11 +78,15 @@ public sealed partial class GeneralPage : Page
             AdminSwitch.IsOn = _controller.ControlsAdminApps;
             AdminSwitch.IsEnabled = _controller.Runtime is not null;
         }
-        AdminCard.Description = _controller.ControlsAdminApps
-            ? "On. Other programs running as you could also use its launch task to gain administrator rights without asking. Turning this off removes the task and closes the elevated host; reopen it from Start to run normally."
-            : AppController.IsElevated
-                ? "This copy was started as administrator. Quit Casement Host and reopen it normally to stop administrator access."
-                : "Off. Casement Host is running without administrator rights. Turn this on only if you need to control administrator apps such as Task Manager.";
+        AdminCard.Description = _controller.UsesLegacyAdminTask
+            ? "On through an older elevated launch task, which other programs running as you could also start. Turn this off and on again to switch to Casement Host Service."
+            : _controller.ControlsAdminApps
+                ? _controller.HelperConnected
+                    ? "On. Paired devices can answer administrator prompts, unlock this PC at its lock screen, and use apps such as Task Manager. Programs running as you could also answer administrator prompts through it."
+                    : "On, but Casement Host Service isn't reachable yet. It starts with Windows; if this stays, turn the setting off and on again."
+                : AppController.IsElevated
+                    ? "This copy was started as administrator. Quit Casement Host and reopen it normally to stop administrator access."
+                    : "Lets paired devices answer administrator prompts, unlock this PC at its lock screen, and use apps such as Task Manager. Windows asks once, to install Casement Host Service.";
         UpdateUpdates();
         _updating = false;
     }
@@ -230,7 +234,7 @@ public sealed partial class GeneralPage : Page
         AdminSwitch.IsEnabled = false;
         try
         {
-            if (!on && AppController.IsElevated)
+            if (!on && _controller.UsesLegacyAdminTask && AppController.IsElevated)
             {
                 var confirm = new ContentDialog
                 {
@@ -255,14 +259,16 @@ public sealed partial class GeneralPage : Page
                 AdminSwitch.IsOn = !on;
                 _updating = false;
                 AdminFeedback.Severity = InfoBarSeverity.Error;
-                AdminFeedback.Message = "Windows couldn't change administrator access. The setting has been restored. Try again and accept the Windows permission prompt if one appears.";
+                AdminFeedback.Message = on
+                    ? "Casement Host Service wasn't installed. Try again and accept the Windows permission prompt."
+                    : "Casement Host Service wasn't removed. Try again and accept the Windows permission prompt.";
                 AdminFeedback.Visibility = Visibility.Visible;
                 AdminFeedback.IsOpen = true;
             }
             else if (!on && !AppController.IsElevated)
             {
                 AdminFeedback.Severity = InfoBarSeverity.Success;
-                AdminFeedback.Message = "Administrator access is off. The elevated launch task has been removed.";
+                AdminFeedback.Message = "Administrator access is off. Casement Host Service has been removed.";
                 AdminFeedback.Visibility = Visibility.Visible;
                 AdminFeedback.IsOpen = true;
             }

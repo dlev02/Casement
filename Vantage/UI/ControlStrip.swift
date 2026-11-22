@@ -10,6 +10,9 @@ struct ControlStrip: View {
     @Binding var stickyModifiers: KeyModifiers
     @Binding var touchMode: InputController.TouchMode
     let onKey: (UInt16, KeyModifiers) -> Void
+    /// Sends a host shortcut (the session may ask first, see `ScreenSessionModel.sendShortcut`);
+    /// nil sends its chord through `onKey`.
+    var onShortcut: ((HostShortcut) -> Void)?
     let onShowKeyboard: () -> Void
     let onSendClipboard: () -> Void
     let onSendPassword: () -> Void
@@ -370,7 +373,7 @@ struct ControlStrip: View {
     /// Shortcuts ignore whatever modifiers are being held — ⌃↑ means Mission Control, not
     /// ⇧⌃↑ — and clear them, the same as tapping a key.
     private func send(_ shortcut: HostShortcut) {
-        onKey(shortcut.keyCode, shortcut.modifiers)
+        if let onShortcut { onShortcut(shortcut) } else { onKey(shortcut.keyCode, shortcut.modifiers) }
         if !stickyModifiers.isEmpty {
             withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
         }

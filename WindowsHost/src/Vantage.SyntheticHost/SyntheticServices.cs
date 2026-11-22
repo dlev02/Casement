@@ -47,10 +47,19 @@ internal sealed class LoggingInputSink : IInputSink
     private readonly EventLog _log;
     private readonly WindowsInputTranslator _translator;
     private readonly List<string> _actions = [];
+    private readonly Action<string?>? _blockedAdminApp;
+    private bool _taskManagerInFront;
 
-    public LoggingInputSink(EventLog log, ILogger logger)
+    /// <param name="log">The JSONL input log.</param>
+    /// <param name="logger">The translator's logger.</param>
+    /// <param name="blockedAdminApp">
+    /// <c>--admin-apps-blocked</c>: told "Task Manager" when Ctrl+Shift+Esc opens it and on each key
+    /// press while it's in front, null when a click lands elsewhere (as the real host reports).
+    /// </param>
+    public LoggingInputSink(EventLog log, ILogger logger, Action<string?>? blockedAdminApp = null)
     {
         _log = log;
+        _blockedAdminApp = blockedAdminApp;
         _translator = new WindowsInputTranslator(new Recorder(_actions), logger);
     }
 
@@ -62,6 +71,11 @@ internal sealed class LoggingInputSink : IInputSink
 
     public void Pointer(PointerEvent e)
     {
+        if (_blockedAdminApp is not null && e.Action == PointerAction.Down)
+        {
+            _taskManagerInFront = false;
+            _blockedAdminApp(null);
+        }
         _translator.Pointer(e);
         Write(new JsonObject
         {
@@ -83,6 +97,12 @@ internal sealed class LoggingInputSink : IInputSink
 
     public void Key(KeyEvent e)
     {
+        if (_blockedAdminApp is not null && e.IsDown)
+        {
+            const KeyModifiers chord = KeyModifiers.Control | KeyModifiers.Shift;
+            if (e.KeyCode == 0x35 && (e.Modifiers & chord) == chord) _taskManagerInFront = true; // Esc
+            else if (_taskManagerInFront) _blockedAdminApp("Task Manager");
+        }
         _translator.Key(e);
         Write(new JsonObject
         {

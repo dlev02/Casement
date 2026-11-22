@@ -35,6 +35,7 @@ $staging = Join-Path $root "artifacts\publish\VantageHost"
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 dotnet publish $project -c $Configuration -r win-x64 --self-contained -p:Platform=x64 -o $staging
 if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
+& (Join-Path $PSScriptRoot "publish-service.ps1") -Arch x64 -Destination $staging -Configuration $Configuration
 
 New-Item -ItemType Directory -Force $Destination | Out-Null
 robocopy $staging $Destination /MIR /NFL /NDL /NJH /NJS /NP | Out-Null

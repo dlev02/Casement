@@ -88,6 +88,9 @@ final class ScreenSessionModel {
     var isEditingControls = false
     /// "Files are still transferring. Disconnect anyway?" (an older host would stop them).
     var isConfirmingDisconnect = false
+    /// A shortcut that opens an administrator app on a PC that can't control one, waiting for
+    /// the person to confirm (`sendShortcut`).
+    var adminShortcutToConfirm: HostShortcut?
 
     // Notices.
     /// The file just received, for the notice at the top.
@@ -317,7 +320,20 @@ final class ScreenSessionModel {
         input.tapChord(keyCode: keyCode, modifiers: modifiers)
     }
 
+    /// Sends a shortcut, except one that opens an administrator app on a PC whose host can't
+    /// control it (Task Manager would sit there, out of reach): that asks first.
     func sendShortcut(_ shortcut: HostShortcut) {
+        if shortcut.opensAdminApp && session.hostBlocksAdminApps {
+            adminShortcutToConfirm = shortcut
+            return
+        }
+        input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
+    }
+
+    /// The person chose to open the administrator app anyway.
+    func confirmAdminShortcut() {
+        guard let shortcut = adminShortcutToConfirm else { return }
+        adminShortcutToConfirm = nil
         input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
     }
 

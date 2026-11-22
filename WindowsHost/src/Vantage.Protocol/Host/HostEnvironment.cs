@@ -41,6 +41,14 @@ public sealed class HostEnvironment
     /// </summary>
     public IDisplayFitter? DisplayFitter { get; init; }
 
+    /// <summary>
+    /// Whether input reaches apps that run as administrator (<c>canControlAdminApps</c>), asked as
+    /// each screen session is admitted: on Windows, whether the host runs elevated or Casement Host
+    /// Service's desktop helper is connected. Null (or answering null) where the question doesn't
+    /// arise: nothing is advertised.
+    /// </summary>
+    public Func<bool?>? ControlsAdminApps { get; init; }
+
     /// <summary>Encoders for captured frames.</summary>
     public required IVideoEncoderFactory Encoders { get; init; }
 

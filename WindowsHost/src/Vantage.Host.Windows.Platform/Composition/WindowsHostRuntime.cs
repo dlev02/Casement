@@ -3,6 +3,7 @@ using Vantage.Host.Windows.Audio;
 using Vantage.Host.Windows.Capture;
 using Vantage.Host.Windows.Clipboard;
 using Vantage.Host.Windows.Desktop;
+using Vantage.Host.Windows.DesktopHelper;
 using Vantage.Host.Windows.Encode;
 using Vantage.Host.Windows.Files;
 using Vantage.Host.Windows.Input;
@@ -42,14 +43,16 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         Tailscale = new TailscaleCli(logging);
         Files = new WindowsFileStore(options.Synthetic && options.ReceiveFolder is null ? null : Settings,
                                      options.ReceiveFolder ?? (options.Synthetic ? SyntheticReceiveFolder() : null), logging);
-        Screen = new WindowsScreenSource(logging, options.DirtyRegions);
+        var ed25519 = new NSecEd25519();
+        // Casement Host Service's SYSTEM helper (secure desktop, administrator apps), when installed.
+        Helper = options.Synthetic ? null : Own(new HelperClient(logging, ed25519));
+        Screen = new WindowsScreenSource(logging, options.DirtyRegions, Helper);
         Encoders = new MediaFoundationEncoderFactory(logging, new EncoderTuning(options.Encoder, options.RateControl, Codec: options.Codec));
         IVideoEncoderFactory encoders = options.DumpH264 is { } dump
             ? new DumpingEncoderFactory(Encoders, dump, logging.CreateLogger("Vantage.Encode"))
             : Encoders;
 
         var storage = new DpapiProtectedStorage(Paths.SecretsDirectory);
-        var ed25519 = new NSecEd25519();
         var inputLog = logging.CreateLogger("Vantage.Input");
         IInputInjector injector;
         if (options.Synthetic)
@@ -58,7 +61,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         }
         else
         {
-            Input = new SendInputInjector(inputLog);
+            Input = new SendInputInjector(inputLog, Helper);
             injector = Input;
         }
 
@@ -73,7 +76,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
         }
         else
         {
-            status = Own(new SessionStatusMonitor(Window, logging));
+            var monitor = Own(new SessionStatusMonitor(Window, logging, Helper));
+            Input!.BlockedAppChanged += monitor.SetBlockedAdminApp;
+            status = monitor;
             power = Own(new PowerControl(Window, logging));
             clipboard = new Win32Clipboard(Window, logging);
         }
@@ -92,6 +97,8 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             HostName = HostName(),
             Platform = options.Platform,
             Screen = Screen,
+            // UIPI lets only an elevated process's input reach elevated windows (Task Manager), or the SYSTEM helper's.
+            ControlsAdminApps = options.Synthetic ? null : () => ElevatedWindows.ThisProcessIsElevated || Helper?.IsConnected == true,
             DisplayFitter = DisplayFitter,
             Curtain = options.Synthetic ? new PretendCurtain() : Curtain,
             Cursor = new Cursor.WindowsCursorSource(logging),
@@ -154,6 +161,9 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
 
     /// <summary>The real input injector (null for synthetic runs).</summary>
     public SendInputInjector? Input { get; }
+
+    /// <summary>The link to Casement Host Service's desktop helper; null on synthetic runs.</summary>
+    public HelperClient? Helper { get; }
 
     /// <summary>The hidden Win32 window (tray, clipboard, notifications).</summary>
     public MessageWindow Window { get; }
