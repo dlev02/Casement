@@ -233,7 +233,14 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   which `publish.ps1` and `make-release.ps1` call, into the host's folder. Users of the old task
   (`HostSettings.ControlAdminApps`, `AdminLaunch`, `Program.ShouldRelaunchElevated`) keep it until they
   turn the switch off and on; the relaunch is skipped once the service is installed. Test:
-  `HelperPipeTests` (the pipe format). Live checks on the PC: see the status line below.
+  `HelperPipeTests` (the pipe format). On Drew-PC (2026-11-22) the PC solution, WinUI app included,
+  builds clean, 561/565 tests pass (4 opt-in skips) and the trimmed service publishes (13.4 MB), but it
+  has **never been installed or run**: nobody was at the PC to approve the install prompt. Still to
+  check there, with someone ready to click Yes twice (install, then uninstall): the service starts a
+  helper in the console session; the trimmed exe runs; a `VantageHostCli`-named check program connects
+  and verifies; Alt+F4 through the helper closes Task Manager where plain `SendInput` can't; a UAC
+  prompt (`PromptOnSecureDesktop=1` there) is captured to a PNG and Escape through the helper dismisses
+  it; the lock screen takes a PIN from a real iPad; uninstall leaves no service, files or key.
 - **Installer** (`installer/CasementHost.iss`, Inno Setup 6.6+; `scripts/make-installer.ps1`, called by
   `make-release.ps1`): `Casement-Host-Setup-x64.exe`/`-arm64.exe` keep the same names every release so the
   READMEs can link `releases/latest/download/`; the zips stay, because the signed manifest points the
