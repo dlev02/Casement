@@ -8,9 +8,10 @@ import UIKit
 import VantageCore
 import os
 
-/// One dictation at a time for a session: records the mic, transcribes on this device or streams
-/// the audio to the Mac (MacWhisper or the host's built-in Parakeet), and holds the text for
-/// review until Send or Cancel.
+/// One dictation at a time for a session: records the mic, transcribes on this device (Apple's
+/// model as you speak, or the optional Parakeet download once you stop) or streams the audio to
+/// the Mac (MacWhisper or the host's built-in Parakeet), and holds the text for review until Send
+/// or Cancel. Listening can be paused and picked up again: the clip and the transcript stay open.
 ///
 /// The Mac path only ever runs when the host advertised a Mac engine (`DictationRoute.resolve`),
 /// so an older host never sees `dictationControl` or `micAudio`. Transcript text is never
@@ -23,7 +24,10 @@ final class DictationController {
         /// Permissions, model download (0–1 when known), or engine warm-up.
         case preparing(progress: Double?)
         case listening
-        /// Audio sent; waiting for the Mac's transcript.
+        /// The microphone is closed, the clip and the transcript so far are kept, and Resume
+        /// carries on where it stopped.
+        case paused
+        /// Recording is over; waiting for the Mac's transcript or this device's Parakeet.
         case transcribing
         case review
         case failed(Failure)
@@ -70,7 +74,10 @@ final class DictationController {
     /// Editable text in review.
     var text = ""
     private(set) var level: Float = 0
+    /// When the stretch being recorded now began (nil while paused).
     private(set) var startedAt: Date?
+    /// Time recorded before the last pause.
+    private(set) var elapsedBeforePause: TimeInterval = 0
     /// The engine that produced the text under review (the Mac may fall back to Apple's).
     private(set) var resultEngine: DictationEngineID?
     /// A live on-iPad transcript shown while the Mac engine records, when the model is installed.
@@ -78,6 +85,12 @@ final class DictationController {
 
     var isActive: Bool { phase != .idle }
     var isListening: Bool { phase == .listening }
+    var isPaused: Bool { phase == .paused }
+
+    /// How long this dictation has recorded, not counting pauses.
+    func elapsed(at date: Date) -> TimeInterval {
+        elapsedBeforePause + (startedAt.map { max(0, date.timeIntervalSince($0)) } ?? 0)
+    }
 
     /// Sends a protocol message to the host (dictation control and audio).
     var send: ((Message) -> Void)?
@@ -86,10 +99,18 @@ final class DictationController {
     /// True right before the microphone takes the audio session (`.playAndRecord`), false right
     /// after it has released it, so Mac audio can step aside instead of fighting over the category.
     var onMicrophoneActive: ((Bool) -> Void)?
+    /// This device's Parakeet, when its model is downloaded and switched on (Settings → Controls).
+    var onDeviceParakeet: () -> (any OnDeviceSpeechEngine)? = { OnDeviceSpeechEngines.parakeet }
 
     private var clipID: UUID?
     private var packetizer: MicPacketizer?
+    /// The clip for this device's Parakeet: 16 kHz PCM16, kept here until listening stops.
+    private var localClip: Data?
+    private var localEngine: (any OnDeviceSpeechEngine)?
+    private var localTranscription: Task<String, any Error>?
     private var capture: MicrophoneCapture?
+    /// Closes the microphone a moment after Pause (the same tail as stopping).
+    private var pauseTask: Task<Void, Never>?
     /// Mic audio for the Mac, in capture order, drained on the main actor.
     private var uplink: AsyncStream<Data>.Continuation?
     private var uplinkTask: Task<Void, Never>?
@@ -117,6 +138,9 @@ final class DictationController {
     /// Uplink audio held for a preview that isn't ready yet (60 s of 16 kHz PCM16); past this
     /// the preview is skipped.
     static let previewBacklogLimit = 60 * 16_000 * 2
+    /// The longest clip kept for this device's Parakeet (10 minutes of 16 kHz PCM16, 19 MB);
+    /// audio past it is dropped, as the Mac does at its own limit.
+    static let localClipLimit = 10 * 60 * 16_000 * 2
 
     // MARK: Control-strip gesture
 
@@ -137,6 +161,8 @@ final class DictationController {
         defer { pressStartedDictation = false }
         if pressStartedDictation {
             if held { stop(then: .review) }
+        } else if phase == .paused {
+            resume()
         } else if phase == .listening || isPreparing {
             stop(then: .review)
         }
@@ -150,7 +176,13 @@ final class DictationController {
 
     /// VoiceOver and keyboard: one action that starts or stops.
     func toggle(route: DictationRoute) {
-        if phase == .listening || isPreparing { stop(then: .review) } else { start(route: route) }
+        if phase == .paused {
+            resume()
+        } else if phase == .listening || isPreparing {
+            stop(then: .review)
+        } else {
+            start(route: route)
+        }
     }
 
     private var isPreparing: Bool {
@@ -178,13 +210,49 @@ final class DictationController {
         switch phase {
         case .preparing:
             cancel()
-        case .listening:
+        case .listening, .paused:
             Task { await finishListening() }
         case .review:
             if case .send(let pressReturn) = completion { sendText(pressReturn: pressReturn) }
         default:
             break
         }
+    }
+
+    /// Closes the microphone and freezes the clock. The clip, the transcript and (on the Mac
+    /// route) the Mac's open clip all stay as they are until Resume, Stop, Send or Cancel.
+    func pause() {
+        guard phase == .listening else { return }
+        elapsedBeforePause = elapsed(at: .now)
+        startedAt = nil
+        phase = .paused
+        level = 0
+        let attempt = self.attempt
+        pauseTask = Task { [weak self] in
+            // The same tail as stopping: the tap lands while the last word is still sounding.
+            try? await Task.sleep(for: Self.captureTail)
+            guard let self, !Task.isCancelled, attempt == self.attempt, self.phase == .paused else { return }
+            self.stopObservingInterruptions()
+            self.releaseMicrophone()
+        }
+    }
+
+    /// Opens the microphone again and carries on with the same clip and transcript.
+    func resume() {
+        guard phase == .paused else { return }
+        pauseTask?.cancel()
+        pauseTask = nil
+        if capture == nil {
+            do {
+                try openMicrophone()
+            } catch {
+                log.error("dictation couldn't resume: \(error.localizedDescription, privacy: .public)")
+                fail(Failure(title: "Dictation Unavailable", message: error.localizedDescription))
+                return
+            }
+        }
+        startedAt = .now
+        phase = .listening
     }
 
     func cancel() {
@@ -205,7 +273,7 @@ final class DictationController {
     /// The session dropped. Audio in flight to the Mac is lost; text under review is kept.
     func connectionLost() {
         switch phase {
-        case .listening, .preparing, .transcribing:
+        case .listening, .paused, .preparing, .transcribing:
             if case .mac = route {
                 let preview = transcript.display
                 reset(keepingPhase: false)
@@ -272,6 +340,19 @@ final class DictationController {
                                                          language: DictationLanguage.code(), format: .pcm16LE16k)))
                 try await startCapture(transcriber: nil, uplink: true)
                 if SFSpeechRecognizer.authorizationStatus() == .authorized { attachPreview() }
+            case .onDeviceParakeet:
+                // Parakeet transcribes the whole clip once it ends, like the Mac's engines, so
+                // the mic opens at once; its model loads while you speak, and Apple's live
+                // preview joins when it can.
+                guard let engine = onDeviceParakeet() else {
+                    fail(Failure(title: "Parakeet Isn't Ready", message: "Download Parakeet again in Settings → Controls → Dictation, or turn it off to use Apple's speech recognition."))
+                    return
+                }
+                localEngine = engine
+                localClip = Data()
+                Task { await engine.prepare() }
+                try await startCapture(transcriber: nil, uplink: true)
+                if SFSpeechRecognizer.authorizationStatus() == .authorized { attachPreview() }
             }
             logStage("listening")
         } catch is CancellationError {
@@ -288,6 +369,7 @@ final class DictationController {
     private func logStage(_ stage: String) {
         let route = switch route {
         case .iPad: LocalDevice.noun
+        case .onDeviceParakeet: "parakeet on \(LocalDevice.noun)"
         case .mac(let engine): engine.rawValue
         }
         log.info("dictation start (\(route, privacy: .public)): \(stage, privacy: .public) after \(LiveTranscriber.milliseconds(since: self.requestedAt), privacy: .public) ms")
@@ -350,19 +432,37 @@ final class DictationController {
             self?.transcript.apply(text, isFinal: isFinal)
         }
         try await transcriber?.start()
-        let (samples, continuation) = AsyncStream<Data>.makeStream()
         if uplink {
+            let (samples, continuation) = AsyncStream<Data>.makeStream()
             self.uplink = continuation
             uplinkTask = Task { [weak self] in
                 for await chunk in samples { self?.upload(chunk) }
             }
         }
+        try openMicrophone()
+        logStage("microphone started")
+        elapsedBeforePause = 0
+        startedAt = .now
+        phase = .listening
+    }
+
+    /// Starts a microphone capture feeding this dictation: at the start, and again after a pause
+    /// (a stopped capture has flushed its converters and can't be started twice).
+    private func openMicrophone() throws {
+        let uplink = self.uplink
+        let transcriber = self.transcriber
         let capture = MicrophoneCapture(
-            analyzerFormat: uplink ? nil : transcriber?.audioFormat,
-            wantsUplink: uplink,
+            analyzerFormat: uplink == nil ? transcriber?.audioFormat : nil,
+            wantsUplink: uplink != nil,
             onAnalyzerBuffer: { [transcriber] buffer in transcriber?.feed(buffer) },
-            onUplink: { chunk in continuation.yield(chunk) },
-            onLevel: { [weak self] level in Task { @MainActor in self?.level = level } })
+            onUplink: { chunk in uplink?.yield(chunk) },
+            onLevel: { [weak self] level in
+                Task { @MainActor in
+                    // The mic stays open a moment after Pause and Stop; the meter doesn't.
+                    guard let self, self.phase == .listening else { return }
+                    self.level = level
+                }
+            })
         onMicrophoneActive?(true)
         do {
             try capture.start()
@@ -371,17 +471,20 @@ final class DictationController {
             throw error
         }
         self.capture = capture
-        logStage("microphone started")
         observeInterruptions(of: capture)
-        startedAt = .now
-        phase = .listening
     }
 
+    /// 16 kHz audio in capture order: to the Mac, or into this device's clip for Parakeet.
     private func upload(_ samples: Data) {
-        guard var packetizer else { return }
-        for packet in packetizer.push(samples) { send?(.micAudio(packet)) }
-        self.packetizer = packetizer
-        // The Mac route's preview listens to the same 16 kHz audio the Mac gets.
+        if localClip != nil {
+            if (localClip?.count ?? 0) + samples.count <= Self.localClipLimit { localClip?.append(samples) }
+        } else if var packetizer {
+            for packet in packetizer.push(samples) { send?(.micAudio(packet)) }
+            self.packetizer = packetizer
+        } else {
+            return
+        }
+        // The preview listens to the same 16 kHz audio the engine gets.
         if let transcriber {
             transcriber.feed(pcm16: samples)
         } else if previewTask != nil {
@@ -396,6 +499,10 @@ final class DictationController {
         // still sounding.
         phase = .transcribing
         level = 0
+        elapsedBeforePause = elapsed(at: .now)
+        startedAt = nil
+        pauseTask?.cancel()
+        pauseTask = nil
         if capture != nil { try? await Task.sleep(for: Self.captureTail) }
         guard attempt == self.attempt else { return } // Cancelled during the tail.
         // Stopping flushes the resamplers, so every captured sample has been handed out after this.
@@ -436,6 +543,48 @@ final class DictationController {
             if let transcriber {
                 await transcriber.finish()
                 if attempt == self.attempt { self.transcriber = nil }
+            }
+        case .onDeviceParakeet:
+            previewTask?.cancel()
+            previewTask = nil
+            previewBacklog = Data()
+            uplink?.finish()
+            uplink = nil
+            await uplinkTask?.value
+            uplinkTask = nil
+            guard attempt == self.attempt, let engine = localEngine else { return }
+            let samples = localClip ?? Data()
+            localClip = nil
+            log.info("dictation clip for Parakeet: \(samples.count, privacy: .public) bytes")
+            let language = DictationLanguage.code()
+            let work = Task { try await engine.transcribe(samples: samples, language: language) }
+            localTranscription = work
+            // The preview's final words are the fallback if Parakeet can't finish.
+            if let transcriber {
+                await transcriber.finish()
+                if attempt == self.attempt { self.transcriber = nil }
+            }
+            let result = await work.result
+            guard attempt == self.attempt, phase == .transcribing else { return }
+            localTranscription = nil
+            switch result {
+            case .success(let transcript):
+                log.debug("parakeet transcript: \(transcript, privacy: .private)")
+                resultEngine = .parakeet
+                text = DictationTranscript.join(self.transcript.prefix, transcript)
+                complete()
+            case .failure(let error):
+                log.error("on-device Parakeet failed: \(error.localizedDescription, privacy: .public)")
+                if self.transcript.finalized.isEmpty {
+                    let keep = self.transcript.prefix
+                    phase = .failed(Failure(title: "Transcription Failed",
+                                            message: "Parakeet couldn't transcribe the recording on \(LocalDevice.this). Try again, or turn Parakeet off in Settings → Controls → Dictation."))
+                    text = keep
+                } else {
+                    // Apple's model heard it too: use that.
+                    text = self.transcript.committed
+                    complete()
+                }
             }
         }
     }
@@ -481,6 +630,12 @@ final class DictationController {
         previewBacklog = Data()
         resultTimeout?.cancel()
         resultTimeout = nil
+        pauseTask?.cancel()
+        pauseTask = nil
+        localTranscription?.cancel()
+        localTranscription = nil
+        localClip = nil
+        localEngine = nil
         releaseMicrophone()
         uplink?.finish()
         uplink = nil
@@ -493,6 +648,7 @@ final class DictationController {
         packetizer = nil
         level = 0
         startedAt = nil
+        elapsedBeforePause = 0
         resultEngine = nil
         hasLivePreview = false
         if !keepingPhase {
@@ -582,17 +738,28 @@ final class DictationController {
     /// anything real (`-VantageDictationSpeak "text"`).
     func speakForTesting(_ phrase: String, route: DictationRoute) {
         reset(keepingPhase: false)
-        guard case .mac(let engine) = route else {
-            phase = .failed(Failure(title: "No Mac Engine", message: "The Mac didn't advertise MacWhisper or Parakeet, so there is nothing to test."))
+        switch route {
+        case .mac(let engine):
+            let id = UUID()
+            clipID = id
+            packetizer = MicPacketizer(dictationID: id)
+            send?(.dictationControl(DictationControl(action: .begin, id: id, engine: engine,
+                                                     language: DictationLanguage.code(), format: .pcm16LE16k)))
+        case .onDeviceParakeet:
+            // The same speech into this device's own Parakeet (its model has to be downloaded).
+            guard let engine = onDeviceParakeet() else {
+                phase = .failed(Failure(title: "Parakeet Isn't Ready", message: "Download it in Settings → Controls → Dictation first."))
+                return
+            }
+            localEngine = engine
+            localClip = Data()
+            Task { await engine.prepare() }
+        case .iPad:
+            phase = .failed(Failure(title: "No Clip Engine", message: "Neither the Mac nor this device has MacWhisper or Parakeet, so there is nothing to test."))
             return
         }
         self.route = route
         completion = .review
-        let id = UUID()
-        clipID = id
-        packetizer = MicPacketizer(dictationID: id)
-        send?(.dictationControl(DictationControl(action: .begin, id: id, engine: engine,
-                                                 language: DictationLanguage.code(), format: .pcm16LE16k)))
         requestedAt = .now
         startedAt = .now
         phase = .listening
@@ -626,6 +793,10 @@ final class DictationController {
         case "download":
             transcript = DictationTranscript()
             phase = .preparing(progress: 0.42)
+        case "paused":
+            elapsedBeforePause = 7
+            hasLivePreview = true
+            phase = .paused
         default:
             startedAt = .now.addingTimeInterval(-7)
             level = 0.6

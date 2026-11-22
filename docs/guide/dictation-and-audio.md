@@ -4,7 +4,10 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
 
 - **Dictation** (`Vantage/Dictation`, `VantageHost/Dictation`, design in
   `docs/research/audio-dictation-files.md` §B/§D): the strip's mic button (hold to talk, tap to
-  toggle) opens `DictationPanel`. "On this iPad" runs `SpeechAnalyzer` (`LiveTranscriber`,
+  toggle) opens `DictationPanel`. Its header is the status and clock on the left and, on the
+  right, History (a clock), Pause or Resume, and Stop; the engine's name shows only once there is
+  text and only when it says something (the Mac's engine, or this device's Parakeet), never
+  while recording (Drew: "On this iPhone" beside Stop was clutter). "On this iPad" runs `SpeechAnalyzer` (`LiveTranscriber`,
   downloads the locale model via `AssetInventory`); "On the Mac (MacWhisper)" streams 16 kHz PCM16
   as `micAudio` (123) between `dictationControl` (64) begin/commit, and the host writes a temp WAV,
   runs `mw transcribe --language xx`, deletes the WAV, and answers `dictationResult` (74), falling
@@ -46,9 +49,30 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   the engine and the panel labels it. Settings rows put values and buttons on the trailing edge
   (the Parakeet model's state, size and Download/Cancel/Remove share one row). `ParakeetRuntime` sits behind
   `BuiltInSpeechEngine`, which the SPM host tests stub (the root package never builds FluidAudio).
-  `--open-settings dictation` (DEBUG) opens the host's Settings in a window for screenshots. Debug: `-VantageDictationFixture listening|review|macTranscribing|macReview|failed|download`
+  `--open-settings dictation` (DEBUG) opens the host's Settings in a window for screenshots. Debug: `-VantageDictationFixture listening|paused|review|macTranscribing|macReview|failed|download`
   shows the panel without the mic; `-VantageDictationSpeak "text"` sends TTS audio through the whole
-  Mac path in the simulator (synthetic hosts advertise engines too, but never type).
+  Mac path in the simulator against a real host (a synthetic host has had no dictation since the
+  2026-11-07 session split, so there it reports "No Clip Engine").
+  **Pause and Resume** (`DictationController.pause()`/`resume()`, `Phase.paused`): Pause freezes
+  the clock (`elapsedBeforePause`, `elapsed(at:)`), closes the microphone after the same
+  `captureTail` as Stop (so Mac audio comes back and the mic indicator goes out), and keeps
+  everything else open: the transcript, the uplink stream, the on-device analyzer, and on the
+  Mac route the Mac's open clip (no audio arrives, so its five-minute cap doesn't run). Resume
+  starts a new `MicrophoneCapture` into the same stream and analyzer (`openMicrophone()`; a
+  stopped capture has flushed its converters and can't restart). Stop, Send and Send + Return
+  work from Paused; a strip tap or ⌃⌥⌘D while paused resumes; a lost connection treats Paused
+  like Listening. Opening the history pauses a live recording. Pause and Resume with a real
+  microphone still need a device check (fixtures only so far).
+  **Dictation History** (`Model/DictationHistory.swift`, `UI/DictationHistoryView.swift`): the
+  last 30 texts sent or copied (`DictationHistory.shared`, added in the model's `deliver`,
+  `resendDictation` and `dictationCopied`; a repeat moves to the top), in
+  `Application Support/Vantage/dictation-history.json` with complete file protection on iOS,
+  left out of backups, never synced, never logged. The panel's clock and the session menu's
+  Dictation History… (under Files & Clipboard on a phone; Session menu on the Mac) open the
+  sheet: Copy and Send per row (Send types it again and is dimmed while the computer can't take
+  typing). Settings → Controls → Save Dictation History (`vantage.dictationHistory`, on by
+  default) hides both entry points when off and deletes the file; Clear History… asks first. A
+  process without the app's bundle id (the package tests) writes a scratch file instead.
 - **Mac audio** (design in `docs/research/audio-dictation-files.md` §A/§D): host `AudioCapture`
   (its own SCK stream, not the video one, so resizes don't drop it; audio only, 2×2 video to a
   no-op `.screen` output, own process excluded) → `AudioRepacketizer` (fixed 480-frame/10 ms

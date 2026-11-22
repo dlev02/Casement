@@ -85,6 +85,7 @@ final class ScreenSessionModel {
     var passwordPrompt: PasswordPrompt?
     var isPickingFiles = false
     var isShowingTransfers = false
+    var isShowingDictationHistory = false
     var isEditingControls = false
     /// "Files are still transferring. Disconnect anyway?" (an older host would stop them).
     var isConfirmingDisconnect = false
@@ -515,7 +516,8 @@ final class ScreenSessionModel {
     /// The computer (MacWhisper, Parakeet) when the host advertised it and Settings allows it;
     /// otherwise this device.
     var dictationRoute: DictationRoute {
-        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines)
+        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines,
+                               hasOnDeviceParakeet: OnDeviceSpeechEngines.parakeet != nil)
     }
 
     func dictationPressed(_ press: DictationPress) {
@@ -526,6 +528,24 @@ final class ScreenSessionModel {
         case .toggle: dictation.toggle(route: dictationRoute)
         case .cancelled: dictation.pressCancelled()
         }
+    }
+
+    /// Recent dictations, to copy or send again. Listening pauses while the list is up.
+    func showDictationHistory() {
+        dictation.pause()
+        isShowingDictationHistory = true
+    }
+
+    /// Types a past dictation on the computer again, as it was sent the first time.
+    func resendDictation(_ text: String) {
+        stickyModifiers = []
+        input.typeText(text)
+        DictationHistory.shared.add(text, computer: savedDevice.name)
+    }
+
+    /// Dictated text copied rather than typed (a secure field on the Mac was in the way).
+    func dictationCopied(_ text: String) {
+        DictationHistory.shared.add(text, computer: savedDevice.name)
     }
 
     // MARK: Wiring
@@ -547,9 +567,10 @@ final class ScreenSessionModel {
         }
         input.send = { [weak self] message in self?.session.send(message) }
         dictation.send = { [weak self] message in self?.session.send(message) }
-        dictation.deliver = { [input] text, pressReturn in
+        dictation.deliver = { [weak self, input] text, pressReturn in
             input.typeText(text)
             if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
+            DictationHistory.shared.add(text, computer: self?.savedDevice.name)
         }
         dictation.onMicrophoneActive = { [macAudio] active in macAudio.setMicrophoneActive(active) }
     }

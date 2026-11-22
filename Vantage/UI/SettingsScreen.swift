@@ -103,6 +103,9 @@ struct ControlSettings: View {
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
+    @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
+    @State private var isConfirmingClearHistory = false
+    private let dictationHistory = DictationHistory.shared
     @AppStorage(Haptic.settingKey) private var haptics = true
     @AppStorage(TabletopDeckMode.enabledKey) private var tabletopLayout = true
     @AppStorage(TabletopDeckMode.defaultsKey) private var tabletopDeck = TabletopDeckMode.trackpad
@@ -252,7 +255,7 @@ struct ControlSettings: View {
         .navigationTitle("Controls")
     }
 
-    private var dictationSection: some View {
+    @ViewBuilder private var dictationSection: some View {
         Section {
             Picker("Transcribe", selection: $dictationEngine) {
                 ForEach(DictationEnginePreference.allCases) { engine in
@@ -263,11 +266,41 @@ struct ControlSettings: View {
             Text("Dictation")
         } footer: {
             #if os(macOS)
-            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the control strip to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
+            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the control strip to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead. This Mac works offline and shows words as you speak.")
             #else
-            Text("Hold the microphone button in the control strip to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
+            Text("Hold the microphone button in the control strip to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead. On this \(LocalDevice.noun) works offline and shows words as you speak.")
             #endif
         }
+
+        Section {
+            Toggle("Save Dictation History", isOn: $savesDictationHistory)
+                .accessibilityIdentifier("settings.dictationHistory")
+            #if os(macOS)
+            // System Settings puts a section's buttons on the trailing edge.
+            HStack {
+                Spacer()
+                clearHistoryButton
+            }
+            #else
+            clearHistoryButton
+            #endif
+        } footer: {
+            Text("The last \(DictationHistory.limit) dictations you sent, kept on \(LocalDevice.this) only, to copy or send again from the dictation panel. Turning this off deletes them.")
+        }
+        .onChange(of: savesDictationHistory) { _, saves in
+            if !saves { dictationHistory.clear() }
+        }
+        .task { dictationHistory.load() }
+        .confirmationDialog("Clear dictation history?", isPresented: $isConfirmingClearHistory, titleVisibility: .visible) {
+            Button("Clear History", role: .destructive) { dictationHistory.clear() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var clearHistoryButton: some View {
+        Button("Clear History…", role: .destructive) { isConfirmingClearHistory = true }
+            .disabled(dictationHistory.entries.isEmpty)
+            .accessibilityIdentifier("settings.clearDictationHistory")
     }
 
     #if os(macOS)
@@ -595,7 +628,7 @@ struct HelpScreen: View {
             FAQEntry("Can someone else connect to my Mac or PC?",
                      "Only a device on your tailnet that you've paired, using a key the computer has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Casement store on this device?",
-                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a computer forgets its saved secrets too."),
+                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a computer forgets its saved secrets too. Unless you turn it off in Settings → Controls, it also keeps the last \(DictationHistory.limit) dictations you sent, on this device only."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
@@ -609,6 +642,10 @@ struct HelpScreen: View {
 }
 
 extension HelpScreen {
+    private static let dictationHistoryEntry = FAQEntry(
+        "Can I get back something I dictated?",
+        "Yes. The clock in the dictation panel, or Dictation History… in the session menu, lists the last \(DictationHistory.limit) dictations you sent, each with Copy and Send. They're kept on \(LocalDevice.this) only and never synced. Turn off Save Dictation History in Settings → Controls to stop keeping them, which also deletes them.")
+
     #if os(macOS)
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
                                            "Yes. Say \"Connect to Studio Mac in Casement\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Casement is locked with Touch ID, the connection waits until you unlock.")
@@ -631,7 +668,8 @@ extension HelpScreen {
         FAQEntry("Can I change the buttons in the control strip?",
                  "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Control Strip… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Pause holds the recording while you think and Resume carries on. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+        dictationHistoryEntry,
     ]
     #else
     #if os(visionOS)
@@ -675,7 +713,8 @@ extension HelpScreen {
                 FAQEntry("Can I change the buttons in the control strip?",
                          "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Control Strip… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Pause holds the recording while you think and Resume carries on. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                dictationHistoryEntry,
     ]
     #endif
 }

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective November 5, 2026**
+**Effective November 22, 2026**
 
 This policy covers the Casement apps for iPhone, iPad, Apple Vision Pro, and Mac, and Casement Host for Mac and Windows (together, "Casement"). Casement is made by Drew Levinson.
 
@@ -17,6 +17,7 @@ Casement stores the following on your devices to work. None of it is sent to the
 - The computers you've added: their names, addresses, and your settings for each.
 - Your preferences, such as appearance, controls, and keyboard options.
 - In the Keychain: this device's identity key, used to prove to your computers that it's really this device. If you choose to add them, it also holds your Tailscale API token or OAuth client, and the account name and password for each Mac you saved one for.
+- The last 30 dictations you sent, so you can copy or send one again. They stay on that device, are never synced or backed up, and are deleted when you turn off **Save Dictation History** in Settings › Controls.
 - Files you receive, in the app's own folder (on iPhone and iPad, Files › On My iPhone/iPad › Casement › Received; on a Mac, your Downloads folder).
 
 **In Casement Host:**
