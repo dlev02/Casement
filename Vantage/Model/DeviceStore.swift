@@ -38,6 +38,12 @@ final class DeviceStore {
         load()
         applyLaunchOptions()
         publishCatalog()
+        // Secrets saved by earlier builds under the entry's id alone get the computer's other names,
+        // once, after the first frame.
+        Task { [weak self] in
+            guard let self else { return }
+            DeviceSecrets.fillInOnce(devices)
+        }
         cloud.onRemoteDevices = { [weak self] devices, tombstones in self?.merge(remote: devices, tombstones: tombstones) }
         if cloud.shouldTurnOnByDefault {
             setCloudSync(true)
@@ -58,29 +64,31 @@ final class DeviceStore {
     }
 
     /// Folds in the list from another device: newer copy of each Mac wins, removals win over
-    /// anything older than the removal, and Macs only known here are kept.
+    /// anything older than the removal, and Macs only known here are kept. The same computer saved
+    /// separately on two devices (two ids, one address or host key) becomes one entry under the
+    /// lower id on both, so later edits and secrets line up (`DeviceMerge`).
     private func merge(remote: [SavedDevice], tombstones remoteTombstones: [UUID: Date]) {
         var changed = false
         for (id, date) in remoteTombstones where (tombstones[id] ?? .distantPast) < date {
             tombstones[id] = date
             if let index = devices.firstIndex(where: { $0.id == id }),
                (devices[index].updatedAt ?? .distantPast) < date {
-                devices.remove(at: index)
-                DeviceSecrets.setPassword(nil, forID: id)
+                DeviceSecrets.removeAll(for: devices.remove(at: index))
                 changed = true
             }
         }
-        for device in remote {
-            if let deleted = tombstones[device.id], (device.updatedAt ?? .distantPast) < deleted { continue }
-            if let index = devices.firstIndex(where: { $0.id == device.id }) {
-                if (devices[index].updatedAt ?? .distantPast) < (device.updatedAt ?? .distantPast) {
-                    devices[index] = device
-                    changed = true
-                }
-            } else if !devices.contains(where: { $0.host == device.host && $0.port == device.port }) {
-                devices.append(device)
-                changed = true
-            }
+        let live = remote.filter { device in
+            guard let deleted = tombstones[device.id] else { return true }
+            return (device.updatedAt ?? .distantPast) >= deleted
+        }
+        let result = DeviceMerge.merge(local: devices, remote: live)
+        for replacement in result.replaced {
+            // Secrets this device kept under the old entry's id move to the one both now share.
+            DeviceSecrets.fillIn(replacement.new, from: replacement.old)
+        }
+        if result.devices != devices {
+            devices = result.devices
+            changed = true
         }
         // A Mac added, renamed, or removed on another device has to reach Siri, Spotlight, and
         // the widgets too, not just local storage.
@@ -88,6 +96,9 @@ final class DeviceStore {
             persist()
             publishCatalog()
         }
+        // iCloud holds a second entry for a computer this device keeps under the lower id: the
+        // list from here tells the other device which to keep.
+        if result.remoteNeedsUpdate { cloud.push(devices: devices, tombstones: tombstones) }
     }
 
     private func applyLaunchOptions() {
@@ -120,7 +131,7 @@ final class DeviceStore {
     /// rather than duplicating it, so the caller gets back the id that secrets belong under.
     @discardableResult
     func add(_ device: SavedDevice) -> SavedDevice {
-        if let index = devices.firstIndex(where: { $0.host == device.host && $0.port == device.port }) {
+        if let index = devices.firstIndex(where: { DeviceMerge.hasSameAddress($0, device) }) {
             devices[index].name = device.name
             devices[index].updatedAt = Date()
             save()
@@ -137,7 +148,7 @@ final class DeviceStore {
     func remove(_ device: SavedDevice) {
         devices.removeAll { $0.id == device.id }
         tombstones[device.id] = Date()
-        DeviceSecrets.setPassword(nil, for: device)
+        DeviceSecrets.removeAll(for: device, sharedNames: !cloud.isEnabled || cloud.deviceListAvailability == .available)
         save()
     }
 
@@ -151,8 +162,12 @@ final class DeviceStore {
 
     func update(_ device: SavedDevice) {
         guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
+        let old = devices[index]
         devices[index] = device
         devices[index].updatedAt = Date()
+        if old.host != device.host || old.port != device.port || old.hostPublicKey != device.hostPublicKey {
+            DeviceSecrets.moved(from: old, to: devices[index])
+        }
         save()
     }
 
@@ -207,6 +222,7 @@ final class DeviceStore {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].hostPublicKey == nil else { return }
         devices[index].hostPublicKey = key
         devices[index].updatedAt = Date()
+        DeviceSecrets.fillIn(devices[index]) // the secrets also go under the key, which other devices share
         save()
     }
 
@@ -224,8 +240,10 @@ final class DeviceStore {
     /// Casement Host was reinstalled there, say).
     func forgetHostKey(for id: UUID) {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].hostPublicKey != nil else { return }
+        let old = devices[index]
         devices[index].hostPublicKey = nil
         devices[index].updatedAt = Date()
+        DeviceSecrets.moved(from: old, to: devices[index])
         save()
     }
 

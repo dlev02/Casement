@@ -132,9 +132,29 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   enabled on the client's App ID). A build without a profile (the simulator, or another team's
   copy) reports `notEntitled` and keeps the list local. Sync is on by default: `DeviceStore.init`
   turns it on once (`CloudSync.shouldTurnOnByDefault`) when the person never chose, the build is
-  entitled, and an iCloud account is signed in; never on the Mac. Turning it on pulls and merges
-  before pushing, and an empty list is never pushed over iCloud's. The app lock and other settings
-  stay per device on purpose.
+  entitled, an iCloud account is signed in, and iCloud Keychain takes an item
+  (`CloudSync.keychainSyncWorks`: always on iOS; a Mac copy needs the data protection Keychain, which
+  only a build signed with the App ID's profile gets, so it's probed once with a throwaway item). The
+  Mac has the same switch (since 2026-11-22). A synced write the Keychain refuses
+  (errSecMissingEntitlement on an unsigned Mac build) lands in the local Keychain instead
+  (`CloudSync.storeSecret`) and the switch says so. Turning it on pulls and merges before pushing,
+  and an empty list is never pushed over iCloud's. The app lock and other settings stay per device
+  on purpose. **One computer, one entry**: the same Mac added separately on two devices used to keep
+  two ids, so edits never crossed and passwords kept under the id were never found. `DeviceMerge`
+  (pure, `DeviceMergeTests`) folds a remote entry with the same address (lowercased, trailing dot
+  dropped) or the same verified host key into the local one under the lower of the two ids, with the
+  newer copy's settings, and pushes back when iCloud still holds the other id; both devices choose
+  the same id on their own, so one round settles it. **Secrets** (`DeviceSecrets`) live under every
+  name the computer goes by, most stable first: `password.key.<host-key fingerprint>`,
+  `password.address.<host>:<port>`, and the old `password.<entry id>` (still written, so earlier
+  builds on other devices find them); likewise `username.…`. Reads take the first with a value;
+  writes and removals touch all of them; `fillInOnce` copies old id-only secrets to the new names
+  once per computer, address and key (`vantage.secretsFilledIn`), and `moved(from:to:)` follows an
+  edited address or a forgotten key. Removing a computer removes its secrets under all its names,
+  which iCloud Keychain carries to the other devices, except while secrets sync but the list can't
+  (`notEntitled`): then only the entry's id goes, so another device still keeping that computer keeps
+  its password. A failed save throws `DeviceSecrets.SaveError`
+  and the Edit sheet and the password sheet stay open with an alert.
 - **visionOS** (native, not "Designed for iPad"): each session opens in its own `WindowGroup(id:
   "session", for: UUID.self)` window (`SessionWindow` in `ContentView.swift`; list and sessions share
   `DeviceStore.shared` / `AppLock.shared`), which `WindowAspectMatcher` reshapes to the Mac's display

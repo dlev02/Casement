@@ -118,9 +118,10 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   an iOS app and still shows the iPad screens; `#if os(macOS)` never reaches it. Controls on the Mac:
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
   off; `MacKeyboardSettings` has the keys), Dictation, Control Strip; no touch, trackpad,
-  on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
-  iCloud sync toggle yet: the Mac build now carries the key-value entitlement, but synced Keychain
-  secrets in the sandboxed Mac app haven't been tried, so the section stays iOS/visionOS-only. Add Computer hides Natural Scrolling (the Mac's own
+  on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID", "Require Touch
+  ID to Type Passwords" and has the iCloud sync switch (2026-11-22; see iCloud sync in
+  [client.md](client.md): a copy without the data protection Keychain keeps secrets on the Mac and
+  says so; a signed build syncing real secrets still needs a check). Add Computer hides Natural Scrolling (the Mac's own
   mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
   About isn't a tab: Casement › About Casement (`CommandGroup(replacing: .appInfo)`) opens
   `Window("About Casement")` (`MacAboutWindow`) showing `AboutScreen`.

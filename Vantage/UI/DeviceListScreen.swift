@@ -69,7 +69,7 @@ struct DeviceListScreen: View {
                     Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
                     Button { actions.editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
                     if ScreenSharingPassword.canLogIn(device) {
-                        Button { actions.deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
+                        Button { actions.requestLogIn(to: device) } label: { Label("Log In", systemImage: "key") }.tint(.orange)
                     }
                 }
                 .contextMenu { DeviceMenu(device: device, actions: actions) }
@@ -174,9 +174,32 @@ final class DeviceActions {
         showSendFiles = true
     }
 
-    func logIn(to device: SavedDevice, atHomeAddress: Bool = false) {
-        logInStatus = .typing(device.name)
+    /// Log In from a menu or swipe. Where Face ID (or Touch ID, or the passcode) is asked before
+    /// the password leaves the Keychain, that prompt is the confirmation; elsewhere a dialog asks.
+    func requestLogIn(to device: SavedDevice) {
+        if PasswordConfirmation.willAsk {
+            logIn(to: device)
+        } else {
+            deviceToLogIn = device
+        }
+    }
+
+    /// Asks for Face ID first unless `confirmed` (the home-address retry, already asked about).
+    func logIn(to device: SavedDevice, atHomeAddress: Bool = false, confirmed: Bool = false) {
+        guard logInStatus?.isTyping != true else { return }
         Task {
+            if !confirmed {
+                switch await PasswordConfirmation.confirm("Log in to \(device.name)") {
+                case .confirmed: break
+                case .cancelled: return
+                case .failed(let message):
+                    logInStatus = .failed(message)
+                    try? await Task.sleep(for: .seconds(6))
+                    logInStatus = nil
+                    return
+                }
+            }
+            logInStatus = .typing(device.name)
             do {
                 try await ScreenSharingPassword.logIn(to: device, atHomeAddress: atHomeAddress)
                 logInStatus = .sent(device.name)
@@ -260,7 +283,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 titleVisibility: .visible,
                 presenting: actions.deviceToLogInAtHome
             ) { device in
-                Button("Type Password") { actions.logIn(to: device, atHomeAddress: true) }
+                Button("Type Password") { actions.logIn(to: device, atHomeAddress: true, confirmed: true) }
                 Button("Cancel", role: .cancel) {}
             } message: { device in
                 Text("“\(device.name)” didn't answer over Tailscale. Its home network address is a plain local address: away from home, whatever answers there would receive the password. Continue only on your home network or through your Tailscale subnet router.")
@@ -291,7 +314,7 @@ struct DeviceMenu: View {
         }
         Button { actions.editingDevice = device } label: { Label(Self.editTitle, systemImage: "pencil") }
         if ScreenSharingPassword.canLogIn(device) {
-            Button { actions.deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
+            Button { actions.requestLogIn(to: device) } label: { Label("Log In with Screen Sharing", systemImage: "key") }
         }
         Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
     }
@@ -626,6 +649,10 @@ func osSymbol(_ os: String) -> String {
 /// Progress of "Log In with Screen Sharing" from the device list.
 enum LogInStatus: Equatable {
     case typing(String), sent(String), failed(String)
+
+    var isTyping: Bool {
+        if case .typing = self { true } else { false }
+    }
 }
 
 struct LogInStatusBadge: View {

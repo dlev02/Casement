@@ -361,10 +361,10 @@ struct ConnectionSettings: View {
 struct SecuritySettings: View {
     @AppStorage("vantage.requireBiometrics") private var requireBiometrics = false
     @AppStorage(AppLockDelay.settingKey) private var lockDelay = AppLockDelay.standard.rawValue
+    @AppStorage(PasswordConfirmation.settingKey) private var confirmPasswords = true
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
-        let cloud = store.cloud
         Form {
             #if os(macOS)
             Section {
@@ -373,8 +373,6 @@ struct SecuritySettings: View {
             } footer: {
                 Text("Casement locks when this Mac's screen locks or it goes to sleep, and asks for Touch ID or your password when you're back. Sessions stay connected behind the lock.")
             }
-            // iCloud sync stays off on the Mac until the app is signed for iCloud there: without
-            // that, its Keychain can't hold synced secrets.
             #else
             Section {
                 #if os(visionOS)
@@ -398,24 +396,36 @@ struct SecuritySettings: View {
                 }
             }
 
-            Section {
-                Toggle("Sync with iCloud", isOn: Binding(
-                    get: { cloud.isEnabled },
-                    set: { store.setCloudSync($0) }
-                ))
-                if cloud.isEnabled, let explanation = cloud.deviceListAvailability.explanation {
-                    Label(explanation, systemImage: "info.circle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("iCloud")
-            } footer: {
-                Text("Keeps your saved Macs, their passwords, and your Tailscale key the same on every iPhone, iPad, and Vision Pro signed into your iCloud account, so you set Casement up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else. The app lock and other settings stay with each device.")
-            }
             #endif
+
+            Section {
+                Toggle("Require \(PasswordConfirmation.biometryName ?? "Passcode") to Type Passwords", isOn: $confirmPasswords)
+                    .accessibilityIdentifier("settings.confirmPasswords")
+            }
+
+            cloudSection
         }
         .navigationTitle("Privacy & Security")
+    }
+
+    private var cloudSection: some View {
+        let cloud = store.cloud
+        return Section {
+            Toggle("Sync with iCloud", isOn: Binding(
+                get: { cloud.isEnabled },
+                set: { store.setCloudSync($0) }
+            ))
+            .accessibilityIdentifier("settings.iCloudSync")
+            if cloud.isEnabled, let explanation = cloud.explanation {
+                Label(explanation, systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("iCloud")
+        } footer: {
+            Text("Keeps your saved computers, their passwords, and your Tailscale key the same on every iPhone, iPad, Mac, and Vision Pro signed into your iCloud account, so you set Casement up once. Secrets travel through iCloud Keychain, end-to-end encrypted; Apple can't read them and neither can anyone else. The app lock and other settings stay with each device.")
+        }
     }
 }
 

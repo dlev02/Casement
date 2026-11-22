@@ -344,7 +344,7 @@ private struct MacDeviceDetail: View {
             }
             .help("Change \(device.name)'s settings")
             if ScreenSharingPassword.canLogIn(device) {
-                Button { actions.deviceToLogIn = device } label: {
+                Button { actions.requestLogIn(to: device) } label: {
                     Label("Log In with Screen Sharing", systemImage: "key")
                 }
                 .help("Type \(device.name)'s saved password at its login or lock screen")

@@ -58,9 +58,23 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (listen-only tap; text keys typed on the Mac itself are logged without a key code). Tests:
   `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`. A PC's shortcuts: see
   [pc-on-the-client.md](pc-on-the-client.md).
-  `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
-  Keychain (when-unlocked class); the key button types it plus Return through the host
-  (`TypePasswordDecision` picks the route; `ScreenSessionModel.typePassword` acts on it). When
+  `DeviceSecrets` keeps one Mac password (and optional account name) per computer in the
+  Keychain (when-unlocked class; see iCloud sync in [client.md](client.md) for the names it's kept
+  under); the key button types it plus Return through the host
+  (`TypePasswordDecision` picks the route; `ScreenSessionModel.typePassword` acts on it). Before a
+  saved password is typed anywhere (the key button, the banner's Unlock / Approve, Log In from the
+  list, showing it in Edit Computer) `PasswordConfirmation` asks for Face ID, Touch ID or Optic ID with
+  the passcode as fallback (`.deviceOwnerAuthentication`; Settings → Privacy & Security → Require
+  Face ID to Type Passwords, `vantage.confirmPasswordTyping`, default on; a device with no passcode
+  types straight away). A password just typed into the sheet isn't asked about again. In the list,
+  Face ID is the confirmation, so Log In skips its dialog where Face ID is asked. **Unlock and
+  Approve**: while a Mac reports a locked screen or Secure Event Input, `HostStatusBanner` carries a
+  button (`HostUnlockOffer`): "Unlock with Face ID" / "Approve with Face ID" types through Screen
+  Sharing; without a saved password or account name it reads "Save Password…" / "Add Account
+  Name…" and opens the password sheet. What's saved is read when the session starts, when the host
+  status changes and after saving, not on every redraw. `-VantageHostStatus locked|secure` (DEBUG)
+  shows a synthetic host's status as locked or secure, and `-VantageSkipPasswordConfirmation 1`
+  skips the prompt (simulators). The Unlock path with a real Mac still needs a device check. When
   `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
   Screen Sharing (`ScreenSharingTyper` in VantageCore: RFB 3.889, ARD auth type 30 — DH with a
   256-bit exponent over the server's 4096-bit prime, MD5, AES-128-ECB — then KeyEvents only, no

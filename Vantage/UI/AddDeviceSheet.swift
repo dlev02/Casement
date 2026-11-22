@@ -23,6 +23,9 @@ struct AddDeviceSheet: View {
     @State private var playAudio = false
     @State private var curtain = false
     @State private var password = ""
+    /// The password as the Keychain had it: showing that one asks for Face ID first.
+    @State private var savedPassword = ""
+    @State private var saveError: String?
     @State private var username = ""
     @State private var homeAddress = ""
     @State private var commandSendsControl = true
@@ -130,6 +133,11 @@ struct AddDeviceSheet: View {
                 }
             }
             .onAppear(perform: populate)
+            .alert("Couldn't Save the Password", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveError ?? "")
+            }
         }
         #if os(macOS)
         .frame(minWidth: 480, idealWidth: 520, minHeight: 520, idealHeight: 640)
@@ -157,7 +165,8 @@ struct AddDeviceSheet: View {
                 .textInputAutocapitalization(.never)
                 #endif
                 .autocorrectionDisabled()
-            PasswordField(title: "Mac Password", text: $password)
+            PasswordField(title: "Mac Password", text: $password,
+                          revealReason: !password.isEmpty && password == savedPassword ? "Show the password for \(name)" : nil)
             TextField("Home Network Address (optional)", text: $homeAddress)
                 #if canImport(UIKit)
                 .textInputAutocapitalization(.never)
@@ -183,6 +192,7 @@ struct AddDeviceSheet: View {
         playAudio = existing.playMacAudio == true
         curtain = existing.curtain == true
         password = DeviceSecrets.password(for: existing) ?? ""
+        savedPassword = password
         username = DeviceSecrets.username(for: existing) ?? ""
         homeAddress = existing.homeAddress ?? ""
         controlStrip = existing.controlStrip
@@ -218,8 +228,14 @@ struct AddDeviceSheet: View {
             device = store.add(device)
         }
         if !isPC { // a PC's section is hidden, so nothing typed here to save or clear
-            DeviceSecrets.setPassword(password, for: device)
-            if !password.isEmpty { DeviceSecrets.setUsername(username, for: device) }
+            do {
+                try DeviceSecrets.setPassword(password, for: device)
+                if !password.isEmpty { try DeviceSecrets.setUsername(username, for: device) }
+            } catch {
+                // The rest is saved; the sheet stays so Save can try the Keychain again.
+                saveError = error.localizedDescription
+                return
+            }
         }
         dismiss()
     }
@@ -229,6 +245,8 @@ struct AddDeviceSheet: View {
 struct PasswordField: View {
     let title: String
     @Binding var text: String
+    /// Showing what's there asks for Face ID first, with this reason (a saved password).
+    var revealReason: String?
     @State private var isRevealed = false
     @FocusState private var isFocused: Bool
 
@@ -250,8 +268,13 @@ struct PasswordField: View {
             Button {
                 // Swapping fields drops focus; once the other one is in place, keep typing there.
                 let wasFocused = isFocused
-                isRevealed.toggle()
-                if wasFocused { Task { isFocused = true } }
+                Task {
+                    if !isRevealed, let revealReason, await PasswordConfirmation.confirm(revealReason) != .confirmed { return }
+                    isRevealed.toggle()
+                    guard wasFocused else { return }
+                    await Task.yield()
+                    isFocused = true
+                }
             } label: {
                 Image(systemName: isRevealed ? "eye.slash" : "eye")
             }

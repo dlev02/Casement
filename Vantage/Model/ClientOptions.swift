@@ -86,6 +86,12 @@ enum ClientOptions {
     /// `-VantageHapticProbe 1` lists the haptics played so far as the value of an invisible
     /// `session.hapticProbe` element. Pair it with `-VantageForceHaptics 1` on iPad.
     static var hapticProbe: Bool { value(for: "-VantageHapticProbe") == "1" }
+    /// `-VantageSkipPasswordConfirmation 1` types saved passwords without asking for Face ID
+    /// (simulators and UI tests, which can't answer the prompt).
+    /// `-VantageHostStatus locked` (or `secure`) shows every status the host sends as a lock screen
+    /// (or a secure field), for the status banner's Unlock and Approve with a synthetic host.
+    static var hostStatusFixture: String? { value(for: "-VantageHostStatus") }
+    static var skipsPasswordConfirmation: Bool { value(for: "-VantageSkipPasswordConfirmation") == "1" }
 
     static var seedSampleDevices: Bool {
         #if DEBUG
