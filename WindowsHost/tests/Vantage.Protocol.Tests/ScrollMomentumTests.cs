@@ -179,6 +179,7 @@ public class ScrollMomentumTests
     /// <summary>
     /// The glide goes through the translator's continuous-scroll conversion (2.5 wheel units a point)
     /// with the remainder carried, so a slow tail of single points still comes out as 2 then 3 units.
+    /// Continuous deltas go out negated (the Mac host's signs), so the units are negative here.
     /// </summary>
     [Fact]
     public void WheelUnitsAccumulateThroughTheTail()
@@ -188,12 +189,12 @@ public class ScrollMomentumTests
         rig.Sink.Scroll(Flick(0, 400) with { DeltaY = 0.2f }); // 0.5 units, carried into the glide
         rig.Run(4);
         Assert.All(sent, a => Assert.Equal(InputActionType.Wheel, a.Type));
-        Assert.All(sent, a => Assert.True(a.WheelDelta is > 0 and < WindowsInputTranslator.WheelDelta, $"{a.WheelDelta}"));
+        Assert.All(sent, a => Assert.True(a.WheelDelta is < 0 and > -WindowsInputTranslator.WheelDelta, $"{a.WheelDelta}"));
         var points = Glide(0, 400).Sum(f => f.DeltaY) + 0.2;
-        Assert.Equal((int)Math.Truncate(points * 120 / 48), sent.Sum(a => a.WheelDelta));
+        Assert.Equal(-(int)Math.Truncate(points * 120 / 48), sent.Sum(a => a.WheelDelta));
         var tail = sent.TakeLast(6).Select(a => a.WheelDelta).ToList();
-        Assert.Contains(2, tail);
-        Assert.Contains(3, tail);
+        Assert.Contains(-2, tail);
+        Assert.Contains(-3, tail);
     }
 
     [Fact]
@@ -209,8 +210,8 @@ public class ScrollMomentumTests
         rig.Run(4);
         var vertical = sent.Where(a => a.Type == InputActionType.Wheel).Sum(a => a.WheelDelta);
         var horizontal = sent.Where(a => a.Type == InputActionType.HorizontalWheel).Sum(a => a.WheelDelta);
-        Assert.True(vertical > 0); // positive deltaY = positive WHEEL
-        Assert.True(horizontal > 0); // negative deltaX = positive HWHEEL
+        Assert.True(vertical < 0); // continuous: positive deltaY = negative WHEEL
+        Assert.True(horizontal < 0); // continuous: negative deltaX = negative HWHEEL
         Assert.InRange(horizontal / (double)vertical, 1.9, 2.1);
 
         // Upward and leftward too.
@@ -218,7 +219,7 @@ public class ScrollMomentumTests
         rig.Sink.Scroll(Flick(600, -300) with { DeltaY = 0 });
         rig.Run(4);
         Assert.NotEmpty(sent);
-        Assert.All(sent, a => Assert.True(a.WheelDelta < 0));
+        Assert.All(sent, a => Assert.True(a.WheelDelta > 0));
     }
 
     /// <summary>The iPad's flick: ended, momentum began, the finger's velocity, and its last delta.</summary>

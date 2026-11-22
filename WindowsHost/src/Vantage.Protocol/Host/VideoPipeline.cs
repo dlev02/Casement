@@ -12,7 +12,10 @@ namespace Vantage.Protocol.Host;
 /// flight, a keyframe when one is due (stream start, <c>requestKeyframe</c>, a dropped frame, bad
 /// output) and only once the lane has drained, Annex-B → AVCC/HVCC with the parameter sets pulled
 /// out, <c>videoConfig</c> before an IDR whose sets changed, waiting for an IDR before any frame,
-/// and P-frames dropped under backpressure.
+/// P-frames dropped under backpressure, and the idle sharpening pass: once the picture has held
+/// still for <see cref="IdleSharpenDelay"/>, the last frame is encoded once more under the preset's
+/// <see cref="AdaptiveController.IdleMaxQP"/>, so text left soft by motion's ceiling sharpens when
+/// the screen stops (the Mac's <c>VideoPacer</c> does the same).
 /// </summary>
 /// <remarks>
 /// Everything runs on the session's <see cref="SerialQueue"/>; encoder callbacks only post onto it.
@@ -31,6 +34,9 @@ internal sealed class VideoPipeline : IAsyncDisposable
     /// <summary>An encode with no sink call within this long is treated as lost.</summary>
     public static readonly TimeSpan EncodeStallLimit = TimeSpan.FromSeconds(1);
 
+    /// <summary>How long the picture must stay still before its one sharpening re-encode.</summary>
+    public static readonly TimeSpan IdleSharpenDelay = TimeSpan.FromMilliseconds(300);
+
     private readonly IVideoEncoder _encoder;
     private readonly ICaptureStream _capture;
     private readonly int _targetFps;
@@ -41,12 +47,16 @@ internal sealed class VideoPipeline : IAsyncDisposable
     private readonly Func<Exception, Task> _onEncoderFailed;
     private readonly ILogger _log;
     private readonly ITimer _stall;
+    private readonly ITimer _sharpen;
     private ICapturedFrame? _latest;
     private bool _pendingEncode;
     private long _lastEncodeId;
     private long? _inFlight;
     private DateTimeOffset _inFlightDeadline;
     private long _stallArmedFor;
+    private bool _inFlightForced; // the encode in flight was asked to be an IDR
+    private long _sharpenArmedFor; // which arming of the idle timer counts (bumped by every other encode)
+    private bool _sharpenDue; // the idle timer fired while an encode was in flight: sharpen once it answers
     private bool _needsKeyframe = true;
     private bool _configSent;
     private byte[][]? _lastParameterSets;
@@ -56,7 +66,7 @@ internal sealed class VideoPipeline : IAsyncDisposable
     private int _stalls;
     private EncodingMode _loggedMode = EncodingMode.Motion;
     private int _currentFps;
-    private int _currentMaxQP;
+    private int _currentMaxQP; // what the encoder was last told
     private bool _disposed;
 
     /// <param name="encoder">Made for <paramref name="capture"/> and not yet started; the pipeline starts and disposes it.</param>
@@ -90,6 +100,11 @@ internal sealed class VideoPipeline : IAsyncDisposable
         {
             var encodeId = Volatile.Read(ref _stallArmedFor);
             _queue.Post(() => StallAsync(encodeId));
+        }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _sharpen = time.CreateTimer(_ =>
+        {
+            var armed = Volatile.Read(ref _sharpenArmedFor);
+            _queue.Post(() => SharpenAsync(armed));
         }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
@@ -126,11 +141,8 @@ internal sealed class VideoPipeline : IAsyncDisposable
             _capture.SetFrameRate(fps);
             _encoder.SetFrameRate(fps);
         }
-        if (_adaptive.MaxQP != _currentMaxQP)
-        {
-            _currentMaxQP = _adaptive.MaxQP;
-            _encoder.SetMaxQP(_currentMaxQP);
-        }
+        // The ceiling reaches the encoder just before the next encode (EncodeLatestAsync), so a
+        // sharpening encode in flight keeps its own.
         var previous = _latest;
         _latest = frame;
         previous?.Dispose();
@@ -165,6 +177,24 @@ internal sealed class VideoPipeline : IAsyncDisposable
     /// <summary>Input arrived: the adaptive controller holds motion rate for a moment.</summary>
     public void NoteInput() => _adaptive.NoteInput();
 
+    /// <summary>The device picked another quality preset: rates and ceilings follow from the next frame, a raised floor at once.</summary>
+    public void SetQuality(QualityPreset preset)
+    {
+        if (_adaptive.SetPreset(preset) is { } bitrate) _encoder.SetBitrate(bitrate);
+        var fps = Math.Min(_adaptive.Fps, _targetFps);
+        if (fps != _currentFps)
+        {
+            _currentFps = fps;
+            _capture.SetFrameRate(fps);
+            _encoder.SetFrameRate(fps);
+        }
+        if (_adaptive.IdleMaxQP is null)
+        {
+            _sharpenDue = false;
+            ArmSharpen(false);
+        }
+    }
+
     /// <summary>The client's <c>qualityFeedback</c>: a bitrate change goes to the encoder at once.</summary>
     public void ApplyFeedback(QualityFeedback feedback)
     {
@@ -177,6 +207,7 @@ internal sealed class VideoPipeline : IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
         _stall.Dispose();
+        _sharpen.Dispose();
         _latest?.Dispose();
         _latest = null;
         try
@@ -189,8 +220,12 @@ internal sealed class VideoPipeline : IAsyncDisposable
         }
     }
 
-    /// <summary>Encodes the newest frame (forcing an IDR when one is due). A due IDR waits while the video lane is backed up.</summary>
-    private async Task EncodeLatestAsync()
+    /// <summary>
+    /// Encodes the newest frame (forcing an IDR when one is due). A due IDR waits while the video lane
+    /// is backed up. <paramref name="sharpening"/>: the idle pass, under the preset's idle ceiling;
+    /// every other encode puts the mode's ceiling back first and arms the idle timer again.
+    /// </summary>
+    private async Task EncodeLatestAsync(bool sharpening = false)
     {
         if (_disposed || _latest is not { } frame || _inFlight is not null) return;
         if (_needsKeyframe && _lane.IsVideoBacklogged)
@@ -201,8 +236,21 @@ internal sealed class VideoPipeline : IAsyncDisposable
         _pendingEncode = false;
         var force = _needsKeyframe;
         _needsKeyframe = false;
+        var idleQP = _adaptive.IdleMaxQP;
+        // A keyframe still owed goes out under the mode's ceiling (an IDR at the idle one would be
+        // huge) and arms the pass again.
+        sharpening &= idleQP is not null && !force;
+        var maxQP = sharpening ? idleQP!.Value : _adaptive.MaxQP;
+        if (maxQP != _currentMaxQP)
+        {
+            _currentMaxQP = maxQP;
+            _encoder.SetMaxQP(maxQP);
+        }
+        _sharpenDue = false;
+        if (!sharpening) ArmSharpen(idleQP is not null);
         var encodeId = ++_lastEncodeId;
         _inFlight = encodeId;
+        _inFlightForced = force;
         _inFlightDeadline = _time.GetUtcNow() + EncodeStallLimit;
         Volatile.Write(ref _stallArmedFor, encodeId);
         _stall.Change(EncodeStallLimit, Timeout.InfiniteTimeSpan);
@@ -216,6 +264,31 @@ internal sealed class VideoPipeline : IAsyncDisposable
             if (force) _needsKeyframe = true;
             _log.LogError("encode failed: {Error}", error.Message);
         }
+    }
+
+    /// <summary>Starts the still-picture wait over (or, for a preset without the pass, just cancels it).</summary>
+    private void ArmSharpen(bool arm)
+    {
+        Volatile.Write(ref _sharpenArmedFor, _sharpenArmedFor + 1);
+        _sharpen.Change(arm ? IdleSharpenDelay : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// The picture has been still for <see cref="IdleSharpenDelay"/> since arming
+    /// <paramref name="armed"/>. With nothing in flight the last frame is encoded once more under the
+    /// idle ceiling; with an encode in flight it waits for that answer; a changed frame waiting (which
+    /// arms the timer again when it encodes) or a newer arming makes this one moot. Never retried: a
+    /// sharpening encode that is skipped or dropped leaves the picture as it was.
+    /// </summary>
+    private async Task SharpenAsync(long armed)
+    {
+        if (_disposed || armed != _sharpenArmedFor || _adaptive.IdleMaxQP is null || _latest is null || _pendingEncode) return;
+        if (_inFlight is not null)
+        {
+            _sharpenDue = true;
+            return;
+        }
+        await EncodeLatestAsync(sharpening: true).ConfigureAwait(false);
     }
 
     /// <summary>The encode in flight is done with (output, skipped, failed to queue, or given up on).</summary>
@@ -236,9 +309,12 @@ internal sealed class VideoPipeline : IAsyncDisposable
             _log.LogInformation("encode {Id} answered after it was given up on; {What} dropped", encodeId, output is null ? "the skip" : "its frame");
             return;
         }
+        var wasForced = _inFlightForced;
         Returned();
         if (output is not null) Send(output);
+        else if (wasForced) _needsKeyframe = true; // the IDR it was asked for never came: the next encode is one
         if (_pendingEncode || (_needsKeyframe && _latest is not null)) await EncodeLatestAsync().ConfigureAwait(false);
+        else if (_sharpenDue) await EncodeLatestAsync(sharpening: true).ConfigureAwait(false);
     }
 
     /// <summary>

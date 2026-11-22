@@ -15,7 +15,29 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   iPad ends a scroll with `ended` + momentum `began` + velocity; the host posts `ended` alone, then
   momentum began/continue/end frames at 60 Hz decaying 0.998 per ms (UIScrollView's rate) in whole
   pixels; it needs ≥ 60 pt/s, stops under 10 pt/s or after 3 s, and the next scroll, a click or
-  `releaseAll` ends it (`ScrollMomentumTests`). Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  `releaseAll` ends it (`ScrollMomentumTests`). **Natural Scrolling** stays one per-computer toggle, the
+  only inversion the client applies (`SavedDevice.naturalScroll`), but until the person changes it in
+  Edit Computer (`naturalScrollChosen`) each connection copies the computer's own setting: a Mac
+  host reads `com.apple.swipescrolldirection` (absent = on) per session and sends it as
+  `HostCapabilities.naturalScroll` (`DeviceStore.adoptHostNaturalScroll`). A PC sends nothing.
+  Whether the iPad's own Trackpad & Mouse setting stacks with it still needs a device check.
+  Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  **Three-finger swipes** (iPhone and iPad, where fingers act as a trackpad: Trackpad mode and the
+  iPhone Duo's `TrackpadSurface`; never Direct Touch or visionOS): a three-finger pan recognizer
+  that `gestureRecognizerShouldBegin` only lets start there and while Settings → Controls →
+  Three-Finger Swipes is on (`vantage.threeFingerSwipes`, default on, read by
+  `ScreenSessionModel` into `InputController.threeFingerSwipes`). `TrackpadSwipeTracker` (pure,
+  `Input/TrackpadSwipe.swift`) turns one drag into at most one swipe: 60 pt along an axis that
+  leads the other by 1.6×, so a three-finger tap that slides (still a middle-click: the pan
+  beginning is what fails the tap) or a diagonal drag sends nothing. `HostShortcut.forSwipe`
+  maps it the way each platform's own trackpad does, the picture following the fingers: left =
+  the next Space (⌃→ with Fn, hot key 81) or desktop (Ctrl Win →), right = the previous one (⌃←,
+  hot key 79; Ctrl Win ←), up = Mission Control / Task View, down = the app's windows / Show
+  Desktop (Win D, what three fingers down does on a Windows touchpad). `InputController.swipe`
+  sends it as a chord for `hostPlatform`, which the model keeps current. The view returns
+  `editingInteractionConfiguration = .none`, or iPadOS's own three-finger undo, redo and copy
+  gestures take the fingers. The recognizer needs real fingers: the simulator has no three-finger
+  input, so the gesture itself is unverified until tried on a device.
   **Edges**: every absolute position goes through `PointerMapping` (pure, `PointerMappingTests`):
   past or within `edgeSnap` (2 pt) of the picture's edge lands on the Mac's outermost row/column,
   and an edge position within `cornerSnap` (16 pt) of a corner lands in the corner. macOS reveals
@@ -34,6 +56,37 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   UIKit; it also needs `GCMouse` deltas the simulator can't produce and a full-screen scene. Don't
   add `prefersPointerLocked = true` back: if SwiftUI ever honoured it, UIKit hover stops and no
   mouse would move the Mac's pointer.
+- **Trackpad & Keyboard** (input-only session; the Mac's menu in the list, iOS only, Macs only):
+  `ClientFeatures.inputOnly` → `SessionAdmission.Kind.inputOnly` (signed as `.screen`, so an older
+  host sees a screen session waiting for a display and the client hangs up when
+  `HostCapabilities.inputOnlySessions` is missing). The host needs only Accessibility: no display
+  list, capture, video, audio or curtain (`selectDisplay`, `audioRequest`, `curtainRequest` are
+  ignored), but input, text, dictation and the clipboard work, and input wakes a sleeping display.
+  Its injector `followPointer()`s: clicks and scrolls land where the Mac's pointer is, and
+  `PointerAction.moveBy` (3) moves it by deltas across every display (`clampToScreens`; within a
+  gesture it counts from its own last position, after a 100 ms pause from the system's). The client
+  shows `TabletopDeck` full screen (trackpad, on-screen Mac keyboard, or both; the strip on top), its
+  `TrackpadSurface` takes the hardware keyboard, and `InputController.relativeOnly` sends `moveBy`
+  with `acceleratedGain` (sensitivity up to 4× for fast flicks). An iPad's own trackpad or mouse
+  doesn't drive it (that needs pointer lock, see above).
+- **Apple Pencil canvas** (`stylusEvent` 125, gated on `HostCapabilities.stylus`): with a host that
+  offers it, `RemoteInteractionView.stylusEnabled` takes the Pencil off the tap, pan and long-press
+  recognizers and sends every coalesced touch (`event.coalescedTouches`, up to 240 Hz) as a
+  `StylusEvent`: phase (hover/down/move/up/leave), display point, `force / maximumPossibleForce`,
+  `altitudeAngle`, `azimuthAngle(in:)` and the tap count (double-tap still double-clicks). Hover
+  comes from the Pencil hover recognizer; a stroke's end, or hover ending, sends `leave` 0.4 s later
+  unless the Pencil comes back. The host (`InputInjector.injectStylus`) posts a tablet proximity
+  event on entry, then mouse events with subtype tablet point, `mouseEventPressure`,
+  `tabletEventPointPressure`, `tabletEventTiltX/Y` (`StylusEvent.tilt`: lean × cos/sin azimuth) and
+  one device ID, and proximity exit on `leave` or `releaseAll`. Squeeze and double-tap actions are
+  unchanged. Needs a check with a real Pencil and drawing apps (Photoshop, Affinity, Krita):
+  whether they need tablet x/y fields or vendor proximity fields too, and the tilt signs.
+- **120 Hz** (audited 2026-11-22): pointer updates go out as each pan/hover/touch callback fires,
+  one `sendDetached` per event, `TCP_NODELAY` on, no throttle on either side; the host's injector
+  posts from its own user-interactive queue, off the session actor. ProMotion iPhones ran the app at
+  60 Hz until `CADisableMinimumFrameDurationOnPhone` (Info.plist), which halves pointer update rate
+  there; iPads are 120 Hz anyway. The Pencil sends its coalesced samples; fingers and trackpads send
+  the latest position per frame, which is what the Mac shows.
 - **Mac shortcuts and password**: `HostShortcut` (`Vantage/Model/HostShortcut.swift`; `MacShortcut`
   is a typealias) sends system-default chords; for a Mac (⌘Space, ⌃↑, ⌃↓, F11). The host posts keys the way a Mac keyboard does
   (`KeyboardSequencer`): a chord's modifiers go down first as their own flagsChanged keys (with
@@ -53,9 +106,23 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (listen-only tap; text keys typed on the Mac itself are logged without a key code). Tests:
   `HostInputTests` (in `xcrun swift test`), `MacShortcutTests`. A PC's shortcuts: see
   [pc-on-the-client.md](pc-on-the-client.md).
-  `DeviceSecrets` keeps one Mac password (and optional account name) per saved-device UUID in the
-  Keychain (when-unlocked class); the key button types it plus Return through the host
-  (`TypePasswordDecision` picks the route; `ScreenSessionModel.typePassword` acts on it). When
+  `DeviceSecrets` keeps one Mac password (and optional account name) per computer in the
+  Keychain (when-unlocked class; see iCloud sync in [client.md](client.md) for the names it's kept
+  under); the key button types it plus Return through the host
+  (`TypePasswordDecision` picks the route; `ScreenSessionModel.typePassword` acts on it). Before a
+  saved password is typed anywhere (the key button, the banner's Unlock / Approve, Log In from the
+  list, showing it in Edit Computer) `PasswordConfirmation` asks for Face ID, Touch ID or Optic ID with
+  the passcode as fallback (`.deviceOwnerAuthentication`; Settings → Privacy & Security → Require
+  Face ID to Type Passwords, `vantage.confirmPasswordTyping`, default on; a device with no passcode
+  types straight away). A password just typed into the sheet isn't asked about again. In the list,
+  Face ID is the confirmation, so Log In skips its dialog where Face ID is asked. **Unlock and
+  Approve**: while a Mac reports a locked screen or Secure Event Input, `HostStatusBanner` carries a
+  button (`HostUnlockOffer`): "Unlock with Face ID" / "Approve with Face ID" types through Screen
+  Sharing; without a saved password or account name it reads "Save Password…" / "Add Account
+  Name…" and opens the password sheet. What's saved is read when the session starts, when the host
+  status changes and after saving, not on every redraw. `-VantageHostStatus locked|secure` (DEBUG)
+  shows a synthetic host's status as locked or secure, and `-VantageSkipPasswordConfirmation 1`
+  skips the prompt (simulators). The Unlock path with a real Mac still needs a device check. When
   `HostStatus` reports Secure Event Input or a locked screen, it instead signs in to the Mac's own
   Screen Sharing (`ScreenSharingTyper` in VantageCore: RFB 3.889, ARD auth type 30 — DH with a
   256-bit exponent over the server's 4096-bit prime, MD5, AES-128-ECB — then KeyEvents only, no

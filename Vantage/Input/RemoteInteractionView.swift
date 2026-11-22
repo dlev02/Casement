@@ -35,6 +35,24 @@ final class RemoteInteractionView: UIView {
     /// A Pencil points at what you mean, so it always positions the pointer absolutely no matter
     /// which touch mode fingers are using.
     private var isPencilTouch = false
+    /// Recognizers that take the Pencil as well as fingers; with the canvas on they take fingers only.
+    private var pencilRecognizers: [UIGestureRecognizer] = []
+    /// A Pencil that can't hover leaves no word when it's lifted away, so the host is told it left
+    /// a moment after the last stroke unless something else arrives first.
+    private var stylusLeave: DispatchWorkItem?
+
+    /// The Pencil canvas: the host takes Pencil samples with pressure and tilt
+    /// (`HostCapabilities.stylus`), so strokes skip the tap, pan and long-press recognizers and go
+    /// out one coalesced touch at a time, at the Pencil's own rate. Fingers are unchanged.
+    var stylusEnabled = false {
+        didSet {
+            guard stylusEnabled != oldValue, !isTrackpadSurface else { return }
+            input.stylusEnabled = stylusEnabled
+            for recognizer in pencilRecognizers {
+                recognizer.allowedTouchTypes = stylusEnabled ? Self.fingerTouchTypes : Self.directTouchTypes
+            }
+        }
+    }
     private var pointsAbsolutely: Bool {
         #if os(visionOS)
         // Look and pinch lands where you looked, so a relative trackpad mapping would only fight
@@ -99,6 +117,10 @@ final class RemoteInteractionView: UIView {
         item.trailingBarButtonGroups = []
         return item
     }
+
+    /// iPadOS's own three-finger gestures (swipe to undo and redo, pinch to copy) would take the
+    /// fingers meant for the computer's Spaces and Mission Control.
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
     #endif
 
     override func layoutSubviews() {
@@ -139,6 +161,7 @@ final class RemoteInteractionView: UIView {
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         singleTap.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(singleTap)
+        pencilRecognizers.append(singleTap)
 
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap))
         twoFingerTap.numberOfTouchesRequired = 2
@@ -155,12 +178,25 @@ final class RemoteInteractionView: UIView {
         pan.maximumNumberOfTouches = 1
         pan.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(pan)
+        pencilRecognizers.append(pan)
 
         let twoFingerPan = UIPanGestureRecognizer(target: self, action: #selector(handleScroll))
         twoFingerPan.minimumNumberOfTouches = 2
         twoFingerPan.maximumNumberOfTouches = 2
         twoFingerPan.allowedTouchTypes = Self.fingerTouchTypes
         addGestureRecognizer(twoFingerPan)
+
+        #if !os(visionOS) // look and pinch has no three-finger anything
+        // Three fingers swiping, as on a Mac's trackpad: Spaces, Mission Control, the app's
+        // windows. Only where fingers drive the pointer like a trackpad (`gestureRecognizerShouldBegin`).
+        let threeFingerPan = UIPanGestureRecognizer(target: self, action: #selector(handleThreeFingerPan))
+        threeFingerPan.minimumNumberOfTouches = 3
+        threeFingerPan.maximumNumberOfTouches = 3
+        threeFingerPan.allowedTouchTypes = Self.fingerTouchTypes
+        threeFingerPan.delegate = self
+        addGestureRecognizer(threeFingerPan)
+        threeFingerSwipeRecognizer = threeFingerPan
+        #endif
 
         // Trackpad and wheel scrolling arrive as scroll events rather than touches, and there is no
         // way to ask an update which kind produced it — so one recognizer per scroll type.
@@ -181,6 +217,7 @@ final class RemoteInteractionView: UIView {
         #endif
         longPress.allowedTouchTypes = Self.directTouchTypes
         addGestureRecognizer(longPress)
+        pencilRecognizers.append(longPress)
     }
 
     private static let fingerTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -203,6 +240,34 @@ final class RemoteInteractionView: UIView {
     @objc private func handleThreeFingerTap(_ recognizer: UITapGestureRecognizer) {
         input.click(button: .middle, modifiers: heldModifiers)
         haptics.play(.secondaryClick, at: recognizer.location(in: self))
+    }
+
+    private var threeFingerSwipeRecognizer: UIPanGestureRecognizer?
+    private var swipeTracker = TrackpadSwipeTracker()
+
+    /// Three-finger swipes belong to the trackpad: in Direct Touch the fingers are on the
+    /// picture itself, and with the setting off three fingers do what they always did.
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard recognizer === threeFingerSwipeRecognizer else { return super.gestureRecognizerShouldBegin(recognizer) }
+        return input.threeFingerSwipes && !pointsAbsolutely
+    }
+
+    /// One swipe per drag, once it has gone far enough in one direction (`TrackpadSwipeTracker`).
+    /// A three-finger tap never gets here: the pan only begins once the fingers have moved, which
+    /// is also what fails the tap.
+    @objc private func handleThreeFingerPan(_ recognizer: UIPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            swipeTracker = TrackpadSwipeTracker()
+            fallthrough
+        case .changed:
+            let translation = recognizer.translation(in: self)
+            if let swipe = swipeTracker.swipe(for: CGSize(width: translation.x, height: translation.y)) {
+                input.swipe(swipe)
+            }
+        default:
+            break
+        }
     }
 
     private var lastPanPoint: CGPoint = .zero
@@ -334,8 +399,44 @@ final class RemoteInteractionView: UIView {
     }
 
     @objc private func handlePencilHover(_ recognizer: UIHoverGestureRecognizer) {
+        if stylusEnabled {
+            switch recognizer.state {
+            case .began, .changed:
+                stylusLeave?.cancel()
+                input.stylus(viewPoint: recognizer.location(in: self), phase: .hover, pressure: 0, altitude: recognizer.altitudeAngle,
+                             azimuth: recognizer.azimuthAngle(in: self), modifiers: heldModifiers)
+            case .ended, .cancelled:
+                // Out of range, or about to touch down (a touch follows at once and cancels this).
+                scheduleStylusLeave(at: recognizer.location(in: self))
+            default:
+                break
+            }
+            return
+        }
         guard recognizer.state == .began || recognizer.state == .changed else { return }
         input.moveAbsolute(viewPoint: recognizer.location(in: self), action: .move, modifiers: heldModifiers)
+    }
+
+    /// Every sample UIKit has for `touch` since the last event (up to 240 a second), so a stroke
+    /// keeps its shape at 120 Hz delivery.
+    private func sendStylus(_ touch: UITouch, phase: StylusPhase, event: UIEvent?) {
+        stylusLeave?.cancel()
+        let samples = phase == .move ? (event?.coalescedTouches(for: touch) ?? [touch]) : [touch]
+        for sample in samples {
+            let pressure = sample.maximumPossibleForce > 0 ? Double(sample.force / sample.maximumPossibleForce) : (phase == .up ? 0 : 0.5)
+            input.stylus(viewPoint: sample.location(in: self), phase: phase, pressure: min(max(pressure, 0), 1), altitude: sample.altitudeAngle,
+                         azimuth: sample.azimuthAngle(in: self), clickCount: touch.tapCount, modifiers: heldModifiers)
+        }
+    }
+
+    private func scheduleStylusLeave(at location: CGPoint) {
+        stylusLeave?.cancel()
+        let leave = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.input.stylus(viewPoint: location, phase: .leave, pressure: 0, altitude: .pi / 2, azimuth: 0, modifiers: self.heldModifiers)
+        }
+        stylusLeave = leave
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: leave)
     }
 
     /// A trackpad or mouse always positions the Mac's pointer absolutely — you can see where the
@@ -354,6 +455,10 @@ final class RemoteInteractionView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if stylusEnabled, let pencil = touches.first(where: { $0.type == .pencil }) {
+            sendStylus(pencil, phase: .down, event: event)
+            if touches.count == 1 { return }
+        }
         guard let touch = touches.first(where: { $0.type == .indirectPointer }), let event else {
             if touches.contains(where: { $0.type == .pencil }) { isPencilTouch = true }
             haptics.prepare() // it may become a long press or a multi-finger tap
@@ -364,6 +469,10 @@ final class RemoteInteractionView: UIView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if stylusEnabled, let pencil = touches.first(where: { $0.type == .pencil }) {
+            sendStylus(pencil, phase: .move, event: event)
+            if touches.count == 1 { return }
+        }
         guard let touch = touches.first(where: { $0.type == .indirectPointer }), let event else {
             super.touchesMoved(touches, with: event)
             return
@@ -372,6 +481,11 @@ final class RemoteInteractionView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if stylusEnabled, let pencil = touches.first(where: { $0.type == .pencil }) {
+            sendStylus(pencil, phase: .up, event: event)
+            scheduleStylusLeave(at: pencil.location(in: self))
+            if touches.count == 1 { return }
+        }
         guard let touch = touches.first(where: { $0.type == .indirectPointer }) else {
             // Cleared after the gesture recognizers have run, so the whole stroke stays absolute.
             if touches.contains(where: { $0.type == .pencil }) {
@@ -387,6 +501,12 @@ final class RemoteInteractionView: UIView {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if stylusEnabled, let pencil = touches.first(where: { $0.type == .pencil }) {
+            // A system gesture took the stroke: lift where it was, then leave.
+            sendStylus(pencil, phase: .up, event: event)
+            input.stylus(viewPoint: pencil.location(in: self), phase: .leave, pressure: 0, altitude: .pi / 2, azimuth: 0, modifiers: heldModifiers)
+            if touches.count == 1 { return }
+        }
         guard let touch = touches.first(where: { $0.type == .indirectPointer }) else {
             if touches.contains(where: { $0.type == .pencil }) {
                 DispatchQueue.main.async { self.isPencilTouch = false }
@@ -460,6 +580,8 @@ final class RemoteInteractionView: UIView {
         hardwareModifiers = modifiers
     }
 }
+
+extension RemoteInteractionView: UIGestureRecognizerDelegate {}
 
 extension RemoteInteractionView: UIPointerInteractionDelegate {
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {

@@ -192,7 +192,7 @@ begin
     SuppressibleMsgBox('Casement Host is running as administrator, so it can''t be closed from here. Choose Quit from its icon next to the clock, then try again.', mbError, MB_OK, IDOK);
 end;
 
-// "Control apps running as administrator" leaves a Task Scheduler task behind. Deleting it takes the
+// The old "Control apps running as administrator" left a Task Scheduler task behind. Deleting it takes the
 // same permission as making it, so Windows only asks when there is one.
 procedure RemoveAdministratorTask;
 var
@@ -202,12 +202,23 @@ begin
     ShellExec('runas', ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "{#TaskName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+// "Control administrator prompts and apps" installs Casement Host Service (a SYSTEM service under
+// Program Files). Its own uninstall removes it, its files and its key; Windows asks only when it's there.
+procedure RemoveDesktopService;
+var
+  ResultCode: Integer;
+begin
+  if RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\CasementHostService') then
+    ShellExec('runas', ExpandConstant('{app}\CasementHostService.exe'), 'uninstall', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
     RegDeleteValue(HKCU, '{#RunKey}', '{#RunValue}');
     RemoveAdministratorTask;
+    RemoveDesktopService;
 #ifndef TestInstall
     if SuppressibleMsgBox('Also remove Casement Host''s settings and the list of paired devices?' + #13#10 + #13#10 + 'Keep them if you plan to install it again: your devices will connect without a new pairing code.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
       DelTree(ExpandConstant('{localappdata}\Vantage Host'), True, True, True);

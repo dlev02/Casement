@@ -37,7 +37,12 @@ struct DeviceListScreen: View {
             .deviceActionPresentations(actions)
             .task {
                 if selectedDevice == nil, let host = ClientOptions.takeAutoConnectHost() {
-                    selectedDevice = store.devices.first { $0.host == host }
+                    let device = store.devices.first { $0.host == host }
+                    #if os(iOS)
+                    if ClientOptions.autoConnectInputOnly { actions.inputOnlyDevice = device } else { selectedDevice = device }
+                    #else
+                    selectedDevice = device
+                    #endif
                 }
                 #if DEBUG
                 // `-VantageSendTestFile` without a session: as if picked with Send Files… on the first Mac.
@@ -53,6 +58,8 @@ struct DeviceListScreen: View {
                 await availability.monitor(store.devices)
             }
             .onChange(of: availability.platforms) { _, platforms in store.recordPlatforms(platforms) }
+            // Settings → Connection → Local Network: look for paired computers here while in front.
+            .onChange(of: scenePhase, initial: true) { _, phase in LocalDiscovery.shared.update(active: phase == .active) }
         }
     }
 
@@ -69,7 +76,7 @@ struct DeviceListScreen: View {
                     Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
                     Button { actions.editingDevice = device } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
                     if ScreenSharingPassword.canLogIn(device) {
-                        Button { actions.deviceToLogIn = device } label: { Label("Log In", systemImage: "key") }.tint(.orange)
+                        Button { actions.requestLogIn(to: device) } label: { Label("Log In", systemImage: "key") }.tint(.orange)
                     }
                 }
                 .contextMenu { DeviceMenu(device: device, actions: actions) }
@@ -101,12 +108,9 @@ struct DeviceListScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .listLeading) {
-            #if os(macOS)
-            // The Mac's settings are the Settings window (⌘,), never the iPad's pushed list.
-            SettingsLink { Label("Settings", systemImage: "gearshape") }
-            #else
-            NavigationLink { SettingsScreen() } label: { Label("Settings", systemImage: "gearshape") }
-            #endif
+            // A sheet over the list on every device, rather than a page that replaces it.
+            Button { actions.showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                .accessibilityIdentifier("deviceList.settings")
         }
         ToolbarItemGroup(placement: .listTrailing) {
             // Layout is its own button, not an item tucked under Sort: it shows what a click
@@ -155,6 +159,7 @@ final class DeviceActions {
     #endif
 
     var showAddDevice = false
+    var showSettings = false
     var showTailscaleDevices = false
     var editingDevice: SavedDevice?
     var deviceToDelete: SavedDevice?
@@ -166,6 +171,8 @@ final class DeviceActions {
     /// Send Files… picks files for this Mac without opening its screen.
     var sendFilesDevice: SavedDevice?
     var showSendFiles = false
+    /// Trackpad & Keyboard: this device as the Mac's trackpad and keyboard, with no picture.
+    var inputOnlyDevice: SavedDevice?
 
     /// Files for this Mac, straight from the Files picker: they go over a files-only session, and
     /// the Mac's row shows them moving.
@@ -174,9 +181,32 @@ final class DeviceActions {
         showSendFiles = true
     }
 
-    func logIn(to device: SavedDevice, atHomeAddress: Bool = false) {
-        logInStatus = .typing(device.name)
+    /// Log In from a menu or swipe. Where Face ID (or Touch ID, or the passcode) is asked before
+    /// the password leaves the Keychain, that prompt is the confirmation; elsewhere a dialog asks.
+    func requestLogIn(to device: SavedDevice) {
+        if PasswordConfirmation.willAsk {
+            logIn(to: device)
+        } else {
+            deviceToLogIn = device
+        }
+    }
+
+    /// Asks for Face ID first unless `confirmed` (the home-address retry, already asked about).
+    func logIn(to device: SavedDevice, atHomeAddress: Bool = false, confirmed: Bool = false) {
+        guard logInStatus?.isTyping != true else { return }
         Task {
+            if !confirmed {
+                switch await PasswordConfirmation.confirm("Log in to \(device.name)") {
+                case .confirmed: break
+                case .cancelled: return
+                case .failed(let message):
+                    logInStatus = .failed(message)
+                    try? await Task.sleep(for: .seconds(6))
+                    logInStatus = nil
+                    return
+                }
+            }
+            logInStatus = .typing(device.name)
             do {
                 try await ScreenSharingPassword.logIn(to: device, atHomeAddress: atHomeAddress)
                 logInStatus = .sent(device.name)
@@ -212,6 +242,18 @@ private struct DeviceActionPresentations: ViewModifier {
         content
             .sheet(isPresented: $actions.showAddDevice) {
                 AddDeviceSheet().appLockCurtain()
+            }
+            #if os(iOS)
+            .fullScreenCover(item: $actions.inputOnlyDevice) { device in
+                RemoteSessionScreen(device: device, inputOnly: true).environment(store)
+            }
+            #endif
+            .sheet(isPresented: $actions.showSettings) {
+                #if os(macOS)
+                MacSettingsSheet().appLockCurtain()
+                #else
+                SettingsSheet().appLockCurtain()
+                #endif
             }
             .sheet(isPresented: $actions.showTailscaleDevices) {
                 TailscaleDevicesSheet().appLockCurtain()
@@ -260,7 +302,7 @@ private struct DeviceActionPresentations: ViewModifier {
                 titleVisibility: .visible,
                 presenting: actions.deviceToLogInAtHome
             ) { device in
-                Button("Type Password") { actions.logIn(to: device, atHomeAddress: true) }
+                Button("Type Password") { actions.logIn(to: device, atHomeAddress: true, confirmed: true) }
                 Button("Cancel", role: .cancel) {}
             } message: { device in
                 Text("“\(device.name)” didn't answer over Tailscale. Its home network address is a plain local address: away from home, whatever answers there would receive the password. Continue only on your home network or through your Tailscale subnet router.")
@@ -284,6 +326,13 @@ struct DeviceMenu: View {
 
     var body: some View {
         Section {
+            #if os(iOS)
+            if device.platform == .macOS {
+                Button { actions.inputOnlyDevice = device } label: {
+                    Label("Trackpad & Keyboard", systemImage: "rectangle.and.hand.point.up.left")
+                }
+            }
+            #endif
             Button { actions.sendFiles(to: device) } label: { Label("Send Files…", systemImage: StripItem.sendFile.symbol) }
             if transfers.files(for: device.id)?.hasTransfers == true {
                 Button { actions.transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }
@@ -291,7 +340,7 @@ struct DeviceMenu: View {
         }
         Button { actions.editingDevice = device } label: { Label(Self.editTitle, systemImage: "pencil") }
         if ScreenSharingPassword.canLogIn(device) {
-            Button { actions.deviceToLogIn = device } label: { Label("Log In with Screen Sharing", systemImage: "key") }
+            Button { actions.requestLogIn(to: device) } label: { Label("Log In with Screen Sharing", systemImage: "key") }
         }
         Button(role: .destructive) { actions.deviceToDelete = device } label: { Label("Remove", systemImage: "trash") }
     }
@@ -330,23 +379,88 @@ struct DeviceSortPicker: View {
     }
 }
 
-/// No Macs saved yet: how to add the first one.
+/// No computers saved yet: the three steps to the first one, with the two ways to add it. The
+/// steps are the setup itself (Casement Host is a separate download), so they're spelled out
+/// rather than left to a one-line description.
 struct DeviceListEmptyState: View {
     let actions: DeviceActions
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ContentUnavailableView {
-            Label("No Devices", systemImage: "display")
-        } description: {
-            Text("Install Casement Host on your Mac or PC, add it here, then pair once with the code Casement Host shows. Everything runs over Tailscale.")
-        } actions: {
-            Button("Add from Tailscale…") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
-            Button("Add Manually…") { actions.showAddDevice = true }.buttonStyle(.glass)
-            Link("Get Casement Host", destination: AppInfo.hostDownloadURL)
+        ScrollView {
+            VStack(spacing: 28) {
+                VStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                        .frame(width: 76, height: 76)
+                        .overlay {
+                            Image(systemName: "desktopcomputer.and.macbook")
+                                .font(.system(size: 34, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .accessibilityHidden(true)
+                    Text("Add a Mac or PC")
+                        .font(.title2.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    step(1) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Install Casement Host on the computer")
+                            Link(destination: AppInfo.hostDownloadURL) {
+                                Label("Get Casement Host", systemImage: "arrow.up.right")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                    step(2) { Text("Add the computer here") }
+                    step(3) { Text("Pair once with the code Casement Host shows") }
+                }
+                .frame(maxWidth: 340, alignment: .leading)
+
+                // Side by side where there's room; stacked and full width on a phone.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { addButtons }
+                    VStack(spacing: 10) { addButtons }
+                }
+                .controlSize(.large)
+                .frame(maxWidth: 440)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
         }
-        // A readable measure on wide screens (an unfolded iPhone Duo, an iPad), as Apple's own
-        // empty states keep, rather than one long line from edge to edge.
-        .frame(maxWidth: 460)
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("deviceList.empty")
+    }
+
+    /// The same width each, so neither button looks like an afterthought.
+    @ViewBuilder private var addButtons: some View {
+        // Titles never wrap: when the pair doesn't fit on a line, `ViewThatFits` stacks them.
+        Button { actions.showTailscaleDevices = true } label: {
+            Text("Add from Tailscale…").fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        Button { actions.showAddDevice = true } label: {
+            Text("Add Manually…").fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func step(_ number: Int, @ViewBuilder _ text: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "\(number).circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityLabel("Step \(number)")
+            text()
+                .fixedSize(horizontal: false, vertical: true) // wrap, never truncate
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -626,6 +740,10 @@ func osSymbol(_ os: String) -> String {
 /// Progress of "Log In with Screen Sharing" from the device list.
 enum LogInStatus: Equatable {
     case typing(String), sent(String), failed(String)
+
+    var isTyping: Bool {
+        if case .typing = self { true } else { false }
+    }
 }
 
 struct LogInStatusBadge: View {

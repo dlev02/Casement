@@ -175,6 +175,7 @@ private struct CurtainContent: View {
 /// never makes the system time the tap out. Physical events reach the HID tap first; the host
 /// posts at the session tap, after it, so its own input never passes through here (and carries
 /// `injectedEventMarker` in any case).
+/// macOS's Screen Sharing is let through, so a password typed at the lock screen reaches it.
 nonisolated private final class InputBlocker: @unchecked Sendable {
     private var tap: CFMachPort?
     private var thread: Thread?
@@ -216,6 +217,31 @@ nonisolated private final class InputBlocker: @unchecked Sendable {
     fileprivate func reenable() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
     }
+
+    /// The process that posted each event seen so far, by pid: whether it's macOS's own Screen
+    /// Sharing. Only the tap's thread touches it.
+    private var screenSharingByPID: [pid_t: Bool] = [:]
+    private let log = Logger(subsystem: "com.benjaminlevinson.vantage.host", category: "curtain")
+
+    /// Keys from macOS's Screen Sharing (screensharingd and its agents, under
+    /// `/System/Library/CoreServices/RemoteManagement`, which System Integrity Protection guards):
+    /// that's how a device types the saved password at the lock screen or into a secure field
+    /// (`ScreenSharingTyper`), and they must reach the lock screen under the curtain. Someone at
+    /// this Mac can't send them without signing in to Screen Sharing with the Mac's own account.
+    /// Physical input carries no posting process.
+    fileprivate func isFromScreenSharing(_ event: CGEvent) -> Bool {
+        let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventSourceUnixProcessID))
+        guard pid > 0 else { return false }
+        if let known = screenSharingByPID[pid] { return known }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        let path = length > 0 ? String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self) : ""
+        let verdict = path.hasPrefix("/System/Library/CoreServices/RemoteManagement/")
+        if screenSharingByPID.count > 64 { screenSharingByPID.removeAll() }
+        screenSharingByPID[pid] = verdict
+        log.info("curtain \(verdict ? "lets through" : "drops", privacy: .public) input posted by \(path.isEmpty ? "pid \(pid)" : path, privacy: .public)")
+        return verdict
+    }
 }
 
 nonisolated private func inputBlockerCallback(_: CGEventTapProxy, type: CGEventType, event: CGEvent, info: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
@@ -225,7 +251,7 @@ nonisolated private func inputBlockerCallback(_: CGEventTapProxy, type: CGEventT
         blocker.reenable()
         return Unmanaged.passUnretained(event)
     }
-    if event.getIntegerValueField(.eventSourceUserData) == VantageProtocol.injectedEventMarker {
+    if event.getIntegerValueField(.eventSourceUserData) == VantageProtocol.injectedEventMarker || blocker.isFromScreenSharing(event) {
         return Unmanaged.passUnretained(event)
     }
     if type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == 0x25, // L

@@ -56,7 +56,7 @@ struct TailscaleDevicesSheet: View {
             } description: {
                 Text(errorMessage)
             } actions: {
-                Button("Try Again") { Task { await load() } }.buttonStyle(.glassProminent)
+                Button("Try Again") { Task { await load() } }.buttonStyle(.onCardProminent)
                 Button("Sign Out") { account.signOut() }
             }
         } else {

@@ -21,13 +21,14 @@ public class VideoPipelineTests
         for (var i = 0; i < 3; i++) await queue.RunAsync(() => Task.CompletedTask);
     }
 
-    private static (VideoPipeline Pipeline, ScriptedEncoder Encoder, RecordingLane Lane, SerialQueue Queue, FakeTimeProvider Clock) Started()
+    /// <summary>Fluid by default: it has no idle pass, so the stall tests see only the encodes they make.</summary>
+    private static (VideoPipeline Pipeline, ScriptedEncoder Encoder, RecordingLane Lane, SerialQueue Queue, FakeTimeProvider Clock) Started(QualityPreset preset = QualityPreset.Motion)
     {
         var clock = new FakeTimeProvider();
         var queue = new SerialQueue(NullLogger.Instance);
         var encoder = new ScriptedEncoder();
         var lane = new RecordingLane();
-        var pipeline = new VideoPipeline(encoder, new FakeCapture(), VideoCodec.H264, targetFps: 60, new AdaptiveController(20_000, clock), lane, queue, clock,
+        var pipeline = new VideoPipeline(encoder, new FakeCapture(), VideoCodec.H264, targetFps: 60, new AdaptiveController(20_000, clock, preset), lane, queue, clock,
                                          firstSequence: 7, _ => Task.CompletedTask, NullLogger.Instance);
         pipeline.Start();
         return (pipeline, encoder, lane, queue, clock);
@@ -193,6 +194,49 @@ public class VideoPipelineTests
         }
     }
 
+    /// <summary>
+    /// Balanced: nothing extra while the picture keeps changing; once it holds still for
+    /// <see cref="VideoPipeline.IdleSharpenDelay"/>, one P-frame re-encode under the idle ceiling (24),
+    /// never repeated; the next changed frame goes back to the mode's ceiling.
+    /// </summary>
+    [Fact]
+    public async Task AStillPictureIsEncodedOnceMoreUnderTheIdleCeiling()
+    {
+        var (pipeline, encoder, lane, queue, clock) = Started(QualityPreset.Auto);
+        try
+        {
+            for (var i = 0; i < 10; i++) // scrolling: a changed frame every 16 ms
+            {
+                await queue.RunAsync(() => pipeline.IngestAsync(new Frame((ulong)i)));
+                await DrainAsync(queue);
+                clock.Advance(TimeSpan.FromMilliseconds(16));
+            }
+            await DrainAsync(queue);
+            Assert.Equal(10, encoder.Forced.Count);
+            Assert.DoesNotContain(24, encoder.MaxQPs);
+
+            clock.Advance(VideoPipeline.IdleSharpenDelay);
+            await DrainAsync(queue);
+            Assert.Equal(11, encoder.Forced.Count);
+            Assert.False(encoder.Forced[^1]); // a P-frame refining the picture, not an IDR
+            Assert.Equal(24, encoder.MaxQPs[^1]);
+            Assert.False(Assert.IsType<VideoFrame>(lane.Posted[^1]).IsKeyframe);
+
+            clock.Advance(VideoPipeline.IdleSharpenDelay * 10);
+            await DrainAsync(queue);
+            Assert.Equal(11, encoder.Forced.Count); // once per still picture
+
+            await queue.RunAsync(() => pipeline.IngestAsync(new Frame(100)));
+            await DrainAsync(queue);
+            Assert.Equal(12, encoder.Forced.Count);
+            Assert.NotEqual(24, encoder.MaxQPs[^1]); // the mode's ceiling is back before the changed frame
+        }
+        finally
+        {
+            await StopAsync(pipeline, queue);
+        }
+    }
+
     /// <summary>Answers every encode at once, except those whose index is in <see cref="Hold"/>, which wait for <see cref="Answer"/>.</summary>
     private sealed class ScriptedEncoder : IVideoEncoder
     {
@@ -200,6 +244,7 @@ public class VideoPipelineTests
         private readonly List<(long Id, EncodedFrame Output)> _encodes = [];
         public readonly List<bool> Forced = [];
         public readonly HashSet<int> Hold = [];
+        public readonly List<int> MaxQPs = [];
 
         public void Start(IEncodedFrameSink sink) => _sink = sink;
 
@@ -232,9 +277,7 @@ public class VideoPipelineTests
         {
         }
 
-        public void SetMaxQP(int maxQP)
-        {
-        }
+        public void SetMaxQP(int maxQP) => MaxQPs.Add(maxQP);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

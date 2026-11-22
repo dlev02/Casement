@@ -1,6 +1,6 @@
 # Casement
 
-Casement lets a person see and control their own Mac or Windows PC from an iPhone, iPad, Mac or Apple Vision Pro, over their own Tailscale network and nothing else. Terms use the words the apps show; the code's older name is noted where it differs (the code still says Vantage, see [ADR-0003](docs/adr/0003-code-keeps-the-vantage-names.md)).
+Casement lets a person see and control their own Mac or Windows PC from an iPhone, iPad, Mac or Apple Vision Pro, over their own Tailscale network or, once paired, their own local network, and nothing else. Terms use the words the apps show; the code's older name is noted where it differs (the code still says Vantage, see [ADR-0003](docs/adr/0003-code-keeps-the-vantage-names.md)).
 
 ## The two apps
 
@@ -23,6 +23,14 @@ _Avoid_: client (in anything a person reads), computer
 **Saved computer**:
 A computer in Casement's list, with its address, name and per-computer choices (control strip, sound, Curtain, display fitting). Code name: `SavedDevice`.
 _Avoid_: saved device, host entry, bookmark
+
+**Local network connection**:
+A connection to an already paired Mac straight across the home network or a cable instead of through Tailscale, found over Bonjour by its key and encrypted end to end by Casement ([ADR-0001](docs/adr/0001-tailscale-only.md)). Settings call it Local network connections (Casement Host) and Local Network (Casement). Code: `PeerReach.localNetwork`, `HostRoute`, `SessionCrypto`.
+_Avoid_: LAN mode, direct mode, offline mode
+
+**Trackpad & Keyboard**:
+Using a device as a Mac's trackpad and keyboard with no picture, from the Mac's menu in the list. Code: input-only session (`ClientFeatures.inputOnly`, `SessionAdmission.Kind.inputOnly`).
+_Avoid_: headless mode, remote, input mode
 
 **Paired device**:
 A device that a computer's Casement Host trusts, after one pairing. Casement Host lists them as Paired Devices.
@@ -96,6 +104,10 @@ _Avoid_: read-only, spectator mode
 Making the computer's display match the shape of the device's screen for the session, then putting it back: a virtual display on a Mac, a change of display mode and scale on a PC.
 _Avoid_: resize, match resolution
 
+**Quality**:
+How a session trades motion against detail, per computer: **Fluid** keeps motion smooth, **Balanced** (the default) adapts and sharpens a screen once it stops moving, **Sharp Text** keeps text crisp at some cost to motion. Code name: `QualityPreset` (`motion`, `auto`, `text`).
+_Avoid_: preset, resolution, bitrate mode
+
 **Curtain**:
 While a device is connected, the computer's displays go black and its own keyboard and mouse stop working, so nobody at the computer sees or interrupts the session. The screen in Casement stays the same.
 _Avoid_: privacy screen, blackout, screen lock
@@ -107,6 +119,10 @@ _Avoid_: sound streaming, remote audio
 **Dictation**:
 Speaking into the device to type on the computer, transcribed either on the device or on the Mac.
 _Avoid_: voice input, speech-to-text
+
+**Dictation History**:
+The last 30 dictations sent from a device, kept on that device only, to copy or send again.
+_Avoid_: transcript log, recents
 
 **Type Password**:
 Typing a password saved on the device into that computer, through Screen Sharing when the Mac's lock screen or a password field blocks ordinary typing.

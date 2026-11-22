@@ -48,6 +48,9 @@ nonisolated struct HostEnvironment: Sendable {
     var captureFailsFor: Duration?
     /// The session's clock: `now` for its timers, and `sleep` for its waits.
     var clock: any HostClock
+    /// The computer's Natural Scrolling setting, read per session (`HostCapabilities.naturalScroll`);
+    /// nil leaves it out.
+    var naturalScroll: @Sendable () -> Bool? = { nil }
 }
 
 /// Displays and the frames captured from them.
@@ -99,7 +102,11 @@ nonisolated protocol HostStatusMonitor: AnyObject, Sendable {
 /// Where a session's input goes.
 nonisolated protocol InputSink: AnyObject, Sendable {
     func updateDisplayFrame(_ frame: CGRect)
+    /// An input-only session: clicks land where the pointer is, and `moveBy` moves it.
+    func followPointer()
     func handle(_ event: PointerEvent)
+    /// Apple Pencil samples, as tablet events.
+    func handle(_ event: StylusEvent)
     func handle(_ event: ScrollEvent)
     func handle(_ event: KeyEvent)
     func typeText(_ text: String)

@@ -58,14 +58,23 @@ public struct ClientFeatures: Codable, Sendable, Equatable {
     /// The client understands `curtainStatus`, so it can hear of a curtain already up when it
     /// connects (left by a session that ended).
     public var curtain: Bool?
+    /// This connection is an input-only session: the device is the computer's trackpad and
+    /// keyboard, with no picture. The host starts no capture, video, audio or clipboard and needs
+    /// no Screen Recording grant; input, shortcuts, typed text and dictation still work. Signed as
+    /// a screen session (`AuthPurpose.screen`), so a host that predates it treats the connection
+    /// as one waiting for a display; the client checks `HostCapabilities.inputOnlySessions` and
+    /// hangs up if it's missing.
+    public var inputOnly: Bool?
 
-    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil, localCursor: Bool? = nil, curtain: Bool? = nil) {
+    public init(dictation: Bool? = nil, macAudio: Bool? = nil, fileTransfer: Bool? = nil, filesOnly: Bool? = nil, localCursor: Bool? = nil, curtain: Bool? = nil,
+                inputOnly: Bool? = nil) {
         self.dictation = dictation
         self.macAudio = macAudio
         self.fileTransfer = fileTransfer
         self.filesOnly = filesOnly
         self.localCursor = localCursor
         self.curtain = curtain
+        self.inputOnly = inputOnly
     }
 }
 

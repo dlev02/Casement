@@ -6,22 +6,30 @@ Connect doesn't ask the encryption questions for each build.
 
 ## Why NO is right
 
-Casement doesn't encrypt user data in transit or at rest itself. The session runs over the
-user's Tailscale WireGuard tunnel, which is Tailscale's software, not part of Casement
-(SECURITY.md: "the Casement stream itself isn't separately encrypted"). The crypto in the client
-is limited to the uses US export rules exclude (EAR Category 5 Part 2, Note to 5A002.a:
-authentication, digital signatures, and integrity):
+Casement uses only the encryption that Apple's operating systems provide (CryptoKit, CommonCrypto,
+the Security framework, `URLSession`), which is the case Apple's questionnaire answers with "none of
+the algorithms mentioned above": no proprietary algorithm, and no standard algorithm implemented or
+bundled by Casement instead of the system's. The one piece of arithmetic Casement carries itself is
+the Diffie-Hellman step of the Screen Sharing login, which is authentication only (see the table).
+
+Over Tailscale the session runs inside the user's WireGuard tunnel, which is Tailscale's software,
+not part of Casement, and Casement adds no encryption of its own there. From 1.2 (9) a **local
+network connection** (off by default) is encrypted by Casement, because nothing else protects it:
+an X25519 key agreement, HKDF-SHA256 and ChaCha20-Poly1305, all CryptoKit calls. Before that build
+this page said Casement encrypted nothing in transit; that is no longer true, and the answer stays
+NO only because every primitive is Apple's. Bundling a crypto library, or writing a cipher, would
+change the answer.
 
 | Use | API | Where | Purpose |
 | --- | --- | --- | --- |
 | Device identity: Ed25519 sign and verify | CryptoKit `Curve25519.Signing` | `Packages/VantageCore/Sources/VantageCore/Identity/DeviceIdentity.swift` | Authentication: the client signs the host's challenge |
 | SHA-256 | CryptoKit `SHA256` | `FileTransferEngine` (file integrity), key fingerprints | Integrity and identification |
 | macOS Screen Sharing (ARD) login: Diffie-Hellman over the server's prime, MD5, AES-128-ECB | `ModularExponent.swift` (DH math), CommonCrypto `CCCrypt` / MD5 | `Packages/VantageCore/Sources/VantageCore/ScreenSharing/ScreenSharingTyper.swift:106-140` | Authentication only: it protects the password block of Apple's own RFB authentication handshake. After login, only key events go unencrypted to the user's own Mac. |
+| Local network session: X25519, HKDF-SHA256, ChaCha20-Poly1305 | CryptoKit `Curve25519.KeyAgreement`, `HKDF`, `ChaChaPoly` | `Packages/VantageCore/Sources/VantageCore/Transport/SessionCrypto.swift` | Confidentiality and integrity of a session that isn't inside Tailscale, with Apple's OS-provided encryption |
 | Keychain storage | Security framework | `Packages/VantageCore/Sources/VantageCore/Identity/KeychainStore.swift` | Apple's OS-provided encryption |
 | HTTPS to `api.tailscale.com` | `URLSession` | `Vantage/Net/TailscaleAPI.swift` | OS-provided TLS |
 
-None of this is a proprietary algorithm or a use that needs classification (no VPN, no
-end-to-end messaging, no encrypted file storage). The DH step is standard Diffie-Hellman used
+None of this is a proprietary algorithm, and all of it is the system's own implementation. The DH step is standard Diffie-Hellman used
 only for authentication, so it's covered by the same exclusion. That matches Apple's "only
 exempt encryption" answer, which is exactly what `ITSAppUsesNonExemptEncryption = NO` declares.
 (This is a technical reading, not legal advice. Casement Host isn't on the App Store, so it isn't

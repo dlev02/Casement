@@ -11,9 +11,12 @@ protocol ScreenSessionStore: AnyObject {
     func markConnected(_ device: SavedDevice)
     func recordPlatform(_ platform: HostPlatform, for id: UUID)
     func recordHostKey(_ key: Data, for id: UUID)
+    /// The computer's own Natural Scrolling setting, kept unless the person chose one.
+    func adoptHostNaturalScroll(_ natural: Bool, for id: UUID)
     func setPlayMacAudio(_ on: Bool, for id: UUID)
     func setCurtain(_ on: Bool, for id: UUID)
     func setUseVirtualDisplay(_ on: Bool, for id: UUID)
+    func setQuality(_ preset: QualityPreset, for id: UUID)
 }
 
 /// Why there's no live picture, if the computer has said.
@@ -72,8 +75,13 @@ final class ScreenSessionModel {
     private(set) var phase: Phase = .idle
     /// Disconnect was chosen (or confirmed): the screen closes.
     private(set) var isEnded = false
-    /// The first frame of the current connection has been shown.
+    /// The first frame of the current connection has been shown (on the fitted display, when the
+    /// host fits it: `ClientSession.isAwaitingFittedStream`).
     private(set) var hasPicture = false
+    /// Counts the points from which the next frame is the first again (a new connection, a fitted
+    /// request before the first picture); a first frame reported for an earlier one is ignored.
+    private(set) var pictureEpoch: UInt64 = 0
+    private var framedEpoch: UInt64?
     /// Modifiers latched on the control strip, sent with the next key.
     var stickyModifiers: KeyModifiers = []
     /// The control strip is hidden (the pencil, the Mac's View menu).
@@ -85,9 +93,13 @@ final class ScreenSessionModel {
     var passwordPrompt: PasswordPrompt?
     var isPickingFiles = false
     var isShowingTransfers = false
+    var isShowingDictationHistory = false
     var isEditingControls = false
     /// "Files are still transferring. Disconnect anyway?" (an older host would stop them).
     var isConfirmingDisconnect = false
+    /// A shortcut that opens an administrator app on a PC that can't control one, waiting for
+    /// the person to confirm (`sendShortcut`).
+    var adminShortcutToConfirm: HostShortcut?
 
     // Notices.
     /// The file just received, for the notice at the top.
@@ -97,6 +109,10 @@ final class ScreenSessionModel {
     private let wakeRequest = TimedNotice<Bool>()
     private(set) var screenSharingTyping: ScreenSharingTypingState?
     var screenSharingError: String?
+    /// What the Keychain holds for this computer, read when the session starts, when the host's
+    /// status changes and after saving (not on every redraw).
+    private(set) var hasSavedPassword = false
+    private(set) var hasSavedAccountName = false
     /// VoiceOver is on, so notices stay long enough to reach their buttons.
     var usesVoiceOver = false
 
@@ -133,6 +149,7 @@ final class ScreenSessionModel {
     private var viewportDebounce: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
     private var screenSharingTask: Task<Void, Never>?
+    private var confirmationTask: Task<Void, Never>?
     private var watchers: [Task<Void, Never>] = []
     private var defaultsObserver: (any NSObjectProtocol)?
     private var queuedTestFile = false
@@ -141,11 +158,18 @@ final class ScreenSessionModel {
     static let trackpadSensitivityKey = "vantage.trackpadSensitivity"
     static let keyboardModeKey = "vantage.softwareKeyboardMode"
     static let dictationEngineKey = "vantage.dictationEngine"
+    static let threeFingerSwipesKey = "vantage.threeFingerSwipes"
 
     /// `fileLink`: the computer's shared link (`FileTransferCenter`), so files keep moving after
     /// the screen closes; nil keeps the session's own (tests).
+    /// This device is the computer's trackpad and keyboard, with no picture (Trackpad & Keyboard
+    /// in a computer's menu).
+    let isInputOnly: Bool
+
     init(device: SavedDevice, store: any ScreenSessionStore, fileLink: FileLink? = nil,
-         session: ClientSession = ClientSession(), viewport: Viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)) {
+         session: ClientSession = ClientSession(), viewport: Viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2),
+         inputOnly: Bool = false) {
+        self.isInputOnly = inputOnly
         self.device = device
         self.store = store
         self.fileLink = fileLink
@@ -177,7 +201,7 @@ final class ScreenSessionModel {
     // MARK: Connection
 
     var isConnected: Bool { session.state == .connected }
-    var isLive: Bool { isConnected && hasPicture }
+    var isLive: Bool { isConnected && (hasPicture || isInputOnly) }
     /// Why there's no live picture, if the computer has said.
     var screenNote: ScreenNote? {
         if session.isDisplayAsleep { return .asleep }
@@ -203,6 +227,9 @@ final class ScreenSessionModel {
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
         input.keyRemap = keyRemap
+        refreshSavedSignIn()
+        input.relativeOnly = isInputOnly
+        input.hostPlatform = hostPlatform
         watchDefaults()
         startWatching()
         connect(pairingCode: ClientOptions.pairingCode)
@@ -222,6 +249,8 @@ final class ScreenSessionModel {
         viewportDebounce?.cancel()
         screenSharingTask?.cancel()
         screenSharingTask = nil
+        confirmationTask?.cancel()
+        confirmationTask = nil
         for watcher in watchers { watcher.cancel() }
         watchers = []
         if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
@@ -231,7 +260,7 @@ final class ScreenSessionModel {
         wakeRequest.clear()
         macAudio.setWanted(false)
         session.files.onReceived = nil
-        session.disconnect()
+        session.disconnect(endingSession: true)
     }
 
     /// Disconnect from the strip, the menu, or the overlay. Files keep moving without the screen
@@ -267,12 +296,13 @@ final class ScreenSessionModel {
         session.setMacAudio(wantsMacAudio)
         session.setCurtain(wantsCurtain)
         session.setFitDisplay(wantsFitDisplay)
+        session.setQuality(quality)
     }
 
     func submitPairingCode(_ code: String) { connect(pairingCode: code) }
 
     private func connect(pairingCode: String?) {
-        session.connect(to: device, viewport: viewport, pairingCode: pairingCode)
+        session.connect(to: device, viewport: viewport, pairingCode: pairingCode, inputOnly: isInputOnly)
     }
 
     /// The app left the screen (background, the Mac going to sleep): let go of the connection
@@ -292,6 +322,12 @@ final class ScreenSessionModel {
         guard viewport != self.viewport else { return }
         self.viewport = viewport
         viewportDebounce?.cancel()
+        // Until the first picture the session hears the latest shape at once (it asks the host
+        // at most once at a time), so the picture opens fitted to the view as it settled.
+        guard hasPicture else {
+            session.updateViewport(viewport)
+            return
+        }
         viewportDebounce = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             guard let self else { return }
@@ -317,7 +353,20 @@ final class ScreenSessionModel {
         input.tapChord(keyCode: keyCode, modifiers: modifiers)
     }
 
+    /// Sends a shortcut, except one that opens an administrator app on a PC whose host can't
+    /// control it (Task Manager would sit there, out of reach): that asks first.
     func sendShortcut(_ shortcut: HostShortcut) {
+        if shortcut.opensAdminApp && session.hostBlocksAdminApps {
+            adminShortcutToConfirm = shortcut
+            return
+        }
+        input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
+    }
+
+    /// The person chose to open the administrator app anyway.
+    func confirmAdminShortcut() {
+        guard let shortcut = adminShortcutToConfirm else { return }
+        adminShortcutToConfirm = nil
         input.tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
     }
 
@@ -354,9 +403,25 @@ final class ScreenSessionModel {
 
     // MARK: Type Password
 
+    /// The status banner's Unlock / Approve button, while the Mac's lock screen or a secure field
+    /// blocks typing.
+    var unlockOffer: HostUnlockOffer? {
+        HostUnlockOffer.make(host: host, status: session.hostStatus, hasPassword: hasSavedPassword,
+                             hasAccountName: hasSavedAccountName, isTyping: screenSharingTyping == .typing || confirmationTask != nil)
+    }
+
+    func refreshSavedSignIn() {
+        let device = savedDevice
+        hasSavedPassword = DeviceSecrets.password(for: device) != nil
+        hasSavedAccountName = DeviceSecrets.username(for: device) != nil
+    }
+
     /// Types the saved password for this Mac and presses Return, through Screen Sharing when the
-    /// Mac blocks ordinary typing, or asks for what's missing (`TypePasswordDecision`).
-    func typePassword() {
+    /// Mac blocks ordinary typing, or asks for what's missing (`TypePasswordDecision`). The
+    /// password leaves the Keychain only after Face ID, Touch ID or the passcode
+    /// (`PasswordConfirmation`), unless it was `confirmed` already (just typed into the sheet).
+    func typePassword(confirmed: Bool = false) {
+        let device = savedDevice
         let decision = TypePasswordDecision.decide(host: host, password: DeviceSecrets.password(for: device),
                                                    hasAccountName: DeviceSecrets.username(for: device) != nil,
                                                    status: session.hostStatus)
@@ -365,29 +430,62 @@ final class ScreenSessionModel {
             break
         case .ask(let prompt):
             passwordPrompt = prompt
-        case .type(let password):
-            stickyModifiers = []
-            input.typeCharacters(password)
-            input.tapChord(keyCode: 0x24, modifiers: []) // Return
-        case .screenSharing:
-            typeThroughScreenSharing()
+        case .type, .screenSharing:
+            guard confirmed else {
+                confirmThenType(reason: confirmationReason)
+                return
+            }
+            if case .type(let password) = decision {
+                stickyModifiers = []
+                input.typeCharacters(password)
+                input.tapChord(keyCode: 0x24, modifiers: []) // Return
+            } else {
+                typeThroughScreenSharing()
+            }
+        }
+    }
+
+    private var confirmationReason: String {
+        session.hostStatus?.isScreenLocked == true ? "Unlock \(device.name)" : "Type your password on \(device.name)"
+    }
+
+    /// Asks, then decides again: the Mac may have locked or unlocked while the prompt was up.
+    private func confirmThenType(reason: String) {
+        guard confirmationTask == nil, screenSharingTyping != .typing else { return }
+        confirmationTask = Task { [weak self] in
+            let outcome = await PasswordConfirmation.confirm(reason)
+            guard let self, !Task.isCancelled else { return }
+            confirmationTask = nil
+            switch outcome {
+            case .confirmed: typePassword(confirmed: true)
+            case .cancelled: break
+            case .failed(let message): screenSharingError = message
+            }
         }
     }
 
     /// The password sheet was saved: keeps what it gave (a password, an account name, or both)
-    /// and types.
-    func savePasswordAndType(password: String?, accountName: String?) {
+    /// and types, without asking for Face ID about a password just typed. Returns why the
+    /// Keychain didn't take it, and then the sheet stays.
+    func savePasswordAndType(password: String?, accountName: String?) -> String? {
+        let device = savedDevice
+        do {
+            if let password, !password.isEmpty { try DeviceSecrets.setPassword(password, for: device) }
+            if let accountName, !accountName.isEmpty { try DeviceSecrets.setUsername(accountName, for: device) }
+        } catch {
+            return error.localizedDescription
+        }
         passwordPrompt = nil
-        if let password, !password.isEmpty { DeviceSecrets.setPassword(password, for: device) }
-        if let accountName, !accountName.isEmpty { DeviceSecrets.setUsername(accountName, for: device) }
-        typePassword()
+        refreshSavedSignIn()
+        typePassword(confirmed: true)
+        return nil
     }
 
     private func typeThroughScreenSharing() {
         guard screenSharingTyping != .typing else { return }
         stickyModifiers = []
         screenSharingTyping = .typing
-        screenSharingTask = Task { [weak self, device] in
+        screenSharingTask = Task { [weak self, device = savedDevice] in
             do {
                 try await ScreenSharingPassword.type(for: device)
                 guard let self, !Task.isCancelled else { return }
@@ -508,12 +606,25 @@ final class ScreenSessionModel {
         session.setFitDisplay(on)
     }
 
+    /// Fluid, Balanced (the default) or Sharp Text, saved for this computer.
+    var quality: QualityPreset { savedDevice.quality ?? .auto }
+
+    var qualityChoice: QualityChoice {
+        QualityChoice(selection: quality, isAvailable: !isInputOnly, onSelect: { [weak self] in self?.setQuality($0) })
+    }
+
+    func setQuality(_ preset: QualityPreset) {
+        store.setQuality(preset, for: device.id)
+        session.setQuality(preset)
+    }
+
     // MARK: Dictation
 
     /// The computer (MacWhisper, Parakeet) when the host advertised it and Settings allows it;
     /// otherwise this device.
     var dictationRoute: DictationRoute {
-        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines)
+        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines,
+                               hasOnDeviceParakeet: OnDeviceSpeechEngines.parakeet != nil)
     }
 
     func dictationPressed(_ press: DictationPress) {
@@ -524,6 +635,24 @@ final class ScreenSessionModel {
         case .toggle: dictation.toggle(route: dictationRoute)
         case .cancelled: dictation.pressCancelled()
         }
+    }
+
+    /// Recent dictations, to copy or send again. Listening pauses while the list is up.
+    func showDictationHistory() {
+        dictation.pause()
+        isShowingDictationHistory = true
+    }
+
+    /// Types a past dictation on the computer again, as it was sent the first time.
+    func resendDictation(_ text: String) {
+        stickyModifiers = []
+        input.typeText(text)
+        DictationHistory.shared.add(text, computer: savedDevice.name)
+    }
+
+    /// Dictated text copied rather than typed (a secure field on the Mac was in the way).
+    func dictationCopied(_ text: String) {
+        DictationHistory.shared.add(text, computer: savedDevice.name)
     }
 
     // MARK: Wiring
@@ -540,14 +669,16 @@ final class ScreenSessionModel {
         video.onNeedsKeyframe = { [weak self] in
             Task { @MainActor in self?.session.send(.requestKeyframe) }
         }
-        video.onFirstFrame = { [weak self] in
-            Task { @MainActor in self?.hasPicture = true }
+        video.onFirstFrame = { [weak self] epoch in
+            Task { @MainActor in self?.firstFrameShown(epoch: epoch) }
         }
+        session.onFitRequested = { [weak self] in self?.expectFirstFrame(requiringNewConfig: true) }
         input.send = { [weak self] message in self?.session.send(message) }
         dictation.send = { [weak self] message in self?.session.send(message) }
-        dictation.deliver = { [input] text, pressReturn in
+        dictation.deliver = { [weak self, input] text, pressReturn in
             input.typeText(text)
             if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
+            DictationHistory.shared.add(text, computer: self?.savedDevice.name)
         }
         dictation.onMicrophoneActive = { [macAudio] active in macAudio.setMicrophoneActive(active) }
     }
@@ -579,8 +710,14 @@ final class ScreenSessionModel {
             }
         }
         watch({ $0.keyRemap }) { model, remap in model.input.keyRemap = remap }
+        // A lock screen or secure field: the banner's button says what's saved (another device
+        // may have synced a password in meanwhile).
+        watch({ $0.session.hostStatus }) { model, _ in model.refreshSavedSignIn() }
+        watch({ $0.hostPlatform }) { model, platform in model.input.hostPlatform = platform }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
         watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
+        watch({ $0.quality }) { model, quality in model.session.setQuality(quality) }
+        watch({ $0.session.isAwaitingFittedStream }) { model, _ in model.updatePicture() }
         // Files opened in Casement from other apps join this session's queue once approved.
         watch({ _ in SharedFileInbox.shared.pending.count }, initial: true) { model, count in
             guard count > 0 else { return }
@@ -627,6 +764,7 @@ final class ScreenSessionModel {
             // Hosts before the platform field are all Macs.
             store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
             if let key = session.hostPublicKey { store.recordHostKey(key, for: device.id) }
+            if let natural = session.capabilities?.naturalScroll { store.adoptHostNaturalScroll(natural, for: device.id) }
             #if os(macOS)
             checkForThisMac()
             #endif
@@ -638,11 +776,30 @@ final class ScreenSessionModel {
             #endif
         } else {
             announce(state)
-            hasPicture = false
-            video.resetFirstFrame()
+            expectFirstFrame(requiringNewConfig: false)
             dictation.connectionLost()
             macAudio.connectionLost()
         }
+    }
+
+    /// From here the next frame is the first: the picture hides until it comes.
+    private func expectFirstFrame(requiringNewConfig: Bool) {
+        pictureEpoch &+= 1
+        framedEpoch = nil
+        hasPicture = false
+        video.resetFirstFrame(epoch: pictureEpoch, requiringNewConfig: requiringNewConfig)
+    }
+
+    private func firstFrameShown(epoch: UInt64) {
+        guard epoch == pictureEpoch else { return } // from before a newer stream request
+        framedEpoch = epoch
+        updatePicture()
+    }
+
+    /// The picture shows once its first frame is in and the host has fitted the display.
+    private func updatePicture() {
+        let shows = framedEpoch == pictureEpoch && !session.isAwaitingFittedStream
+        if shows != hasPicture { hasPicture = shows }
     }
 
     /// Says what the overlay now shows, since it appears without VoiceOver's focus moving to it.
@@ -686,6 +843,7 @@ final class ScreenSessionModel {
         var trackpadSensitivity: Double?
         var keyboardMode: SoftwareKeyboardMode?
         var dictationEngine: DictationEnginePreference?
+        var threeFingerSwipes: Bool?
         var defaultStripLayout: ControlStripLayout?
         var capturesShortcuts: Bool?
     }
@@ -702,6 +860,11 @@ final class ScreenSessionModel {
             readDefaults.trackpadSensitivity = sensitivity
             trackpadSensitivity = sensitivity
             input.trackpadSensitivity = sensitivity
+        }
+        let swipes = defaults.object(forKey: Self.threeFingerSwipesKey) as? Bool ?? true
+        if swipes != readDefaults.threeFingerSwipes {
+            readDefaults.threeFingerSwipes = swipes
+            input.threeFingerSwipes = swipes
         }
         let keyboard = defaults.string(forKey: Self.keyboardModeKey).flatMap(SoftwareKeyboardMode.init(rawValue:)) ?? .unicode
         if keyboard != readDefaults.keyboardMode {

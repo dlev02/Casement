@@ -22,7 +22,7 @@ app's bundle identifier uses the new one. New user-facing text says Casement; th
 says Vantage when it means the code. The GitHub repo is `dlev02/Casement`.
 
 Vantage is a native Apple remote-desktop app: an iPadOS client controls a macOS host over
-Tailscale only. It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
+Tailscale, or (opt-in, already-paired devices) the local network ([ADR-0001](docs/adr/0001-tailscale-only.md)). It is a personal, Screens-5-style alternative for Drew, macOS-first. The Xcode
 project is `Vantage.xcodeproj` (hand-maintained pbxproj, objectVersion 77, file-system-synchronized
 groups). Read this before working here.
 
@@ -63,7 +63,8 @@ Swift 6, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, `SWIFT_APPROACHABLE_CONCUR
   for a large minimum: on a Mac with a content filter (Little Snitch), non-loopback connections run
   through Network.framework's `ne_filter`, which silently dropped stream chunks whenever a receive
   waited for ≥ 16 KB (4K keyframes from a PC arrived with holes, then `badMagic`). Loopback and
-  BSD sockets never showed it, so loopback tests can't catch it.
+  BSD sockets never showed it, so loopback tests can't catch it. Off the tailnet the channel
+  seals every frame after the challenge (`SessionCrypto`; Local network in `docs/guide/connection.md`).
 - **Host pipeline**: `ScreenCapture` (ScreenCaptureKit, `'420v'`, sRGB, dirty-rect ratio) →
   `VideoEncoder` (VideoToolbox low-latency, no reordering, event-driven IDRs, BT.709/sRGB colour
   tags) → `MessageChannel`. Incoming input goes to `InputInjector` (CGEvent, releases all held
@@ -194,6 +195,13 @@ decode, input, or Tailscale code.
 
 ## Known limitations
 
+- Client polish of 2026-11-22 (three-finger swipes, dictation Pause/Resume and history, Parakeet
+  on the device, Settings as a sheet, the Mac's bordered buttons and empty list): built for iOS,
+  visionOS and macOS and checked in the iPhone simulator. Still needing hands: the three-finger
+  swipe itself (no simulator input for it), Pause and Resume with a live microphone, Parakeet's
+  download and memory on a real iPhone, and every Mac change in a signed Mac build (see
+  `mac-client.md`, Settings).
+
 - The published Windows ARM64 packages (1.5, 1.6) probably won't start: they were published with
   `-p:Platform=x64`, so 44 native files, `Microsoft.ui.xaml.dll` among them, were x64. The script now passes the
   real platform and `check-package-arch.ps1` fails a release on the wrong kind of binary; 1.7 (2026-11-20)
@@ -206,8 +214,8 @@ decode, input, or Tailscale code.
   isn't available. Real Mac video, pointer, clicks and software-keyboard typing are verified on a
   physical iPad; BetterDisplay and biometric session recovery still need device checks (the
   topic guides name what else does).
-- Windows host (1.3, 2026-11-04): a saved password can't be typed at the Windows lock screen (the
-  secure desktop is reachable only from a SYSTEM service, a separate decision). HEVC, the PC's
+- Windows host (1.3, 2026-11-04): the lock screen, UAC prompts and administrator apps need the opt-in
+  Casement Host Service (2026-11-22, ADR 0006), whose live checks are in `windows-host.md`. HEVC, the PC's
   sound, display fitting and the restart guard were checked on Drew-PC with the console host and a
   throwaway client, not yet from a real iPad or through a real restart; the transfer UI was only
   compiled.

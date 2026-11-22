@@ -9,7 +9,7 @@ public enum DisplayFitResult
     Changed,
     /// <summary>The display already shows the best mode for the viewport (or nothing fits better): nothing changed.</summary>
     Unchanged,
-    /// <summary>Another session holds this display fitted to its own screen; stream what's there.</summary>
+    /// <summary>Another device holds this display fitted to its own screen; stream what's there.</summary>
     Busy,
     /// <summary>Windows refused the mode (logged); stream the current mode.</summary>
     Failed,
@@ -19,8 +19,9 @@ public enum DisplayFitResult
 /// The Windows stand-in for the Mac's virtual display (<c>selectDisplay{fitViewport, useVirtualDisplay: true}</c>):
 /// Windows has no user-space virtual display, so the shared display is switched to the mode that
 /// best matches the device's screen, temporarily, and put back afterwards (as Parsec and Sunshine
-/// do). Calls come from any session's queue; implementations lock. One session holds a display at
-/// a time, identified by its <c>owner</c>.
+/// do). Calls come from any session's queue; implementations lock. One owner holds a display at
+/// a time: a device, whichever of its sessions asks (<see cref="DisplayHolds"/> maps sessions to
+/// owners and gives a dropped device a grace before its <see cref="Restore"/>).
 /// </summary>
 public interface IDisplayFitter
 {

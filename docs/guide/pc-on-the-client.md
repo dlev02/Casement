@@ -15,7 +15,16 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   slots (`HostShortcut.forItem`): spotlight = ⌘Space / Search (Win S, kVK 0x01 + ⌘), missionControl
   = ⌃↑ / Task View (Win Tab), applicationWindows = ⌃↓ / Switch Apps (Alt Tab, 0x30 + ⌥),
   showDesktop = F11 / Win D; `startMenu` (the Windows key alone: 0x37 down and up) and
-  `taskManager` (Ctrl Shift Esc: 0x35 + ⌃⇧) exist for a PC only. The Windows host maps ⌘ to the
+  `taskManager` (Ctrl Shift Esc: 0x35 + ⌃⇧) exist for a PC only. Task Manager always runs as
+  administrator on Windows 11, so on a host that says `canControlAdminApps: false` (not elevated)
+  `ScreenSessionModel.sendShortcut` asks first (`adminShortcutToConfirm`, from the strip, the session
+  menu and the Mac's menus alike; the strip routes shortcuts through `onShortcut`), and
+  `HostStatusBanner` shows `hostStatus.blockedAdminApp` ("Task Manager runs as administrator, so
+  clicks and typing don't reach it…", `AdminAppText`) until a press reaches an ordinary window. A PC
+  whose Casement Host Service is connected sends `hostStatus.controlsSecureDesktop: true`: its lock
+  screen and UAC prompts are in the picture and take input, so `HostStatusBanner.isShown` drops the
+  "unlock it at the PC" banner (and no secure-desktop banner comes, since `isSecureInputActive` stays
+  false). The Windows host maps ⌘ to the
   Windows key literally, so shortcuts are sent as written. `StripItem.label(for:)`/`detail(for:)`/
   `symbol(for:)` name an item per host (nil = any host, for the default editor);
   `keycapText(for:)` draws a PC's modifiers as "ctrl"/"alt"/"win"; strip modifiers are always sent

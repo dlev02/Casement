@@ -31,10 +31,19 @@ import Testing
                                            peerTailnetName: "drew@example.com", hostPlatform: .windows))),
         ("challengeSigned", .challenge(Challenge(hostName: "DREW-PC", hostVersion: "1.0", hostPublicKey: key32, nonce: token, isPaired: true,
                                                  hostPlatform: .windows, hostSignature: signature64))),
+        ("helloKeyShare", .hello(Hello(clientName: "iPad", deviceModel: "iPad16,6", appVersion: "1.0", clientPublicKey: key32,
+                                       supportedCodecs: [], maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil,
+                                       features: ClientFeatures(dictation: true, inputOnly: true), clientNonce: token, clientKeyShare: key32))),
+        ("challengeKeyShare", .challenge(Challenge(hostName: "Studio", hostVersion: "1.0", hostPublicKey: key32, nonce: token, isPaired: true,
+                                                   hostPlatform: .macOS, hostSignature: signature64, hostKeyShare: token))),
         ("authenticate", .authenticate(Authenticate(signature: signature64, pairingCode: "024680"))),
+        ("authResultInputOnly", .authResult(AuthResult(status: .ok,
+                                                       capabilities: HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: true, maxFPS: 0,
+                                                                                      platform: .macOS, inputOnlySessions: true, stylus: true)))),
         ("authResultOk", .authResult(AuthResult(status: .ok, sessionToken: token, displays: [display],
                                                 capabilities: HostCapabilities(codecs: [.h264], canManageVirtualDisplay: false, clipboard: true, maxFPS: 60,
-                                                                               fileTransfer: true, filesOnlySessions: true, platform: .windows)))),
+                                                                               fileTransfer: true, filesOnlySessions: true, platform: .windows,
+                                                                               naturalScroll: false, canControlAdminApps: false)))),
         ("authResultPairing", .authResult(AuthResult(status: .pairingRequired, message: "Enter the pairing code shown on the PC"))),
         ("authResultProbe", .authResult(AuthResult(status: .ok, readiness: HostReadiness(screenRecordingGranted: true, accessibilityGranted: true)))),
         ("displayList", .displayList(DisplayList(displays: [display]))),
@@ -61,6 +70,10 @@ import Testing
                                                  nalLengthSize: 4, fps: 60))),
         ("hostStatus", .hostStatus(HostStatus(isScreenLocked: true, isSecureInputActive: false, inputPath: .native, message: "The PC is locked",
                                               isDisplayAsleep: false, isScreenUnavailable: false))),
+        ("hostStatusAdminApp", .hostStatus(HostStatus(isScreenLocked: false, isSecureInputActive: false, inputPath: .native,
+                                                      blockedAdminApp: "Task Manager"))),
+        ("hostStatusSecureDesktop", .hostStatus(HostStatus(isScreenLocked: true, isSecureInputActive: false, inputPath: .native,
+                                                           message: "The PC is locked", controlsSecureDesktop: true))),
         ("fileOffer", .fileOffer(FileOffer(id: id, name: "Quarterly Report.pdf", byteCount: 70_000_000_000,
                                            modified: Date(timeIntervalSinceReferenceDate: 780_000_000.5), uti: "com.adobe.pdf"))),
         ("fileAccept", .fileAccept(FileAccept(id: id, resumeOffset: 1_048_576))),
@@ -74,6 +87,9 @@ import Testing
         ("pointerEvent", .pointerEvent(PointerEvent(action: .down, button: .right, x: 400.5, y: 250.25, clickCount: 2, modifiers: [.shift, .command]))),
         ("scrollEvent", .scrollEvent(ScrollEvent(phase: .ended, momentum: .none, isContinuous: true, deltaX: -1.5, deltaY: 12.75, x: 100, y: 200,
                                                  velocityX: -30, velocityY: 640.5, modifiers: [.control]))),
+        ("pointerEventMoveBy", .pointerEvent(PointerEvent(action: .moveBy, x: -12.5, y: 3.25))),
+        ("stylusEvent", .stylusEvent(StylusEvent(phase: .move, x: 812.5, y: 433.25, pressure: 0.625, altitude: 0.75, azimuth: -1.5, clickCount: 2,
+                                                 modifiers: [.shift]))),
         ("keyEvent", .keyEvent(KeyEvent(keyCode: 0x7E, isDown: true, modifiers: [.control, .function], isRepeat: true))),
         ("fileChunkToClient", .fileChunkToClient(FileChunk(id: id, offset: 262_144, data: Data([1, 2, 3, 4, 5])))),
         ("fileChunkToHost", .fileChunkToHost(FileChunk(id: id, offset: 0x0102_0304_0506_0708, data: Data([0xFF])))),
@@ -95,7 +111,7 @@ import Testing
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try frame.write(to: url)
         }
-        // JSON key order isn't promised by JSONEncoder, so compare what the committed bytes mean.
+        // Compare what the committed bytes mean, so a reordered or reformatted file still passes.
         let committed = try Data(contentsOf: url)
         try Self.expectSameMessage(committed, as: message)
     }

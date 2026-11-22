@@ -32,7 +32,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
   `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
   `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
-  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, and `--no-audio`
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, `--admin-apps-blocked`, and `--no-audio`
   (it otherwise offers the Mac synthetic host's −18 dBFS chime as the PC's sound). Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
@@ -87,11 +87,35 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   Foundation reports an abandoned input as skipped about a second later, right when the
   replacement is in flight), and an encode that never answers at all shifts nothing. A stall
   timeout acts only when it was armed for the encode still in flight and that encode's deadline
-  has passed; one already queued behind the answer that finished its encode does nothing. The
-  session only makes the encoder and hands it over. Tests: `VideoPipelineTests` (scripted encoder
+  has passed; one already queued behind the answer that finished its encode does nothing. A forced
+  keyframe that comes back skipped makes the next encode an IDR again. The
+  session only makes the encoder and hands it over. **Quality presets** (`selectDisplay.quality`,
+  the Mac's numbers in `QualityProfile.For`): Balanced (`auto`) 30/60 fps, max QP 32 text / 44
+  motion; Fluid (`motion`) 60 fps always, 36/44, no idle pass; Sharp Text (`text`) 30/60, 28/38,
+  bitrate floor 6 Mbit/s; `maximum` (not offered) 24/34, floor 10 Mbit/s. A `selectDisplay` that
+  differs from the running one only in `quality` changes it in place (`CaptureSupervisor.QualityChanged`,
+  `VideoPipeline.SetQuality`): no new capture or `streamConfig`. **Idle sharpening**: a still screen
+  sends nothing, so the soft frame motion's ceiling left would stay; every encode other than the
+  pass itself arms a 300 ms timer (`IdleSharpenDelay`), and when it runs out with nothing in flight
+  or pending the last frame is encoded once more as a P-frame under the preset's idle ceiling (24
+  Balanced, 20 Sharp Text, 18 `maximum`); the next encode puts the mode's ceiling back first. The
+  ceiling now reaches the encoder just before an encode, not when the mode flips. Scrolling re-arms
+  it every frame, so it costs nothing while the screen moves; on the Mac a 2560×1600 text refine
+  near QP 24 cost ~0.2–0.6 MB once and lifted luma PSNR by 3–9 dB. **NVENC ignores
+  `AVEncVideoMaxQP`** (checked on Drew-PC's RTX 5070 Ti, 2026-11-22, HEVC and H.264, CBR and
+  low-delay VBR): every call returns S_OK and changes nothing, even QP 4 for the pass or QP 10 from
+  the first frame, so there the pass is a 2–20 KB P-frame that scores the same as the frame before
+  (42.6 dB against a screenshot of the text; a forced IDR instead was 182 KB at 31.7 dB, worse).
+  Text after scrolling is already as good as NVENC's rate control makes it; a real gain on NVIDIA
+  would need another lever (a QP-controlled mode or a brief bitrate boost), untried. Quick Sync and
+  AMF are unchecked. Tests: `VideoPipelineTests` (scripted encoder
   that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
-  answer), with `HevcSessionTests` and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
-  over loopback.
+  answer, the idle pass), with `HevcSessionTests`, `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
+  and `DisplayFittingTests.AQualityChangeAloneDoesNotRestartTheStream` over loopback.
+- **Scroll signs** (`WindowsInputTranslator.Scroll`): the Mac host's. Lines: WHEEL = +deltaY,
+  HWHEEL = −deltaX; continuous deltas arrive negated, so WHEEL = −deltaY, HWHEEL = +deltaX. Until
+  2026-11-22 continuous deltas took the line signs and trackpad scrolling ran backwards from every
+  client (`MacTrackpadAndWheelScrollTheSameWay`).
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
@@ -186,12 +210,61 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
   `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the
   foreground one for a key; its process's `TokenElevation`) and raises `ElevatedWindowBlocked`, which
-  the app turns into a notification while a screen session is up. General › Control apps running
-  as administrator (`HostSettings.ControlAdminApps`) registers a trigger-less Task Scheduler task,
-  "Casement Host", with `HighestAvailable` (`AdminLaunch`; one UAC prompt, which only someone at the
-  PC can answer), and every non-elevated launch with the setting on runs that task and exits
-  (`Program.ShouldRelaunchElevated`). Start at login (the Run value) is turned on once at the first
-  launch of a Release build (`StartAtLoginSettled`).
+  the app turns into a notification while a screen session is up. The device hears it too:
+  `capabilities.canControlAdminApps` says whether input reaches such apps (the host is elevated or
+  the desktop helper is connected, asked as each session is admitted; null from synthetic hosts and
+  Macs), and `BlockedAppChanged` follows each press (the app's title when it went to an elevated
+  window, null once one reaches an ordinary window; moves, scrolls and releases change nothing),
+  which `SessionStatusMonitor.SetBlockedAdminApp` turns into `hostStatus.blockedAdminApp` while the
+  session is unlocked and no secure desktop is up. The client words the banner and asks before
+  sending Task Manager to a host that can't control it. The synthetic host's `--admin-apps-blocked`
+  says false and pretends Ctrl+Shift+Esc opened Task Manager (key presses then report it, a click
+  clears it). Start at login (the Run value) is turned on once at the first launch of a Release
+  build (`StartAtLoginSettled`).
+- **Casement Host Service** (ADR 0006; `src/Vantage.Host.Windows.Service` → `CasementHostService.exe`,
+  `Platform/DesktopHelper`, `Protocol/DesktopHelper`): General › Control administrator prompts and
+  apps runs `CasementHostService.exe install` from the host's folder as administrator
+  (`HelperInstall.RunElevatedAsync`; one UAC prompt at the PC). That copies it to
+  `%ProgramFiles%\Casement Host Service`, makes an Ed25519 key (seed in `%ProgramData%\Casement Host
+  Service\helper.key`, SYSTEM and Administrators only, no inheritance; public half `helper.pub` beside the
+  exe), registers the LocalSystem service `CasementHostService` (auto start, restart on failure) with
+  `sc.exe`, and deletes the old elevated task. `uninstall` (the switch off, or the Inno uninstaller's
+  `RemoveDesktopService`, Windows asking only when the service exists) stops and deletes it and both
+  folders. `HostService` keeps one `helper` process (`HelperLauncher`: its own token duplicated with
+  `TokenSessionId` set, `CreateProcessAsUser` on `winsta0\default`) in the console session while
+  `WTSQueryUserToken` says someone is signed in to it, and none otherwise (so never at the sign-in screen
+  after a restart); a helper that exits within 10 s backs off 2× up to 1 min. The helper
+  (`SecureDesktopHelper`) serves `\\.\pipe\CasementHostDesktop-<session>`: DACL SYSTEM + the session's
+  user (read/write, not create-instance), one instance, `FirstPipeInstance`, and it refuses a client from
+  another session or that isn't `VantageHost.exe`/`VantageHostCli.exe`. The host (`HelperClient`,
+  retrying every 3 s while the service is installed) sends `HelperHello` with a nonce and trusts only a
+  `HelperWelcome` signed over `HelperProof.Transcript(session, nonce)` with `helper.pub`'s key, so
+  something squatting on the name gets nothing. Then the helper reports the input desktop (Default,
+  Winlogon = secure, Other) on change; input goes to it (`SendInputInjector`: while the secure desktop
+  has the input, and from a press aimed at an elevated window until one lands elsewhere; it injects on
+  a thread `SetThreadDesktop`'d to the input desktop, through the same `InputBatch` as the host); and
+  `WindowsScreenSource` starts `HelperCaptureStream` instead of WGC while the secure desktop is up (a
+  switch either way ends the running capture, so the supervisor restarts the right one, ~0.5 s). The
+  helper's `DesktopDuplicator` is DXGI desktop duplication on a thread on the input desktop: the whole
+  screen first, then dirty and moved rects, copied off one staging texture and cut into ≤ 8 MB messages
+  (`HelperFrames.Split`, only the last `IsLastPart`); the host paints them with `UpdateSubresource` onto
+  a canvas and hands the encoder a pooled copy. The pointer isn't in those frames (devices that draw
+  their own still show it). While it's connected `SessionStatusMonitor` reports no secure desktop and
+  `hostStatus.controlsSecureDesktop`, so the device drops the "unlock it at the PC" banner. Both sides
+  refuse another `HelperPipe.Version`; an installed service is only replaced by turning the switch off
+  and on (not by the host's updater yet). Logs: `%ProgramData%\Casement Host Service\{install,service,helper}.log`.
+  Published single-file, self-contained and partially trimmed (~13 MB) by `scripts/publish-service.ps1`,
+  which `publish.ps1` and `make-release.ps1` call, into the host's folder. Users of the old task
+  (`HostSettings.ControlAdminApps`, `AdminLaunch`, `Program.ShouldRelaunchElevated`) keep it until they
+  turn the switch off and on; the relaunch is skipped once the service is installed. Test:
+  `HelperPipeTests` (the pipe format). On Drew-PC (2026-11-22) the PC solution, WinUI app included,
+  builds clean, 561/565 tests pass (4 opt-in skips) and the trimmed service publishes (13.4 MB), but it
+  has **never been installed or run**: nobody was at the PC to approve the install prompt. Still to
+  check there, with someone ready to click Yes twice (install, then uninstall): the service starts a
+  helper in the console session; the trimmed exe runs; a `VantageHostCli`-named check program connects
+  and verifies; Alt+F4 through the helper closes Task Manager where plain `SendInput` can't; a UAC
+  prompt (`PromptOnSecureDesktop=1` there) is captured to a PNG and Escape through the helper dismisses
+  it; the lock screen takes a PIN from a real iPad; uninstall leaves no service, files or key.
 - **Installer** (`installer/CasementHost.iss`, Inno Setup 6.6+; `scripts/make-installer.ps1`, called by
   `make-release.ps1`): `Casement-Host-Setup-x64.exe`/`-arm64.exe` keep the same names every release so the
   READMEs can link `releases/latest/download/`; the zips stay, because the signed manifest points the
@@ -296,9 +369,24 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the mode). `Host/DisplayChoice` (one per session) owns display choice and fitting: `Wanted(select)`
   remembers whether the device wants the display fitted, `ChooseAsync(select)` (with capture
   stopped) lists the displays, fits or restores the mode as wanted, waits ≤ 1 s for the new size
-  so `streamConfig` reports the new mode, and picks the display (by id, else the main one);
+  so `streamConfig` reports the new mode, then `LayoutSettle` (1200 ms) more so windows and the
+  taskbar have redrawn at the new mode and scale before capture starts (the device used to watch
+  the desktop rearrange itself), and picks the display (by id, else the main one);
   `CaptureSizedForOldMode` drives the retry below; `StopFitting`/`RestoreNow` serve
-  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`. A
+  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`.
+  **Holds belong to the device** (`Host/DisplayHolds`, one per listener in front of the fitter, which
+  sees one owner per client key fingerprint): a session of the same device takes the hold over
+  (the same viewport is `Unchanged`, no switch; no `Busy` while the old session hasn't noticed its
+  connection died), and a session that ends without a goodbye (no `disconnect` from the device, not
+  ended by the host) lets go after `ReconnectGrace` (10 s) unless the device fits it again, so a
+  dropped connection's reconnect doesn't switch the PC back and forth. A goodbye, `restoreDisplays`
+  and listener stop restore at once; another device asking during a grace ends it first. Casement's
+  closes the screen with `disconnect` (`ClientSession.disconnect(endingSession: true)`), so a
+  deliberate close restores at once (~15 ms, the mode back ~1 s later) while a drop or the app going
+  to the background holds it. A restore Windows refuses (`DISP_CHANGE_FAILED` while a UAC prompt or
+  the secure desktop is up; seen on Drew-PC) used to be forgotten, leaving the PC in the fitted mode
+  until the host exited; `DisplayFitter` now keeps it and tries again every 2 s, and a fit on that
+  display meanwhile starts from the user's mode it remembers. A
   refit comes from the `selectDisplay` Casement resends when its viewport changes
   (`ClientSession.updateViewport`); **`viewportChanged` only forces a keyframe**, as on the Mac (no
   client sends it; the 500 ms `ScheduleRefit` path and `IDisplayFitter.WouldChange` are gone).
@@ -308,7 +396,14 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `HostSettings.AllowDisplayFitting` (Display page switch, default on). Checked on the 4K PG32UCDM: a
   1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
   scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and
-  `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter).
+  `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter; the
+  grace on a `FakeTimeProvider`). Measured on Drew-PC (2026-11-22, 1366×1024@2 → 2048×1536 at
+  150%): the taskbar finishes redrawing ~1.24–1.33 s after Windows reports the new scale; with a
+  600 ms settle the first frame showed it mid-redraw 3 of 3 times, with 1200 ms it was final 3 of 3
+  (request → first frame ~2.3–2.5 s). A dropped connection reconnecting at 2.5 s kept the mode with no
+  switch; one that didn't come back restored at 10.04 s. During a restore the PC's own monitor
+  shows the fitted mode at 100% for ~1 s (the scale goes back first). Open: on that run the monitor
+  came back at 59 Hz instead of its saved 240 Hz after the host woke it, before any fitting.
 - **The PC's sound** (the Mac's Mac audio, same wire: `audioRequest` 63 → `audioConfig` 73, then
   `audioPacket` 102 every 10 ms; Opus 48 kHz stereo, 480-frame packets, 128 kbps). `HostEnvironment.Audio`
   (`IAudioSource`, null = none) delivers 10 ms `AudioBlock`s; `HostSessionCore` advertises
@@ -356,11 +451,12 @@ VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
   VANTAGE_INTEROP_CLIPBOARD_TEXT="from the PC" xcrun swift test --filter WindowsHostInteropTests
 ```
 
-**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 38 messages
+**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 45 messages
 defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
 `WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
 (JSON compared key for key after canonicalising, binary byte for byte);
-`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files. A change to any message must update both lists.
+`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files (the Swift wire encoder sorts JSON keys, so only
+messages that changed show up in the diff). A change to any message must update both lists.
 **Interop harness**: `Tests/ClientSessionTests/WindowsHostInteropTests.swift` (opt-in,
 `.serialized`) drives the real `ClientSession` and raw channels against a running Windows host:
 pairing, burning, probe, version mismatch, the stream decoded with VideoToolbox (a PNG is written,

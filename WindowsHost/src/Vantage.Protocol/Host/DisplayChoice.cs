@@ -9,8 +9,10 @@ namespace Vantage.Protocol.Host;
 /// fits the main display's mode to the viewport through <see cref="IDisplayFitter"/> (when asked
 /// with <c>useVirtualDisplay</c> and the host allows it), waits for the new mode to show, and
 /// picks the display; it restores the mode on <c>restoreDisplays</c>, on a later <c>selectDisplay</c>
-/// that doesn't fit, and when the session ends. A refused mode, or a display another session
-/// holds, streams what's there.
+/// that doesn't fit, and when the session ends (after <see cref="DisplayHolds.ReconnectGrace"/> when
+/// the device left without a goodbye, so its reconnect finds the mode still fitted). Holds belong to
+/// the device (<paramref name="device"/>, its key's fingerprint) through <see cref="DisplayHolds"/>.
+/// A refused mode, or a display another device holds, streams what's there.
 /// </summary>
 /// <remarks>
 /// Capture must be stopped around <see cref="ChooseAsync"/> and <see cref="RestoreNow"/>: a running
@@ -18,10 +20,17 @@ namespace Vantage.Protocol.Host;
 /// replaces it. Refits come from the <c>selectDisplay</c> Casement resends when its viewport changes;
 /// <c>viewportChanged</c> only forces a keyframe, as on the Mac.
 /// </remarks>
-internal sealed class DisplayChoice(Guid owner, IDisplayFitter? fitter, IScreenSource screen, TimeProvider time, ILogger log)
+internal sealed class DisplayChoice(Guid owner, Func<string> device, DisplayHolds? fitter, IScreenSource screen, TimeProvider time, ILogger log)
 {
     /// <summary>How long to wait for the monitor to report a changed mode's size before describing the old one.</summary>
     public static readonly TimeSpan ModeSettleLimit = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// After a changed mode or scale shows, how long windows and the taskbar get to lay themselves out
+    /// again (a scale change sends every window <c>WM_DPICHANGED</c>) before capture starts, so the
+    /// device never sees the desktop rearrange itself.
+    /// </summary>
+    public static readonly TimeSpan LayoutSettle = TimeSpan.FromMilliseconds(1200);
 
     /// <summary>Right after a mode change, a capture sized for the old mode is started again for up to this long.</summary>
     public static readonly TimeSpan CaptureCatchUp = TimeSpan.FromSeconds(2);
@@ -84,17 +93,23 @@ internal sealed class DisplayChoice(Guid owner, IDisplayFitter? fitter, IScreenS
     /// <summary>Puts back a mode this session changed, now (capture stopped first when a stream is up).</summary>
     public void RestoreNow()
     {
-        if (fitter?.Restore(owner) != true) return;
+        if (fitter?.Restore(owner, Device) != true) return;
         log.LogInformation("display mode restored");
         _modeChangedAt = time.GetUtcNow();
     }
 
-    /// <summary>The session is over: whatever it changed goes back; a failure is logged, never thrown.</summary>
-    public void RestoreAtEnd()
+    /// <summary>
+    /// The session is over: whatever it changed goes back, at once after a goodbye
+    /// (<paramref name="saidGoodbye"/>), else after <see cref="DisplayHolds.ReconnectGrace"/> unless the
+    /// device fits it again first. A failure is logged, never thrown.
+    /// </summary>
+    public void RestoreAtEnd(bool saidGoodbye)
     {
         try
         {
-            if (fitter?.Restore(owner) == true) log.LogInformation("display mode restored at session end");
+            if (fitter is null) return;
+            if (!saidGoodbye) fitter.Release(owner, Device);
+            else if (fitter.Restore(owner, Device)) log.LogInformation("display mode restored at session end");
         }
         catch (Exception error)
         {
@@ -115,14 +130,14 @@ internal sealed class DisplayChoice(Guid owner, IDisplayFitter? fitter, IScreenS
         {
             if (_fitting && select.Selection is DisplaySelection.FitViewport fit && main is not null)
             {
-                var result = fitter.Fit(owner, main, fit.Viewport);
+                var result = fitter.Fit(owner, Device, main, fit.Viewport);
                 if (result is DisplayFitResult.Busy) log.LogInformation("another device has display {Id} fitted to its screen; streaming it as it is", main.Id);
                 changed = result is DisplayFitResult.Changed;
             }
             else
             {
                 // A display chosen by id while fitting, or fitting over: only the latter puts the mode back.
-                changed = !_fitting && fitter.Restore(owner);
+                changed = !_fitting && fitter.Restore(owner, Device);
             }
         }
         catch (Exception error)
@@ -134,7 +149,7 @@ internal sealed class DisplayChoice(Guid owner, IDisplayFitter? fitter, IScreenS
         _modeChangedAt = time.GetUtcNow();
 
         // The monitor's rect follows the mode at once, but give it a moment (≤ 1 s) to report the
-        // new size so streamConfig describes the mode being shown.
+        // new size so streamConfig describes the mode being shown, then let the desktop redraw at it.
         var started = time.GetTimestamp();
         while (true)
         {
@@ -145,11 +160,16 @@ internal sealed class DisplayChoice(Guid owner, IDisplayFitter? fitter, IScreenS
                 || time.GetElapsedTime(started) >= ModeSettleLimit)
             {
                 if (after is not null)
-                    log.LogInformation("display {Id} now {Width}x{Height} at {Scale}x ({PointWidth}x{PointHeight} points)",
-                                       after.Id, after.PixelWidth, after.PixelHeight, after.Scale, after.PointWidth, after.PointHeight);
-                return now;
+                    log.LogInformation("display {Id} now {Width}x{Height} at {Scale}x ({PointWidth}x{PointHeight} points); waiting {Ms} ms for the desktop to redraw",
+                                       after.Id, after.PixelWidth, after.PixelHeight, after.Scale, after.PointWidth, after.PointHeight, (int)LayoutSettle.TotalMilliseconds);
+                await Task.Delay(LayoutSettle, time, CancellationToken.None).ConfigureAwait(false);
+                // Listed again: a scale applied after the mode can show only now.
+                return await screen.GetDisplaysAsync(CancellationToken.None).ConfigureAwait(false);
             }
             await Task.Delay(TimeSpan.FromMilliseconds(100), time, CancellationToken.None).ConfigureAwait(false);
         }
     }
+
+    /// <summary>The device's key fingerprint, or this session's own id before it is known.</summary>
+    private string Device => device() is { Length: > 0 } key ? key : owner.ToString();
 }

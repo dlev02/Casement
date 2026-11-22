@@ -23,8 +23,10 @@ nonisolated enum DictationEnginePreference: String, CaseIterable, Identifiable {
 
 /// The engine one dictation actually uses.
 nonisolated enum DictationRoute: Equatable {
-    /// This device (iPad, or the Mac the client runs on).
+    /// This device (iPad, or the Mac the client runs on), with Apple's speech model.
     case iPad
+    /// This device, with the Parakeet model it downloaded (Settings → Controls → Dictation).
+    case onDeviceParakeet
     /// Stream audio to the host, which transcribes it with this engine.
     case mac(DictationEngineID)
 
@@ -32,10 +34,14 @@ nonisolated enum DictationRoute: Equatable {
     /// or Parakeet: an older host (nil engines) would drop the session on the new message kinds,
     /// and a Mac with only Apple's engine offers nothing the iPad doesn't already have. Then it's
     /// the engine the host lists first, which is the one chosen in its Settings (older hosts list
-    /// MacWhisper first).
-    static func resolve(preference: DictationEnginePreference, hostEngines: [DictationEngineID]?) -> DictationRoute {
+    /// MacWhisper first). Whatever stays on this device (a PC, a Mac with only Apple's engine,
+    /// "On this iPad") goes to this device's Parakeet when it has one, else Apple's model.
+    static func resolve(preference: DictationEnginePreference, hostEngines: [DictationEngineID]?,
+                        hasOnDeviceParakeet: Bool = false) -> DictationRoute {
         guard preference == .mac, let hostEngines, let first = hostEngines.first,
-              hostEngines.contains(where: { $0 == .macWhisper || $0 == .parakeet }) else { return .iPad }
+              hostEngines.contains(where: { $0 == .macWhisper || $0 == .parakeet }) else {
+            return hasOnDeviceParakeet ? .onDeviceParakeet : .iPad
+        }
         return .mac(first)
     }
 
@@ -46,6 +52,7 @@ nonisolated enum DictationRoute: Equatable {
         #else
         case .iPad: "On \(LocalDevice.this)"
         #endif
+        case .onDeviceParakeet: "Parakeet"
         case .mac(let engine): Self.label(for: engine)
         }
     }
@@ -62,10 +69,27 @@ nonisolated enum DictationRoute: Equatable {
 
     var symbol: String {
         switch self {
-        case .iPad: LocalDevice.symbol
+        case .iPad, .onDeviceParakeet: LocalDevice.symbol
         case .mac: "macbook"
         }
     }
+}
+
+/// A speech engine on this device that transcribes a whole clip once it ends (the optional
+/// Parakeet download). The app's implementation links FluidAudio, which the root package and the
+/// visionOS build leave out, so the dictation controller only knows this.
+nonisolated protocol OnDeviceSpeechEngine: Sendable {
+    /// Starts loading the model, so it's ready by the time the clip ends.
+    func prepare() async
+    /// Transcribes 16 kHz mono PCM16.
+    func transcribe(samples: Data, language: String?) async throws -> String
+}
+
+/// The on-device engines that are ready to use right now.
+@MainActor
+enum OnDeviceSpeechEngines {
+    /// Set while Parakeet's model is downloaded and switched on.
+    static var parakeet: (any OnDeviceSpeechEngine)?
 }
 
 /// Live transcript assembly: finalized text is kept; the latest volatile guess replaces the last.

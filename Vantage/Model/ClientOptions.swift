@@ -3,7 +3,8 @@ import VantageCore
 
 /// Launch-argument driven options for headless testing (DEBUG only):
 /// `-VantageSeedHost <host>` adds a device, `-VantageAutoConnect <host>` opens a session to it,
-/// `-VantagePairingCode 123456` supplies the pairing code automatically.
+/// `-VantagePairingCode 123456` supplies the pairing code automatically, and `-VantageInputOnly 1`
+/// opens the auto-connected session as Trackpad & Keyboard.
 enum ClientOptions {
     static var seedHost: String? { value(for: "-VantageSeedHost") }
     /// `-VantageLockPreview 1`: the lock screen stays up without asking for Face ID, for screenshots.
@@ -20,6 +21,7 @@ enum ClientOptions {
     }
     private static var autoConnectTaken = false
     static var pairingCode: String? { value(for: "-VantagePairingCode") }
+    static var autoConnectInputOnly: Bool { value(for: "-VantageInputOnly") == "1" }
     /// `-VantageReadOnlyDevices 1`: the device list (from defaults, or an argument-domain
     /// `-vantage.savedDevices`) changes in memory only and is never written back, so screenshots
     /// and manual checks leave alone the real list every Debug build shares.
@@ -86,6 +88,12 @@ enum ClientOptions {
     /// `-VantageHapticProbe 1` lists the haptics played so far as the value of an invisible
     /// `session.hapticProbe` element. Pair it with `-VantageForceHaptics 1` on iPad.
     static var hapticProbe: Bool { value(for: "-VantageHapticProbe") == "1" }
+    /// `-VantageSkipPasswordConfirmation 1` types saved passwords without asking for Face ID
+    /// (simulators and UI tests, which can't answer the prompt).
+    /// `-VantageHostStatus locked` (or `secure`) shows every status the host sends as a lock screen
+    /// (or a secure field), for the status banner's Unlock and Approve with a synthetic host.
+    static var hostStatusFixture: String? { value(for: "-VantageHostStatus") }
+    static var skipsPasswordConfirmation: Bool { value(for: "-VantageSkipPasswordConfirmation") == "1" }
 
     static var seedSampleDevices: Bool {
         #if DEBUG

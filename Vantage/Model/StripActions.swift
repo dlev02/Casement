@@ -42,6 +42,37 @@ struct FitDisplayToggle {
     var onToggle: () -> Void = {}
 }
 
+/// The session menu's Quality choice.
+struct QualityChoice {
+    var selection: QualityPreset = .auto
+    /// False in a Trackpad & Keyboard session, which has no picture.
+    var isAvailable = true
+    var onSelect: (QualityPreset) -> Void = { _ in }
+}
+
+extension QualityPreset {
+    /// What Casement offers, in menu order (`maximum` is the host's alone).
+    static let offered: [QualityPreset] = [.motion, .auto, .text]
+
+    var label: String {
+        switch self {
+        case .motion: String(localized: "Fluid")
+        case .auto: String(localized: "Balanced")
+        case .text: String(localized: "Sharp Text")
+        case .maximum: String(localized: "Maximum")
+        }
+    }
+
+    /// What it trades, for the Edit sheet.
+    var summary: String {
+        switch self {
+        case .motion: String(localized: "Fluid keeps motion at 60 frames per second and never spends extra on a still screen.")
+        case .auto: String(localized: "Balanced follows what's on the screen and sharpens text as soon as it stops moving.")
+        case .text, .maximum: String(localized: "Sharp Text spends more on detail so text stays crisp, at some cost to motion on a slow connection.")
+        }
+    }
+}
+
 /// What the strip needs for Send File and the Transfers list.
 struct SendFileAction {
     /// Nil when the Mac can take files; otherwise why Send File is dimmed.

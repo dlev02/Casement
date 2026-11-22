@@ -119,6 +119,12 @@ public sealed record ClientFeatures
     [JsonPropertyName("localCursor")] public bool? LocalCursor { get; init; }
     /// <summary>The client understands <c>curtainStatus</c>, so it hears of a curtain already up.</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
+    /// <summary>
+    /// An input-only session: the device is the computer's trackpad and keyboard, no picture. Signed
+    /// as a screen session. This host doesn't offer <see cref="HostCapabilities.InputOnlySessions"/>,
+    /// so the client hangs up.
+    /// </summary>
+    [JsonPropertyName("inputOnly")] public bool? InputOnly { get; init; }
 }
 
 public sealed record Hello : IMessage
@@ -142,6 +148,11 @@ public sealed record Hello : IMessage
     /// predate host authentication, which sign the older transcript.
     /// </summary>
     [JsonPropertyName("clientNonce")] public byte[]? ClientNonce { get; init; }
+    /// <summary>
+    /// The client's X25519 share for an encrypted connection outside Tailscale (the Mac host's
+    /// local-network mode). This host takes tailnet peers only and never answers it.
+    /// </summary>
+    [JsonPropertyName("clientKeyShare")] public byte[]? ClientKeyShare { get; init; }
 }
 
 public sealed record Challenge : IMessage
@@ -163,6 +174,11 @@ public sealed record Challenge : IMessage
     /// key it names. Sent whenever the hello carried a nonce; the client refuses a host without it.
     /// </summary>
     [JsonPropertyName("hostSignature")] public byte[]? HostSignature { get; init; }
+    /// <summary>
+    /// The host's X25519 share answering <see cref="Hello.ClientKeyShare"/>; then the signature
+    /// covers both shares and every later frame is a sealed record. Never sent by this host.
+    /// </summary>
+    [JsonPropertyName("hostKeyShare")] public byte[]? HostKeyShare { get; init; }
 }
 
 public sealed record Authenticate : IMessage
@@ -195,6 +211,20 @@ public sealed record HostCapabilities
     [JsonPropertyName("cursorShapes")] public bool? CursorShapes { get; init; }
     /// <summary>The host can black out its own screen (<c>curtainRequest</c>).</summary>
     [JsonPropertyName("curtain")] public bool? Curtain { get; init; }
+    /// <summary>
+    /// The computer's own Natural Scrolling setting, which a device copies into that computer's
+    /// toggle. Only Macs send it; this host leaves it out.
+    /// </summary>
+    [JsonPropertyName("naturalScroll")] public bool? NaturalScroll { get; init; }
+    /// <summary>
+    /// Whether input reaches apps that run as administrator (Task Manager, installers): false on a
+    /// PC whose host isn't elevated, where Windows drops it. Null from Macs and older hosts.
+    /// </summary>
+    [JsonPropertyName("canControlAdminApps")] public bool? CanControlAdminApps { get; init; }
+    /// <summary>Input-only sessions and <see cref="PointerAction.MoveBy"/> (the Mac host only).</summary>
+    [JsonPropertyName("inputOnlySessions")] public bool? InputOnlySessions { get; init; }
+    /// <summary>The host takes <see cref="StylusEvent"/> (the Mac host only).</summary>
+    [JsonPropertyName("stylus")] public bool? Stylus { get; init; }
 }
 
 public sealed record HostReadiness
@@ -328,6 +358,18 @@ public sealed record HostStatus : IMessage
     [JsonPropertyName("message")] public string? Message { get; init; }
     [JsonPropertyName("isDisplayAsleep")] public bool? IsDisplayAsleep { get; init; }
     [JsonPropertyName("isScreenUnavailable")] public bool? IsScreenUnavailable { get; init; }
+    /// <summary>
+    /// The app that the device's last click or key press went to runs as administrator and Windows
+    /// dropped the input (its window title, "Task Manager"); null once a press reaches an ordinary
+    /// window, and from hosts that can control such apps.
+    /// </summary>
+    [JsonPropertyName("blockedAdminApp")] public string? BlockedAdminApp { get; init; }
+    /// <summary>
+    /// The PC's Casement Host Service shows and controls Windows' secure desktop (the lock screen,
+    /// administrator prompts, Ctrl+Alt+Del), so a locked PC can be unlocked from the device and
+    /// <c>isSecureInputActive</c> stays false. Null from Macs, older hosts and PCs without it.
+    /// </summary>
+    [JsonPropertyName("controlsSecureDesktop")] public bool? ControlsSecureDesktop { get; init; }
 }
 
 public sealed record HostCommandMessage : IMessage

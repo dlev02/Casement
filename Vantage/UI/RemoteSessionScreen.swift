@@ -10,6 +10,8 @@ import AppKit
 /// a parent re-rendering never makes a second connection or Keychain identity.
 struct RemoteSessionScreen: View {
     let device: SavedDevice
+    /// Trackpad & Keyboard: the computer's input, with no picture.
+    var inputOnly = false
     @Environment(DeviceStore.self) private var store
     @State private var model: ScreenSessionModel?
 
@@ -19,7 +21,7 @@ struct RemoteSessionScreen: View {
         } else {
             placeholder.onAppear {
                 // Takes this computer's shared `FileLink`, so files keep moving after the screen closes.
-                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device))
+                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device), inputOnly: inputOnly)
             }
         }
     }
@@ -69,6 +71,7 @@ struct RemoteSessionLayout: View {
     @State private var stripTapGuard = StripTapGuard()
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
+    @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
     #if os(macOS)
     @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapsCommandAndControl = false
     @State private var windowShape = SessionWindowShape()
@@ -116,27 +119,35 @@ struct RemoteSessionLayout: View {
             Color.black.ignoresSafeArea()
             #endif
 
-            #if canImport(UIKit)
+            #if os(iOS)
+            if model.isInputOnly {
+                if model.isConnected { inputOnlyDeck }
+            } else if model.isConnected {
+                RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
+                                           screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
+                                           onPencilAction: performPencilAction, stylus: session.capabilities?.stylus == true)
+                    .overlay { pictureCover }
+                    // The half above the fold in tabletop; nil sizes fill the screen as always.
+                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+            }
+            #elseif canImport(UIKit) // visionOS
             if model.isConnected {
                 RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
-                    #if os(visionOS)
+                    .overlay { pictureCover }
                     // Exactly the Mac's shape, so a window that's a little off never shows black
                     // bars (see `VisionSessionPicture`).
                     .background(.black)
                     .aspectRatio(visionPictureAspect, contentMode: .fit)
                     .clipShape(.rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
-                    #else
-                    // The half above the fold in tabletop; nil sizes fill the screen as always.
-                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea()
-                    #endif
             }
             #elseif os(macOS)
             if model.isConnected {
                 macSessionSurface
+                    .overlay { pictureCover }
             }
             #endif
 
@@ -159,8 +170,9 @@ struct RemoteSessionLayout: View {
                 }
                 #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
-                if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
-                    HostStatusBanner(status: status, host: host)
+                if let status = session.hostStatus, !session.isDisplayAsleep,
+                   HostStatusBanner.isShown(for: status) {
+                    HostStatusBanner(status: status, host: host, offer: model.unlockOffer) { model.typePassword() }
                         .padding(.top, 12)
                         .transition(bannerTransition)
                 }
@@ -207,11 +219,11 @@ struct RemoteSessionLayout: View {
             }
             #else
             #if os(iOS)
-            if model.isConnected, let tabletop {
+            if model.isConnected, let tabletop, !model.isInputOnly {
                 tabletopDeck(tabletop)
             }
             #endif
-            if model.isConnected && tabletop == nil && (!model.areControlsHidden || model.dictation.isActive) {
+            if model.isConnected && tabletop == nil && !model.isInputOnly && (!model.areControlsHidden || model.dictation.isActive) {
                 floatingControls
             }
             #endif
@@ -329,6 +341,17 @@ struct RemoteSessionLayout: View {
             #endif
             .appLockCurtain()
         }
+        .sheet(isPresented: $model.isShowingDictationHistory) {
+            NavigationStack {
+                DictationHistoryView(canSend: model.isConnected && session.hostStatus?.isSecureInputActive != true,
+                                     computer: device.name,
+                                     onSend: { model.resendDictation($0) }, onCopy: Self.copyToClipboard)
+            }
+            #if os(macOS)
+            .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
+            #endif
+            .appLockCurtain()
+        }
         .alert("Files are still transferring. Disconnect anyway?", isPresented: $model.isConfirmingDisconnect) {
             Button("Disconnect", role: .destructive) { model.end() }
             Button("Cancel", role: .cancel) {}
@@ -361,6 +384,7 @@ struct RemoteSessionLayout: View {
             .environment(store)
             .appLockCurtain()
         }
+        .modifier(AdminShortcutConfirmation(model: model))
         .alert("Couldn't Type the Password", isPresented: Binding(get: { model.screenSharingError != nil },
                                                                 set: { if !$0 { model.screenSharingError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -382,6 +406,7 @@ struct RemoteSessionLayout: View {
             stickyModifiers: $model.stickyModifiers,
             touchMode: $model.touchMode,
             onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) },
+            onShortcut: { model.sendShortcut($0) },
             onShowKeyboard: { showKeyboard.toggle() },
             onSendClipboard: { model.sendClipboard() },
             onSendPassword: { model.typePassword() },
@@ -389,12 +414,14 @@ struct RemoteSessionLayout: View {
             onDisconnect: { model.disconnect() },
             isDictating: model.dictation.isListening,
             onDictation: { model.dictationPressed($0) },
+            onShowDictationHistory: savesDictationHistory ? { model.showDictationHistory() } : nil,
             tapGuard: stripTapGuard,
             items: model.stripItems,
             onCustomize: { model.isEditingControls = true },
             macAudio: model.macAudioToggle,
             curtain: model.curtainToggle,
             fitDisplay: model.fitDisplayToggle,
+            quality: model.qualityChoice,
             files: model.sendFileAction,
             host: model.hostPlatform
         )
@@ -529,6 +556,24 @@ struct RemoteSessionLayout: View {
     }
     #endif
 
+    #if os(iOS)
+    /// Trackpad & Keyboard: the deck a folded iPhone Duo puts on the desk, filling the screen,
+    /// with dictation's panel over it. A hardware keyboard types on the computer too.
+    private var inputOnlyDeck: some View {
+        VStack(spacing: 12) {
+            dictationPanel
+                .frame(maxWidth: 520)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
+            TabletopDeck(input: model.input, stickyModifiers: $model.stickyModifiers, host: model.hostPlatform, takesHardwareKeyboard: true,
+                         onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
+                if !model.areControlsHidden { controlStrip }
+            }
+        }
+        .padding(16)
+        .transition(.opacity)
+    }
+    #endif
+
     /// Banners slide down from the top, or just fade with Reduce Motion.
     private var bannerTransition: AnyTransition {
         reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
@@ -558,12 +603,19 @@ struct RemoteSessionLayout: View {
 
     // MARK: Connection overlay
 
+    /// Black over the picture until its first frame, on the display as fitted, is in: a stream
+    /// from before the fit, or a display changing shape, never shows.
+    private var pictureCover: some View {
+        Color.black.opacity(model.hasPicture ? 0 : 1).allowsHitTesting(false)
+    }
+
     private var connectionOverlay: some View {
         VStack(spacing: 16) {
             switch session.state {
             case .connecting, .authenticating, .connected:
                 overlayProgress
-                Text(model.isConnected ? "Starting screen capture…" : "Connecting to \(device.name)…")
+                Text(!model.isConnected ? "Connecting to \(device.name)…"
+                     : session.isAwaitingFittedStream ? "Fitting display…" : "Starting screen capture…")
                     .contentTransition(.opacity)
             case .reconnecting, .suspended:
                 overlayProgress
@@ -615,7 +667,11 @@ struct RemoteSessionLayout: View {
         if model.dictation.isActive {
             DictationPanel(dictation: model.dictation,
                            isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
-                           onCopy: Self.copyToClipboard)
+                           onCopy: { text in
+                               Self.copyToClipboard(text)
+                               model.dictationCopied(text)
+                           },
+                           onShowHistory: { model.showDictationHistory() })
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
         }
     }

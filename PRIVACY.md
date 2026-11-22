@@ -1,12 +1,12 @@
 # Privacy Policy
 
-**Effective November 5, 2026**
+**Effective November 22, 2026**
 
 This policy covers the Casement apps for iPhone, iPad, Apple Vision Pro, and Mac, and Casement Host for Mac and Windows (together, "Casement"). Casement is made by Drew Levinson.
 
 ## The short version
 
-Casement doesn't collect any information about you. There is no Casement account, no Casement server, and no advertising, analytics, tracking, or third-party crash reporting. Your screen, keystrokes, clipboard, sound, and files travel directly between your own devices over your own [Tailscale](https://tailscale.com) network. Nothing is sent to the developer.
+Casement doesn't collect any information about you. There is no Casement account, no Casement server, and no advertising, analytics, tracking, or third-party crash reporting. Your screen, keystrokes, clipboard, sound, and files travel directly between your own devices over your own [Tailscale](https://tailscale.com) network, or, if you turn on local network connections, straight across your home network or a cable. Nothing is sent to the developer.
 
 ## What stays on your devices
 
@@ -17,6 +17,8 @@ Casement stores the following on your devices to work. None of it is sent to the
 - The computers you've added: their names, addresses, and your settings for each.
 - Your preferences, such as appearance, controls, and keyboard options.
 - In the Keychain: this device's identity key, used to prove to your computers that it's really this device. If you choose to add them, it also holds your Tailscale API token or OAuth client, and the account name and password for each Mac you saved one for.
+- The last 30 dictations you sent, so you can copy or send one again. They stay on that device, are never synced or backed up, and are deleted when you turn off **Save Dictation History** in Settings › Controls.
+- The Parakeet speech model, if you choose to download it for dictation on your device.
 - Files you receive, in the app's own folder (on iPhone and iPad, Files › On My iPhone/iPad › Casement › Received; on a Mac, your Downloads folder).
 
 **In Casement Host:**
@@ -24,6 +26,7 @@ Casement stores the following on your devices to work. None of it is sent to the
 - The identity keys of devices you've paired, so they can reconnect without a new code.
 - Your host settings.
 - Files you send to the computer, saved to Downloads or the folder you choose.
+- On a PC with **Control administrator prompts and apps** on: Casement Host Service's key (proving the service to Casement Host) and its logs, in `C:\ProgramData\Casement Host Service`, readable only by Windows and administrators. Turning the setting off deletes them.
 
 Removing a device in Casement deletes the secrets saved for it. Deleting the app deletes its data, though Apple's Keychain items can outlive the app on some devices.
 
@@ -34,19 +37,21 @@ Casement connects only to the places below, and only when you use the matching f
 | Where | When | What is sent |
 | --- | --- | --- |
 | Your own computers, over Tailscale | When you connect, check availability, transfer files, or dictate | The session itself: screen video, sound, input, clipboard content, files, and dictation audio |
+| Your own computers, over your local network or a cable | Only if you turn on **Local network connections** in Casement Host and **Local Network** in Casement, for a computer this device has already paired with | The same session, encrypted end to end by Casement |
+| Your local network (Bonjour) | While those settings are on: Casement Host announces itself, and Casement looks for it | Casement Host announces the Mac's name, Casement's port, and a short fingerprint of the Mac's public identity key to devices on the same network. Casement only listens |
 | Your Mac's built-in Screen Sharing (port 5900) | Only when you use Type Password or Log In with Screen Sharing | Your saved Mac account name and password, to type them at the Mac |
 | `api.tailscale.com` | Only if you add a Tailscale key, to list your tailnet's devices | Your Tailscale key. Tailscale returns your device list, which stays on your device |
-| Hugging Face | Only if you turn on the built-in Parakeet dictation model in Casement Host | A download request for the model files (about 490 MB) |
+| Hugging Face | Only if you turn on the built-in Parakeet dictation model in Casement Host, or choose **Download** for Parakeet in Casement's own Settings › Controls on an iPhone, iPad, or Mac | A download request for the model files (about 490 MB). Hugging Face sees your IP address, as with any download |
 | GitHub | Casement Host for Mac and Windows, about once a day, while **Install updates automatically** is on (it is by default), or when you choose **Check for updates** | A download request for the latest release's update information and, when there's a newer version, the update itself. GitHub sees your computer's IP address and Casement Host's version, as with any download. Nothing about you or your devices is sent, and the developer can't see these requests |
 
-Casement doesn't add its own encryption layer. It relies on Tailscale's encrypted WireGuard tunnel between your devices, and on the pairing step, where each device proves its identity with a signing key. Casement Host refuses connections from outside Tailscale's address ranges. Tailscale's handling of your data is covered by [Tailscale's privacy policy](https://tailscale.com/privacy-policy).
+Over Tailscale, Casement relies on Tailscale's encrypted WireGuard tunnel between your devices, and on the pairing step, where each device proves its identity with a signing key. Over your local network or a cable, Casement encrypts the whole session itself (X25519 key agreement bound to both devices' signing keys, then ChaCha20-Poly1305, with fresh keys every connection), and Casement Host takes only devices that already paired over Tailscale. It refuses everything else from outside Tailscale's address ranges, and anything from a public internet address. Tailscale's handling of your data is covered by [Tailscale's privacy policy](https://tailscale.com/privacy-policy).
 
 ## Permissions
 
 Casement asks for a permission only for the feature that needs it:
 
 - **Microphone and Speech Recognition**, for dictation. Audio is transcribed on your device, or sent to your own computer if you choose to dictate there. It's used for that one transcript and not kept.
-- **Local Network**, to reach your computers, including a Mac's home-network address if you save one.
+- **Local Network**, to reach your computers, including a Mac's home-network address if you save one, and to find them on your home network if you turn that on. Casement Host for Mac asks for it too, when you turn on Local network connections.
 - **Face ID or Touch ID**, if you turn on the app lock. Apple handles the check; Casement never sees your biometric data.
 - **Screen Recording and Accessibility** (Casement Host on a Mac), to show your screen and move the pointer and type for you.
 - **Downloads folder and Notifications** (Casement Host on a Mac), to save files you send and tell you when they arrive.

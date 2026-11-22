@@ -6,6 +6,7 @@
     <Project Path="src/Vantage.SyntheticHost/Vantage.SyntheticHost.csproj" />
     <Project Path="src/Vantage.Host.Windows.Platform/Vantage.Host.Windows.Platform.csproj" />
     <Project Path="src/Vantage.Host.Windows.Cli/Vantage.Host.Windows.Cli.csproj" />
+    <Project Path="src/Vantage.Host.Windows.Service/Vantage.Host.Windows.Service.csproj" />
     <Project Path="src/Vantage.Host.Windows/Vantage.Host.Windows.csproj" />
   </Folder>
   <Folder Name="/tests/">

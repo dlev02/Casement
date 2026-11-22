@@ -34,6 +34,7 @@
 		A100000000000000000000B2 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D2 /* VantageCore */; };
 		A100000000000000000000B3 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D3 /* FluidAudio */; };
 		A100000000000000000000B4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D4 /* Sparkle */; };
+		A100000000000000000000B5 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; platformFilters = (ios, macos, ); productRef = A100000000000000000000D5 /* FluidAudio */; };
 		C10000000000000000000011 /* VantageWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* VantageWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -80,6 +81,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000000000000000000B1 /* VantageCore in Frameworks */,
+				A100000000000000000000B5 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +154,7 @@
 			name = Vantage;
 			packageProductDependencies = (
 				A100000000000000000000D1 /* VantageCore */,
+				A100000000000000000000D5 /* FluidAudio */,
 			);
 			productName = Vantage;
 			productReference = A100000000000000000000A1 /* Casement.app */;
@@ -453,7 +456,7 @@
 				CODE_SIGN_ENTITLEMENTS = Vantage/Vantage.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Vantage/VantageMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = YES;
 				"ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER[sdk=macosx*]" = readwrite;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -466,7 +469,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network, and over your local network when you turn that on.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
@@ -510,7 +513,7 @@
 				CODE_SIGN_ENTITLEMENTS = Vantage/Vantage.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Vantage/VantageMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = YES;
 				"ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER[sdk=macosx*]" = readwrite;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -523,7 +526,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Drew Levinson";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement connects to your Mac or PC over your private Tailscale network, and over your local network when you turn that on.";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Casement uses Face ID to unlock the app and protect your connections.";
 				"INFOPLIST_KEY_NSFaceIDUsageDescription[sdk=xros*]" = "Casement uses Optic ID to unlock the app and protect your connections.";
@@ -567,7 +570,7 @@
 				CODE_SIGN_ENTITLEMENTS = VantageHost/VantageHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -577,13 +580,14 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement Host lets your paired devices connect over this network when you turn on Local network connections.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.host;
 				PRODUCT_MODULE_NAME = VantageHost;
 				PRODUCT_NAME = "Casement Host";
@@ -601,7 +605,7 @@
 				CODE_SIGN_ENTITLEMENTS = VantageHost/VantageHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -611,13 +615,14 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Casement Host asks macOS to restart normally after Restart Safely prepares FileVault, so your apps can save first.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Casement Host saves files you send from your iPad in your Downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Casement Host lets your paired devices connect over this network when you turn on Local network connections.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.7;
+				MARKETING_VERSION = 1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = me.drewlevinson.casement.host;
 				PRODUCT_MODULE_NAME = VantageHost;
 				PRODUCT_NAME = "Casement Host";
@@ -633,7 +638,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = VantageWidgets/VantageWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
@@ -662,7 +667,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = VantageWidgets/VantageWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VantageWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Casement;
@@ -741,6 +746,8 @@
 				kind = upToNextMinorVersion;
 				minimumVersion = 0.16.1;
 			};
+			traits = (
+			);
 		};
 		A100000000000000000000EB /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -762,6 +769,11 @@
 			productName = VantageCore;
 		};
 		A100000000000000000000D3 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
+		A100000000000000000000D5 /* FluidAudio */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;

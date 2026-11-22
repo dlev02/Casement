@@ -108,6 +108,8 @@ public enum SessionAdmission {
         /// Files without a screen.
         case filesOnly
         case screen
+        /// The device is the computer's trackpad and keyboard: input, no picture.
+        case inputOnly
     }
 
     public enum Begin: Sendable {
@@ -132,14 +134,20 @@ public enum SessionAdmission {
         public var canManageVirtualDisplay: Bool
         /// Engines the host can run, best first; advertised only to a device that knows them.
         public var dictationEngines: [DictationEngineID]
+        /// `HostCapabilities.naturalScroll`; nil when the host doesn't know it.
+        public var naturalScroll: Bool?
+        /// Input-only sessions and the Pencil's tablet events (Casement Host for Mac).
+        public var inputOnlyAndStylus: Bool
 
         public init(platform: HostPlatform?, screenRecordingGranted: Bool, accessibilityGranted: Bool, canManageVirtualDisplay: Bool,
-                    dictationEngines: [DictationEngineID]) {
+                    dictationEngines: [DictationEngineID], naturalScroll: Bool? = nil, inputOnlyAndStylus: Bool = false) {
             self.platform = platform
             self.screenRecordingGranted = screenRecordingGranted
             self.accessibilityGranted = accessibilityGranted
             self.canManageVirtualDisplay = canManageVirtualDisplay
             self.dictationEngines = dictationEngines
+            self.naturalScroll = naturalScroll
+            self.inputOnlyAndStylus = inputOnlyAndStylus
         }
     }
 
@@ -152,12 +160,17 @@ public enum SessionAdmission {
         let hostNonce: Data
         /// The device's nonce when it sent a valid one (it then signs the v2 transcript).
         let clientNonce: Data?
+        /// Both shares when this connection is encrypted (the device then signs the v3 transcript).
+        let keyShares: AuthTranscript.KeyShares?
+        /// The keys that seal everything after the challenge, for `MessageChannel.send(_:thenEncryptWith:)`;
+        /// nil for a connection inside Tailscale.
+        public let sessionKeys: SessionKeys?
 
         /// Checks the signature and, for an unpaired device, the pairing code.
         public func finish(_ auth: Authenticate, pairing: any PairingAuthority) -> Outcome {
             let signatureValid = if let clientNonce {
                 AuthTranscript.verifyClient(signature: auth.signature, clientNonce: clientNonce, hostNonce: hostNonce, hostPublicKey: hostPublicKey,
-                                            clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello))
+                                            clientPublicKey: hello.clientPublicKey, purpose: AuthPurpose(hello: hello), keyShares: keyShares)
             } else {
                 AuthTranscript.verify(signature: auth.signature, nonce: hostNonce, hostPublicKey: hostPublicKey, clientPublicKey: hello.clientPublicKey)
             }
@@ -189,34 +202,76 @@ public enum SessionAdmission {
     /// Answers a `hello`: a refusal for the wrong protocol version, else the challenge (signed
     /// over the device's nonce when it sent one) and what to remember until the device answers.
     /// `peerTailnetName` is looked up only for a screen session (it costs a subprocess).
+    ///
+    /// `peer` is where the connection came from. Outside Tailscale (`PeerReach.localNetwork`)
+    /// nothing else protects the stream, so the device must offer a key share, the challenge
+    /// answers it and everything after is sealed, and pairing is refused: a first pairing there
+    /// could be answered by a device in the middle (the device has no key to compare yet), so it
+    /// happens over Tailscale and only an already-paired device may connect locally.
     public static func begin(hello: Hello, identity: DeviceIdentity, hostName: String, hostVersion: String = "1.0", platform: HostPlatform?,
-                             isPaired: Bool, peerTailnetName: () -> String? = { nil }, nonce: Data = AuthTranscript.randomNonce()) throws -> Begin {
+                             isPaired: Bool, peer: PeerReach = .tailnet, peerTailnetName: () -> String? = { nil },
+                             nonce: Data = AuthTranscript.randomNonce()) throws -> Begin {
         guard hello.protocolVersion == VantageProtocol.version else {
             return .refused(AuthResult(status: .versionMismatch, message: "Protocol \(VantageProtocol.version) required"))
         }
         let kind: Kind = switch AuthPurpose(hello: hello) {
         case .probe: .availabilityCheck
         case .files: .filesOnly
-        case .screen: .screen
+        case .screen: hello.features?.inputOnly == true ? .inputOnly : .screen
         }
         // A client that sent a nonce wants proof this challenge comes from the holder of the host
         // key, and signs the transcript that binds both nonces and the connection's purpose. One
         // that didn't (an older Casement) signs the older transcript; the host still takes that.
         let clientNonce = hello.clientNonce.flatMap { $0.count == AuthTranscript.nonceLength ? $0 : nil }
+        // A share is answered only off the tailnet: inside it WireGuard already seals the stream.
+        let clientShare = hello.clientKeyShare.flatMap { $0.count == SessionCrypto.shareLength ? $0 : nil }
+        let hostShare = peer.encryptsWhenOffered && clientNonce != nil ? clientShare.map { _ in SessionKeyShare() } : nil
+        if peer == .localNetwork {
+            guard hostShare != nil else {
+                return .refused(AuthResult(status: .denied, message: "Update Casement on this device to connect over the local network."))
+            }
+            guard isPaired else {
+                return .refused(AuthResult(status: .denied,
+                                           message: "Pair this device over Tailscale first. After that it can connect over the local network."))
+            }
+        }
+        let keyShares = clientShare.flatMap { client in hostShare.map { AuthTranscript.KeyShares(client: client, host: $0.publicShare) } }
         let hostSignature = try clientNonce.map { clientNonce in
             try identity.sign(AuthTranscript.hostBytes(clientNonce: clientNonce, hostNonce: nonce, hostPublicKey: identity.publicKeyData,
-                                                       clientPublicKey: hello.clientPublicKey))
+                                                       clientPublicKey: hello.clientPublicKey, keyShares: keyShares))
+        }
+        let sessionKeys = try hostShare.flatMap { share in
+            try clientNonce.flatMap { clientNonce in
+                try clientShare.map {
+                    try share.sessionKeys(peerShare: $0, role: .host, clientNonce: clientNonce, hostNonce: nonce,
+                                          hostPublicKey: identity.publicKeyData, clientPublicKey: hello.clientPublicKey)
+                }
+            }
         }
         let challenge = Challenge(hostName: hostName, hostVersion: hostVersion, hostPublicKey: identity.publicKeyData, nonce: nonce, isPaired: isPaired,
-                                  peerTailnetName: kind == .screen ? peerTailnetName() : nil, hostPlatform: platform, hostSignature: hostSignature)
+                                  peerTailnetName: kind == .screen || kind == .inputOnly ? peerTailnetName() : nil, hostPlatform: platform,
+                                  hostSignature: hostSignature, hostKeyShare: keyShares?.host)
         return .challenged(challenge, Pending(hello: hello, kind: kind, isPaired: isPaired, hostPublicKey: identity.publicKeyData,
-                                              hostNonce: nonce, clientNonce: clientNonce))
+                                              hostNonce: nonce, clientNonce: clientNonce, keyShares: keyShares, sessionKeys: sessionKeys))
     }
 
     /// The result an admitted availability check receives before the connection ends.
     public static func availabilityResult(host: HostAbilities) -> AuthResult {
         AuthResult(status: .ok, readiness: HostReadiness(screenRecordingGranted: host.screenRecordingGranted,
                                                          accessibilityGranted: host.accessibilityGranted))
+    }
+
+    /// Why an input-only session can't open on this host right now, or nil: it needs only the
+    /// Accessibility grant that lets the host post events.
+    public static func inputOnlyRefusal(host: HostAbilities) -> AuthResult? {
+        guard host.inputOnlyAndStylus else {
+            return AuthResult(status: .denied, message: "Update Casement Host to use this device as a trackpad and keyboard.")
+        }
+        guard host.accessibilityGranted else {
+            return AuthResult(status: .denied,
+                              message: "On the Mac, allow Casement Host under Accessibility in System Settings → Privacy & Security, then retry.")
+        }
+        return nil
     }
 
     /// Why a screen session can't open on this host right now, or nil.
@@ -243,7 +298,13 @@ public enum SessionAdmission {
             return HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: host.canManageVirtualDisplay, clipboard: true, maxFPS: 60,
                                     dictationEngines: hello.features?.dictation == true ? host.dictationEngines : nil,
                                     audio: true, fileTransfer: takesFiles ? true : nil, filesOnlySessions: takesFiles ? true : nil,
-                                    platform: host.platform, curtain: true)
+                                    platform: host.platform, curtain: true, naturalScroll: host.naturalScroll,
+                                    inputOnlySessions: host.inputOnlyAndStylus ? true : nil, stylus: host.inputOnlyAndStylus ? true : nil)
+        case .inputOnly:
+            // No picture: no codecs, display fitting, audio, curtain or Pencil canvas.
+            return HostCapabilities(codecs: [], canManageVirtualDisplay: false, clipboard: true, maxFPS: 0,
+                                    dictationEngines: hello.features?.dictation == true ? host.dictationEngines : nil,
+                                    platform: host.platform, inputOnlySessions: true)
         }
     }
 }

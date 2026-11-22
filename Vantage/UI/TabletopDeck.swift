@@ -66,6 +66,8 @@ struct TabletopDeck<Strip: View>: View {
     let input: InputController
     @Binding var stickyModifiers: KeyModifiers
     let host: HostPlatform
+    /// The trackpad takes the hardware keyboard (Trackpad & Keyboard, where there's no picture to).
+    var takesHardwareKeyboard = false
     let onKey: (UInt16, KeyModifiers) -> Void
     @ViewBuilder let strip: () -> Strip
     @AppStorage(TabletopDeckMode.defaultsKey) private var mode = TabletopDeckMode.trackpad
@@ -79,9 +81,12 @@ struct TabletopDeck<Strip: View>: View {
                 modePicker
             }
             GeometryReader { geometry in
-                HStack(spacing: 12) {
+                HStack(alignment: .bottom, spacing: 12) {
                     if mode != .trackpad {
+                        // Keys a laptop's height at most: a whole iPad screen (Trackpad & Keyboard)
+                        // would otherwise stretch them several times too tall.
                         TabletopKeyboard(host: host, modifiers: $stickyModifiers, onKey: onKey)
+                            .frame(maxHeight: 440)
                             .transition(.opacity)
                     }
                     if mode != .keyboard {
@@ -96,7 +101,7 @@ struct TabletopDeck<Strip: View>: View {
     }
 
     private var trackpad: some View {
-        TrackpadSurface(input: input, stickyModifiers: stickyModifiers)
+        TrackpadSurface(input: input, stickyModifiers: stickyModifiers, takesHardwareKeyboard: takesHardwareKeyboard)
             .background(.white.opacity(0.08), in: .rect(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)

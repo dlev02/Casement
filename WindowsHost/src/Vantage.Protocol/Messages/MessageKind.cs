@@ -67,6 +67,8 @@ public enum MessageKind : byte
     MicAudio = 123,
     /// <summary>A file chunk from the client (file channel only).</summary>
     FileChunkToHost = 124,
+    /// <summary>Apple Pencil samples; only sent to hosts that offer <c>stylus</c>.</summary>
+    StylusEvent = 125,
 }
 
 public static class MessageKindExtensions

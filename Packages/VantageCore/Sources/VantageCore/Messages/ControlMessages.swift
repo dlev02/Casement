@@ -87,8 +87,12 @@ public struct Hello: Codable, Sendable {
     /// the client's own signature (`AuthTranscript.clientBytes`). Absent from clients that predate
     /// host authentication, which sign the older transcript.
     public var clientNonce: Data?
+    /// The device's X25519 share for this connection (`SessionCrypto`), sent when the connection
+    /// isn't inside Tailscale. A host that answers it (`Challenge.hostKeyShare`) seals everything
+    /// after its challenge; one that predates local connections ignores it.
+    public var clientKeyShare: Data?
 
-    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil, features: ClientFeatures? = nil, clientNonce: Data? = nil) {
+    public init(protocolVersion: UInt16 = VantageProtocol.version, clientName: String, deviceModel: String, appVersion: String, clientPublicKey: Data, supportedCodecs: [VideoCodec], maxDecodeWidth: Int, maxDecodeHeight: Int, viewport: Viewport?, isReadinessProbe: Bool? = nil, features: ClientFeatures? = nil, clientNonce: Data? = nil, clientKeyShare: Data? = nil) {
         self.protocolVersion = protocolVersion
         self.clientName = clientName
         self.deviceModel = deviceModel
@@ -101,6 +105,7 @@ public struct Hello: Codable, Sendable {
         self.isReadinessProbe = isReadinessProbe
         self.features = features
         self.clientNonce = clientNonce
+        self.clientKeyShare = clientKeyShare
     }
 }
 
@@ -145,9 +150,13 @@ public struct Challenge: Codable, Sendable {
     /// the client's `Hello.clientNonce`: the host's proof that it holds the key it names. Sent
     /// whenever the hello carried a nonce; the client refuses a host without it.
     public var hostSignature: Data?
+    /// The host's X25519 share, answering `Hello.clientKeyShare` on a connection outside Tailscale.
+    /// When present, `hostSignature` covers both shares (`AuthTranscript.encryptedHostDomain`) and
+    /// every frame after this one is a sealed record.
+    public var hostKeyShare: Data?
 
     public init(hostName: String, hostVersion: String, hostPublicKey: Data, nonce: Data, isPaired: Bool, peerTailnetName: String? = nil,
-                hostPlatform: HostPlatform? = nil, hostSignature: Data? = nil) {
+                hostPlatform: HostPlatform? = nil, hostSignature: Data? = nil, hostKeyShare: Data? = nil) {
         self.hostName = hostName
         self.hostVersion = hostVersion
         self.hostPublicKey = hostPublicKey
@@ -156,6 +165,7 @@ public struct Challenge: Codable, Sendable {
         self.peerTailnetName = peerTailnetName
         self.hostPlatform = hostPlatform
         self.hostSignature = hostSignature
+        self.hostKeyShare = hostKeyShare
     }
 }
 
@@ -210,10 +220,26 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// The host can black out its own screen (`curtainRequest`). Nil from older hosts, which would
     /// drop the session on that kind.
     public var curtain: Bool?
+    /// The computer's own Natural Scrolling setting (a Mac's `com.apple.swipescrolldirection`), so
+    /// a device can start that computer's Natural Scrolling toggle the same way. Nil from PCs and
+    /// older hosts.
+    public var naturalScroll: Bool?
+    /// Whether input reaches apps that run as administrator (Task Manager, installers): false from a
+    /// PC whose host isn't elevated, where Windows drops it. Nil from Macs and older hosts.
+    public var canControlAdminApps: Bool?
+
+    /// The host runs input-only sessions (`ClientFeatures.inputOnly`): no capture or video, and
+    /// `PointerAction.moveBy` moves the pointer from wherever it is. Nil from older hosts, which
+    /// treat such a session as an ordinary screen session waiting for a display.
+    public var inputOnlySessions: Bool?
+    /// The host takes `stylusEvent` (Apple Pencil pressure and tilt as tablet events). Nil from
+    /// older hosts, which would drop the session on that kind.
+    public var stylus: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
                 audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil,
-                curtain: Bool? = nil) {
+                curtain: Bool? = nil, naturalScroll: Bool? = nil, canControlAdminApps: Bool? = nil,
+                inputOnlySessions: Bool? = nil, stylus: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -225,6 +251,10 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.curtain = curtain
         self.platform = platform
         self.cursorShapes = cursorShapes
+        self.naturalScroll = naturalScroll
+        self.canControlAdminApps = canControlAdminApps
+        self.inputOnlySessions = inputOnlySessions
+        self.stylus = stylus
     }
 }
 
@@ -390,15 +420,26 @@ public struct HostStatus: Codable, Sendable, Equatable {
     /// The display is awake but the host has had no picture of it for a few seconds (capture
     /// won't start); it keeps trying. Nil from hosts that predate it.
     public var isScreenUnavailable: Bool?
+    /// A PC's host isn't elevated and the device's latest click or key press went to an app that
+    /// runs as administrator, so Windows dropped it: that app's window title ("Task Manager").
+    /// Nil once a press reaches an ordinary window, and from Macs and older hosts.
+    public var blockedAdminApp: String?
+    /// The PC's Casement Host Service shows and controls Windows' secure desktop (the lock screen,
+    /// administrator prompts, Ctrl+Alt+Del), so a locked PC can be unlocked from here and
+    /// `isSecureInputActive` stays false. Nil from Macs, older hosts and PCs without it.
+    public var controlsSecureDesktop: Bool?
 
     public init(isScreenLocked: Bool, isSecureInputActive: Bool, inputPath: HostInputPath, message: String? = nil,
-                isDisplayAsleep: Bool? = nil, isScreenUnavailable: Bool? = nil) {
+                isDisplayAsleep: Bool? = nil, isScreenUnavailable: Bool? = nil, blockedAdminApp: String? = nil,
+                controlsSecureDesktop: Bool? = nil) {
         self.isScreenLocked = isScreenLocked
         self.isSecureInputActive = isSecureInputActive
         self.inputPath = inputPath
         self.message = message
         self.isDisplayAsleep = isDisplayAsleep
         self.isScreenUnavailable = isScreenUnavailable
+        self.blockedAdminApp = blockedAdminApp
+        self.controlsSecureDesktop = controlsSecureDesktop
     }
 }
 

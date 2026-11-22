@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
+using Vantage.Host.Windows.DesktopHelper;
 using Vantage.Protocol.Host;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -35,15 +36,23 @@ public sealed class SessionStatusMonitor : IHostStatusSource, IDisposable
     private bool _locked;
     private bool _secureDesktop;
     private bool _displayOff;
+    private string? _blockedAdminApp;
+    private readonly HelperClient? _helper;
 
     /// <param name="window">The host's message window (receives the notifications).</param>
     /// <param name="logging">Loggers (category <c>Vantage.Status</c>).</param>
-    public SessionStatusMonitor(MessageWindow window, ILoggerFactory logging)
+    /// <param name="helper">
+    /// The SYSTEM desktop helper, when Casement Host Service is installed: while it's connected the
+    /// secure desktop and the lock screen don't block input (<c>controlsSecureDesktop</c>).
+    /// </param>
+    public SessionStatusMonitor(MessageWindow window, ILoggerFactory logging, HelperClient? helper = null)
     {
         _window = window;
+        _helper = helper;
         _log = logging.CreateLogger("Vantage.Status");
         _locked = QueryLocked();
         _hook = window.AddHook(OnMessage);
+        if (helper is not null) helper.Changed += NotifyWatchers;
         window.Invoke(Register);
     }
 
@@ -90,13 +99,39 @@ public sealed class SessionStatusMonitor : IHostStatusSource, IDisposable
         {
         }
         _hook.Dispose();
+        if (_helper is not null) _helper.Changed -= NotifyWatchers;
+    }
+
+    /// <summary>
+    /// The administrator app the latest press was dropped by, or null (from
+    /// <c>SendInputInjector.BlockedAppChanged</c>); reported while the session is unlocked.
+    /// </summary>
+    public void SetBlockedAdminApp(string? name)
+    {
+        Action[] watchers;
+        lock (_lock)
+        {
+            if (_blockedAdminApp == name) return;
+            _blockedAdminApp = name;
+            watchers = [.. _watchers];
+        }
+        _log.LogInformation("{What}", name is null ? "input reaches the front window again" : $"input blocked by {name} (administrator)");
+        foreach (var watcher in watchers) watcher();
     }
 
     private HostConditions Conditions()
     {
-        var secure = _secureDesktop && !_locked;
+        var helper = _helper?.IsConnected == true;
+        var secure = _secureDesktop && !_locked && !helper;
         var message = _locked ? LockedMessage : secure ? SecureDesktopMessage : null;
-        return new HostConditions(_locked, secure, _displayOff, message);
+        return new HostConditions(_locked, secure, _displayOff, message, _locked || secure ? null : _blockedAdminApp, helper);
+    }
+
+    private void NotifyWatchers()
+    {
+        Action[] watchers;
+        lock (_lock) watchers = [.. _watchers];
+        foreach (var watcher in watchers) watcher();
     }
 
     private unsafe void Register()

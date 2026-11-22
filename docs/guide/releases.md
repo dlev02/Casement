@@ -11,7 +11,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (E174.1: the free-space check before a receive), and system boot time (35F9.1: uptime clocks for
   latency); the widget's declares UserDefaults. Add a category whenever code starts using another
   required-reason API. `ITSAppUsesNonExemptEncryption = NO` (both Vantage configs): all crypto is
-  Apple's (CryptoKit, CommonCrypto for the ARD login) and used for authentication and integrity.
+  Apple's (CryptoKit, CommonCrypto for the ARD login): authentication, integrity, and from 1.2 (9)
+  the encryption of a local network session (`docs/app-store/export-compliance.md` has the reasoning;
+  bundling a crypto library would change the answer).
   Vantage Host can't be on the Mac App Store (unsandboxed, CGEvent injection); it ships as a
   notarized Developer ID download.
 - **Releases and versions**: version numbers live only in the pbxproj (`MARKETING_VERSION` and

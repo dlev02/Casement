@@ -57,14 +57,34 @@ public class GoldenVectorTests
             HostName = "DREW-PC", HostVersion = "1.0", HostPublicKey = Key32, Nonce = Token, IsPaired = true,
             HostPlatform = "windows", HostSignature = Signature64,
         }),
+        ("helloKeyShare", new Hello
+        {
+            ProtocolVersion = 2, ClientName = "iPad", DeviceModel = "iPad16,6", AppVersion = "1.0", ClientPublicKey = Key32,
+            SupportedCodecs = [], MaxDecodeWidth = 0, MaxDecodeHeight = 0,
+            Features = new ClientFeatures { Dictation = true, InputOnly = true }, ClientNonce = Token, ClientKeyShare = Key32,
+        }),
+        ("challengeKeyShare", new Challenge
+        {
+            HostName = "Studio", HostVersion = "1.0", HostPublicKey = Key32, Nonce = Token, IsPaired = true,
+            HostPlatform = "macos", HostSignature = Signature64, HostKeyShare = Token,
+        }),
         ("authenticate", new Authenticate { Signature = Signature64, PairingCode = "024680" }),
+        ("authResultInputOnly", new AuthResult
+        {
+            Status = AuthStatus.Ok,
+            Capabilities = new HostCapabilities
+            {
+                Codecs = [], CanManageVirtualDisplay = false, Clipboard = true, MaxFPS = 0, Platform = "macos",
+                InputOnlySessions = true, Stylus = true,
+            },
+        }),
         ("authResultOk", new AuthResult
         {
             Status = AuthStatus.Ok, SessionToken = Token, Displays = [Display],
             Capabilities = new HostCapabilities
             {
                 Codecs = [VideoCodec.H264], CanManageVirtualDisplay = false, Clipboard = true, MaxFPS = 60,
-                FileTransfer = true, FilesOnlySessions = true, Platform = "windows",
+                FileTransfer = true, FilesOnlySessions = true, Platform = "windows", NaturalScroll = false, CanControlAdminApps = false,
             },
         }),
         ("authResultPairing", new AuthResult { Status = AuthStatus.PairingRequired, Message = "Enter the pairing code shown on the PC" }),
@@ -103,6 +123,15 @@ public class GoldenVectorTests
             IsScreenLocked = true, IsSecureInputActive = false, InputPath = HostInputPath.Native, Message = "The PC is locked",
             IsDisplayAsleep = false, IsScreenUnavailable = false,
         }),
+        ("hostStatusAdminApp", new HostStatus
+        {
+            IsScreenLocked = false, IsSecureInputActive = false, InputPath = HostInputPath.Native, BlockedAdminApp = "Task Manager",
+        }),
+        ("hostStatusSecureDesktop", new HostStatus
+        {
+            IsScreenLocked = true, IsSecureInputActive = false, InputPath = HostInputPath.Native, Message = "The PC is locked",
+            ControlsSecureDesktop = true,
+        }),
         ("fileOffer", new FileOffer
         {
             Id = Id, Name = "Quarterly Report.pdf", ByteCount = 70_000_000_000,
@@ -124,6 +153,12 @@ public class GoldenVectorTests
         {
             Phase = ScrollPhase.Ended, Momentum = MomentumPhase.None, IsContinuous = true, DeltaX = -1.5f, DeltaY = 12.75f, X = 100, Y = 200,
             VelocityX = -30, VelocityY = 640.5f, Modifiers = KeyModifiers.Control,
+        }),
+        ("pointerEventMoveBy", new PointerEvent { Action = PointerAction.MoveBy, X = -12.5f, Y = 3.25f }),
+        ("stylusEvent", new StylusEvent
+        {
+            Phase = StylusPhase.Move, X = 812.5f, Y = 433.25f, Pressure = 0.625f, Altitude = 0.75f, Azimuth = -1.5f, ClickCount = 2,
+            Modifiers = KeyModifiers.Shift,
         }),
         ("keyEvent", new KeyEvent { KeyCode = 0x7E, IsDown = true, Modifiers = KeyModifiers.Control | KeyModifiers.Function, IsRepeat = true }),
         ("fileChunkToClient", new FileChunk { ToHost = false, Id = Id, Offset = 262_144, Data = new byte[] { 1, 2, 3, 4, 5 } }),

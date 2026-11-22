@@ -81,6 +81,10 @@ public enum PointerAction: UInt8, Sendable {
     case move = 0
     case down = 1
     case up = 2
+    /// Move (or drag) by `x`, `y` points from wherever the pointer is now: an input-only session's
+    /// trackpad, which can't see the screen to aim at. Only sent to hosts whose capabilities say
+    /// `inputOnlySessions`; older hosts can't decode it.
+    case moveBy = 3
 }
 
 /// Client → host pointer event in display points of the streamed display.
@@ -198,6 +202,75 @@ public struct ScrollEvent: Sendable, Equatable {
         let velocityY = try reader.readFloat()
         let modifiers = KeyModifiers(rawValue: try reader.readUInt32())
         return ScrollEvent(phase: phase, momentum: momentum, isContinuous: isContinuous, deltaX: deltaX, deltaY: deltaY, x: x, y: y, velocityX: velocityX, velocityY: velocityY, modifiers: modifiers)
+    }
+}
+
+public enum StylusPhase: UInt8, Sendable {
+    /// The tip is over the screen without touching it (Apple Pencil Pro and M2 iPads hover).
+    case hover = 0
+    case down = 1
+    case move = 2
+    case up = 3
+    /// The Pencil left hover range, or the stroke was taken by the system.
+    case leave = 4
+}
+
+/// Client → host Apple Pencil sample, in display points of the streamed display, posted on a Mac
+/// as tablet events so drawing apps get pressure and tilt. One per coalesced touch, so a stroke
+/// keeps the Pencil's own sample rate. 26 bytes.
+public struct StylusEvent: Sendable, Equatable {
+    public var phase: StylusPhase
+    public var x: Float
+    public var y: Float
+    /// 0 (hovering, or barely touching) to 1 (the Pencil's hardest press): `force / maximumPossibleForce`.
+    public var pressure: Float
+    /// Radians between the Pencil and the screen: π/2 straight up, toward 0 as it lies flat.
+    public var altitude: Float
+    /// Radians the Pencil points toward, in display space: 0 along +x, increasing toward +y
+    /// (clockwise on screen).
+    public var azimuth: Float
+    /// For `down` and `up`: 2 for the second tap of a double-tap, as a mouse's click count.
+    public var clickCount: UInt8
+    public var modifiers: KeyModifiers
+
+    public init(phase: StylusPhase, x: Float, y: Float, pressure: Float, altitude: Float, azimuth: Float, clickCount: UInt8 = 1,
+                modifiers: KeyModifiers = []) {
+        self.phase = phase
+        self.clickCount = clickCount
+        self.x = x
+        self.y = y
+        self.pressure = pressure
+        self.altitude = altitude
+        self.azimuth = azimuth
+        self.modifiers = modifiers
+    }
+
+    /// Tablet tilt in -1…1 on each axis (CGEvent's `tabletEventTiltX`/`Y`): how far the Pencil
+    /// leans from upright, toward where it points.
+    public var tilt: (x: Double, y: Double) {
+        let lean = max(0, min(1, (Double.pi / 2 - Double(altitude)) / (Double.pi / 2)))
+        return (lean * cos(Double(azimuth)), lean * sin(Double(azimuth)))
+    }
+
+    func encode() -> Data {
+        var writer = BinaryWriter(capacity: 26)
+        writer.write(phase.rawValue)
+        writer.write(x)
+        writer.write(y)
+        writer.write(pressure)
+        writer.write(altitude)
+        writer.write(azimuth)
+        writer.write(clickCount)
+        writer.write(modifiers.rawValue)
+        return writer.data
+    }
+
+    static func decode(_ payload: Data) throws -> StylusEvent {
+        var reader = BinaryReader(payload)
+        let phase = try reader.readEnum(StylusPhase.self)
+        return StylusEvent(phase: phase, x: try reader.readFloat(), y: try reader.readFloat(), pressure: try reader.readFloat(),
+                           altitude: try reader.readFloat(), azimuth: try reader.readFloat(), clickCount: try reader.readUInt8(),
+                           modifiers: KeyModifiers(rawValue: try reader.readUInt32()))
     }
 }
 

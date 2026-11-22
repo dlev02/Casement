@@ -83,6 +83,15 @@ struct MacCommands: Commands {
 /// items follow the model's state while the window stays focused).
 private struct SessionMenuItems: View {
     let session: ScreenSessionModel?
+    @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
+
+    private var dictateTitle: String {
+        switch session?.dictation.phase {
+        case .listening?: "Stop Dictating"
+        case .paused?: "Resume Dictating"
+        default: "Dictate"
+        }
+    }
 
     var body: some View {
         let connected = session?.isConnected == true
@@ -102,9 +111,17 @@ private struct SessionMenuItems: View {
             .disabled(session?.isCurtainAvailable != true)
         Toggle(session?.fitDisplayLabel ?? "Fit Display", isOn: toggle(\.wantsFitDisplay) { $0.toggleFitDisplay() })
             .disabled(session?.isFitDisplayAvailable != true)
-        Button(session?.dictation.isListening == true ? "Stop Dictating" : "Dictate") { session?.dictationPressed(.toggle) }
+        Picker("Quality", selection: Binding(get: { session?.quality ?? .auto }, set: { session?.setQuality($0) })) {
+            ForEach(QualityPreset.offered, id: \.self) { preset in
+                Text(preset.label).tag(preset)
+            }
+        }
+        .disabled(session == nil)
+        Button(dictateTitle) { session?.dictationPressed(.toggle) }
             .keyboardShortcut("d", modifiers: MacCommands.vantageChord)
             .disabled(!canType)
+        Button("Dictation History…") { session?.showDictationHistory() }
+            .disabled(session == nil || !savesDictationHistory)
         Divider()
         Button("Send File…") { session?.isPickingFiles = true }
             .keyboardShortcut("u", modifiers: MacCommands.vantageChord)

@@ -32,6 +32,18 @@ nonisolated final class InputInjector: @unchecked Sendable {
     private var momentum: ScrollMomentum?
     private var momentumTimer: DispatchSourceTimer?
     private var momentumFlags: CGEventFlags = []
+    /// An input-only session: there's no picture to aim at, so clicks land wherever the pointer
+    /// is and only `moveBy` moves it (`followPointer`).
+    private var followsPointer = false
+    /// When this injector last posted a pointer event. A relative move after a pause starts from
+    /// where the pointer really is (a mouse on the Mac may have moved it); within a gesture it
+    /// follows its own count, since the system's position lags the events just posted.
+    private var lastPointerPost: UInt64 = 0
+    /// The active displays' frames, refreshed at the start of each relative gesture.
+    private var screens: [CGRect] = []
+    /// The Pencil is in range (a proximity event went out) and touching.
+    private var stylusInRange = false
+    private var stylusDown = false
 
     init(displayFrame: CGRect, naturalScroll: Bool = false) {
         self.displayFrame = displayFrame
@@ -62,6 +74,12 @@ nonisolated final class InputInjector: @unchecked Sendable {
         queue.async { self.naturalScroll = enabled }
     }
 
+    /// From now on clicks, drags and scrolls happen where the pointer already is, and `moveBy`
+    /// moves it across every display: the device is a trackpad with no picture.
+    func followPointer() {
+        queue.async { self.followsPointer = true }
+    }
+
     // MARK: Pointer
 
     func handle(_ event: PointerEvent) {
@@ -69,8 +87,17 @@ nonisolated final class InputInjector: @unchecked Sendable {
     }
 
     private func injectPointer(_ event: PointerEvent) {
-        let point = clampToDisplay(CGPoint(x: Double(event.x) + displayFrame.minX, y: Double(event.y) + displayFrame.minY))
+        let point: CGPoint
+        if event.action == .moveBy {
+            let from = currentPointer()
+            point = clampToScreens(CGPoint(x: from.x + Double(event.x), y: from.y + Double(event.y)), from: from)
+        } else if followsPointer {
+            point = currentPointer()
+        } else {
+            point = clampToDisplay(CGPoint(x: Double(event.x) + displayFrame.minX, y: Double(event.y) + displayFrame.minY))
+        }
         lastPointer = point
+        lastPointerPost = DispatchTime.now().uptimeNanoseconds
         let flags = combinedFlags(with: event.modifiers)
 
         let type: CGEventType
@@ -78,7 +105,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
         // actually down — the client sends moves without one.
         var effectiveButton = event.button
         switch event.action {
-        case .move:
+        case .move, .moveBy:
             if let held = heldButtons.first {
                 effectiveButton = held
                 type = dragType(for: held)
@@ -100,7 +127,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
             return
         }
         cgEvent.flags = flags
-        if event.action != .move {
+        if event.action == .down || event.action == .up {
             cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(max(1, event.clickCount)))
         }
         if effectiveButton.rawValue >= 2 {
@@ -109,7 +136,7 @@ nonisolated final class InputInjector: @unchecked Sendable {
 
         post(cgEvent)
         pointerEventCount += 1
-        if event.action != .move || pointerEventCount == 1 {
+        if event.action == .down || event.action == .up || pointerEventCount == 1 {
             log.info("pointer \(String(describing: event.action), privacy: .public) \(String(describing: event.button), privacy: .public) at \(Int(point.x)),\(Int(point.y)) clicks=\(event.clickCount) trusted=\(AXIsProcessTrusted())")
         }
     }
@@ -278,6 +305,8 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 }
             }
             self.heldButtons.removeAll()
+            self.stylusDown = false
+            if self.stylusInRange { self.postProximity(entering: false) }
             // Keys first, then each held modifier comes up as its own key.
             self.post(self.keyboard.releaseAll())
             if !self.currentFlags.isEmpty {
@@ -289,6 +318,116 @@ nonisolated final class InputInjector: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    // MARK: Relative pointer
+
+    /// Where a relative move starts: this injector's own position within a gesture, the
+    /// system's after a pause.
+    private func currentPointer() -> CGPoint {
+        let pausedFor = DispatchTime.now().uptimeNanoseconds &- lastPointerPost
+        guard lastPointerPost == 0 || pausedFor > 100_000_000 else { return lastPointer }
+        screens = Self.activeScreens()
+        return CGEvent(source: nil)?.location ?? lastPointer
+    }
+
+    /// Keeps the pointer on a display: a point between or beyond them stays at the edge of the
+    /// display it came from, as a real trackpad's pointer does.
+    private func clampToScreens(_ point: CGPoint, from: CGPoint) -> CGPoint {
+        if screens.isEmpty { screens = Self.activeScreens() }
+        if screens.contains(where: { $0.contains(point) }) { return point }
+        let home = screens.first { $0.contains(from) } ?? screens.first ?? displayFrame
+        return CGPoint(x: point.x.clamped(home.minX, home.maxX - 1), y: point.y.clamped(home.minY, home.maxY - 1))
+    }
+
+    private static func activeScreens() -> [CGRect] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
+        return ids.prefix(Int(count)).map { CGDisplayBounds($0) }
+    }
+
+    // MARK: Apple Pencil
+
+    func handle(_ event: StylusEvent) {
+        queue.async { self.injectStylus(event) }
+    }
+
+    /// The Pencil as a pen tablet: a proximity event when it comes into range, then mouse events
+    /// tagged as tablet points with pressure and tilt (what drawing apps read), and a proximity
+    /// event when it leaves. Touching is the left button, so everything else still sees clicks
+    /// and drags.
+    private func injectStylus(_ event: StylusEvent) {
+        let point = clampToDisplay(CGPoint(x: Double(event.x) + displayFrame.minX, y: Double(event.y) + displayFrame.minY))
+        lastPointer = point
+        lastPointerPost = DispatchTime.now().uptimeNanoseconds
+        let flags = combinedFlags(with: event.modifiers)
+        if event.phase != .leave, !stylusInRange { postProximity(entering: true) }
+        let type: CGEventType
+        switch event.phase {
+        case .hover:
+            type = .mouseMoved
+        case .down:
+            stopMomentum()
+            stylusDown = true
+            heldButtons.insert(.left)
+            type = .leftMouseDown
+        case .move:
+            type = stylusDown ? .leftMouseDragged : .mouseMoved
+        case .up:
+            stylusDown = false
+            heldButtons.remove(.left)
+            type = .leftMouseUp
+        case .leave:
+            if stylusDown {
+                stylusDown = false
+                heldButtons.remove(.left)
+                postTablet(.leftMouseUp, at: point, event: event, flags: flags)
+            }
+            if stylusInRange { postProximity(entering: false) }
+            return
+        }
+        postTablet(type, at: point, event: event, flags: flags)
+    }
+
+    private static let stylusDeviceID: Int64 = 0x5641 // "VA": one pen, the same in every event
+    private static let tabletPointSubtype: Int64 = 1 // kCGEventMouseSubtypeTabletPoint
+    private static let tabletProximitySubtype: Int64 = 2 // kCGEventMouseSubtypeTabletProximity
+
+    private func postTablet(_ type: CGEventType, at point: CGPoint, event: StylusEvent, flags: CGEventFlags) {
+        guard let cgEvent = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
+        let touching = type == .leftMouseDown || type == .leftMouseDragged
+        let pressure = touching ? Double(max(event.pressure, 0.01)) : 0
+        let tilt = event.tilt
+        cgEvent.flags = flags
+        cgEvent.setIntegerValueField(.mouseEventSubtype, value: Self.tabletPointSubtype)
+        cgEvent.setDoubleValueField(.mouseEventPressure, value: pressure)
+        cgEvent.setDoubleValueField(.tabletEventPointPressure, value: pressure)
+        cgEvent.setDoubleValueField(.tabletEventTiltX, value: tilt.x)
+        cgEvent.setDoubleValueField(.tabletEventTiltY, value: tilt.y)
+        cgEvent.setIntegerValueField(.tabletEventPointButtons, value: touching ? 1 : 0)
+        cgEvent.setIntegerValueField(.tabletEventDeviceID, value: Self.stylusDeviceID)
+        if type == .leftMouseDown || type == .leftMouseUp {
+            cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(max(1, event.clickCount)))
+        }
+        post(cgEvent)
+    }
+
+    private func postProximity(entering: Bool) {
+        stylusInRange = entering
+        guard let cgEvent = CGEvent(source: source) else { return }
+        cgEvent.type = .tabletProximity
+        cgEvent.location = lastPointer
+        cgEvent.setIntegerValueField(.mouseEventSubtype, value: Self.tabletProximitySubtype)
+        cgEvent.setIntegerValueField(.tabletProximityEventEnterProximity, value: entering ? 1 : 0)
+        cgEvent.setIntegerValueField(.tabletProximityEventPointerType, value: 1) // pen
+        cgEvent.setIntegerValueField(.tabletProximityEventDeviceID, value: Self.stylusDeviceID)
+        cgEvent.setIntegerValueField(.tabletProximityEventSystemTabletID, value: 1)
+        cgEvent.setIntegerValueField(.tabletProximityEventPointerID, value: 1)
+        // Device ID, absolute x and y, buttons, tilt x and y, pressure (NX_TABLET_CAPABILITY_*).
+        cgEvent.setIntegerValueField(.tabletProximityEventCapabilityMask, value: 0x0001 | 0x0002 | 0x0004 | 0x0040 | 0x0080 | 0x0100 | 0x0400)
+        post(cgEvent)
     }
 
     // MARK: Helpers

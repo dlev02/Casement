@@ -77,7 +77,9 @@ final class FileLink {
     // MARK: Screen session
 
     /// The screen session authenticated. `token` is its file channel ticket, if it got one.
-    func screenDidConnect(token: Data?, capabilities: HostCapabilities?, host: String, port: NWEndpoint.Port) {
+    /// `endpoint` is where the session's connection went (its resolved address), `keys` the
+    /// session's when it's encrypted: the file channel is sealed too then.
+    func screenDidConnect(token: Data?, capabilities: HostCapabilities?, endpoint: NWEndpoint, keys: SessionKeys?) {
         screen = .connected
         macKeepsFiles = capabilities?.filesOnlySessions == true
         guard capabilities?.fileTransfer == true else {
@@ -86,7 +88,7 @@ final class FileLink {
         }
         // One channel at a time: one that outlived an earlier screen session carries on.
         guard linkTask == nil, let token else { return }
-        start { link in await link.runScreenChannel(token: token, host: host, port: port) }
+        start { link in await link.runScreenChannel(token: token, endpoint: endpoint, keys: keys) }
     }
 
     /// The screen session ended. On a Mac that keeps files the channel stays for whatever is
@@ -160,10 +162,10 @@ final class FileLink {
 
     /// The screen session's channel. On a Mac that keeps files, losing it while the screen is up
     /// or files are waiting falls through to a files-only session.
-    private func runScreenChannel(token: Data, host: String, port: NWEndpoint.Port) async {
+    private func runScreenChannel(token: Data, endpoint: NWEndpoint, keys: SessionKeys?) async {
         phase = .connecting
         let opened = ContinuousClock.now
-        await runChannel(token: token, host: host, port: port)
+        await runChannel(token: token, endpoint: endpoint, keys: keys)
         guard !Task.isCancelled else { return }
         if macKeepsFiles == true {
             if screenConnected || files.hasPendingWork { await runFilesOnly() } else { phase = .idle }
@@ -199,7 +201,7 @@ final class FileLink {
                 onHostKeyVerified?(device, session.hostPublicKey)
                 primary = session.primary
                 let opened = ContinuousClock.now
-                await runChannel(token: token, host: session.host, port: session.port)
+                await runChannel(token: token, endpoint: session.endpoint, keys: session.keys)
                 if let primary { self.primary = nil; await primary.close() }
                 if ContinuousClock.now - opened > .seconds(10) { attempt = 0 }
             } catch let failure as FilesOnlySession.Failure {
@@ -224,12 +226,15 @@ final class FileLink {
 
     /// Opens the file channel with `token`, runs it until it closes (or goes idle), and hands the
     /// queue back.
-    private func runChannel(token: Data, host: String, port: NWEndpoint.Port) async {
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: VantageNetwork.bulkParameters())
+    private func runChannel(token: Data, endpoint: NWEndpoint, keys: SessionKeys?) async {
+        let connection = NWConnection(to: endpoint, using: VantageNetwork.bulkParameters())
         let channel = MessageChannel(connection: connection, label: "vantage.client.files", maxBufferedMessages: 64)
         do {
             try await channel.start()
             try await channel.send(.attachMedia(AttachMedia(sessionToken: token)))
+            // The attach goes as it is (the host needs the token to know the keys); everything
+            // after it is sealed with keys only this session's two ends can work out.
+            if let keys { await channel.encrypt(with: keys.fileChannelKeys(token: token)) }
         } catch {
             log.error("file channel didn't open: \(error.localizedDescription, privacy: .public)")
             await channel.close()
@@ -279,8 +284,10 @@ enum FilesOnlySession {
         let primary: MessageChannel
         let token: Data?
         let capabilities: HostCapabilities?
-        let host: String
-        let port: NWEndpoint.Port
+        /// Where the session's connection went, for its file channel.
+        let endpoint: NWEndpoint
+        /// The session's keys when it's encrypted (the local network).
+        let keys: SessionKeys?
         /// The host's verified key, for the saved device to remember.
         let hostPublicKey: Data
     }
@@ -299,13 +306,29 @@ enum FilesOnlySession {
         }
     }
 
+    /// Over the local network first when the Mac is advertising there, then its saved address.
     @MainActor
     static func open(to device: SavedDevice, identity: DeviceIdentity, clientName: String, clientModel: String,
                      timeout: Duration = .seconds(15)) async throws -> Opened {
         let address = try ConnectionAddress(host: device.host, port: String(device.port))
         guard let port = NWEndpoint.Port(rawValue: address.port) else { throw ConnectionAddress.AddressError.invalidPort }
-        let channel = MessageChannel(connection: NWConnection(host: NWEndpoint.Host(address.host), port: port,
-                                                              using: VantageNetwork.tcpParameters()),
+        var saved = device
+        saved.host = address.host
+        let routes = HostRoute.candidates(for: saved, port: port)
+        for route in routes.dropLast() {
+            if let opened = try? await open(route, to: device, identity: identity, clientName: clientName, clientModel: clientModel,
+                                            timeout: route.connectTimeout) {
+                return opened
+            }
+        }
+        return try await open(routes[routes.count - 1], to: device, identity: identity, clientName: clientName, clientModel: clientModel,
+                              timeout: timeout)
+    }
+
+    @MainActor
+    private static func open(_ route: HostRoute, to device: SavedDevice, identity: DeviceIdentity, clientName: String, clientModel: String,
+                             timeout: Duration) async throws -> Opened {
+        let channel = MessageChannel(connection: NWConnection(to: route.endpoint, using: VantageNetwork.tcpParameters()),
                                      label: "vantage.client.filesOnly")
         let timer = Task {
             do { try await Task.sleep(for: timeout) } catch { return }
@@ -314,32 +337,32 @@ enum FilesOnlySession {
         defer { timer.cancel() }
         do {
             try await channel.start()
-            let clientNonce = AuthTranscript.randomNonce()
-            try await channel.send(.hello(Hello(clientName: clientName, deviceModel: clientModel, appVersion: "1.0",
-                                                clientPublicKey: identity.publicKeyData, supportedCodecs: [],
-                                                maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil,
-                                                features: ClientFeatures(fileTransfer: true, filesOnly: true), clientNonce: clientNonce)))
+            let exchange = ClientHandshake(clientPublicKey: identity.publicKeyData, offersEncryption: route.offersEncryption,
+                                           requiresEncryption: route.isLocal)
+            try await channel.send(.hello(exchange.prepare(Hello(clientName: clientName, deviceModel: clientModel, appVersion: "1.0",
+                                                                 clientPublicKey: identity.publicKeyData, supportedCodecs: [],
+                                                                 maxDecodeWidth: 0, maxDecodeHeight: 0, viewport: nil,
+                                                                 features: ClientFeatures(fileTransfer: true, filesOnly: true)))))
             let first = try await channel.receive()
             if case .authResult(let result)? = first, result.status == .versionMismatch { throw Failure.incompatible }
             guard case .challenge(let challenge)? = first else { throw ClientHandshakeError.badHandshake }
             let hostKey: Data
             do {
-                hostKey = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
-                                                       expected: device.hostPublicKey)
+                hostKey = try exchange.verify(challenge, expected: device.hostPublicKey)
             } catch HostIdentityCheck.Failure.unsigned {
                 throw Failure.incompatible
             } catch let failure as HostIdentityCheck.Failure {
                 throw Failure.refused(failure.message(deviceName: device.name, host: device.hostNoun))
             }
-            let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
-                                                                         hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData,
-                                                                         purpose: .files))
+            let signature = try identity.sign(exchange.transcript(for: challenge, purpose: .files))
+            let keys = try exchange.sessionKeys(for: challenge)
+            if let keys { await channel.encrypt(with: keys) }
             try await channel.send(.authenticate(Authenticate(signature: signature)))
             guard case .authResult(let result)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
             switch result.status {
             case .ok:
-                return Opened(primary: channel, token: result.sessionToken, capabilities: result.capabilities, host: address.host, port: port,
-                              hostPublicKey: hostKey)
+                return Opened(primary: channel, token: result.sessionToken, capabilities: result.capabilities,
+                              endpoint: channel.remoteEndpoint ?? route.endpoint, keys: keys, hostPublicKey: hostKey)
             case .pairingRequired, .badPairingCode:
                 throw Failure.pairingRequired
             case .versionMismatch:

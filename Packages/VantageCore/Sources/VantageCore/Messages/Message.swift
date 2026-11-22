@@ -30,6 +30,8 @@ public enum Message: Sendable {
     case pointerEvent(PointerEvent)
     case scrollEvent(ScrollEvent)
     case keyEvent(KeyEvent)
+    /// Capability-gated: only sent to hosts whose capabilities say `stylus`.
+    case stylusEvent(StylusEvent)
     case dictationControl(DictationControl)
     case dictationResult(DictationResult)
     case micAudio(MicAudio)
@@ -76,6 +78,7 @@ public enum Message: Sendable {
         case .pointerEvent: .pointerEvent
         case .scrollEvent: .scrollEvent
         case .keyEvent: .keyEvent
+        case .stylusEvent: .stylusEvent
         case .dictationControl: .dictationControl
         case .dictationResult: .dictationResult
         case .micAudio: .micAudio
@@ -103,6 +106,8 @@ extension Message {
     private static let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dataEncodingStrategy = .base64
+        // The same message always encodes to the same bytes (the golden vectors stay put).
+        encoder.outputFormatting = .sortedKeys
         return encoder
     }()
 
@@ -151,6 +156,7 @@ extension Message {
         case .pointerEvent(let value): value.encode()
         case .scrollEvent(let value): value.encode()
         case .keyEvent(let value): value.encode()
+        case .stylusEvent(let value): value.encode()
         case .dictationControl(let value): try Self.json(value)
         case .dictationResult(let value): try Self.json(value)
         case .micAudio(let value): value.encode()
@@ -203,6 +209,7 @@ extension Message {
         case .pointerEvent: .pointerEvent(try PointerEvent.decode(payload))
         case .scrollEvent: .scrollEvent(try ScrollEvent.decode(payload))
         case .keyEvent: .keyEvent(try KeyEvent.decode(payload))
+        case .stylusEvent: .stylusEvent(try StylusEvent.decode(payload))
         case .dictationControl: .dictationControl(try decodeJSON(DictationControl.self, payload))
         case .dictationResult: .dictationResult(try decodeJSON(DictationResult.self, payload))
         case .micAudio: .micAudio(try MicAudio.decode(payload))

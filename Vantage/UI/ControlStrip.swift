@@ -10,6 +10,9 @@ struct ControlStrip: View {
     @Binding var stickyModifiers: KeyModifiers
     @Binding var touchMode: InputController.TouchMode
     let onKey: (UInt16, KeyModifiers) -> Void
+    /// Sends a host shortcut (the session may ask first, see `ScreenSessionModel.sendShortcut`);
+    /// nil sends its chord through `onKey`.
+    var onShortcut: ((HostShortcut) -> Void)?
     let onShowKeyboard: () -> Void
     let onSendClipboard: () -> Void
     let onSendPassword: () -> Void
@@ -18,6 +21,8 @@ struct ControlStrip: View {
     /// Dictation is listening (the mic button shows as active).
     var isDictating = false
     var onDictation: (DictationPress) -> Void = { _ in }
+    /// Opens the recent dictations from the session menu; nil (history off) leaves the item out.
+    var onShowDictationHistory: (() -> Void)?
     /// Set while the strip is being dragged between corners, so the button under the finger
     /// doesn't also fire when it's let go.
     var tapGuard: StripTapGuard?
@@ -30,6 +35,7 @@ struct ControlStrip: View {
     var macAudio = MacAudioToggle()
     var curtain = CurtainToggle()
     var fitDisplay = FitDisplayToggle()
+    var quality = QualityChoice()
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
     /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
@@ -370,7 +376,7 @@ struct ControlStrip: View {
     /// Shortcuts ignore whatever modifiers are being held — ⌃↑ means Mission Control, not
     /// ⇧⌃↑ — and clear them, the same as tapping a key.
     private func send(_ shortcut: HostShortcut) {
-        onKey(shortcut.keyCode, shortcut.modifiers)
+        if let onShortcut { onShortcut(shortcut) } else { onKey(shortcut.keyCode, shortcut.modifiers) }
         if !stickyModifiers.isEmpty {
             withAnimation(.snappy(duration: 0.2)) { stickyModifiers = [] }
         }
@@ -448,6 +454,7 @@ struct ControlStrip: View {
             }
             Menu {
                 fitDisplayRow
+                qualityPicker
                 if !noun.isWindows { passwordRow }
                 hostRows
             } label: {
@@ -480,6 +487,7 @@ struct ControlStrip: View {
         Section {
             audioAndCurtainRows
             fitDisplayRow
+            qualityPicker
             fileRows
             if !noun.isWindows { passwordRow }
         }
@@ -514,6 +522,20 @@ struct ControlStrip: View {
         .accessibilityIdentifier("session.menu.fitDisplay")
     }
 
+    /// Fluid, Balanced or Sharp Text, saved for this computer and applied at once.
+    private var qualityPicker: some View {
+        Picker(selection: Binding(get: { quality.selection }, set: { quality.onSelect($0) })) {
+            ForEach(QualityPreset.offered, id: \.self) { preset in
+                Text(preset.label).tag(preset)
+            }
+        } label: {
+            Label("Quality", systemImage: "dial.medium")
+        }
+        .pickerStyle(.menu)
+        .disabled(!quality.isAvailable)
+        .accessibilityIdentifier("session.menu.quality")
+    }
+
     @ViewBuilder private var fileRows: some View {
         Button(action: files.onSend) {
             Label("Send File to \(noun.name)…", systemImage: StripItem.sendFile.symbol)
@@ -526,6 +548,12 @@ struct ControlStrip: View {
         .accessibilityIdentifier("session.menu.transfers")
         Button(action: onSendClipboard) {
             Label("Send Clipboard to \(noun.name)", systemImage: "doc.on.clipboard")
+        }
+        if let onShowDictationHistory {
+            Button(action: onShowDictationHistory) {
+                Label("Dictation History…", systemImage: "clock")
+            }
+            .accessibilityIdentifier("session.menu.dictationHistory")
         }
     }
 

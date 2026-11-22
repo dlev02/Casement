@@ -260,17 +260,32 @@ public class InputTranslatorTests
     public void ScrollingScalesAndCarriesTheRemainder()
     {
         _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.None, IsContinuous = false, DeltaX = 0, DeltaY = 1, X = 0, Y = 0 });
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Began, IsContinuous = true, DeltaX = 0, DeltaY = 10, X = 0, Y = 0 });
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = 10, X = 0, Y = 0 });
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 4, DeltaY = 0, X = 0, Y = 0, Modifiers = KeyModifiers.Control });
-        // 10 pt = 25 units twice; −4 pt horizontally = −10 units, with Ctrl around it.
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Began, IsContinuous = true, DeltaX = 0, DeltaY = -10, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = -10, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = -4, DeltaY = 0, X = 0, Y = 0, Modifiers = KeyModifiers.Control });
+        // Continuous deltas arrive negated (the Mac host's convention): −10 pt = 25 units up twice;
+        // −4 pt horizontally = −10 units (left), with Ctrl around it.
         Assert.Equal(["wheel 120", "wheel 25", "wheel 25", "key 1D down", "hwheel -10", "key 1D up"], _sent);
         _sent.Clear();
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = 0.19f, X = 0, Y = 0 });
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = 0.19f, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = -0.19f, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = -0.19f, X = 0, Y = 0 });
         Assert.Empty(_sent); // 0.475 + 0.475 units: nothing yet
-        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = 0.19f, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Changed, IsContinuous = true, DeltaX = 0, DeltaY = -0.19f, X = 0, Y = 0 });
         Assert.Equal(["wheel 1"], _sent);
+    }
+
+    /// The Mac client's trackpad: it sends <c>-scrollingDelta</c> (<c>ScrollTranslator</c>) and a
+    /// wheel's lines as they are, so one swipe and one notch the same way scroll the PC the same way.
+    [Fact]
+    public void MacTrackpadAndWheelScrollTheSameWay()
+    {
+        // The Mac delivered scrollingDeltaY +48 (reveal what's above) from a trackpad, then +1 line from a wheel.
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Began, IsContinuous = true, DeltaX = 0, DeltaY = -48, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.None, IsContinuous = false, DeltaX = 0, DeltaY = 1, X = 0, Y = 0 });
+        // And scrollingDeltaX +48 (reveal what's to the left), both ways.
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.Began, IsContinuous = true, DeltaX = -48, DeltaY = 0, X = 0, Y = 0 });
+        _translator.Scroll(new ScrollEvent { Phase = ScrollPhase.None, IsContinuous = false, DeltaX = 1, DeltaY = 0, X = 0, Y = 0 });
+        Assert.Equal(["wheel 120", "wheel 120", "hwheel -120", "hwheel -120"], _sent);
     }
 
     [Fact]

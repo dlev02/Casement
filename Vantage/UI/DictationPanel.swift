@@ -1,13 +1,18 @@
 import SwiftUI
 import VantageCore
 
-/// The glass card that shows a dictation: live transcript and level while listening, a spinner
-/// while the Mac transcribes, then editable text with Send, Send + Return, and Cancel.
+/// The glass card that shows a dictation: live transcript and level while listening (with Pause
+/// and Stop), a spinner while the Mac transcribes, then editable text with Send, Send + Return,
+/// and Cancel.
 struct DictationPanel: View {
     @Bindable var dictation: DictationController
     /// macOS drops typed text while a secure field has focus; offer Copy instead of Send then.
     let isTypingBlocked: Bool
     let onCopy: (String) -> Void
+    /// Opens the recent dictations (hidden while Settings has the history off).
+    let onShowHistory: () -> Void
+
+    @AppStorage(DictationHistory.enabledKey) private var savesHistory = true
 
     @FocusState private var editorFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,14 +40,14 @@ struct DictationPanel: View {
 
     // MARK: Header
 
-    /// One line normally; at accessibility text sizes the status, the engine, and Stop each get
-    /// a line of their own rather than squeezing into one.
+    /// One line normally; at accessibility text sizes the status, the engine, and the buttons
+    /// each get a line of their own rather than squeezing into one.
     @ViewBuilder private var header: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) { status }
                 engine
-                stopButton
+                HStack(spacing: Self.controlSpacing) { controls }
             }
         } else {
             HStack(spacing: 8) {
@@ -50,10 +55,16 @@ struct DictationPanel: View {
                 Spacer(minLength: 8)
                 engine
                     .lineLimit(1)
-                stopButton
+                HStack(spacing: Self.controlSpacing) { controls }
             }
         }
     }
+
+    #if os(iOS)
+    private static let controlSpacing: CGFloat = 2 // each button already keeps a 44 pt target
+    #else
+    private static let controlSpacing: CGFloat = 8
+    #endif
 
     @ViewBuilder private var status: some View {
         statusIndicator
@@ -62,39 +73,84 @@ struct DictationPanel: View {
             .contentTransition(.opacity)
         if let startedAt = dictation.startedAt, dictation.phase == .listening {
             TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                Text(Duration.seconds(max(0, context.date.timeIntervalSince(startedAt))),
-                     format: .time(pattern: .minuteSecond))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                elapsedTime(dictation.elapsed(at: context.date))
             }
+        } else if dictation.phase == .paused {
+            elapsedTime(dictation.elapsedBeforePause)
         }
     }
 
-    private var engine: some View {
-        Label(engineLabel, systemImage: dictation.route.symbol)
-            .font(.caption.weight(.medium))
+    private func elapsedTime(_ seconds: TimeInterval) -> some View {
+        Text(Duration.seconds(seconds), format: .time(pattern: .minuteSecond))
+            .font(.subheadline.monospacedDigit())
             .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
     }
 
-    @ViewBuilder private var stopButton: some View {
-        if dictation.phase == .listening {
-            Button {
-                dictation.stop(then: .review)
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.footnote)
+    /// Which engine wrote the text, once there is text: the Mac's (it may have fallen back to
+    /// another) or this device's Parakeet. Never while recording, where the header belongs to
+    /// the clock and the buttons, and never for the plain on-device default.
+    @ViewBuilder private var engine: some View {
+        if let engineName {
+            Label(engineName, systemImage: dictation.route.symbol)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private var engineName: String? {
+        switch dictation.phase {
+        case .transcribing: dictation.route == .iPad ? nil : dictation.route.label
+        case .review: dictation.resultEngine.map(DictationRoute.label(for:))
+        default: nil
+        }
+    }
+
+    /// History, then Pause or Resume and Stop while a recording is open.
+    @ViewBuilder private var controls: some View {
+        if savesHistory {
+            Button(action: onShowHistory) {
+                Image(systemName: "clock")
+                    .font(.body)
                     .frame(width: stopSide, height: stopSide)
             }
-            .buttonStyle(.onCard)
-            .buttonBorderShape(.circle)
+            .buttonStyle(.borderless)
+            .tint(.secondary)
             #if os(iOS)
-            .frame(minWidth: 44, minHeight: 44) // the glass circle grows with its padding; this keeps the target
+            .frame(minWidth: 44, minHeight: 44)
             .contentShape(.rect)
             #endif
-            .accessibilityLabel("Stop and Review")
-            .help("Stop and Review")
+            .accessibilityLabel("Dictation History")
+            .help("Dictation History")
+            .accessibilityIdentifier("dictation.history")
         }
+        if dictation.phase == .listening {
+            roundButton("Pause", symbol: "pause.fill") { dictation.pause() }
+                .accessibilityIdentifier("dictation.pause")
+        } else if dictation.phase == .paused {
+            roundButton("Resume", symbol: "play.fill") { dictation.resume() }
+                .accessibilityIdentifier("dictation.resume")
+        }
+        if dictation.phase == .listening || dictation.phase == .paused {
+            roundButton("Stop and Review", symbol: "stop.fill") { dictation.stop(then: .review) }
+                .accessibilityIdentifier("dictation.stop")
+        }
+    }
+
+    private func roundButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.footnote)
+                .frame(width: stopSide, height: stopSide)
+        }
+        .buttonStyle(.onCard)
+        .buttonBorderShape(.circle)
+        #if os(iOS)
+        .frame(minWidth: 44, minHeight: 44) // the glass circle grows with its padding; this keeps the target
+        .contentShape(.rect)
+        #endif
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     @ViewBuilder private var statusIndicator: some View {
@@ -105,6 +161,11 @@ struct DictationPanel: View {
                 .frame(width: 10, height: 10)
                 .scaleEffect(reduceMotion ? 1 : 0.8 + CGFloat(dictation.level) * 0.5)
                 .animation(.easeOut(duration: 0.12), value: dictation.level)
+                .accessibilityHidden(true)
+        case .paused:
+            Image(systemName: "pause.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
         case .preparing, .transcribing:
             ProgressView().controlSize(.small)
@@ -125,14 +186,11 @@ struct DictationPanel: View {
         case .preparing(let progress?): "Downloading speech model \(progress.formatted(.percent.precision(.fractionLength(0))))"
         case .preparing: "Getting ready…"
         case .listening: "Listening"
-        case .transcribing: dictation.route == .iPad ? "Transcribing…" : "Transcribing on Mac…"
+        case .paused: "Paused"
+        case .transcribing: if case .mac = dictation.route { "Transcribing on Mac…" } else { "Transcribing…" }
         case .review: "Review"
         case .failed(let failure): failure.title
         }
-    }
-
-    private var engineLabel: String {
-        if let engine = dictation.resultEngine { DictationRoute.label(for: engine) } else { dictation.route.label }
     }
 
     // MARK: Content
@@ -174,8 +232,8 @@ struct DictationPanel: View {
         let committed = transcript.committed
         let placeholder: String? = {
             guard committed.isEmpty, transcript.volatile.isEmpty else { return nil }
-            if dictation.phase == .transcribing { return nil }
-            if case .mac = dictation.route, !dictation.hasLivePreview { return "Speak now. MacWhisper transcribes when you stop." }
+            if dictation.phase != .listening { return nil }
+            if dictation.route != .iPad, !dictation.hasLivePreview { return "Speak now. \(dictation.route.label) transcribes when you stop." }
             return "Speak now…"
         }()
         return VStack(alignment: .leading, spacing: 10) {
@@ -185,9 +243,13 @@ struct DictationPanel: View {
                 transcriptText(Text("\(committed)\(committed.isEmpty ? "" : " ")\(Text(transcript.volatile).foregroundStyle(.secondary))"))
                     .opacity(dictation.phase == .transcribing ? 0.55 : 1)
             }
-            if dictation.phase == .listening {
+            if dictation.phase == .listening || dictation.phase == .paused {
+                // Flat and dimmed while paused, so the card keeps its shape. A meter of its
+                // own for each stretch: the bars from before the pause don't linger.
                 LevelMeter(level: dictation.level)
+                    .id(dictation.phase == .paused)
                     .frame(height: 36)
+                    .opacity(dictation.phase == .paused ? 0.4 : 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -210,13 +272,23 @@ struct DictationPanel: View {
 
     private var canSend: Bool {
         switch dictation.phase {
-        case .listening: true
+        case .listening, .paused: true
         case .review: !dictation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         default: false
         }
     }
 
+    /// Icons beside the titles where the row fits on one line; titles alone on a narrow phone,
+    /// rather than "Send + Return" wrapping onto two.
     private var buttons: some View {
+        ViewThatFits(in: .horizontal) {
+            buttonRow.labelStyle(.titleAndIcon)
+            buttonRow.labelStyle(.titleOnly)
+        }
+        .controlSize(.regular)
+    }
+
+    private var buttonRow: some View {
         HStack(spacing: 10) {
             Button("Cancel", role: .cancel) { dictation.cancel() }
                 .buttonStyle(.onCard)
@@ -254,8 +326,6 @@ struct DictationPanel: View {
                 .accessibilityHint("Types the text on the Mac.")
             }
         }
-        .labelStyle(.titleAndIcon)
-        .controlSize(.regular)
     }
 
     private var copyButton: some View {
@@ -316,7 +386,7 @@ extension DictationController.Phase {
         switch (old, new) {
         case (.listening, .listening), (.failed, .failed): nil
         case (_, .listening): .start
-        case (.listening, .transcribing), (.listening, .review): .stop
+        case (.listening, .transcribing), (.listening, .review), (.listening, .paused): .stop
         case (_, .failed): .error
         default: nil
         }

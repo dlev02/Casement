@@ -89,6 +89,7 @@ public static class MessageCodec
         MessageKind.KeyEvent => KeyEvent.Decode(payload.Span),
         MessageKind.MicAudio => MicAudio.Decode(payload),
         MessageKind.FileChunkToHost => FileChunk.Decode(payload, toHost: true),
+        MessageKind.StylusEvent => StylusEvent.Decode(payload.Span),
         _ => throw new FrameException(FrameError.UnknownKind, $"Unknown message kind {(byte)kind}."),
     };
 
