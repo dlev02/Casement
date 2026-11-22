@@ -41,6 +41,7 @@ foreach ($arch in "x64", "arm64") {
     if (Test-Path (Split-Path $staging)) { Remove-Item -Recurse -Force (Split-Path $staging) }
     dotnet publish $project -c Release -r "win-$arch" --self-contained "-p:Platform=$arch" -o $staging
     if ($LASTEXITCODE -ne 0) { throw "Publishing $arch failed." }
+    & (Join-Path $PSScriptRoot "publish-service.ps1") -Arch $arch -Destination $staging
     & (Join-Path $PSScriptRoot "check-package-arch.ps1") -Arch $arch -Folder $staging
     $setups[$arch] = & (Join-Path $PSScriptRoot "make-installer.ps1") -Version $Version -Arch $arch -Source $staging -Out $out | Select-Object -Last 1
     Set-Content -Path (Join-Path $staging "README.txt") -Value $readme

@@ -32,7 +32,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `--exit-after`, `--display-asleep`, `--capture-fails-for`, `--send-file-on-connect`,
   `--receive-folder`, `--log-input-events`) plus `--platform windows|macos`, `--input-log`,
   `--clipboard-text` (sent at stream start), `--state-dir` (trust store; default
-  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, and `--no-audio`
+  `$TMPDIR/VantageSynthetic/WindowsHostState`), `--pairing-code-rearm <s>`, `--cursor-shapes`, `--admin-apps-blocked`, and `--no-audio`
   (it otherwise offers the Mac synthetic host's −18 dBFS chime as the PC's sound). Loopback is always
   allowed. **A fixed pairing code works like the Mac's: one pairing uses it up** (and five misses
   burn it); `--pairing-code-rearm 3` shows it again 3 s later, which the interop suite needs.
@@ -204,12 +204,54 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `SendInput` still reports success; Task Manager is always elevated on Windows 11. Before a press,
   `SendInputInjector` checks the target (`ElevatedWindows`: the root window under a click, or the
   foreground one for a key; its process's `TokenElevation`) and raises `ElevatedWindowBlocked`, which
-  the app turns into a notification while a screen session is up. General › Control apps running
-  as administrator (`HostSettings.ControlAdminApps`) registers a trigger-less Task Scheduler task,
-  "Casement Host", with `HighestAvailable` (`AdminLaunch`; one UAC prompt, which only someone at the
-  PC can answer), and every non-elevated launch with the setting on runs that task and exits
-  (`Program.ShouldRelaunchElevated`). Start at login (the Run value) is turned on once at the first
-  launch of a Release build (`StartAtLoginSettled`).
+  the app turns into a notification while a screen session is up. The device hears it too:
+  `capabilities.canControlAdminApps` says whether input reaches such apps (the host is elevated or
+  the desktop helper is connected, asked as each session is admitted; null from synthetic hosts and
+  Macs), and `BlockedAppChanged` follows each press (the app's title when it went to an elevated
+  window, null once one reaches an ordinary window; moves, scrolls and releases change nothing),
+  which `SessionStatusMonitor.SetBlockedAdminApp` turns into `hostStatus.blockedAdminApp` while the
+  session is unlocked and no secure desktop is up. The client words the banner and asks before
+  sending Task Manager to a host that can't control it. The synthetic host's `--admin-apps-blocked`
+  says false and pretends Ctrl+Shift+Esc opened Task Manager (key presses then report it, a click
+  clears it). Start at login (the Run value) is turned on once at the first launch of a Release
+  build (`StartAtLoginSettled`).
+- **Casement Host Service** (ADR 0006; `src/Vantage.Host.Windows.Service` → `CasementHostService.exe`,
+  `Platform/DesktopHelper`, `Protocol/DesktopHelper`): General › Control administrator prompts and
+  apps runs `CasementHostService.exe install` from the host's folder as administrator
+  (`HelperInstall.RunElevatedAsync`; one UAC prompt at the PC). That copies it to
+  `%ProgramFiles%\Casement Host Service`, makes an Ed25519 key (seed in `%ProgramData%\Casement Host
+  Service\helper.key`, SYSTEM and Administrators only, no inheritance; public half `helper.pub` beside the
+  exe), registers the LocalSystem service `CasementHostService` (auto start, restart on failure) with
+  `sc.exe`, and deletes the old elevated task. `uninstall` (the switch off, or the Inno uninstaller's
+  `RemoveDesktopService`, Windows asking only when the service exists) stops and deletes it and both
+  folders. `HostService` keeps one `helper` process (`HelperLauncher`: its own token duplicated with
+  `TokenSessionId` set, `CreateProcessAsUser` on `winsta0\default`) in the console session while
+  `WTSQueryUserToken` says someone is signed in to it, and none otherwise (so never at the sign-in screen
+  after a restart); a helper that exits within 10 s backs off 2× up to 1 min. The helper
+  (`SecureDesktopHelper`) serves `\\.\pipe\CasementHostDesktop-<session>`: DACL SYSTEM + the session's
+  user (read/write, not create-instance), one instance, `FirstPipeInstance`, and it refuses a client from
+  another session or that isn't `VantageHost.exe`/`VantageHostCli.exe`. The host (`HelperClient`,
+  retrying every 3 s while the service is installed) sends `HelperHello` with a nonce and trusts only a
+  `HelperWelcome` signed over `HelperProof.Transcript(session, nonce)` with `helper.pub`'s key, so
+  something squatting on the name gets nothing. Then the helper reports the input desktop (Default,
+  Winlogon = secure, Other) on change; input goes to it (`SendInputInjector`: while the secure desktop
+  has the input, and from a press aimed at an elevated window until one lands elsewhere; it injects on
+  a thread `SetThreadDesktop`'d to the input desktop, through the same `InputBatch` as the host); and
+  `WindowsScreenSource` starts `HelperCaptureStream` instead of WGC while the secure desktop is up (a
+  switch either way ends the running capture, so the supervisor restarts the right one, ~0.5 s). The
+  helper's `DesktopDuplicator` is DXGI desktop duplication on a thread on the input desktop: the whole
+  screen first, then dirty and moved rects, copied off one staging texture and cut into ≤ 8 MB messages
+  (`HelperFrames.Split`, only the last `IsLastPart`); the host paints them with `UpdateSubresource` onto
+  a canvas and hands the encoder a pooled copy. The pointer isn't in those frames (devices that draw
+  their own still show it). While it's connected `SessionStatusMonitor` reports no secure desktop and
+  `hostStatus.controlsSecureDesktop`, so the device drops the "unlock it at the PC" banner. Both sides
+  refuse another `HelperPipe.Version`; an installed service is only replaced by turning the switch off
+  and on (not by the host's updater yet). Logs: `%ProgramData%\Casement Host Service\{install,service,helper}.log`.
+  Published single-file, self-contained and partially trimmed (~13 MB) by `scripts/publish-service.ps1`,
+  which `publish.ps1` and `make-release.ps1` call, into the host's folder. Users of the old task
+  (`HostSettings.ControlAdminApps`, `AdminLaunch`, `Program.ShouldRelaunchElevated`) keep it until they
+  turn the switch off and on; the relaunch is skipped once the service is installed. Test:
+  `HelperPipeTests` (the pipe format). Live checks on the PC: see the status line below.
 - **Installer** (`installer/CasementHost.iss`, Inno Setup 6.6+; `scripts/make-installer.ps1`, called by
   `make-release.ps1`): `Casement-Host-Setup-x64.exe`/`-arm64.exe` keep the same names every release so the
   READMEs can link `releases/latest/download/`; the zips stay, because the signed manifest points the
@@ -386,7 +428,7 @@ VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
   VANTAGE_INTEROP_CLIPBOARD_TEXT="from the PC" xcrun swift test --filter WindowsHostInteropTests
 ```
 
-**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 38 messages
+**Golden vectors**: `WindowsHost/tests/golden/{swift,csharp}/<name>.frame`, the same 41 messages
 defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
 `WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
 (JSON compared key for key after canonicalising, binary byte for byte);

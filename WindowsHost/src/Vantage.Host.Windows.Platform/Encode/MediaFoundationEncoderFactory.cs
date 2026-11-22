@@ -49,8 +49,8 @@ public sealed class MediaFoundationEncoderFactory : IVideoEncoderFactory
     /// <inheritdoc />
     public IVideoEncoder Create(ICaptureStream source, VideoEncoderSettings settings)
     {
-        if (source is not WgcCaptureStream capture)
-            throw new CaptureUnavailableException("The Media Foundation encoder needs a Windows.Graphics.Capture stream.");
+        if (source is not IGpuCaptureStream capture)
+            throw new CaptureUnavailableException("The Media Foundation encoder needs a capture on a GPU device.");
         if (settings.Codec is not (VideoCodec.H264 or VideoCodec.Hevc))
             throw new CaptureUnavailableException($"{settings.Codec} isn't supported on Windows.");
         var codec = MfVideoEncoder.CodecName(settings.Codec);

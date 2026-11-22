@@ -24,6 +24,7 @@ Casement stores the following on your devices to work. None of it is sent to the
 - The identity keys of devices you've paired, so they can reconnect without a new code.
 - Your host settings.
 - Files you send to the computer, saved to Downloads or the folder you choose.
+- On a PC with **Control administrator prompts and apps** on: Casement Host Service's key (proving the service to Casement Host) and its logs, in `C:\ProgramData\Casement Host Service`, readable only by Windows and administrators. Turning the setting off deletes them.
 
 Removing a device in Casement deletes the secrets saved for it. Deleting the app deletes its data, though Apple's Keychain items can outlive the app on some devices.
 

@@ -150,7 +150,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
     private static Guid Subtype(VideoCodec codec) => codec == VideoCodec.Hevc ? MFVideoFormat_HEVC : VideoFormatGuids.H264;
 
     /// <summary>Makes the hardware MFT for the settings' codec on <paramref name="source"/>'s adapter.</summary>
-    public static MfVideoEncoder CreateHardware(WgcCaptureStream source, VideoEncoderSettings settings, EncoderTuning tuning, ILogger log)
+    public static MfVideoEncoder CreateHardware(IGpuCaptureStream source, VideoEncoderSettings settings, EncoderTuning tuning, ILogger log)
     {
         EnsureStarted();
         var gpu = source.Gpu.AddReference();
@@ -211,7 +211,7 @@ internal sealed class MfVideoEncoder : IVideoEncoder
     /// Makes a software MFT: Microsoft's H.264 encoder, or for HEVC the first software HEVC encoder
     /// registered on the PC (none on a stock Windows; then this throws <see cref="NotSupportedException"/>).
     /// </summary>
-    public static MfVideoEncoder CreateSoftware(WgcCaptureStream source, VideoEncoderSettings settings, EncoderTuning tuning, ILogger log)
+    public static MfVideoEncoder CreateSoftware(IGpuCaptureStream source, VideoEncoderSettings settings, EncoderTuning tuning, ILogger log)
     {
         EnsureStarted();
         var gpu = source.Gpu.AddReference();

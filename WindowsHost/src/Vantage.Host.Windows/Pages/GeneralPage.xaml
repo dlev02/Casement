@@ -79,14 +79,13 @@
             </tk:SettingsCard>
             <tk:SettingsCard
                 x:Name="AdminCard"
-                Description="Includes Task Manager. Windows asks once, then any program you run could use this to get administrator rights without asking, so turn it on only if you need it."
-                Header="Control apps running as administrator">
+                Header="Control administrator prompts and apps">
                 <tk:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE7EF;" />
                 </tk:SettingsCard.HeaderIcon>
                 <ToggleSwitch
                     x:Name="AdminSwitch"
-                    AutomationProperties.Name="Control apps running as administrator"
+                    AutomationProperties.Name="Control administrator prompts and apps"
                     Toggled="OnAdminToggled" />
             </tk:SettingsCard>
 

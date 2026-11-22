@@ -206,8 +206,8 @@ decode, input, or Tailscale code.
   isn't available. Real Mac video, pointer, clicks and software-keyboard typing are verified on a
   physical iPad; BetterDisplay and biometric session recovery still need device checks (the
   topic guides name what else does).
-- Windows host (1.3, 2026-11-04): a saved password can't be typed at the Windows lock screen (the
-  secure desktop is reachable only from a SYSTEM service, a separate decision). HEVC, the PC's
+- Windows host (1.3, 2026-11-04): the lock screen, UAC prompts and administrator apps need the opt-in
+  Casement Host Service (2026-11-22, ADR 0006), whose live checks are in `windows-host.md`. HEVC, the PC's
   sound, display fitting and the restart guard were checked on Drew-PC with the console host and a
   throwaway client, not yet from a real iPad or through a real restart; the transfer UI was only
   compiled.

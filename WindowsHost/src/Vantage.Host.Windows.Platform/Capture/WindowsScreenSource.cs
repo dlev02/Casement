@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vantage.Host.Windows.DesktopHelper;
 using Vantage.Host.Windows.Gpu;
 using Vantage.Protocol.Host;
 using Vantage.Protocol.Messages;
@@ -19,14 +20,21 @@ public sealed class WindowsScreenSource : IScreenSource
     private readonly ILogger _log;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly DirtyRegionSource _dirtyRegions;
+    private readonly HelperClient? _helper;
     private bool? _borderless;
 
     /// <param name="logging">Loggers (category <c>Vantage.Capture</c>).</param>
     /// <param name="dirtyRegions">Where dirty ratios come from (<c>--dirty-regions</c>).</param>
-    public WindowsScreenSource(ILoggerFactory logging, DirtyRegionSource dirtyRegions = DirtyRegionSource.Native)
+    /// <param name="helper">
+    /// The SYSTEM desktop helper, when Casement Host Service is installed: while the secure desktop
+    /// has the input, capture goes through it, and a switch either way ends the running capture so
+    /// the session starts the right one.
+    /// </param>
+    public WindowsScreenSource(ILoggerFactory logging, DirtyRegionSource dirtyRegions = DirtyRegionSource.Native, HelperClient? helper = null)
     {
         _log = logging.CreateLogger("Vantage.Capture");
         _dirtyRegions = dirtyRegions;
+        _helper = helper;
         DirtyRegions = FrameChange.Resolve(dirtyRegions, FrameChange.NativeAvailable);
     }
 
@@ -78,7 +86,8 @@ public sealed class WindowsScreenSource : IScreenSource
                 ? "no displays are active (the monitor may be asleep or switched off)"
                 : $"display {request.Display.Id} ({request.Display.Name}) isn't connected");
 
-        var borderless = await EnsureBorderlessAccessAsync().ConfigureAwait(false);
+        var secure = _helper?.IsSecureDesktopUp == true;
+        var borderless = !secure && await EnsureBorderlessAccessAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         GpuDevice gpu;
@@ -93,9 +102,10 @@ public sealed class WindowsScreenSource : IScreenSource
 
         try
         {
+            if (secure) return WatchDesktop(HelperCaptureStream.Start(monitor, gpu, _helper!, request.Fps, onFrame, onStopped, _log), secure, s => s.Stop);
             var stream = WgcCaptureStream.Start(monitor, gpu, request.Fps, request.IncludesCursor, borderless, _dirtyRegions, onFrame, onStopped, _log);
             DirtyRegions = stream.DirtyRegions;
-            return stream;
+            return WatchDesktop(stream, secure, s => s.Stop);
         }
         catch (CaptureUnavailableException)
         {
@@ -106,6 +116,44 @@ public sealed class WindowsScreenSource : IScreenSource
         {
             gpu.Dispose();
             throw new CaptureUnavailableException($"capture couldn't start: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Ends <paramref name="stream"/> when the input desktop moves to or from the secure desktop, so
+    /// the session restarts capture with the source that can see it.
+    /// </summary>
+    private ICaptureStream WatchDesktop<T>(T stream, bool secure, Func<T, Action<string>> stop) where T : IGpuCaptureStream
+    {
+        if (_helper is not { } helper) return stream;
+        var end = stop(stream);
+        void Check()
+        {
+            if (helper.IsSecureDesktopUp == secure) return;
+            end(secure ? "the secure desktop went away" : "the secure desktop has the input");
+        }
+        helper.Changed += Check;
+        Check(); // it may have switched while this one started
+        return new DesktopWatchedStream(stream, () => helper.Changed -= Check);
+    }
+
+    /// <summary>A capture plus the desktop watch to drop when it's disposed; the encoder sees the capture itself.</summary>
+    private sealed class DesktopWatchedStream(IGpuCaptureStream inner, Action unwatch) : IGpuCaptureStream
+    {
+        public GpuDevice Gpu => inner.Gpu;
+
+        public DisplayInfo Display => inner.Display;
+
+        public int FrameWidth => inner.FrameWidth;
+
+        public int FrameHeight => inner.FrameHeight;
+
+        public void SetFrameRate(int fps) => inner.SetFrameRate(fps);
+
+        public ValueTask DisposeAsync()
+        {
+            unwatch();
+            return inner.DisposeAsync();
         }
     }
 

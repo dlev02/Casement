@@ -40,6 +40,7 @@ internal sealed class FakeDisplay(bool enabled, bool startsAsleep, ILogger log) 
     private readonly Lock _lock = new();
     private readonly List<Action> _watchers = [];
     private bool _asleep = enabled && startsAsleep;
+    private string? _blockedAdminApp;
 
     public static readonly DisplayInfo Info = new()
     {
@@ -66,7 +67,27 @@ internal sealed class FakeDisplay(bool enabled, bool startsAsleep, ILogger log) 
         get { lock (_lock) return _asleep; }
     }
 
-    public HostConditions Current => new(false, false, IsAsleep, null);
+    public HostConditions Current
+    {
+        get
+        {
+            lock (_lock) return new(false, false, _asleep, null, _blockedAdminApp);
+        }
+    }
+
+    /// <summary>The pretend administrator app in front (<c>--admin-apps-blocked</c>), or null.</summary>
+    public void SetBlockedAdminApp(string? name)
+    {
+        List<Action> watchers;
+        lock (_lock)
+        {
+            if (_blockedAdminApp == name) return;
+            _blockedAdminApp = name;
+            watchers = [.. _watchers];
+        }
+        log.LogInformation("{What}", name is null ? "input reaches the front window again" : $"input blocked by {name} (administrator)");
+        foreach (var watcher in watchers) watcher();
+    }
 
     public IDisposable Watch(Action onChanged)
     {

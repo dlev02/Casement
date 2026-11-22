@@ -3,27 +3,42 @@ import VantageCore
 
 // The screen session's banners, badges and the password sheet (`RemoteSessionLayout` places them).
 
-/// Explains why input may be ignored: the host is locked or a secure field has focus. On a Mac
-/// its button types the saved password through Screen Sharing after Face ID (`HostUnlockOffer`),
-/// or saves one first. A locked PC can't be unlocked from here (there's no saved password to
-/// type), so it says where to go.
+/// Explains why input may be ignored: the host is locked, a secure field has focus, or (on a PC)
+/// the app in front runs as administrator. On a Mac its button types the saved password through
+/// Screen Sharing after Face ID (`HostUnlockOffer`), or saves one first. A locked PC can't be
+/// unlocked from here (there's no saved password to type), so it says where to go.
 struct HostStatusBanner: View {
     let status: HostStatus
     var host = HostNoun.mac
     var offer: HostUnlockOffer?
     var onUnlock: () -> Void = {}
 
+    /// Whether there's anything to explain. A PC whose host controls the secure desktop shows its
+    /// lock screen in the picture and takes the PIN from here, so its lock needs no banner.
+    static func isShown(for status: HostStatus) -> Bool {
+        (status.isScreenLocked && status.controlsSecureDesktop != true) || status.isSecureInputActive || status.blockedAdminApp != nil
+    }
+
     private var text: String {
         if host.isWindows {
-            if status.isScreenLocked { return "The PC is locked. Unlock it at the PC, or sign in with Remote Desktop." }
+            if status.isScreenLocked && status.controlsSecureDesktop != true {
+                return "The PC is locked. Unlock it at the PC, or sign in with Remote Desktop."
+            }
+            if !status.isSecureInputActive, let app = status.blockedAdminApp { return AdminAppText.banner(app: app) }
             return status.message ?? "Typing is blocked by a Windows security prompt"
         }
         return status.message ?? (status.isScreenLocked ? "The Mac is locked" : "Typing is blocked by a secure field")
     }
 
+    private var symbol: String {
+        if status.isScreenLocked && status.controlsSecureDesktop != true { return "lock.fill" }
+        if !status.isSecureInputActive, status.blockedAdminApp != nil { return "exclamationmark.shield.fill" }
+        return "key.fill"
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: status.isScreenLocked ? "lock.fill" : "key.fill")
+            Image(systemName: symbol)
                 .accessibilityHidden(true)
             Text(text)
                 .font(.callout)
@@ -51,6 +66,38 @@ struct HostStatusBanner: View {
         .frame(maxWidth: 560)
         .accessibilityElement(children: offer == nil ? .combine : .contain)
         .announcing(text)
+    }
+}
+
+/// What the session says about an app that runs as administrator on a PC whose Casement Host
+/// isn't elevated: Windows shows it but drops every click and key sent to it.
+enum AdminAppText {
+    static func banner(app: String) -> String {
+        "\(app) runs as administrator, so clicks and typing don't reach it. Click another window to carry on."
+    }
+
+    static func confirmation(app: String) -> String {
+        "\(app) runs as administrator and Casement Host doesn't, so you won't be able to click, type in or close it from here. "
+            + "To control it, turn on Control administrator prompts and apps in Casement Host on the PC."
+    }
+}
+
+/// Asks before a shortcut opens an administrator app the PC's host can't control
+/// (`ScreenSessionModel.adminShortcutToConfirm`).
+struct AdminShortcutConfirmation: ViewModifier {
+    @Bindable var model: ScreenSessionModel
+
+    func body(content: Content) -> some View {
+        let shortcut = model.adminShortcutToConfirm
+        content.alert("Open \(shortcut?.label ?? "Task Manager")?",
+                      isPresented: Binding(get: { model.adminShortcutToConfirm != nil },
+                                           set: { if !$0 { model.adminShortcutToConfirm = nil } }),
+                      presenting: shortcut) { _ in
+            Button("Open") { model.confirmAdminShortcut() }
+            Button("Cancel", role: .cancel) {}
+        } message: { shortcut in
+            Text(AdminAppText.confirmation(app: shortcut.label))
+        }
     }
 }
 

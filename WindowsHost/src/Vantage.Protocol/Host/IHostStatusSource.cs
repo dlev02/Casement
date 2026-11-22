@@ -33,4 +33,14 @@ public interface IHostStatusSource
 /// User-facing text for the banner, or null: e.g. "The PC is locked", "A Windows security prompt
 /// is open on the PC".
 /// </param>
-public sealed record HostConditions(bool IsScreenLocked, bool IsSecureDesktop, bool IsDisplayAsleep, string? Message);
+/// <param name="BlockedAdminApp">
+/// The administrator app the last click or key press was dropped by (its title), until a press
+/// reaches an ordinary window. Sent as <c>HostStatus.blockedAdminApp</c>.
+/// </param>
+/// <param name="ControlsSecureDesktop">
+/// The secure desktop (lock screen, administrator prompts) is shown and controlled through the
+/// SYSTEM helper, so neither it nor the lock screen blocks input. Sent as
+/// <c>HostStatus.controlsSecureDesktop</c> (true only; false is left out).
+/// </param>
+public sealed record HostConditions(bool IsScreenLocked, bool IsSecureDesktop, bool IsDisplayAsleep, string? Message,
+                                    string? BlockedAdminApp = null, bool ControlsSecureDesktop = false);

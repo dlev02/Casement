@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using Vantage.Host.Windows.DesktopHelper;
 using Vantage.Host.Windows.Input;
 using Vantage.Host.Windows.Startup;
 using Vantage.Host.Windows.Storage;
@@ -12,7 +13,7 @@ namespace Vantage.Host.Windows.App;
 /// <summary>
 /// Entry point (the XAML-generated Main is disabled): one Vantage Host per user. A second launch
 /// (the Start menu shortcut, or the Run key while it's already running) hands its activation to the
-/// first, which opens its window, and exits. With "Control apps running as administrator" on, a
+/// first, which opens its window, and exits. With the old "Control apps running as administrator" task (and no Casement Host Service), a
 /// launch that isn't elevated starts the elevated task instead (<see cref="AdminLaunch"/>) and exits.
 /// </summary>
 public static class Program
@@ -143,7 +144,8 @@ public static class Program
 
     private static bool ShouldRelaunchElevated(string[] args)
     {
-        if (ElevatedWindows.ThisProcessIsElevated || args.Contains("--synthetic")) return false;
+        // Casement Host Service replaces the elevated task: with it installed, the host runs normally.
+        if (ElevatedWindows.ThisProcessIsElevated || args.Contains("--synthetic") || HelperInstall.IsInstalled) return false;
         try
         {
             return new HostSettingsStore(HostPaths.ForCurrentUser(synthetic: false).SettingsFile).Current.ControlAdminApps;

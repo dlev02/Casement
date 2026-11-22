@@ -645,6 +645,8 @@ public sealed class HostSessionCore
             Message = conditions.Message,
             IsDisplayAsleep = conditions.IsDisplayAsleep,
             IsScreenUnavailable = _supervisor.ScreenUnavailable && !conditions.IsDisplayAsleep,
+            BlockedAdminApp = conditions.BlockedAdminApp,
+            ControlsSecureDesktop = conditions.ControlsSecureDesktop ? true : null,
         };
     }
 

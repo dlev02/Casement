@@ -1,0 +1,9 @@
+// Starting the desktop helper as SYSTEM in the signed-in console session.
+WTSGetActiveConsoleSessionId
+WTSQueryUserToken
+GetCurrentProcess
+OpenProcessToken
+DuplicateTokenEx
+SetTokenInformation
+CreateProcessAsUserW
+CloseHandle
