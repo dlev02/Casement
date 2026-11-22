@@ -1,0 +1,29 @@
+Casement 1.2 (9) — iPhone, iPad, Mac, and Apple Vision Pro
+
+Most of this build needs Casement Host 1.8 on the computer: https://github.com/dlev02/Casement/releases
+
+SHARPER, AND FITTED FROM THE START
+A session with Fit Display or Virtual Display on opens already the right shape. Quality (session menu, Edit Computer) chooses Fluid, Balanced or Sharp Text, and text sharpens a moment after the screen stops moving.
+
+TRACKPAD & KEYBOARD
+Touch and hold a Mac in the list and choose Trackpad & Keyboard to use your iPhone or iPad as that Mac's trackpad and keyboard, with no picture. Three-finger swipes switch Spaces and open Mission Control. Apple Pencil pressure and tilt reach drawing apps.
+
+UNLOCK WITH FACE ID
+A locked Mac shows a banner with a button: save its password once, then unlock with Face ID or Touch ID. Saved Mac passwords sync between your devices.
+
+DICTATION
+Pause and resume a dictation, get anything back from Dictation History, and run Parakeet on your own device.
+
+LOCAL NETWORK
+Off by default. With Local Network on (Settings > Connection) and Local network connections on in Casement Host for Mac, a Mac you've already paired connects over your own network, encrypted by Casement.
+
+WHAT TO TEST
+• Connect with Fit Display on: the first picture should already fit. Switch Quality mid-session: nothing should reconnect.
+• Scroll some text, stop, and watch it sharpen.
+• Trackpad & Keyboard against a real Mac; three-finger swipes in Trackpad mode; a Pencil in a drawing app.
+• Lock a Mac, save its password from the banner, then unlock with Face ID.
+• Pause and resume a dictation; find it in Dictation History.
+• Local Network at home, and over a USB-C cable if you can.
+• On a PC: open Task Manager and read what Casement says; scroll with a trackpad.
+
+Report a problem from Settings/About and include diagnostics.
