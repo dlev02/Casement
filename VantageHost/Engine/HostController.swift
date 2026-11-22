@@ -142,6 +142,9 @@ final class HostController {
     }
 
     func start() {
+        #if DEBUG
+        if HostOptions.shared.virtualHID { VirtualHIDProbe.run() }
+        #endif
         refreshPermissions()
         refreshTailscale()
         monitorPermissions()
