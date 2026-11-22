@@ -15,7 +15,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   iPad ends a scroll with `ended` + momentum `began` + velocity; the host posts `ended` alone, then
   momentum began/continue/end frames at 60 Hz decaying 0.998 per ms (UIScrollView's rate) in whole
   pixels; it needs ≥ 60 pt/s, stops under 10 pt/s or after 3 s, and the next scroll, a click or
-  `releaseAll` ends it (`ScrollMomentumTests`). Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  `releaseAll` ends it (`ScrollMomentumTests`). **Natural Scrolling** stays one per-computer toggle, the
+  only inversion the client applies (`SavedDevice.naturalScroll`), but until the person changes it in
+  Edit Computer (`naturalScrollChosen`) each connection copies the computer's own setting: a Mac
+  host reads `com.apple.swipescrolldirection` (absent = on) per session and sends it as
+  `HostCapabilities.naturalScroll` (`DeviceStore.adoptHostNaturalScroll`). A PC sends nothing.
+  Whether the iPad's own Trackpad & Mouse setting stacks with it still needs a device check. Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
   **Edges**: every absolute position goes through `PointerMapping` (pure, `PointerMappingTests`):
   past or within `edgeSnap` (2 pt) of the picture's edge lands on the Mac's outermost row/column,
   and an edge position within `cornerSnap` (16 pt) of a corner lands in the corner. macOS reveals

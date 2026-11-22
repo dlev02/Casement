@@ -210,6 +210,16 @@ final class DeviceStore {
         save()
     }
 
+    /// Copies the computer's own Natural Scrolling setting into its saved one, until the person
+    /// sets it in Edit Computer. Stamped like any other edit; nothing happens while it matches.
+    func adoptHostNaturalScroll(_ natural: Bool, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].naturalScrollChosen != true,
+              devices[index].naturalScroll != natural else { return }
+        devices[index].naturalScroll = natural
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     /// Forgets the host's key, so the next connection trusts whatever key it meets (after
     /// Casement Host was reinstalled there, say).
     func forgetHostKey(for id: UUID) {

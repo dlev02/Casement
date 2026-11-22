@@ -17,6 +17,8 @@ struct AddDeviceSheet: View {
     @State private var port = String(VantageProtocol.defaultPort)
     @State private var codec: VideoCodec = .hevc
     @State private var naturalScroll = true
+    /// What the toggle showed when the sheet opened: changing it makes it the person's choice.
+    @State private var initialNaturalScroll = true
     @State private var useVirtualDisplay = false
     @State private var playAudio = false
     @State private var curtain = false
@@ -176,6 +178,7 @@ struct AddDeviceSheet: View {
         port = String(existing.port)
         codec = existing.preferredCodec ?? .hevc
         naturalScroll = existing.naturalScroll
+        initialNaturalScroll = existing.naturalScroll
         useVirtualDisplay = existing.useVirtualDisplay == true
         playAudio = existing.playMacAudio == true
         curtain = existing.curtain == true
@@ -199,6 +202,7 @@ struct AddDeviceSheet: View {
         device.host = address.host
         device.port = address.port
         device.preferredCodec = codec
+        if naturalScroll != initialNaturalScroll { device.naturalScrollChosen = true }
         device.naturalScroll = naturalScroll
         device.useVirtualDisplay = useVirtualDisplay
         device.playMacAudio = playAudio ? true : nil

@@ -11,6 +11,8 @@ protocol ScreenSessionStore: AnyObject {
     func markConnected(_ device: SavedDevice)
     func recordPlatform(_ platform: HostPlatform, for id: UUID)
     func recordHostKey(_ key: Data, for id: UUID)
+    /// The computer's own Natural Scrolling setting, kept unless the person chose one.
+    func adoptHostNaturalScroll(_ natural: Bool, for id: UUID)
     func setPlayMacAudio(_ on: Bool, for id: UUID)
     func setCurtain(_ on: Bool, for id: UUID)
     func setUseVirtualDisplay(_ on: Bool, for id: UUID)
@@ -627,6 +629,7 @@ final class ScreenSessionModel {
             // Hosts before the platform field are all Macs.
             store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
             if let key = session.hostPublicKey { store.recordHostKey(key, for: device.id) }
+            if let natural = session.capabilities?.naturalScroll { store.adoptHostNaturalScroll(natural, for: device.id) }
             #if os(macOS)
             checkForThisMac()
             #endif

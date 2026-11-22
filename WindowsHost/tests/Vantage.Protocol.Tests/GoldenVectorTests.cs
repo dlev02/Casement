@@ -64,7 +64,7 @@ public class GoldenVectorTests
             Capabilities = new HostCapabilities
             {
                 Codecs = [VideoCodec.H264], CanManageVirtualDisplay = false, Clipboard = true, MaxFPS = 60,
-                FileTransfer = true, FilesOnlySessions = true, Platform = "windows",
+                FileTransfer = true, FilesOnlySessions = true, Platform = "windows", NaturalScroll = false,
             },
         }),
         ("authResultPairing", new AuthResult { Status = AuthStatus.PairingRequired, Message = "Enter the pairing code shown on the PC" }),

@@ -210,10 +210,14 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
     /// The host can black out its own screen (`curtainRequest`). Nil from older hosts, which would
     /// drop the session on that kind.
     public var curtain: Bool?
+    /// The computer's own Natural Scrolling setting (a Mac's `com.apple.swipescrolldirection`), so
+    /// a device can start that computer's Natural Scrolling toggle the same way. Nil from PCs and
+    /// older hosts.
+    public var naturalScroll: Bool?
 
     public init(codecs: [VideoCodec], canManageVirtualDisplay: Bool, clipboard: Bool, maxFPS: Int, dictationEngines: [DictationEngineID]? = nil,
                 audio: Bool? = nil, fileTransfer: Bool? = nil, filesOnlySessions: Bool? = nil, platform: HostPlatform? = nil, cursorShapes: Bool? = nil,
-                curtain: Bool? = nil) {
+                curtain: Bool? = nil, naturalScroll: Bool? = nil) {
         self.codecs = codecs
         self.canManageVirtualDisplay = canManageVirtualDisplay
         self.clipboard = clipboard
@@ -225,6 +229,7 @@ public struct HostCapabilities: Codable, Sendable, Equatable {
         self.curtain = curtain
         self.platform = platform
         self.cursorShapes = cursorShapes
+        self.naturalScroll = naturalScroll
     }
 }
 

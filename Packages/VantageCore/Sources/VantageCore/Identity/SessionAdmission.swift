@@ -132,14 +132,17 @@ public enum SessionAdmission {
         public var canManageVirtualDisplay: Bool
         /// Engines the host can run, best first; advertised only to a device that knows them.
         public var dictationEngines: [DictationEngineID]
+        /// `HostCapabilities.naturalScroll`; nil when the host doesn't know it.
+        public var naturalScroll: Bool?
 
         public init(platform: HostPlatform?, screenRecordingGranted: Bool, accessibilityGranted: Bool, canManageVirtualDisplay: Bool,
-                    dictationEngines: [DictationEngineID]) {
+                    dictationEngines: [DictationEngineID], naturalScroll: Bool? = nil) {
             self.platform = platform
             self.screenRecordingGranted = screenRecordingGranted
             self.accessibilityGranted = accessibilityGranted
             self.canManageVirtualDisplay = canManageVirtualDisplay
             self.dictationEngines = dictationEngines
+            self.naturalScroll = naturalScroll
         }
     }
 
@@ -243,7 +246,7 @@ public enum SessionAdmission {
             return HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: host.canManageVirtualDisplay, clipboard: true, maxFPS: 60,
                                     dictationEngines: hello.features?.dictation == true ? host.dictationEngines : nil,
                                     audio: true, fileTransfer: takesFiles ? true : nil, filesOnlySessions: takesFiles ? true : nil,
-                                    platform: host.platform, curtain: true)
+                                    platform: host.platform, curtain: true, naturalScroll: host.naturalScroll)
         }
     }
 }

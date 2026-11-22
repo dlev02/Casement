@@ -27,7 +27,14 @@ nonisolated enum MacHostEnvironment {
                         audio: MacAudio(), curtain: MacCurtain(allowsSelfCurtain: allowsSelfCurtain),
                         dictation: MacDictation(), peers: TailscalePeers(),
                         fileDestination: fileDestination, resumeFolder: { ResumeFolders.shared.folder(for: $0) },
-                        captureFailsFor: captureFailsFor, clock: SystemHostClock())
+                        captureFailsFor: captureFailsFor, clock: SystemHostClock(),
+                        naturalScroll: { naturalScrollSetting })
+    }
+
+    /// System Settings → Trackpad/Mouse → Natural Scrolling, a global default that's absent while
+    /// it's on (the factory setting).
+    static var naturalScrollSetting: Bool {
+        UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") as? Bool ?? true
     }
 }
 
