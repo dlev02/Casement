@@ -14,7 +14,7 @@
     <!-- What Task Manager and the file's Details tab show. -->
     <AssemblyTitle>Casement Host</AssemblyTitle>
     <Product>Casement Host</Product>
-    <Version>1.7</Version>
+    <Version>1.8</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Vantage.ico</ApplicationIcon>
     <!-- Platform picks the Windows App SDK's native files, not only the exe's: pass the real one
