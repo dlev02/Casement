@@ -14,6 +14,7 @@ protocol ScreenSessionStore: AnyObject {
     func setPlayMacAudio(_ on: Bool, for id: UUID)
     func setCurtain(_ on: Bool, for id: UUID)
     func setUseVirtualDisplay(_ on: Bool, for id: UUID)
+    func setQuality(_ preset: QualityPreset, for id: UUID)
 }
 
 /// Why there's no live picture, if the computer has said.
@@ -72,8 +73,13 @@ final class ScreenSessionModel {
     private(set) var phase: Phase = .idle
     /// Disconnect was chosen (or confirmed): the screen closes.
     private(set) var isEnded = false
-    /// The first frame of the current connection has been shown.
+    /// The first frame of the current connection has been shown (on the fitted display, when the
+    /// host fits it: `ClientSession.isAwaitingFittedStream`).
     private(set) var hasPicture = false
+    /// Counts the points from which the next frame is the first again (a new connection, a fitted
+    /// request before the first picture); a first frame reported for an earlier one is ignored.
+    private(set) var pictureEpoch: UInt64 = 0
+    private var framedEpoch: UInt64?
     /// Modifiers latched on the control strip, sent with the next key.
     var stickyModifiers: KeyModifiers = []
     /// The control strip is hidden (the pencil, the Mac's View menu).
@@ -231,7 +237,7 @@ final class ScreenSessionModel {
         wakeRequest.clear()
         macAudio.setWanted(false)
         session.files.onReceived = nil
-        session.disconnect()
+        session.disconnect(endingSession: true)
     }
 
     /// Disconnect from the strip, the menu, or the overlay. Files keep moving without the screen
@@ -267,6 +273,7 @@ final class ScreenSessionModel {
         session.setMacAudio(wantsMacAudio)
         session.setCurtain(wantsCurtain)
         session.setFitDisplay(wantsFitDisplay)
+        session.setQuality(quality)
     }
 
     func submitPairingCode(_ code: String) { connect(pairingCode: code) }
@@ -292,6 +299,12 @@ final class ScreenSessionModel {
         guard viewport != self.viewport else { return }
         self.viewport = viewport
         viewportDebounce?.cancel()
+        // Until the first picture the session hears the latest shape at once (it asks the host
+        // at most once at a time), so the picture opens fitted to the view as it settled.
+        guard hasPicture else {
+            session.updateViewport(viewport)
+            return
+        }
         viewportDebounce = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             guard let self else { return }
@@ -508,6 +521,18 @@ final class ScreenSessionModel {
         session.setFitDisplay(on)
     }
 
+    /// Fluid, Balanced (the default) or Sharp Text, saved for this computer.
+    var quality: QualityPreset { savedDevice.quality ?? .auto }
+
+    var qualityChoice: QualityChoice {
+        QualityChoice(selection: quality, onSelect: { [weak self] in self?.setQuality($0) })
+    }
+
+    func setQuality(_ preset: QualityPreset) {
+        store.setQuality(preset, for: device.id)
+        session.setQuality(preset)
+    }
+
     // MARK: Dictation
 
     /// The computer (MacWhisper, Parakeet) when the host advertised it and Settings allows it;
@@ -540,9 +565,10 @@ final class ScreenSessionModel {
         video.onNeedsKeyframe = { [weak self] in
             Task { @MainActor in self?.session.send(.requestKeyframe) }
         }
-        video.onFirstFrame = { [weak self] in
-            Task { @MainActor in self?.hasPicture = true }
+        video.onFirstFrame = { [weak self] epoch in
+            Task { @MainActor in self?.firstFrameShown(epoch: epoch) }
         }
+        session.onFitRequested = { [weak self] in self?.expectFirstFrame(requiringNewConfig: true) }
         input.send = { [weak self] message in self?.session.send(message) }
         dictation.send = { [weak self] message in self?.session.send(message) }
         dictation.deliver = { [input] text, pressReturn in
@@ -581,6 +607,8 @@ final class ScreenSessionModel {
         watch({ $0.keyRemap }) { model, remap in model.input.keyRemap = remap }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
         watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
+        watch({ $0.quality }) { model, quality in model.session.setQuality(quality) }
+        watch({ $0.session.isAwaitingFittedStream }) { model, _ in model.updatePicture() }
         // Files opened in Casement from other apps join this session's queue once approved.
         watch({ _ in SharedFileInbox.shared.pending.count }, initial: true) { model, count in
             guard count > 0 else { return }
@@ -638,11 +666,30 @@ final class ScreenSessionModel {
             #endif
         } else {
             announce(state)
-            hasPicture = false
-            video.resetFirstFrame()
+            expectFirstFrame(requiringNewConfig: false)
             dictation.connectionLost()
             macAudio.connectionLost()
         }
+    }
+
+    /// From here the next frame is the first: the picture hides until it comes.
+    private func expectFirstFrame(requiringNewConfig: Bool) {
+        pictureEpoch &+= 1
+        framedEpoch = nil
+        hasPicture = false
+        video.resetFirstFrame(epoch: pictureEpoch, requiringNewConfig: requiringNewConfig)
+    }
+
+    private func firstFrameShown(epoch: UInt64) {
+        guard epoch == pictureEpoch else { return } // from before a newer stream request
+        framedEpoch = epoch
+        updatePicture()
+    }
+
+    /// The picture shows once its first frame is in and the host has fitted the display.
+    private func updatePicture() {
+        let shows = framedEpoch == pictureEpoch && !session.isAwaitingFittedStream
+        if shows != hasPicture { hasPicture = shows }
     }
 
     /// Says what the overlay now shows, since it appears without VoiceOver's focus moving to it.

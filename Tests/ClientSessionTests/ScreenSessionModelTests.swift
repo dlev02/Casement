@@ -39,6 +39,14 @@ private final class MockScreenHost: @unchecked Sendable {
     private var dropped = false
     private var engines: [FileTransferEngine] = []
     private var displayEvents: [DisplayEvent] = []
+    private var screenChannel: MessageChannel?
+
+    /// Answers the last stream request, as a host does once its display is fitted.
+    func sendStreamConfig() async throws {
+        let display = DisplayInfo(id: 1, name: "Display", pixelWidth: 2732, pixelHeight: 2048, pointWidth: 1366, pointHeight: 1024, scale: 2,
+                                  originX: 0, originY: 0, isMain: true, isBuiltIn: false, isVirtual: false, refreshRate: 60)
+        try await lock.withLock { screenChannel }?.send(.streamConfig(StreamConfig(display: display, codec: .hevc, fps: 60, bitrateKbps: 20_000)))
+    }
 
     var port: UInt16 { listener.port!.rawValue }
     var screenCount: Int { lock.withLock { screens } }
@@ -96,7 +104,7 @@ private final class MockScreenHost: @unchecked Sendable {
     }
 
     private func screen(_ channel: MessageChannel, hello: Hello, peer: String) async throws {
-        let number = lock.withLock { screens += 1; return screens }
+        let number = lock.withLock { screens += 1; screenChannel = channel; return screens }
         try await channel.send(.challenge(MockHost.challenge(for: hello, identity: DeviceIdentity(), hostName: "Mock Mac", isPaired: true,
                                                              hostPlatform: platform).0))
         guard case .authenticate? = try await channel.receive() else { throw ChannelError.closed }
@@ -153,6 +161,7 @@ private final class MockScreenHost: @unchecked Sendable {
     func setPlayMacAudio(_ on: Bool, for id: UUID) { device.playMacAudio = on }
     func setCurtain(_ on: Bool, for id: UUID) { device.curtain = on }
     func setUseVirtualDisplay(_ on: Bool, for id: UUID) { device.useVirtualDisplay = on }
+    func setQuality(_ preset: QualityPreset, for id: UUID) { device.quality = preset }
 }
 
 private enum Failure: Error { case timedOut(String) }
@@ -273,7 +282,7 @@ struct ScreenSessionModelTests {
         let model = try makeModel(host: host, store: store)
         model.start(viewport: viewport)
         try await waitUntil("connected") { model.isConnected }
-        model.video.onFirstFrame?()
+        model.video.onFirstFrame?(model.pictureEpoch)
         try await waitUntil("first frame") { model.hasPicture }
         #expect(model.isLive)
         model.dictation.showFixture("macTranscribing") // a clip on its way to the Mac
@@ -292,6 +301,41 @@ struct ScreenSessionModelTests {
         model.stop()
         #expect(model.phase == .stopped && !model.isEnded, "stopping isn't Disconnect")
         #expect(model.dictation.phase == .idle, "closing the screen drops the clip, so the mic can't open later")
+    }
+
+    /// With the display fitted, the first picture waits for the host's answer to the fitted
+    /// request: a frame before it stays hidden, a view that changed shape meanwhile is asked for
+    /// once more after the answer (one request at a time), and the picture shows only with a
+    /// frame of that stream.
+    @Test @MainActor func theFirstPictureWaitsForTheFittedDisplay() async throws {
+        let host = try await MockScreenHost(keepsFiles: true, canManageVirtualDisplay: true, platform: .windows)
+        defer { host.stop() }
+        var device = SavedDevice(name: "Desk PC", host: "127.0.0.1", port: host.port, os: "Windows")
+        device.useVirtualDisplay = true
+        let model = try makeModel(host: host, store: FakeStore(device: device))
+        model.start(viewport: viewport)
+        try await waitUntil("connected") { model.isConnected && host.receivedDisplayEvents.count == 1 }
+        #expect(model.session.isAwaitingFittedStream)
+        model.video.onFirstFrame?(model.pictureEpoch) // a frame before the host answered
+        let settled = Viewport(widthPoints: 1366, heightPoints: 1024, scale: 2)
+        model.viewportChanged(settled) // the view settles into another shape meanwhile
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(host.receivedDisplayEvents.count == 1 && !model.hasPicture)
+
+        try await host.sendStreamConfig()
+        try await waitUntil("refit after the answer") { host.receivedDisplayEvents.count == 2 }
+        guard case .select(let refit) = host.receivedDisplayEvents[1] else { Issue.record("expected the refit"); return }
+        #expect(refit.selection == .fitViewport(settled) && refit.useVirtualDisplay == true)
+        #expect(model.session.isAwaitingFittedStream && !model.hasPicture)
+
+        try await host.sendStreamConfig()
+        try await waitUntil("answered") { !model.session.isAwaitingFittedStream }
+        model.video.onFirstFrame?(model.pictureEpoch - 1) // a late word from before the refit
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!model.hasPicture)
+        model.video.onFirstFrame?(model.pictureEpoch)
+        try await waitUntil("picture") { model.hasPicture && model.isLive }
+        model.stop()
     }
 
     /// Toggling Fit Display / Virtual Display live updates the saved device, asks the host to fit

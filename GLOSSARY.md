@@ -96,6 +96,10 @@ _Avoid_: read-only, spectator mode
 Making the computer's display match the shape of the device's screen for the session, then putting it back: a virtual display on a Mac, a change of display mode and scale on a PC.
 _Avoid_: resize, match resolution
 
+**Quality**:
+How a session trades motion against detail, per computer: **Fluid** keeps motion smooth, **Balanced** (the default) adapts and sharpens a screen once it stops moving, **Sharp Text** keeps text crisp at some cost to motion. Code name: `QualityPreset` (`motion`, `auto`, `text`).
+_Avoid_: preset, resolution, bitrate mode
+
 **Curtain**:
 While a device is connected, the computer's displays go black and its own keyboard and mouse stop working, so nobody at the computer sees or interrupts the session. The screen in Casement stays the same.
 _Avoid_: privacy screen, blackout, screen lock

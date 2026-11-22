@@ -87,11 +87,25 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   Foundation reports an abandoned input as skipped about a second later, right when the
   replacement is in flight), and an encode that never answers at all shifts nothing. A stall
   timeout acts only when it was armed for the encode still in flight and that encode's deadline
-  has passed; one already queued behind the answer that finished its encode does nothing. The
-  session only makes the encoder and hands it over. Tests: `VideoPipelineTests` (scripted encoder
+  has passed; one already queued behind the answer that finished its encode does nothing. A forced
+  keyframe that comes back skipped makes the next encode an IDR again. The
+  session only makes the encoder and hands it over. **Quality presets** (`selectDisplay.quality`,
+  the Mac's numbers in `QualityProfile.For`): Balanced (`auto`) 30/60 fps, max QP 32 text / 44
+  motion; Fluid (`motion`) 60 fps always, 36/44, no idle pass; Sharp Text (`text`) 30/60, 28/38,
+  bitrate floor 6 Mbit/s; `maximum` (not offered) 24/34, floor 10 Mbit/s. A `selectDisplay` that
+  differs from the running one only in `quality` changes it in place (`CaptureSupervisor.QualityChanged`,
+  `VideoPipeline.SetQuality`): no new capture or `streamConfig`. **Idle sharpening**: a still screen
+  sends nothing, so the soft frame motion's ceiling left would stay; every encode other than the
+  pass itself arms a 300 ms timer (`IdleSharpenDelay`), and when it runs out with nothing in flight
+  or pending the last frame is encoded once more as a P-frame under the preset's idle ceiling (24
+  Balanced, 20 Sharp Text, 18 `maximum`); the next encode puts the mode's ceiling back first. The
+  ceiling now reaches the encoder just before an encode, not when the mode flips. Scrolling re-arms
+  it every frame, so it costs nothing while the screen moves; on the Mac a 2560×1600 text refine
+  near QP 24 cost ~0.2–0.6 MB once and lifted luma PSNR by 3–9 dB. Whether `AVEncVideoMaxQP` takes effect
+  mid-stream on NVENC, Quick Sync and AMF is unchecked. Tests: `VideoPipelineTests` (scripted encoder
   that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
-  answer), with `HevcSessionTests` and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
-  over loopback.
+  answer, the idle pass), with `HevcSessionTests`, `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
+  and `DisplayFittingTests.AQualityChangeAloneDoesNotRestartTheStream` over loopback.
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
@@ -296,9 +310,20 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the mode). `Host/DisplayChoice` (one per session) owns display choice and fitting: `Wanted(select)`
   remembers whether the device wants the display fitted, `ChooseAsync(select)` (with capture
   stopped) lists the displays, fits or restores the mode as wanted, waits ≤ 1 s for the new size
-  so `streamConfig` reports the new mode, and picks the display (by id, else the main one);
+  so `streamConfig` reports the new mode, then `LayoutSettle` (600 ms) more so windows and the
+  taskbar have redrawn at the new mode and scale before capture starts (the device used to watch
+  the desktop rearrange itself), and picks the display (by id, else the main one);
   `CaptureSizedForOldMode` drives the retry below; `StopFitting`/`RestoreNow` serve
-  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`. A
+  `restoreDisplays` and `RestoreAtEnd` teardown; `HostListener.StopAsync` calls `RestoreAll`.
+  **Holds belong to the device** (`Host/DisplayHolds`, one per listener in front of the fitter, which
+  sees one owner per client key fingerprint): a session of the same device takes the hold over
+  (the same viewport is `Unchanged`, no switch; no `Busy` while the old session hasn't noticed its
+  connection died), and a session that ends without a goodbye (no `disconnect` from the device, not
+  ended by the host) lets go after `ReconnectGrace` (10 s) unless the device fits it again, so a
+  dropped connection's reconnect doesn't switch the PC back and forth. A goodbye, `restoreDisplays`
+  and listener stop restore at once; another device asking during a grace ends it first. Casement's
+  `ClientSession.disconnect()` sends no `disconnect` message, so closing a session from Casement
+  also waits out the grace. A
   refit comes from the `selectDisplay` Casement resends when its viewport changes
   (`ClientSession.updateViewport`); **`viewportChanged` only forces a keyframe**, as on the Mac (no
   client sends it; the 500 ms `ScheduleRefit` path and `IDisplayFitter.WouldChange` are gone).
@@ -308,7 +333,8 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   `HostSettings.AllowDisplayFitting` (Display page switch, default on). Checked on the 4K PG32UCDM: a
   1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
   scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and
-  `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter).
+  `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter; the
+  grace on a `FakeTimeProvider`). The 600 ms settle is a guess, not measured on Drew-PC.
 - **The PC's sound** (the Mac's Mac audio, same wire: `audioRequest` 63 → `audioConfig` 73, then
   `audioPacket` 102 every 10 ms; Opus 48 kHz stereo, 480-frame packets, 128 kbps). `HostEnvironment.Audio`
   (`IAudioSource`, null = none) delivers 10 ms `AudioBlock`s; `HostSessionCore` advertises

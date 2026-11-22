@@ -23,12 +23,24 @@ nonisolated final class VirtualDisplayManager: @unchecked Sendable {
 
     var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: cliPath) }
 
-    /// Ensures a virtual display of the requested logical size at 2x exists and is connected.
-    /// Returns the CGDirectDisplayID once it appears (polls up to ~15s).
+    /// After the display shows the requested mode, the window server still moves and redraws
+    /// windows onto it for a moment; capture starts once that has settled, so the device never
+    /// watches the layout shift.
+    static let layoutSettle: Duration = .milliseconds(500)
+    /// How long to wait for BetterDisplay's display to show the requested mode.
+    static let modeLimit: Duration = .seconds(4)
+
+    /// Ensures a virtual display of the requested logical size at 2x exists, is connected and
+    /// shows that mode, and returns its CGDirectDisplayID. One that already shows the mode is
+    /// returned at once without touching the CLI (a reconnect, or the same window size again).
+    /// Otherwise it returns once the mode has shown and the layout has settled; a display that
+    /// never reaches the mode within `modeLimit` is returned as it is (the old behaviour), one
+    /// that never appears throws.
     func provision(pointWidth: Int, pointHeight: Int) async throws -> CGDirectDisplayID {
         guard isAvailable else { throw VirtualDisplayError.cliUnavailable }
         let pixelWidth = pointWidth * 2
         let pixelHeight = pointHeight * 2
+        if let id = existingVirtualDisplayID(), Self.shows(id, pointWidth: pointWidth, pointHeight: pointHeight) { return id }
 
         if existingVirtualDisplayID() == nil {
             _ = try? runCLI(["set", "-namelike=\(screenName)", "-connected=on"])
@@ -39,13 +51,30 @@ nonisolated final class VirtualDisplayManager: @unchecked Sendable {
         }
         _ = try? runCLI(["set", "-namelike=\(screenName)", "-resolution=\(pixelWidth)x\(pixelHeight)", "-hidpi=on"])
 
-        // Poll CoreGraphics briefly for the display to come online. This runs on the connect
-        // path, so give up quickly; the caller falls back to the main display.
-        for _ in 0 ..< 16 {
-            if let id = existingVirtualDisplayID() { return id }
-            try await Task.sleep(for: .milliseconds(250))
+        // Poll CoreGraphics for the display and its new mode. This runs on the connect path, so
+        // give up quickly; the caller falls back to the main display if it never appears.
+        let started = ContinuousClock.now
+        var appeared: CGDirectDisplayID?
+        while ContinuousClock.now - started < Self.modeLimit {
+            if let id = existingVirtualDisplayID() {
+                appeared = id
+                if Self.shows(id, pointWidth: pointWidth, pointHeight: pointHeight) {
+                    try await Task.sleep(for: Self.layoutSettle)
+                    log.info("virtual display \(id) at \(pointWidth)x\(pointHeight) after \((ContinuousClock.now - started).components.seconds) s")
+                    return id
+                }
+            }
+            try await Task.sleep(for: .milliseconds(100))
         }
-        throw VirtualDisplayError.didNotAppear
+        guard let appeared else { throw VirtualDisplayError.didNotAppear }
+        log.error("virtual display \(appeared) never showed \(pointWidth)x\(pointHeight); streaming it as it is")
+        return appeared
+    }
+
+    /// The display shows this size in points at 2× (a point either way for rounding).
+    private static func shows(_ id: CGDirectDisplayID, pointWidth: Int, pointHeight: Int) -> Bool {
+        guard let mode = CGDisplayCopyDisplayMode(id) else { return false }
+        return abs(mode.width - pointWidth) <= 1 && abs(mode.height - pointHeight) <= 1 && mode.pixelWidth >= mode.width * 2 - 2
     }
 
     func disconnect() {

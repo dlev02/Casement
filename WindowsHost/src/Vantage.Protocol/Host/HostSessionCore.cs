@@ -53,6 +53,7 @@ public sealed class HostSessionCore
     private readonly SerialQueue _queue;
     private readonly CancellationTokenSource _ended = new();
     private Hello? _hello;
+    private volatile bool _saidGoodbye; // the device's disconnect, or the host ending the session on purpose
     private PeerIdentity? _peer;
     private bool _peerLookedUp;
     private bool _clientTakesFiles;
@@ -92,7 +93,7 @@ public sealed class HostSessionCore
         _log = _env.Logging.CreateLogger("Vantage.Session");
         _queue = new SerialQueue(_log);
         _supervisor = new CaptureSupervisor(_env.Time, _log);
-        _display = new DisplayChoice(Id, _env.DisplayFitter, _env.Screen, _env.Time, _log);
+        _display = new DisplayChoice(Id, () => Fingerprint, listener.DisplayHolds, _env.Screen, _env.Time, _log);
         _connection.VideoDrained += () => _queue.Post(OnVideoDrained);
     }
 
@@ -158,6 +159,7 @@ public sealed class HostSessionCore
     /// <summary>Ends the session deliberately: <c>disconnect{reason}</c>, then close.</summary>
     internal async Task DisconnectAsync(string reason)
     {
+        _saidGoodbye = true; // ended on purpose: nothing will reconnect
         try
         {
             await _connection.SendAsync(new DisconnectMessage { Reason = reason }).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
@@ -268,6 +270,7 @@ public sealed class HostSessionCore
                     _connection.Post(new Pong { EchoNanos = ping.SentAtNanos });
                     continue;
                 case DisconnectMessage:
+                    _saidGoodbye = true;
                     return;
                 case UnknownMessage unknown:
                     _log.LogInformation("skipping unknown kind {Kind} ({Length} bytes)", unknown.RawKind, unknown.Length);
@@ -387,6 +390,13 @@ public sealed class HostSessionCore
 
     private async Task SelectDisplayAsync(SelectDisplay select)
     {
+        // Only the quality preset changed (the session menu's Quality): the stream keeps going.
+        if (_video is { } running && _supervisor.QualityChanged(select))
+        {
+            running.SetQuality(select.Quality);
+            _log.LogInformation("quality preset now {Quality}", select.Quality);
+            return;
+        }
         _display.Wanted(select);
         if (_captureFailsUntil is null && _listener.Options.CaptureFailsFor is { } fails)
         {
@@ -463,7 +473,7 @@ public sealed class HostSessionCore
             capture = await StartCaptureAsync(request).ConfigureAwait(false);
         }
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
-        var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time);
+        var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time, select.Quality);
         var codec = ChooseCodec(select.PreferredCodec, _env.Encoders.SupportedCodecs, hello.SupportedCodecs);
         VideoPipeline video;
         try
@@ -875,7 +885,7 @@ public sealed class HostSessionCore
                 _env.Curtain?.SessionEnded(Id);
                 await StopAudioAsync().ConfigureAwait(false);
                 await StopCaptureAsync().ConfigureAwait(false);
-                _display.RestoreAtEnd();
+                _display.RestoreAtEnd(_saidGoodbye);
                 if (_input is not null)
                 {
                     try

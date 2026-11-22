@@ -63,6 +63,9 @@ nonisolated struct CaptureLifecycle: Sendable {
         case beginMonitoring
         /// The next frame should be a keyframe (a wake with capture still running).
         case requestKeyframe
+        /// The device asked for the stream it already has at another quality: apply it to the
+        /// running stream instead of starting capture again.
+        case applyQuality(QualityPreset)
         /// Something worth a line in the log.
         case note(String)
     }
@@ -164,6 +167,13 @@ nonisolated struct CaptureLifecycle: Sendable {
     mutating func handle(_ event: Event, now: ContinuousClock.Instant) -> [Decision] {
         switch event {
         case .selectionRequested(let select):
+            // Only the quality changed and the stream is up: no restart, no blank moment.
+            if let wanted, running != nil, !starting, pendingStart == nil, select.quality != wanted.quality,
+               SelectDisplay(selection: select.selection, targetFPS: select.targetFPS, quality: wanted.quality,
+                             preferredCodec: select.preferredCodec, useVirtualDisplay: select.useVirtualDisplay) == wanted {
+                self.wanted = select
+                return [.applyQuality(select.quality)]
+            }
             wanted = select
             var decisions: [Decision] = []
             if !monitoring {

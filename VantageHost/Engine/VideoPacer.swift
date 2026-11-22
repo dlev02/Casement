@@ -10,6 +10,8 @@ nonisolated protocol VideoEncoding: AnyObject, Sendable {
     func start(onOutcome: @escaping @Sendable (VideoEncoder.Outcome) -> Void) throws
     func encode(_ pixelBuffer: CVPixelBuffer, ptsNanos: UInt64, forceKeyframe: Bool, encodeID: UInt64)
     func setBitrate(kbps: Int)
+    /// The QP ceiling from the next frame on.
+    func setMaxQP(_ maxQP: Int)
     func setExpectedFrameRate(_ fps: Int)
     func stop()
 }
@@ -24,7 +26,15 @@ extension VideoEncoder: VideoEncoding {}
 /// whose parameter sets differ from the ones the device was last sent (the encoder puts them on
 /// every keyframe, so a written-off encode can't take the only copy), and the encoder's answer to
 /// every frame, encoded or dropped, keeps the in-flight count honest: a drop forces the next
-/// keyframe, and an encode silent for over a second is written off.
+/// keyframe (a rate-control skip only re-sends the change), and an encode silent for over a
+/// second is written off.
+///
+/// The mode's QP ceiling reaches the encoder before the frame it applies to. Once the screen has
+/// been still for `sharpenDelay` after an encode, the last frame is encoded once more under the
+/// quality's idle ceiling (`AdaptiveController.Limits.idleMaxQP`): motion leaves text soft at the
+/// motion ceiling, and a still screen sends nothing else to fix it. Every other encode puts the
+/// deadline back, so a screen that keeps changing never pays for it; the owner calls
+/// `sharpenIfDue` at `sharpenDeadline`.
 ///
 /// Every encode gets a number, and the encoder's answer carries it back, so an answer from an
 /// encode already written off is recognised and dropped: it never frees the slot of the encode
@@ -43,6 +53,8 @@ nonisolated struct VideoPacer {
     static let idleDirtyRatio = 0.0001
     /// Longer than this with no word from the encoder means the frame is lost, whatever it says later.
     static let encodeLimit: Duration = .seconds(1)
+    /// How long the screen stays still after an encode before the sharper re-encode.
+    static let sharpenDelay: Duration = .milliseconds(300)
 
     private let encoder: any VideoEncoding
     private let send: @Sendable (Message) -> Void
@@ -53,8 +65,13 @@ nonisolated struct VideoPacer {
     /// A changed frame arrived while an encode was in flight and its change hasn't been encoded yet.
     private var pendingEncode = false
     private var lastEncodeID: UInt64 = 0
-    /// The encode awaiting the encoder's answer, and when it is written off if still unanswered.
-    private var inFlight: (encodeID: UInt64, deadline: ContinuousClock.Instant)?
+    /// The encode awaiting the encoder's answer, when it is written off if still unanswered, and
+    /// whether it was a forced keyframe or the sharper re-encode of a still screen.
+    private var inFlight: (encodeID: UInt64, deadline: ContinuousClock.Instant, forced: Bool, sharpening: Bool)?
+    /// The QP ceiling the encoder was last given (it starts with the adaptive controller's).
+    private var encoderMaxQP: Int
+    /// When the still screen gets its sharper re-encode; nil when it has had it or never will.
+    private var sharpenAt: ContinuousClock.Instant?
     private var needsKeyframe = true
     /// The parameter sets in the last `videoConfig` sent: what the device's decoder is set up for.
     private var sentParameterSets: [Data]?
@@ -66,6 +83,7 @@ nonisolated struct VideoPacer {
         self.encoder = encoder
         self.adaptive = adaptive
         self.currentFPS = fps
+        self.encoderMaxQP = adaptive.maxQP
         self.send = send
     }
 
@@ -80,7 +98,11 @@ nonisolated struct VideoPacer {
 
     /// The encode in flight and the moment to call `encodeTimedOut` for it; nil when the encoder
     /// owes nothing.
-    var outstanding: (encodeID: UInt64, deadline: ContinuousClock.Instant)? { inFlight }
+    var outstanding: (encodeID: UInt64, deadline: ContinuousClock.Instant)? { inFlight.map { ($0.encodeID, $0.deadline) } }
+
+    /// When to call `sharpenIfDue`; nil while an encode is in flight (its answer takes over) or
+    /// when nothing is owed.
+    var sharpenDeadline: ContinuousClock.Instant? { inFlight == nil ? sharpenAt : nil }
 
     /// Pointer, scroll or key input: the frame rate stays up for a moment.
     mutating func noteInput() {
@@ -114,8 +136,9 @@ nonisolated struct VideoPacer {
     /// The encoder's word on a frame it was given. Only the encode in flight is listened to: an
     /// answer from one already written off is dropped, its accounting and picture alike.
     mutating func encoderReported(_ outcome: VideoEncoder.Outcome, now: ContinuousClock.Instant) {
-        guard inFlight?.encodeID == outcome.encodeID else { return }
+        guard let finished = inFlight, finished.encodeID == outcome.encodeID else { return }
         inFlight = nil
+        var resend = false
         switch outcome {
         case .encoded(let output, _):
             if let config = output.config, config.parameterSets != sentParameterSets {
@@ -124,11 +147,21 @@ nonisolated struct VideoPacer {
             }
             send(.videoFrame(output.frame))
             framesSent &+= 1
+        case .skipped:
+            // Rate control left it out; the device still has every frame the encoder refers to.
+            // A keyframe asked for is still owed, and a change is sent again (the screen may stay
+            // still now). A skipped sharper re-encode changed nothing the device lacks.
+            if finished.forced { needsKeyframe = true }
+            resend = !finished.sharpening
         case .dropped:
             // The client's decoder has a hole now; the next frame fills it.
             needsKeyframe = true
         }
-        if pendingEncode || (needsKeyframe && latest != nil) { encodeLatest(now: now, reencoding: !pendingEncode) }
+        if pendingEncode || resend || (needsKeyframe && latest != nil) {
+            encodeLatest(now: now, reencoding: !pendingEncode)
+        } else if let sharpenAt, now >= sharpenAt {
+            encodeLatest(now: now, reencoding: true, sharpening: true)
+        }
     }
 
     /// `outstanding`'s deadline passed for that encode. When it is still the one in flight and its
@@ -153,6 +186,39 @@ nonisolated struct VideoPacer {
         if let bitrate = adaptive.apply(feedback: feedback) { encoder.setBitrate(kbps: bitrate) }
     }
 
+    /// The device picked another quality: its limits apply from the next frame, and a still
+    /// screen gets that quality's sharper re-encode. Returns the capture frame rate to switch to,
+    /// when it changed.
+    mutating func setQuality(_ preset: QualityPreset, now: ContinuousClock.Instant) -> Int? {
+        if let bitrate = adaptive.setPreset(preset) { encoder.setBitrate(kbps: bitrate) }
+        if adaptive.limits.idleMaxQP == nil {
+            sharpenAt = nil
+        } else if framesSent > 0 {
+            sharpenAt = now + Self.sharpenDelay
+        }
+        let fps = adaptive.fps()
+        guard fps != currentFPS else { return nil }
+        currentFPS = fps
+        encoder.setExpectedFrameRate(fps)
+        return fps
+    }
+
+    /// `sharpenDeadline` came: with the screen still since, nothing waiting and no keyframe due,
+    /// the last frame is encoded once more under the idle ceiling. A P-frame, so it only carries
+    /// the detail the earlier frames left out. Returns the ceiling it used when it did.
+    @discardableResult
+    mutating func sharpenIfDue(now: ContinuousClock.Instant) -> Int? {
+        guard let sharpenAt, now >= sharpenAt, inFlight == nil else { return nil }
+        guard latest != nil else {
+            self.sharpenAt = nil
+            return nil
+        }
+        // A change or a keyframe still owed goes first, as an ordinary encode (which sets the
+        // deadline again), so a due deadline never sits waiting on something that isn't coming.
+        encodeLatest(now: now, reencoding: !pendingEncode, sharpening: !pendingEncode && !needsKeyframe)
+        return inFlight?.sharpening == true ? encoderMaxQP : nil
+    }
+
     /// The encoder answers every frame, encoded or dropped; this is the net under that promise:
     /// an encode past its deadline is given up on, and the next frame is an IDR.
     @discardableResult
@@ -163,15 +229,24 @@ nonisolated struct VideoPacer {
         return true
     }
 
-    /// Encodes the newest frame, forcing an IDR when one is due. A re-encode of the same frame
-    /// takes a fresh timestamp, so the encoder never sees two frames at one instant.
-    private mutating func encodeLatest(now: ContinuousClock.Instant, reencoding: Bool) {
+    /// Encodes the newest frame, forcing an IDR when one is due, under the mode's QP ceiling (or
+    /// the idle one for the sharper re-encode, which is never a keyframe). Every other encode
+    /// sets the sharper re-encode's deadline back. A re-encode of the same frame takes a fresh
+    /// timestamp, so the encoder never sees two frames at one instant.
+    private mutating func encodeLatest(now: ContinuousClock.Instant, reencoding: Bool, sharpening: Bool = false) {
         guard let latest, inFlight == nil else { return }
         pendingEncode = false
         let force = needsKeyframe
         needsKeyframe = false
+        let sharpens = sharpening && !force && adaptive.limits.idleMaxQP != nil
+        let ceiling = sharpens ? adaptive.limits.idleMaxQP ?? adaptive.maxQP : adaptive.maxQP
+        if ceiling != encoderMaxQP {
+            encoder.setMaxQP(ceiling)
+            encoderMaxQP = ceiling
+        }
+        sharpenAt = sharpens || adaptive.limits.idleMaxQP == nil ? nil : now + Self.sharpenDelay
         lastEncodeID &+= 1
-        inFlight = (lastEncodeID, now + Self.encodeLimit)
+        inFlight = (lastEncodeID, now + Self.encodeLimit, force, sharpens)
         encoder.encode(latest, ptsNanos: reencoding ? MonotonicClock.nanos() : latestPTSNanos, forceKeyframe: force, encodeID: lastEncodeID)
     }
 }

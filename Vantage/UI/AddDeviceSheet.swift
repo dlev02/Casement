@@ -16,6 +16,7 @@ struct AddDeviceSheet: View {
     @State private var host = ""
     @State private var port = String(VantageProtocol.defaultPort)
     @State private var codec: VideoCodec = .hevc
+    @State private var quality: QualityPreset = .auto
     @State private var naturalScroll = true
     @State private var useVirtualDisplay = false
     @State private var playAudio = false
@@ -50,6 +51,11 @@ struct AddDeviceSheet: View {
                     }
                 }
                 Section {
+                    Picker("Quality", selection: $quality) {
+                        ForEach(QualityPreset.offered, id: \.self) { preset in
+                            Text(preset.label).tag(preset)
+                        }
+                    }
                     if !isPC {
                         Picker("Codec", selection: $codec) {
                             Text("HEVC").tag(VideoCodec.hevc)
@@ -67,10 +73,13 @@ struct AddDeviceSheet: View {
                 } header: {
                     Text("Preferences")
                 } footer: {
-                    if !isPC {
-                        Text(codec == .hevc
-                             ? "HEVC looks better at the same bandwidth. Switch to H.264 if video from \(name.isEmpty ? hostNoun.the : name) ever fails to decode."
-                             : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(quality.summary)
+                        if !isPC {
+                            Text(codec == .hevc
+                                 ? "HEVC looks better at the same bandwidth. Switch to H.264 if video from \(name.isEmpty ? hostNoun.the : name) ever fails to decode."
+                                 : "H.264 decodes everywhere. HEVC looks better at the same bandwidth.")
+                        }
                     }
                 }
 
@@ -175,6 +184,7 @@ struct AddDeviceSheet: View {
         host = existing.host
         port = String(existing.port)
         codec = existing.preferredCodec ?? .hevc
+        quality = existing.quality ?? .auto
         naturalScroll = existing.naturalScroll
         useVirtualDisplay = existing.useVirtualDisplay == true
         playAudio = existing.playMacAudio == true
@@ -199,6 +209,7 @@ struct AddDeviceSheet: View {
         device.host = address.host
         device.port = address.port
         device.preferredCodec = codec
+        device.quality = quality == .auto ? nil : quality
         device.naturalScroll = naturalScroll
         device.useVirtualDisplay = useVirtualDisplay
         device.playMacAudio = playAudio ? true : nil

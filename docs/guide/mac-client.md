@@ -22,7 +22,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   drops its orange on the accent fill via `backgroundProminence`; `DeviceTransferBadge`; drops go
   through `FileDropDelegate`), `.contextMenu(forSelectionType:primaryAction:)` so double-click and
   Return connect. Detail `MacDeviceDetail`: Connect (`.glassProminent`, default action), Send
-  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac/PC Audio, Fit Display / Virtual Display, what's saved. Selection is
+  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac/PC Audio, Fit Display / Virtual Display, Quality, what's saved. Selection is
   `@SceneStorage`. Availability checks run while the list is open (none at all, not "Checking…",
   while Settings › Connection turns them off). `DeviceActions` (in `DeviceListScreen.swift`) holds
   every sheet, picker, and confirmation the list can raise, shared by the iOS list and the Mac
@@ -36,7 +36,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   without it), appearance, the lock curtain, and the pending-connection watch.
 - **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
   Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Curtain ⌃⌥⌘B,
-  Fit Display / Virtual Display, Dictate
+  Fit Display / Virtual Display, Quality ▸, Dictate
   ⌃⌥⌘D, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)

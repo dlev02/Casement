@@ -121,6 +121,7 @@ struct RemoteSessionLayout: View {
                 RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
+                    .overlay { pictureCover }
                     #if os(visionOS)
                     // Exactly the Mac's shape, so a window that's a little off never shows black
                     // bars (see `VisionSessionPicture`).
@@ -137,6 +138,7 @@ struct RemoteSessionLayout: View {
             #elseif os(macOS)
             if model.isConnected {
                 macSessionSurface
+                    .overlay { pictureCover }
             }
             #endif
 
@@ -395,6 +397,7 @@ struct RemoteSessionLayout: View {
             macAudio: model.macAudioToggle,
             curtain: model.curtainToggle,
             fitDisplay: model.fitDisplayToggle,
+            quality: model.qualityChoice,
             files: model.sendFileAction,
             host: model.hostPlatform
         )
@@ -558,12 +561,19 @@ struct RemoteSessionLayout: View {
 
     // MARK: Connection overlay
 
+    /// Black over the picture until its first frame, on the display as fitted, is in: a stream
+    /// from before the fit, or a display changing shape, never shows.
+    private var pictureCover: some View {
+        Color.black.opacity(model.hasPicture ? 0 : 1).allowsHitTesting(false)
+    }
+
     private var connectionOverlay: some View {
         VStack(spacing: 16) {
             switch session.state {
             case .connecting, .authenticating, .connected:
                 overlayProgress
-                Text(model.isConnected ? "Starting screen capture…" : "Connecting to \(device.name)…")
+                Text(!model.isConnected ? "Connecting to \(device.name)…"
+                     : session.isAwaitingFittedStream ? "Fitting display…" : "Starting screen capture…")
                     .contentTransition(.opacity)
             case .reconnecting, .suspended:
                 overlayProgress

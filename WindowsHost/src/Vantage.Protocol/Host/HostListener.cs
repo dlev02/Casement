@@ -41,6 +41,7 @@ public sealed class HostListener : IAsyncDisposable
         Pairing = new PairingCodes(environment.Time, options.FixedPairingCode);
         AttachTokens = new AttachTokenRegistry<HostSessionCore>(environment.Time);
         Paster = new ClipboardPaster(environment.Clipboard, environment.Time, options.PasteRestoreDelay, environment.Logging.CreateLogger("Vantage.Input"));
+        if (environment.DisplayFitter is { } fitter) DisplayHolds = new DisplayHolds(fitter, environment.Time, environment.Logging.CreateLogger("Vantage.Display"));
         if (options.FixedPairingCode is not null && options.RearmFixedPairingCodeAfter is { } rearm)
         {
             Pairing.Cleared += () => _ = Task.Delay(rearm, environment.Time, _stopping.Token).ContinueWith(
@@ -49,6 +50,9 @@ public sealed class HostListener : IAsyncDisposable
     }
 
     internal HostEnvironment Environment { get; }
+
+    /// <summary>Which device holds a fitted display, in front of <see cref="HostEnvironment.DisplayFitter"/> (null without one).</summary>
+    internal DisplayHolds? DisplayHolds { get; }
     internal HostListenerOptions Options { get; }
     internal AttachTokenRegistry<HostSessionCore> AttachTokens { get; }
 
@@ -160,7 +164,7 @@ public sealed class HostListener : IAsyncDisposable
         try
         {
             // Sessions put their display modes back as they tear down; a quitting host may not wait for that.
-            Environment.DisplayFitter?.RestoreAll();
+            DisplayHolds?.RestoreAll();
         }
         catch (Exception error)
         {

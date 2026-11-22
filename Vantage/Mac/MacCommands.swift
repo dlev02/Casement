@@ -102,6 +102,12 @@ private struct SessionMenuItems: View {
             .disabled(session?.isCurtainAvailable != true)
         Toggle(session?.fitDisplayLabel ?? "Fit Display", isOn: toggle(\.wantsFitDisplay) { $0.toggleFitDisplay() })
             .disabled(session?.isFitDisplayAvailable != true)
+        Picker("Quality", selection: Binding(get: { session?.quality ?? .auto }, set: { session?.setQuality($0) })) {
+            ForEach(QualityPreset.offered, id: \.self) { preset in
+                Text(preset.label).tag(preset)
+            }
+        }
+        .disabled(session == nil)
         Button(session?.dictation.isListening == true ? "Stop Dictating" : "Dictate") { session?.dictationPressed(.toggle) }
             .keyboardShortcut("d", modifiers: MacCommands.vantageChord)
             .disabled(!canType)

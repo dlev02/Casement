@@ -23,9 +23,14 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     private var lastDecodeMillis: Double = 0
 
     var onNeedsKeyframe: (() -> Void)?
-    /// Fires once per stream when the first frame has been handed to the renderer.
-    var onFirstFrame: (@Sendable () -> Void)?
+    /// Fires once per stream when the first frame has been handed to the renderer, with the
+    /// number `resetFirstFrame` was last given, so a late call from before a reset is told apart.
+    var onFirstFrame: (@Sendable (UInt64) -> Void)?
     private var deliveredFirstFrame = false
+    private var firstFrameEpoch: UInt64 = 0
+    /// Only a frame of a stream configured after the reset counts (a new stream always starts
+    /// with a `videoConfig`; frames still coming from the one it replaces don't).
+    private var awaitingConfig = false
 
     @MainActor init() {
         renderer = displayLayer.sampleBufferRenderer
@@ -65,6 +70,7 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
 
     private func applyConfig(_ config: VideoConfig) {
         currentConfig = config
+        awaitingConfig = false
         formatDescription = Self.makeFormatDescription(config)
         if formatDescription == nil {
             log.error("failed to build format description")
@@ -99,15 +105,21 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
         renderer.enqueue(sampleBuffer)
         lastDecodeMillis = Double(DispatchTime.now().uptimeNanoseconds &- start) / 1_000_000
         framesReceived &+= 1
-        if !deliveredFirstFrame {
+        if !deliveredFirstFrame, !awaitingConfig {
             deliveredFirstFrame = true
-            onFirstFrame?()
+            onFirstFrame?(firstFrameEpoch)
         }
     }
 
-    /// Call when a new connection starts so the next frame counts as the first again.
-    func resetFirstFrame() {
-        queue.async { self.deliveredFirstFrame = false }
+    /// Call when a new connection starts, or a new stream is asked for before the first picture,
+    /// so the next frame (of a newly configured stream, when `requiringNewConfig`) counts as the
+    /// first again; `onFirstFrame` then reports `epoch`.
+    func resetFirstFrame(epoch: UInt64, requiringNewConfig: Bool = false) {
+        queue.async {
+            self.deliveredFirstFrame = false
+            self.firstFrameEpoch = epoch
+            self.awaitingConfig = requiringNewConfig
+        }
     }
 
     private func observeFailures() {

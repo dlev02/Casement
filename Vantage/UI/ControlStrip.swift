@@ -30,6 +30,7 @@ struct ControlStrip: View {
     var macAudio = MacAudioToggle()
     var curtain = CurtainToggle()
     var fitDisplay = FitDisplayToggle()
+    var quality = QualityChoice()
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
     /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
@@ -448,6 +449,7 @@ struct ControlStrip: View {
             }
             Menu {
                 fitDisplayRow
+                qualityPicker
                 if !noun.isWindows { passwordRow }
                 hostRows
             } label: {
@@ -480,6 +482,7 @@ struct ControlStrip: View {
         Section {
             audioAndCurtainRows
             fitDisplayRow
+            qualityPicker
             fileRows
             if !noun.isWindows { passwordRow }
         }
@@ -512,6 +515,19 @@ struct ControlStrip: View {
         .disabled(!fitDisplay.isAvailable)
         .accessibilityHint(fitDisplay.unavailableReason ?? "")
         .accessibilityIdentifier("session.menu.fitDisplay")
+    }
+
+    /// Fluid, Balanced or Sharp Text, saved for this computer and applied at once.
+    private var qualityPicker: some View {
+        Picker(selection: Binding(get: { quality.selection }, set: { quality.onSelect($0) })) {
+            ForEach(QualityPreset.offered, id: \.self) { preset in
+                Text(preset.label).tag(preset)
+            }
+        } label: {
+            Label("Quality", systemImage: "dial.medium")
+        }
+        .pickerStyle(.menu)
+        .accessibilityIdentifier("session.menu.quality")
     }
 
     @ViewBuilder private var fileRows: some View {
