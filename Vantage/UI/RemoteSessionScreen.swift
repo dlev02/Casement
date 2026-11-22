@@ -118,23 +118,28 @@ struct RemoteSessionLayout: View {
             Color.black.ignoresSafeArea()
             #endif
 
-            #if canImport(UIKit)
+            #if os(iOS)
+            if model.isInputOnly {
+                if model.isConnected { inputOnlyDeck }
+            } else if model.isConnected {
+                RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
+                                           screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
+                                           onPencilAction: performPencilAction, stylus: session.capabilities?.stylus == true)
+                    // The half above the fold in tabletop; nil sizes fill the screen as always.
+                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+            }
+            #elseif canImport(UIKit) // visionOS
             if model.isConnected {
                 RemoteSessionRepresentable(input: model.input, video: model.video, stickyModifiers: model.stickyModifiers,
                                            screenLabel: screenLabel, pencilSqueeze: pencilSqueeze, pencilDoubleTap: pencilDoubleTap,
                                            onPencilAction: performPencilAction)
-                    #if os(visionOS)
                     // Exactly the Mac's shape, so a window that's a little off never shows black
                     // bars (see `VisionSessionPicture`).
                     .background(.black)
                     .aspectRatio(visionPictureAspect, contentMode: .fit)
                     .clipShape(.rect(cornerRadius: VisionSessionPicture.cornerRadius, style: .continuous))
-                    #else
-                    // The half above the fold in tabletop; nil sizes fill the screen as always.
-                    .frame(width: tabletop?.picture.width, height: tabletop?.picture.height)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea()
-                    #endif
             }
             #elseif os(macOS)
             if model.isConnected {
@@ -209,11 +214,11 @@ struct RemoteSessionLayout: View {
             }
             #else
             #if os(iOS)
-            if model.isConnected, let tabletop {
+            if model.isConnected, let tabletop, !model.isInputOnly {
                 tabletopDeck(tabletop)
             }
             #endif
-            if model.isConnected && tabletop == nil && (!model.areControlsHidden || model.dictation.isActive) {
+            if model.isConnected && tabletop == nil && !model.isInputOnly && (!model.areControlsHidden || model.dictation.isActive) {
                 floatingControls
             }
             #endif

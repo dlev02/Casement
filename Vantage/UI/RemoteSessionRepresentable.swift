@@ -14,6 +14,8 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
     var pencilSqueeze: PencilAction = .collapseControls
     var pencilDoubleTap: PencilAction = .rightClick
     var onPencilAction: (PencilAction) -> Void = { _ in }
+    /// The host takes Pencil pressure and tilt (`HostCapabilities.stylus`).
+    var stylus = false
 
     func makeUIViewController(context: Context) -> RemoteSessionViewController {
         RemoteSessionViewController(input: input, video: video)
@@ -26,6 +28,7 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
         view.pencilSqueezeAction = pencilSqueeze
         view.pencilDoubleTapAction = pencilDoubleTap
         view.onPencilAction = onPencilAction
+        view.stylusEnabled = stylus
     }
 }
 

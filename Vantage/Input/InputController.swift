@@ -128,6 +128,21 @@ final class InputController {
         if localCursor != nil { onLocalCursorChange?() }
     }
 
+    // MARK: Apple Pencil
+
+    /// The host takes the Pencil as a pen tablet (`HostCapabilities.stylus`): pressure and tilt
+    /// go with every sample instead of plain clicks and drags.
+    var stylusEnabled = false
+
+    /// One Pencil sample at a point in the client view, mapped like every absolute position.
+    func stylus(viewPoint: CGPoint, phase: StylusPhase, pressure: Double, altitude: Double, azimuth: Double, clickCount: Int = 1,
+                modifiers: KeyModifiers = []) {
+        guard let point = pointerMapping.displayPoint(forViewPoint: viewPoint) else { return }
+        cursorPoint = point
+        send?(.stylusEvent(StylusEvent(phase: phase, x: Float(point.x), y: Float(point.y), pressure: Float(pressure), altitude: Float(altitude),
+                                       azimuth: Float(azimuth), clickCount: UInt8(clamping: max(1, clickCount)), modifiers: modifiers)))
+    }
+
     // MARK: Scroll
 
     func scroll(deltaX: Double, deltaY: Double, phase: ScrollPhase, momentum: MomentumPhase = .none, continuous: Bool,
