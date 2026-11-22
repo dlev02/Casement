@@ -63,9 +63,13 @@ final class RemoteSessionViewController: UIViewController {
 struct TrackpadSurface: UIViewRepresentable {
     let input: InputController
     let stickyModifiers: KeyModifiers
+    /// Keys from a hardware keyboard go to the computer through this pad (Trackpad & Keyboard).
+    var takesHardwareKeyboard = false
 
     func makeUIView(context: Context) -> RemoteInteractionView {
-        RemoteInteractionView(input: input, displayLayer: nil)
+        let view = RemoteInteractionView(input: input, displayLayer: nil)
+        if takesHardwareKeyboard { DispatchQueue.main.async { view.becomeFirstResponder() } }
+        return view
     }
 
     func updateUIView(_ view: RemoteInteractionView, context: Context) {

@@ -3,7 +3,8 @@ import VantageCore
 
 /// Launch-argument driven options for headless testing (DEBUG only):
 /// `-VantageSeedHost <host>` adds a device, `-VantageAutoConnect <host>` opens a session to it,
-/// `-VantagePairingCode 123456` supplies the pairing code automatically.
+/// `-VantagePairingCode 123456` supplies the pairing code automatically, and `-VantageInputOnly 1`
+/// opens the auto-connected session as Trackpad & Keyboard.
 enum ClientOptions {
     static var seedHost: String? { value(for: "-VantageSeedHost") }
     /// `-VantageLockPreview 1`: the lock screen stays up without asking for Face ID, for screenshots.
@@ -20,6 +21,7 @@ enum ClientOptions {
     }
     private static var autoConnectTaken = false
     static var pairingCode: String? { value(for: "-VantagePairingCode") }
+    static var autoConnectInputOnly: Bool { value(for: "-VantageInputOnly") == "1" }
     /// `-VantageReadOnlyDevices 1`: the device list (from defaults, or an argument-domain
     /// `-vantage.savedDevices`) changes in memory only and is never written back, so screenshots
     /// and manual checks leave alone the real list every Debug build shares.

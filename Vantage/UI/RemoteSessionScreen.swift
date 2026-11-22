@@ -10,6 +10,8 @@ import AppKit
 /// a parent re-rendering never makes a second connection or Keychain identity.
 struct RemoteSessionScreen: View {
     let device: SavedDevice
+    /// Trackpad & Keyboard: the computer's input, with no picture.
+    var inputOnly = false
     @Environment(DeviceStore.self) private var store
     @State private var model: ScreenSessionModel?
 
@@ -19,7 +21,7 @@ struct RemoteSessionScreen: View {
         } else {
             placeholder.onAppear {
                 // Takes this computer's shared `FileLink`, so files keep moving after the screen closes.
-                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device))
+                model = ScreenSessionModel(device: device, store: store, fileLink: FileTransferCenter.shared.link(for: device), inputOnly: inputOnly)
             }
         }
     }
@@ -525,6 +527,24 @@ struct RemoteSessionLayout: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
+        .transition(.opacity)
+    }
+    #endif
+
+    #if os(iOS)
+    /// Trackpad & Keyboard: the deck a folded iPhone Duo puts on the desk, filling the screen,
+    /// with dictation's panel over it. A hardware keyboard types on the computer too.
+    private var inputOnlyDeck: some View {
+        VStack(spacing: 12) {
+            dictationPanel
+                .frame(maxWidth: 520)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.15), value: model.dictation.isActive)
+            TabletopDeck(input: model.input, stickyModifiers: $model.stickyModifiers, host: model.hostPlatform, takesHardwareKeyboard: true,
+                         onKey: { keyCode, modifiers in model.tapChord(keyCode: keyCode, modifiers: modifiers) }) {
+                if !model.areControlsHidden { controlStrip }
+            }
+        }
+        .padding(16)
         .transition(.opacity)
     }
     #endif

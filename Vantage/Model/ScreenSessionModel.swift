@@ -144,8 +144,14 @@ final class ScreenSessionModel {
 
     /// `fileLink`: the computer's shared link (`FileTransferCenter`), so files keep moving after
     /// the screen closes; nil keeps the session's own (tests).
+    /// This device is the computer's trackpad and keyboard, with no picture (Trackpad & Keyboard
+    /// in a computer's menu).
+    let isInputOnly: Bool
+
     init(device: SavedDevice, store: any ScreenSessionStore, fileLink: FileLink? = nil,
-         session: ClientSession = ClientSession(), viewport: Viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2)) {
+         session: ClientSession = ClientSession(), viewport: Viewport = Viewport(widthPoints: 1210, heightPoints: 834, scale: 2),
+         inputOnly: Bool = false) {
+        self.isInputOnly = inputOnly
         self.device = device
         self.store = store
         self.fileLink = fileLink
@@ -177,7 +183,7 @@ final class ScreenSessionModel {
     // MARK: Connection
 
     var isConnected: Bool { session.state == .connected }
-    var isLive: Bool { isConnected && hasPicture }
+    var isLive: Bool { isConnected && (hasPicture || isInputOnly) }
     /// Why there's no live picture, if the computer has said.
     var screenNote: ScreenNote? {
         if session.isDisplayAsleep { return .asleep }
@@ -203,6 +209,7 @@ final class ScreenSessionModel {
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
         input.keyRemap = keyRemap
+        input.relativeOnly = isInputOnly
         watchDefaults()
         startWatching()
         connect(pairingCode: ClientOptions.pairingCode)
@@ -272,7 +279,7 @@ final class ScreenSessionModel {
     func submitPairingCode(_ code: String) { connect(pairingCode: code) }
 
     private func connect(pairingCode: String?) {
-        session.connect(to: device, viewport: viewport, pairingCode: pairingCode)
+        session.connect(to: device, viewport: viewport, pairingCode: pairingCode, inputOnly: isInputOnly)
     }
 
     /// The app left the screen (background, the Mac going to sleep): let go of the connection

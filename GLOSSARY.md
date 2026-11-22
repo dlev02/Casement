@@ -24,6 +24,14 @@ _Avoid_: client (in anything a person reads), computer
 A computer in Casement's list, with its address, name and per-computer choices (control strip, sound, Curtain, display fitting). Code name: `SavedDevice`.
 _Avoid_: saved device, host entry, bookmark
 
+**Local network connection**:
+A connection to an already paired Mac straight across the home network or a cable instead of through Tailscale, found over Bonjour by its key and encrypted end to end by Casement ([ADR-0001](docs/adr/0001-tailscale-only.md)). Settings call it Local network connections (Casement Host) and Local Network (Casement). Code: `PeerReach.localNetwork`, `HostRoute`, `SessionCrypto`.
+_Avoid_: LAN mode, direct mode, offline mode
+
+**Trackpad & Keyboard**:
+Using a device as a Mac's trackpad and keyboard with no picture, from the Mac's menu in the list. Code: input-only session (`ClientFeatures.inputOnly`, `SessionAdmission.Kind.inputOnly`).
+_Avoid_: headless mode, remote, input mode
+
 **Paired device**:
 A device that a computer's Casement Host trusts, after one pairing. Casement Host lists them as Paired Devices.
 _Avoid_: client, trusted client (in anything a person reads)

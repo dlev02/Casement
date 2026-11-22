@@ -37,7 +37,12 @@ struct DeviceListScreen: View {
             .deviceActionPresentations(actions)
             .task {
                 if selectedDevice == nil, let host = ClientOptions.takeAutoConnectHost() {
-                    selectedDevice = store.devices.first { $0.host == host }
+                    let device = store.devices.first { $0.host == host }
+                    #if os(iOS)
+                    if ClientOptions.autoConnectInputOnly { actions.inputOnlyDevice = device } else { selectedDevice = device }
+                    #else
+                    selectedDevice = device
+                    #endif
                 }
                 #if DEBUG
                 // `-VantageSendTestFile` without a session: as if picked with Send Files… on the first Mac.
@@ -168,6 +173,8 @@ final class DeviceActions {
     /// Send Files… picks files for this Mac without opening its screen.
     var sendFilesDevice: SavedDevice?
     var showSendFiles = false
+    /// Trackpad & Keyboard: this device as the Mac's trackpad and keyboard, with no picture.
+    var inputOnlyDevice: SavedDevice?
 
     /// Files for this Mac, straight from the Files picker: they go over a files-only session, and
     /// the Mac's row shows them moving.
@@ -215,6 +222,11 @@ private struct DeviceActionPresentations: ViewModifier {
             .sheet(isPresented: $actions.showAddDevice) {
                 AddDeviceSheet().appLockCurtain()
             }
+            #if os(iOS)
+            .fullScreenCover(item: $actions.inputOnlyDevice) { device in
+                RemoteSessionScreen(device: device, inputOnly: true).environment(store)
+            }
+            #endif
             .sheet(isPresented: $actions.showTailscaleDevices) {
                 TailscaleDevicesSheet().appLockCurtain()
             }
@@ -286,6 +298,13 @@ struct DeviceMenu: View {
 
     var body: some View {
         Section {
+            #if os(iOS)
+            if device.platform == .macOS {
+                Button { actions.inputOnlyDevice = device } label: {
+                    Label("Trackpad & Keyboard", systemImage: "rectangle.and.hand.point.up.left")
+                }
+            }
+            #endif
             Button { actions.sendFiles(to: device) } label: { Label("Send Files…", systemImage: StripItem.sendFile.symbol) }
             if transfers.files(for: device.id)?.hasTransfers == true {
                 Button { actions.transfersDevice = device } label: { Label("Transfers…", systemImage: "arrow.up.arrow.down") }

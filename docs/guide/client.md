@@ -86,6 +86,10 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
 - **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display right under Audio and Curtain). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
+- **Trackpad & Keyboard** (`DeviceActions.inputOnlyDevice` → `RemoteSessionScreen(inputOnly:)` →
+  `ScreenSessionModel.isInputOnly`): an input-only session laid out as `TabletopDeck` full screen,
+  live as soon as it connects (no picture to wait for). Input rules in [input.md](input.md).
+- **Local Network** (Settings → Connection; `LocalDiscovery`): see [connection.md](connection.md).
 - **iPhone Duo tabletop** (`TabletopDeck.swift`, iOS 27.1): half-folded with the fold running
   across (the inner display in portrait; open flat in landscape the fold runs top to bottom), the
   session splits at the fold. `TabletopLayout` comes from the division reserved region
