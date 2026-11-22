@@ -94,7 +94,7 @@ import Testing
         let url = Self.golden.appending(path: "swift/\(name).frame")
         if ProcessInfo.processInfo.environment["VANTAGE_WRITE_GOLDEN"] == "1" {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try frame.write(to: url)
+            try Self.stable(frame, kind: message.kind).write(to: url)
         }
         // JSON key order isn't promised by JSONEncoder, so compare what the committed bytes mean.
         let committed = try Data(contentsOf: url)
@@ -125,6 +125,17 @@ import Testing
             #expect(try canonical(payload) == canonical(ours))
             #expect(try canonical(decoded.encodedPayload()) == canonical(ours))
         }
+    }
+
+    /// The frame with its JSON keys sorted, so rewriting the vectors leaves unchanged messages
+    /// byte for byte as they were (JSONEncoder's key order changes from run to run).
+    static func stable(_ frame: Data, kind: MessageKind) throws -> Data {
+        let payload = Data(frame.dropFirst(Frame.headerLength))
+        guard !kind.isBinary, !payload.isEmpty else { return frame }
+        let sorted = try canonical(payload)
+        var header = Data(frame.prefix(Frame.headerLength))
+        withUnsafeBytes(of: UInt32(sorted.count).littleEndian) { header.replaceSubrange(4..<8, with: $0) }
+        return header + sorted
     }
 
     /// Sorted keys, numbers by value: two encodings of the same JSON compare equal.

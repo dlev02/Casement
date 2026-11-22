@@ -364,7 +364,8 @@ VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
 defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
 `WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
 (JSON compared key for key after canonicalising, binary byte for byte);
-`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files. A change to any message must update both lists.
+`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files (the Swift side with its JSON keys sorted, so
+only messages that changed show up in the diff). A change to any message must update both lists.
 **Interop harness**: `Tests/ClientSessionTests/WindowsHostInteropTests.swift` (opt-in,
 `.serialized`) drives the real `ClientSession` and raw channels against a running Windows host:
 pairing, burning, probe, version mismatch, the stream decoded with VideoToolbox (a PNG is written,
