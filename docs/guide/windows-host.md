@@ -101,8 +101,14 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   Balanced, 20 Sharp Text, 18 `maximum`); the next encode puts the mode's ceiling back first. The
   ceiling now reaches the encoder just before an encode, not when the mode flips. Scrolling re-arms
   it every frame, so it costs nothing while the screen moves; on the Mac a 2560×1600 text refine
-  near QP 24 cost ~0.2–0.6 MB once and lifted luma PSNR by 3–9 dB. Whether `AVEncVideoMaxQP` takes effect
-  mid-stream on NVENC, Quick Sync and AMF is unchecked. Tests: `VideoPipelineTests` (scripted encoder
+  near QP 24 cost ~0.2–0.6 MB once and lifted luma PSNR by 3–9 dB. **NVENC ignores
+  `AVEncVideoMaxQP`** (checked on Drew-PC's RTX 5070 Ti, 2026-11-22, HEVC and H.264, CBR and
+  low-delay VBR): every call returns S_OK and changes nothing, even QP 4 for the pass or QP 10 from
+  the first frame, so there the pass is a 2–20 KB P-frame that scores the same as the frame before
+  (42.6 dB against a screenshot of the text; a forced IDR instead was 182 KB at 31.7 dB, worse).
+  Text after scrolling is already as good as NVENC's rate control makes it; a real gain on NVIDIA
+  would need another lever (a QP-controlled mode or a brief bitrate boost), untried. Quick Sync and
+  AMF are unchecked. Tests: `VideoPipelineTests` (scripted encoder
   that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
   answer, the idle pass), with `HevcSessionTests`, `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
   and `DisplayFittingTests.AQualityChangeAloneDoesNotRestartTheStream` over loopback.
@@ -310,7 +316,7 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   the mode). `Host/DisplayChoice` (one per session) owns display choice and fitting: `Wanted(select)`
   remembers whether the device wants the display fitted, `ChooseAsync(select)` (with capture
   stopped) lists the displays, fits or restores the mode as wanted, waits ≤ 1 s for the new size
-  so `streamConfig` reports the new mode, then `LayoutSettle` (600 ms) more so windows and the
+  so `streamConfig` reports the new mode, then `LayoutSettle` (1200 ms) more so windows and the
   taskbar have redrawn at the new mode and scale before capture starts (the device used to watch
   the desktop rearrange itself), and picks the display (by id, else the main one);
   `CaptureSizedForOldMode` drives the retry below; `StopFitting`/`RestoreNow` serve
@@ -322,8 +328,12 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   ended by the host) lets go after `ReconnectGrace` (10 s) unless the device fits it again, so a
   dropped connection's reconnect doesn't switch the PC back and forth. A goodbye, `restoreDisplays`
   and listener stop restore at once; another device asking during a grace ends it first. Casement's
-  `ClientSession.disconnect()` sends no `disconnect` message, so closing a session from Casement
-  also waits out the grace. A
+  closes the screen with `disconnect` (`ClientSession.disconnect(endingSession: true)`), so a
+  deliberate close restores at once (~15 ms, the mode back ~1 s later) while a drop or the app going
+  to the background holds it. A restore Windows refuses (`DISP_CHANGE_FAILED` while a UAC prompt or
+  the secure desktop is up; seen on Drew-PC) used to be forgotten, leaving the PC in the fitted mode
+  until the host exited; `DisplayFitter` now keeps it and tries again every 2 s, and a fit on that
+  display meanwhile starts from the user's mode it remembers. A
   refit comes from the `selectDisplay` Casement resends when its viewport changes
   (`ClientSession.updateViewport`); **`viewportChanged` only forces a keyframe**, as on the Mac (no
   client sends it; the 500 ms `ScheduleRefit` path and `IDisplayFitter.WouldChange` are gone).
@@ -334,7 +344,13 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   1376×1032@2 viewport got 2560×1600 (2048×1536 is listed but too small at 150%), Windows dropped the
   scale to 100% in that mode (2560×1600 points), frames arrived at 2560×1600 within ~0.9 s, and
   `restoreDisplays` brought back 3840×2160 at 150%. Tests: `DisplayFittingTests` (fake fitter; the
-  grace on a `FakeTimeProvider`). The 600 ms settle is a guess, not measured on Drew-PC.
+  grace on a `FakeTimeProvider`). Measured on Drew-PC (2026-11-22, 1366×1024@2 → 2048×1536 at
+  150%): the taskbar finishes redrawing ~1.24–1.33 s after Windows reports the new scale; with a
+  600 ms settle the first frame showed it mid-redraw 3 of 3 times, with 1200 ms it was final 3 of 3
+  (request → first frame ~2.3–2.5 s). A dropped connection reconnecting at 2.5 s kept the mode with no
+  switch; one that didn't come back restored at 10.04 s. During a restore the PC's own monitor
+  shows the fitted mode at 100% for ~1 s (the scale goes back first). Open: on that run the monitor
+  came back at 59 Hz instead of its saved 240 Hz after the host woke it, before any fitting.
 - **The PC's sound** (the Mac's Mac audio, same wire: `audioRequest` 63 → `audioConfig` 73, then
   `audioPacket` 102 every 10 ms; Opus 48 kHz stereo, 480-frame packets, 128 kbps). `HostEnvironment.Audio`
   (`IAudioSource`, null = none) delivers 10 ms `AudioBlock`s; `HostSessionCore` advertises

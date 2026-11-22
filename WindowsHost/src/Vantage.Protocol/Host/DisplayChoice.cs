@@ -30,7 +30,7 @@ internal sealed class DisplayChoice(Guid owner, Func<string> device, DisplayHold
     /// again (a scale change sends every window <c>WM_DPICHANGED</c>) before capture starts, so the
     /// device never sees the desktop rearrange itself.
     /// </summary>
-    public static readonly TimeSpan LayoutSettle = TimeSpan.FromMilliseconds(600);
+    public static readonly TimeSpan LayoutSettle = TimeSpan.FromMilliseconds(1200);
 
     /// <summary>Right after a mode change, a capture sized for the old mode is started again for up to this long.</summary>
     public static readonly TimeSpan CaptureCatchUp = TimeSpan.FromSeconds(2);

@@ -23,6 +23,11 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
     private readonly Lock _lock = new();
     private readonly string _restoreFile;
     private readonly Dictionary<uint, Hold> _holds = [];
+    // Modes Windows refused to put back (DISP_CHANGE_FAILED while a UAC prompt or the secure
+    // desktop is up). A temporary mode only reverts by itself when this process exits, which for
+    // the tray app can be days, so they're tried again every 2 s until they go back.
+    private readonly List<Hold> _pendingRestore = [];
+    private Timer? _restoreRetry;
 
     /// <summary>A monitor this fitter changed: who asked, and what to go back to.</summary>
     private sealed record Hold(Guid Owner, string GdiName, DisplayMode Original, DisplayScales.Scale? OriginalScale, DisplayMode Applied);
@@ -49,6 +54,13 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
             if (!IsEnabled) return DisplayFitResult.Unchanged;
             var hold = _holds.GetValueOrDefault(display.Id);
             if (hold is not null && hold.Owner != owner) return DisplayFitResult.Busy;
+            if (hold is null && _pendingRestore.Find(h => h.GdiName == $@"\\.\DISPLAY{display.Id}") is { } refused)
+            {
+                // A restore Windows refused is still owed: this fit starts from the user's mode it
+                // remembers, not from the fitted mode still showing, and the retry stands down.
+                _pendingRestore.Remove(refused);
+                hold = refused with { Owner = owner };
+            }
             if (Plan(display, viewport, hold) is not { } plan)
             {
                 _log.LogWarning("display {Id}: Windows lists no modes; leaving it as it is", display.Id);
@@ -63,7 +75,7 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
                 // Back to the user's own mode and scale: that's a restore, and the display is free again.
                 RestoreLocked(hold);
                 _holds.Remove(display.Id);
-                ForgetScale();
+                ForgetScaleIfSettled();
                 return DisplayFitResult.Changed;
             }
             var modeChanges = plan.Choice != plan.Current;
@@ -73,7 +85,7 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
             var scaleChanges = ApplyScale(plan.GdiName, plan.Percent);
             if (!modeChanges && !scaleChanges)
             {
-                if (hold is null) ForgetScale();
+                if (hold is null) ForgetScaleIfSettled();
                 return DisplayFitResult.Unchanged;
             }
             _holds[display.Id] = new Hold(owner, plan.GdiName, plan.Original, original, plan.Choice);
@@ -92,7 +104,7 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
                 RestoreLocked(hold);
                 _holds.Remove(id);
             }
-            if (_holds.Count == 0) ForgetScale();
+            if (_holds.Count == 0) ForgetScaleIfSettled();
             return mine.Count > 0;
         }
     }
@@ -104,12 +116,43 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
         {
             foreach (var hold in _holds.Values) RestoreLocked(hold);
             _holds.Clear();
-            ForgetScale();
+            _pendingRestore.RemoveAll(RestoreLocked);
+            ForgetScaleIfSettled();
         }
     }
 
-    /// <summary>Puts every changed mode back.</summary>
-    public void Dispose() => RestoreAll();
+    /// <summary>
+    /// Puts every changed mode back. A mode Windows still refuses goes back when the process exits
+    /// (it was set with <c>CDS_FULLSCREEN</c>), and the scale note makes the next launch put the
+    /// scale back.
+    /// </summary>
+    public void Dispose()
+    {
+        RestoreAll();
+        lock (_lock)
+        {
+            _restoreRetry?.Dispose();
+            _restoreRetry = null;
+        }
+    }
+
+    private void RetryRestores()
+    {
+        lock (_lock)
+        {
+            _pendingRestore.RemoveAll(RestoreLocked);
+            if (_pendingRestore.Count > 0) return;
+            _restoreRetry?.Dispose();
+            _restoreRetry = null;
+            if (_holds.Count == 0) ForgetScaleIfSettled();
+        }
+    }
+
+    /// <summary>The scale note goes only once nothing this fitter changed is still owed.</summary>
+    private void ForgetScaleIfSettled()
+    {
+        if (_pendingRestore.Count == 0) ForgetScale();
+    }
 
     private readonly record struct ModePlan(string GdiName, DisplayMode Current, DisplayMode Original, DisplayMode Choice, int Percent);
 
@@ -173,9 +216,10 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
     /// <summary>
     /// Scale first, while the temporary mode shows: the value is relative to the mode's recommended
     /// scale, so the user's mode with the fitted value would flash a wrong scale. Checked afterwards
-    /// because Windows may rewrite the value when the mode changes.
+    /// because Windows may rewrite the value when the mode changes. False when Windows refused the
+    /// mode: the hold is kept and tried again (<see cref="RetryRestores"/>).
     /// </summary>
-    private unsafe void RestoreLocked(Hold hold)
+    private unsafe bool RestoreLocked(Hold hold)
     {
         if (hold.OriginalScale is { } scale && !DisplayScales.SetRelative(hold.GdiName, scale.Relative))
             _log.LogError("{Display} didn't take its own scale back", hold.GdiName);
@@ -184,15 +228,20 @@ public sealed class DisplayFitter : IDisplayFitter, IDisposable
         {
             result = PInvoke.ChangeDisplaySettingsEx(name, null, HWND.Null, 0, null);
         }
-        if (result == DISP_CHANGE.DISP_CHANGE_SUCCESSFUL)
-            _log.LogInformation("{Display} back to its own mode (was {Applied} for a device)", hold.GdiName, hold.Applied);
-        else
-            _log.LogError("{Display} didn't go back to its own mode ({Result})", hold.GdiName, result);
+        if (result != DISP_CHANGE.DISP_CHANGE_SUCCESSFUL)
+        {
+            _log.LogError("{Display} didn't go back to its own mode ({Result}); trying again", hold.GdiName, result);
+            if (!_pendingRestore.Contains(hold)) _pendingRestore.Add(hold);
+            _restoreRetry ??= new Timer(_ => RetryRestores(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+            return false;
+        }
+        _log.LogInformation("{Display} back to its own mode (was {Applied} for a device)", hold.GdiName, hold.Applied);
         if (hold.OriginalScale is { } own && DisplayScales.Read(hold.GdiName) is { } after)
         {
             if (after.Relative != own.Relative) DisplayScales.SetRelative(hold.GdiName, own.Relative);
             _log.LogInformation("{Display} scale back to {Percent}%", hold.GdiName, DisplayScales.Read(hold.GdiName)?.Percent);
         }
+        return true;
     }
 
     private void RememberScale(string gdiName, int relative)
