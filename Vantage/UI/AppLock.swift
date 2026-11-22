@@ -194,7 +194,7 @@ struct LockOverlay: View {
                         .font(.headline)
                         .frame(minWidth: 140)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.onCardProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
             }

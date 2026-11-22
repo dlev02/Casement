@@ -335,23 +335,88 @@ struct DeviceSortPicker: View {
     }
 }
 
-/// No Macs saved yet: how to add the first one.
+/// No computers saved yet: the three steps to the first one, with the two ways to add it. The
+/// steps are the setup itself (Casement Host is a separate download), so they're spelled out
+/// rather than left to a one-line description.
 struct DeviceListEmptyState: View {
     let actions: DeviceActions
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ContentUnavailableView {
-            Label("No Devices", systemImage: "display")
-        } description: {
-            Text("Install Casement Host on your Mac or PC, add it here, then pair once with the code Casement Host shows. Everything runs over Tailscale.")
-        } actions: {
-            Button("Add from Tailscale…") { actions.showTailscaleDevices = true }.buttonStyle(.glassProminent)
-            Button("Add Manually…") { actions.showAddDevice = true }.buttonStyle(.glass)
-            Link("Get Casement Host", destination: AppInfo.hostDownloadURL)
+        ScrollView {
+            VStack(spacing: 28) {
+                VStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                        .frame(width: 76, height: 76)
+                        .overlay {
+                            Image(systemName: "desktopcomputer.and.macbook")
+                                .font(.system(size: 34, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .accessibilityHidden(true)
+                    Text("Add a Mac or PC")
+                        .font(.title2.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    step(1) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Install Casement Host on the computer")
+                            Link(destination: AppInfo.hostDownloadURL) {
+                                Label("Get Casement Host", systemImage: "arrow.up.right")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                    step(2) { Text("Add the computer here") }
+                    step(3) { Text("Pair once with the code Casement Host shows") }
+                }
+                .frame(maxWidth: 340, alignment: .leading)
+
+                // Side by side where there's room; stacked and full width on a phone.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { addButtons }
+                    VStack(spacing: 10) { addButtons }
+                }
+                .controlSize(.large)
+                .frame(maxWidth: 440)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
         }
-        // A readable measure on wide screens (an unfolded iPhone Duo, an iPad), as Apple's own
-        // empty states keep, rather than one long line from edge to edge.
-        .frame(maxWidth: 460)
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("deviceList.empty")
+    }
+
+    /// The same width each, so neither button looks like an afterthought.
+    @ViewBuilder private var addButtons: some View {
+        // Titles never wrap: when the pair doesn't fit on a line, `ViewThatFits` stacks them.
+        Button { actions.showTailscaleDevices = true } label: {
+            Text("Add from Tailscale…").fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        Button { actions.showAddDevice = true } label: {
+            Text("Add Manually…").fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func step(_ number: Int, @ViewBuilder _ text: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "\(number).circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityLabel("Step \(number)")
+            text()
+                .fixedSize(horizontal: false, vertical: true) // wrap, never truncate
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

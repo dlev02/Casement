@@ -21,8 +21,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `MacSidebarRow` (a `Label`, so the symbol turns white on a selected row; `AvailabilityLabel`
   drops its orange on the accent fill via `backgroundProminence`; `DeviceTransferBadge`; drops go
   through `FileDropDelegate`), `.contextMenu(forSelectionType:primaryAction:)` so double-click and
-  Return connect. Detail `MacDeviceDetail`: Connect (`.glassProminent`, default action), Send
-  Files…, Transfers, Edit…, Log In with Screen Sharing, Play Mac/PC Audio, Fit Display / Virtual Display, what's saved. Selection is
+  Return connect. Detail `MacDeviceDetail`: Connect (`.borderedProminent`, default action), Send
+  Files…, Transfers…, Edit…, Log In… (with Screen Sharing; the tooltip and VoiceOver say so) as
+  `.bordered` buttons of the same large size, Play Mac/PC Audio, Fit Display / Virtual Display, what's saved. Selection is
   `@SceneStorage`. Availability checks run while the list is open (none at all, not "Checking…",
   while Settings › Connection turns them off). `DeviceActions` (in `DeviceListScreen.swift`) holds
   every sheet, picker, and confirmation the list can raise, shared by the iOS list and the Mac
@@ -37,7 +38,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
   Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Curtain ⌃⌥⌘B,
   Fit Display / Virtual Display, Dictate
-  ⌃⌥⌘D, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
+  ⌃⌥⌘D (Stop Dictating / Resume Dictating by state), Dictation History…, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)
   Screen/Wake Display, Customize Control Strip…, Disconnect ⌃⌥⌘W); View adds Hide/Show Control Strip ⌃⌥⌘C,
@@ -109,13 +110,21 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Settings** (`MacSettingsView`, ⌘,): tabs General (appearance), Controls, Connection, Privacy &
   Security (`hand.raised`), each a grouped form in its own `NavigationStack`; the last tab is remembered
   (`vantage.mac.settingsTab`, also an argument-domain flag for screenshots). Each tab sizes the
-  window to its content (`SettingsPage`, 160–620 pt, longer tabs scroll), as Apple's apps do. It is
-  the only settings UI on the Mac: any in-app Settings button is a `SettingsLink`/`openSettings`,
-  never the iPad's `SettingsScreen` list (which also hides Help & FAQ and About there). The iPad
+  window to its content (`SettingsPage`, 160–620 pt, longer tabs scroll), as Apple's apps do. The
+  device list's gear button opens the same four pages as a sheet over the list
+  (`MacSettingsSheet`, 2026-11-22: Drew wanted Settings to come up over the window rather than
+  as a separate one): a segmented control picks the page, because a Mac `TabView` outside a
+  Settings scene puts its tabs in the window's toolbar and a sheet has none; Done or Esc closes
+  it. ⌘, and Casement › Settings… still open the Settings window, which works with any window
+  in front. Both are the Mac's pages, never the iPad's `SettingsScreen` list (which also hides
+  Help & FAQ and About there). The sheet has only been compiled and laid out offscreen: an
+  unsigned Mac client can't be run on Drew's Mac without reading the installed app's Keychain
+  identity, so it still needs a look in a signed build. The iPad
   build installed on an Apple silicon Mac ("Designed for iPad", runs from a `Wrapper/` bundle) is
   an iOS app and still shows the iPad screens; `#if os(macOS)` never reaches it. Controls on the Mac:
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
-  off; `MacKeyboardSettings` has the keys), Dictation, Control Strip; no touch, trackpad,
+  off; `MacKeyboardSettings` has the keys), Dictation (with this Mac's Parakeet and the
+  dictation history), Control Strip; no touch, trackpad,
   on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
   iCloud sync toggle yet: the Mac build now carries the key-value entitlement, but synced Keychain
   secrets in the sandboxed Mac app haven't been tried, so the section stays iOS/visionOS-only. Add Computer hides Natural Scrolling (the Mac's own
@@ -126,7 +135,12 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   the Mac) and `LocalDevice.this`; "this Mac" always means the local machine, so the remote one is
   named (`device.name`, `HostNoun`). Buttons sitting on a glass card (dictation panel, screen
   note, pairing prompt, connection overlay) use `.onCard`/`.onCardProminent` (`PlatformGlass.swift`:
-  bordered on the Mac and visionOS, glass on iOS), never glass on glass. On the Mac the strip's
+  bordered on the Mac and visionOS, glass on iOS), never glass on glass. The same goes for
+  buttons in a window's own content (2026-11-22, Drew: "a little too much liquid glass"): the
+  detail pane's row, the empty list's Add buttons, an empty Transfers sheet's Send File…, Try
+  Again in the Tailscale sheet and the lock's Unlock are standard bordered push buttons on the
+  Mac, one prominent per screen. Glass stays on what floats over the picture (the control
+  strip, notices, the dictation panel) and on the system's own toolbar and sidebar. On the Mac the strip's
   buttons are 36 pt with a hover highlight and plain (not interactive) glass; every strip button
   has a `.help` tag. The detail pane has one large prominent button (Connect); the sidebar's
   Tailscale banner is a flat fill, not glass. View has one full-screen item: `VantageApp.init`
