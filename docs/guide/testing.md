@@ -93,7 +93,14 @@ click as "pointer down/up" in the `input` category. A synthetic host runs
 a pretend display, the test pattern and a chime, no input, clipboard, curtain, dictation or
 tailnet, nothing that reads the real Mac's display power or permissions, a separate trust
 store, and its own identity file (above). Host synthetic
-and fixed-code arguments are DEBUG-only. The debug-only `--port 47821` override allows isolated tests alongside the normal host on 47820; quit the synthetic host afterward, or launch it with `--exit-after <seconds>` (DEBUG) so it quits by itself. Client debug
+and fixed-code arguments are DEBUG-only. The debug-only `--port` override allows isolated tests alongside the normal host on 47820. Several
+worktrees and agents run hosts at once, so take a port from `scripts/test-port.sh` (a free one in a
+block of 10 in 47900–48899 that belongs to this checkout's path; `scripts/test-port.sh 3` skips the
+first 3 for a second host) rather than a fixed number: on 2026-11-22 a fixed 47871 was already
+taken by another worktree's PC host, and the Mac host that lost the race only logged "Address
+already in use" every 3 s. The fixed ports in the recipes here (47821, 47822, 47862) are the
+defaults for one checkout at a time; 47821–47829 is also the PC's firewall range, so the script
+never hands those out. quit the synthetic host afterward, or launch it with `--exit-after <seconds>` (DEBUG) so it quits by itself. Client debug
 flags (`-VantageSeedSamples 1`, `-VantageSeedHost`, `-VantageAutoConnect`, `-VantagePairingCode`)
 are DEBUG-only. Read unified logs with `/usr/bin/log show --info --debug` (a shell function shadows
 `log` in Drew's profile).
