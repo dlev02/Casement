@@ -58,6 +58,33 @@ nonisolated struct HostShortcut: Identifiable, Hashable, Sendable {
 
     static let pcMenuOrder: [HostShortcut] = [start, search, taskView, switchApps, pcShowDesktop, taskManager]
 
+    // MARK: Three-finger swipes
+
+    /// ⌃→ and ⌃← with Fn, the way macOS stores "Move right/left a space" (hot keys 81 and 79).
+    static let nextSpace = HostShortcut(id: "nextSpace", label: "Next Space", symbol: "arrow.right.square",
+                                        keyCode: 0x7C, modifiers: [.control, .function], chord: "⌃ →")
+    static let previousSpace = HostShortcut(id: "previousSpace", label: "Previous Space", symbol: "arrow.left.square",
+                                            keyCode: 0x7B, modifiers: [.control, .function], chord: "⌃ ←")
+    /// Windows' virtual desktops: Ctrl Win → and Ctrl Win ←.
+    static let nextDesktop = HostShortcut(id: "nextSpace", label: "Next Desktop", symbol: "arrow.right.square",
+                                          keyCode: 0x7C, modifiers: [.control, .command], chord: "Ctrl Win →")
+    static let previousDesktop = HostShortcut(id: "previousSpace", label: "Previous Desktop", symbol: "arrow.left.square",
+                                              keyCode: 0x7B, modifiers: [.control, .command], chord: "Ctrl Win ←")
+
+    /// What a three-finger swipe sends, matching each platform's own trackpad: the picture
+    /// follows the fingers, so swiping left brings in the Space (or desktop) to the right. Up is
+    /// Mission Control or Task View; down is the front app's windows on a Mac and Show Desktop
+    /// on a PC, which is what three fingers down does on a Windows touchpad.
+    static func forSwipe(_ swipe: TrackpadSwipe, on platform: HostPlatform?) -> HostShortcut {
+        let pc = platform == .windows
+        switch swipe {
+        case .left: return pc ? nextDesktop : nextSpace
+        case .right: return pc ? previousDesktop : previousSpace
+        case .up: return pc ? taskView : missionControl
+        case .down: return pc ? pcShowDesktop : applicationWindows
+        }
+    }
+
     // MARK: Lookup
 
     /// The shortcut a strip control sends to this host; nil for controls that aren't shortcuts,

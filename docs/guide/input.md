@@ -16,6 +16,22 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   momentum began/continue/end frames at 60 Hz decaying 0.998 per ms (UIScrollView's rate) in whole
   pixels; it needs ≥ 60 pt/s, stops under 10 pt/s or after 3 s, and the next scroll, a click or
   `releaseAll` ends it (`ScrollMomentumTests`). Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  **Three-finger swipes** (iPhone and iPad, where fingers act as a trackpad: Trackpad mode and the
+  iPhone Duo's `TrackpadSurface`; never Direct Touch or visionOS): a three-finger pan recognizer
+  that `gestureRecognizerShouldBegin` only lets start there and while Settings → Controls →
+  Three-Finger Swipes is on (`vantage.threeFingerSwipes`, default on, read by
+  `ScreenSessionModel` into `InputController.threeFingerSwipes`). `TrackpadSwipeTracker` (pure,
+  `Input/TrackpadSwipe.swift`) turns one drag into at most one swipe: 60 pt along an axis that
+  leads the other by 1.6×, so a three-finger tap that slides (still a middle-click: the pan
+  beginning is what fails the tap) or a diagonal drag sends nothing. `HostShortcut.forSwipe`
+  maps it the way each platform's own trackpad does, the picture following the fingers: left =
+  the next Space (⌃→ with Fn, hot key 81) or desktop (Ctrl Win →), right = the previous one (⌃←,
+  hot key 79; Ctrl Win ←), up = Mission Control / Task View, down = the app's windows / Show
+  Desktop (Win D, what three fingers down does on a Windows touchpad). `InputController.swipe`
+  sends it as a chord for `hostPlatform`, which the model keeps current. The view returns
+  `editingInteractionConfiguration = .none`, or iPadOS's own three-finger undo, redo and copy
+  gestures take the fingers. The recognizer needs real fingers: the simulator has no three-finger
+  input, so the gesture itself is unverified until tried on a device.
   **Edges**: every absolute position goes through `PointerMapping` (pure, `PointerMappingTests`):
   past or within `edgeSnap` (2 pt) of the picture's edge lands on the Mac's outermost row/column,
   and an edge position within `cornerSnap` (16 pt) of a corner lands in the corner. macOS reveals

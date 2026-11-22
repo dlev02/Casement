@@ -96,6 +96,7 @@ private struct DeviceListLayoutSection: View {
 struct ControlSettings: View {
     @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
     @AppStorage("vantage.trackpadSensitivity") private var sensitivity = 1.5
+    @AppStorage(ScreenSessionModel.threeFingerSwipesKey) private var threeFingerSwipes = true
     @AppStorage("vantage.softwareKeyboardMode") private var keyboardMode = SoftwareKeyboardMode.unicode
     @AppStorage("vantage.toolbarDock") private var dock = ToolbarDock.bottomLeft
     @AppStorage("vantage.toolbarCollapsed") private var collapsed = false
@@ -157,10 +158,12 @@ struct ControlSettings: View {
                         .accessibilityLabel("Trackpad sensitivity")
                         .accessibilityValue("\(sensitivity.formatted(.number.precision(.fractionLength(1)))) times")
                 }
+                Toggle("Three-Finger Swipes", isOn: $threeFingerSwipes)
+                    .accessibilityIdentifier("settings.threeFingerSwipes")
             } header: {
                 Text("Pointer")
             } footer: {
-                Text("Trackpad moves the Mac's pointer like a laptop trackpad and taps to click. Direct Touch clicks exactly where you tap.")
+                Text("Trackpad moves the Mac's pointer like a laptop trackpad and taps to click. Direct Touch clicks exactly where you tap. In Trackpad, three-finger swipes work as on a Mac's trackpad: left and right switch Spaces, up opens Mission Control, and down shows the app's windows.")
             }
             #endif
 
@@ -656,6 +659,8 @@ extension HelpScreen {
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the control strip or in Settings → Controls."),
                 FAQEntry("How do I right-click or middle-click?",
                          "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+                FAQEntry("What do three-finger swipes do?",
+                         "In Trackpad mode they work as on a Mac's own trackpad: swipe three fingers left or right to move between Spaces, up for Mission Control, and down for the front app's windows. On a PC the same swipes move between desktops, open Task View, and show the desktop. They also work on the trackpad half of an iPhone folded like a laptop. Turn them off in Settings → Controls → Three-Finger Swipes."),
     ]
     #endif
     private static let controllingTheMac: [FAQEntry] = touchEntries + [

@@ -141,6 +141,7 @@ final class ScreenSessionModel {
     static let trackpadSensitivityKey = "vantage.trackpadSensitivity"
     static let keyboardModeKey = "vantage.softwareKeyboardMode"
     static let dictationEngineKey = "vantage.dictationEngine"
+    static let threeFingerSwipesKey = "vantage.threeFingerSwipes"
 
     /// `fileLink`: the computer's shared link (`FileTransferCenter`), so files keep moving after
     /// the screen closes; nil keeps the session's own (tests).
@@ -203,6 +204,7 @@ final class ScreenSessionModel {
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
         input.keyRemap = keyRemap
+        input.hostPlatform = hostPlatform
         watchDefaults()
         startWatching()
         connect(pairingCode: ClientOptions.pairingCode)
@@ -579,6 +581,7 @@ final class ScreenSessionModel {
             }
         }
         watch({ $0.keyRemap }) { model, remap in model.input.keyRemap = remap }
+        watch({ $0.hostPlatform }) { model, platform in model.input.hostPlatform = platform }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
         watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
         // Files opened in Casement from other apps join this session's queue once approved.
@@ -686,6 +689,7 @@ final class ScreenSessionModel {
         var trackpadSensitivity: Double?
         var keyboardMode: SoftwareKeyboardMode?
         var dictationEngine: DictationEnginePreference?
+        var threeFingerSwipes: Bool?
         var defaultStripLayout: ControlStripLayout?
         var capturesShortcuts: Bool?
     }
@@ -702,6 +706,11 @@ final class ScreenSessionModel {
             readDefaults.trackpadSensitivity = sensitivity
             trackpadSensitivity = sensitivity
             input.trackpadSensitivity = sensitivity
+        }
+        let swipes = defaults.object(forKey: Self.threeFingerSwipesKey) as? Bool ?? true
+        if swipes != readDefaults.threeFingerSwipes {
+            readDefaults.threeFingerSwipes = swipes
+            input.threeFingerSwipes = swipes
         }
         let keyboard = defaults.string(forKey: Self.keyboardModeKey).flatMap(SoftwareKeyboardMode.init(rawValue:)) ?? .unicode
         if keyboard != readDefaults.keyboardMode {

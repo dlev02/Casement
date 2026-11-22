@@ -45,6 +45,11 @@ final class InputController {
     /// "⌘ acts as Ctrl" for a PC. Applies to the hardware keyboard only: callers pass modifiers
     /// already remapped (`keyRemap.modifiers`) with the strip's sticky ones added as they are.
     var keyRemap = KeyRemap.none
+    /// Three-finger swipes on the trackpad send the host's Spaces and Mission Control shortcuts
+    /// (Settings → Controls).
+    var threeFingerSwipes = true
+    /// Which platform's shortcuts a swipe stands for.
+    var hostPlatform = HostPlatform.macOS
 
     /// Point size of the streamed display (set from StreamConfig).
     var displayPointSize: CGSize = CGSize(width: 1210, height: 834)
@@ -142,6 +147,12 @@ final class InputController {
     func tapChord(keyCode: UInt16, modifiers: KeyModifiers) {
         send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: true, modifiers: modifiers)))
         send?(.keyEvent(KeyEvent(keyCode: keyCode, isDown: false, modifiers: modifiers)))
+    }
+
+    /// A three-finger swipe on the trackpad: the shortcut the host's own trackpad would send.
+    func swipe(_ swipe: TrackpadSwipe) {
+        let shortcut = HostShortcut.forSwipe(swipe, on: hostPlatform)
+        tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
     }
 
     func typeText(_ text: String) {
