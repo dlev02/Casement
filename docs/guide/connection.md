@@ -220,6 +220,8 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   quality change on a running stream (`CaptureLifecycle` sees a `selectionRequested` equal to what's
   wanted apart from quality) is `.applyQuality`: `VideoPacer.setQuality` applies it without a
   restart (`ClientSession.setQuality` resends the last request with only the quality changed).
+  On a PC the same pass runs, but NVIDIA's encoder ignores the QP ceiling altogether
+  ([windows-host.md](windows-host.md)), so there it costs a few KB and changes nothing.
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
   `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,
