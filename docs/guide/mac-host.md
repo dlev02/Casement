@@ -50,7 +50,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   while any session wants it): a shielding-level black window per screen, left out of the picture
   by window ID (`CurtainWindows`, `ScreenCapture.makeFilter`, `refreshFilter`; measured: luma 0.90
   excluded, 0 included), and `InputBlocker`, an active tap at `.cghidEventTap` on its own thread,
-  which drops everything physical; the host posts at the session tap, past it. A device turning it
+  which drops everything physical; the host posts at the session tap, past it. Keys from macOS's
+  Screen Sharing (any process under `/System/Library/CoreServices/RemoteManagement`, found by the
+  event's source pid and `proc_pidpath`) also pass, so a password a device types at the lock screen
+  through Screen Sharing reaches it with the curtain up; the log (`curtain` category) names each
+  posting process it lets through or drops, once per pid. Whether Screen Sharing's keys carry its
+  pid at the HID tap still needs a device check. A device turning it
   off lifts it. Otherwise it never comes down onto the desktop: `reconnectGrace` (60 s) after the
   last device goes the Mac locks, then it lifts; ⌃⌥⌘L at the keyboard does the same at once; quitting
   locks; and `CurtainGuard`, a second copy of the host, locks the Mac if the host dies (killing a

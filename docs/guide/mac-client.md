@@ -94,7 +94,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Scrolling** (`ScrollTranslator`): precise deltas go as `-scrollingDelta`, wheel lines as
   `+scrollingDelta`; the host negates continuous deltas only (`InputInjector.postScroll`), so the
   posted event equals the local one, already corrected for this Mac's natural-scrolling setting
-  (the per-Mac Natural Scrolling toggle is hidden on macOS). `NSEventPhase` bits aren't wire
+  (the per-Mac Natural Scrolling toggle is hidden on macOS). The Windows host posts with the same
+  signs (continuous negated), so a PC scrolls the same way; before 2026-11-22 it gave continuous
+  deltas the line signs and a Mac's trackpad scrolled a PC backwards. `NSEventPhase` bits aren't wire
   values: may-begin and stationary are dropped, as is an end or cancel without a began; momentum
   passes through; wheels send whole lines with the fraction carried, and a change of direction
   starts from zero. Test: `ScrollTranslatorTests`.
@@ -116,9 +118,10 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   an iOS app and still shows the iPad screens; `#if os(macOS)` never reaches it. Controls on the Mac:
   Keyboard (`vantage.mac.captureShortcuts`, default on; `vantage.mac.swapCommandControl`, default
   off; `MacKeyboardSettings` has the keys), Dictation, Control Strip; no touch, trackpad,
-  on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID" and has no
-  iCloud sync toggle yet: the Mac build now carries the key-value entitlement, but synced Keychain
-  secrets in the sandboxed Mac app haven't been tried, so the section stays iOS/visionOS-only. Add Computer hides Natural Scrolling (the Mac's own
+  on-screen keyboard, Pencil, or haptics. Privacy & Security says "Require Touch ID", "Require Touch
+  ID to Type Passwords" and has the iCloud sync switch (2026-11-22; see iCloud sync in
+  [client.md](client.md): a copy without the data protection Keychain keeps secrets on the Mac and
+  says so; a signed build syncing real secrets still needs a check). Add Computer hides Natural Scrolling (the Mac's own
   mouse settings apply). Help swaps the touch answers for Mac ones (`HelpScreen.controllingTheMac`).
   About isn't a tab: Casement › About Casement (`CommandGroup(replacing: .appInfo)`) opens
   `Window("About Casement")` (`MacAboutWindow`) showing `AboutScreen`.

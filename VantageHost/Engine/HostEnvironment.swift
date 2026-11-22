@@ -48,6 +48,9 @@ nonisolated struct HostEnvironment: Sendable {
     var captureFailsFor: Duration?
     /// The session's clock: `now` for its timers, and `sleep` for its waits.
     var clock: any HostClock
+    /// The computer's Natural Scrolling setting, read per session (`HostCapabilities.naturalScroll`);
+    /// nil leaves it out.
+    var naturalScroll: @Sendable () -> Bool? = { nil }
 }
 
 /// Displays and the frames captured from them.

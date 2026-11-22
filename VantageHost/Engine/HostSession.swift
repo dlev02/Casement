@@ -158,7 +158,8 @@ actor HostSession {
         if kind == .screen, hello.features?.dictation == true, let dictation = env.dictation { dictationEngines = await dictation.availableEngines() }
         let abilities = SessionAdmission.HostAbilities(platform: env.platform, screenRecordingGranted: env.screenRecordingGranted(),
                                                        accessibilityGranted: env.accessibilityGranted(),
-                                                       canManageVirtualDisplay: env.screen.canManageVirtualDisplay, dictationEngines: dictationEngines)
+                                                       canManageVirtualDisplay: env.screen.canManageVirtualDisplay, dictationEngines: dictationEngines,
+                                                       naturalScroll: env.naturalScroll())
 
         switch kind {
         case .availabilityCheck:

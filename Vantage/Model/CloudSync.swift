@@ -36,7 +36,11 @@ final class CloudSync {
         var explanation: String? {
             switch self {
             case .available: nil
+            #if os(macOS)
+            case .noiCloudAccount: "Sign in to iCloud in System Settings to sync your computers."
+            #else
             case .noiCloudAccount: "Sign in to iCloud in Settings to sync your computers."
+            #endif
             case .notEntitled: "Passwords and your Tailscale key sync through iCloud Keychain. This copy of Casement isn't signed for iCloud storage, so your list of computers stays on this device."
             }
         }
@@ -52,6 +56,19 @@ final class CloudSync {
     /// The Keychain store secrets should use right now.
     static func secretsStore(service: String) -> KeychainStore {
         KeychainStore(service: service, synchronizable: shared.isEnabled, unlockedOnly: true)
+    }
+
+    /// Saves to the store sync points at. When that's iCloud Keychain and it refuses (a Mac copy
+    /// not signed for the data protection Keychain answers errSecMissingEntitlement), the secret
+    /// is kept in this device's Keychain instead, so saving never fails just because sync can't
+    /// carry it.
+    static func storeSecret(_ value: String, account: String, service: String) throws {
+        do {
+            try secretsStore(service: service).set(value, for: account)
+        } catch where shared.isEnabled {
+            log.error("iCloud Keychain refused a secret, keeping it on this device: \(String(describing: error), privacy: .public)")
+            try KeychainStore(service: service, synchronizable: false, unlockedOnly: true).set(value, for: account)
+        }
     }
 
     /// Reads from the store sync currently points at, falling back to the other so a key saved
@@ -77,7 +94,7 @@ final class CloudSync {
     /// this device's, which on a new iPhone is empty.
     func setEnabled(_ enabled: Bool, devices: [SavedDevice]) {
         guard enabled != isEnabled else { return }
-        migrateSecrets(toSynchronizable: enabled, deviceIDs: devices.map(\.id))
+        migrateSecrets(toSynchronizable: enabled, devices: devices)
         isEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
         if enabled {
@@ -88,25 +105,38 @@ final class CloudSync {
         }
     }
 
-    /// Sync starts on by itself, once, on an iPhone, iPad, or Vision Pro whose copy of Casement
-    /// is signed for iCloud and signed into an iCloud account, unless the person has already
-    /// chosen either way. Setting things up once is the point, and a new device can't offer to
-    /// bring the list over if it waits for a switch nobody knows about. Not on the Mac: its
-    /// sandboxed app has no switch yet and synced Keychain items there haven't been tried. A
+    /// Sync starts on by itself, once, on a device whose copy of Casement is signed for iCloud,
+    /// signed into an iCloud account, and allowed to keep synced Keychain items, unless the
+    /// person has already chosen either way. Setting things up once is the point, and a new
+    /// device can't offer to bring the list over if it waits for a switch nobody knows about. A
     /// device without iCloud asks again next launch, so signing in later still turns it on.
     var shouldTurnOnByDefault: Bool {
-        #if os(macOS)
-        false
-        #else
         !isEnabled && UserDefaults.standard.object(forKey: Self.enabledKey) == nil
-            && deviceListAvailability == .available
-        #endif
+            && deviceListAvailability == .available && Self.keychainSyncWorks
     }
 
-    private func migrateSecrets(toSynchronizable: Bool, deviceIDs: [UUID]) {
+    /// iCloud Keychain takes an item here. Always on an iPhone or iPad; a Mac copy needs the data
+    /// protection Keychain, which only a build signed with its App ID's profile gets. Tried once
+    /// per launch with a throwaway item.
+    static let keychainSyncWorks: Bool = {
+        #if os(macOS)
+        let probe = KeychainStore(service: DeviceSecrets.keychainService, synchronizable: true, unlockedOnly: true)
+        do {
+            try probe.set("probe", for: "sync-probe")
+            try? probe.remove("sync-probe")
+            return true
+        } catch {
+            log.error("iCloud Keychain unavailable to this copy: \(String(describing: error), privacy: .public)")
+            return false
+        }
+        #else
+        return true
+        #endif
+    }()
+
+    private func migrateSecrets(toSynchronizable: Bool, devices: [SavedDevice]) {
         let accounts = TailscaleAccount.keychainAccounts.map { ($0, TailscaleAccount.keychainService) }
-            + deviceIDs.flatMap { [(DeviceSecrets.account(for: $0), DeviceSecrets.keychainService),
-                                   (DeviceSecrets.usernameAccount(for: $0), DeviceSecrets.keychainService)] }
+            + DeviceSecrets.allAccounts(for: devices).map { ($0, DeviceSecrets.keychainService) }
         for (account, service) in accounts {
             let from = KeychainStore(service: service, synchronizable: !toSynchronizable)
             let to = KeychainStore(service: service, synchronizable: toSynchronizable, unlockedOnly: true)
@@ -118,6 +148,13 @@ final class CloudSync {
                 Self.log.error("could not move \(account, privacy: .public) between keychains: \(String(describing: error), privacy: .public)")
             }
         }
+    }
+
+    /// Why sync isn't carrying everything on this device, if it isn't.
+    var explanation: String? {
+        if let list = deviceListAvailability.explanation { return list }
+        guard !Self.keychainSyncWorks else { return nil }
+        return "This copy of Casement can't use iCloud Keychain, so passwords and your Tailscale key stay on this Mac. Your list of computers still syncs."
     }
 
     // MARK: Device list

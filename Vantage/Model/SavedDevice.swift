@@ -59,7 +59,12 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     var lastConnected: Date?
     var connectionCount: Int
     var preferredCodec: VideoCodec?
+    /// Content follows the fingers. Until the person sets it (`naturalScrollChosen`), each
+    /// connection copies the computer's own setting (`HostCapabilities.naturalScroll`).
     var naturalScroll: Bool
+    /// The person set Natural Scrolling for this computer, so what the computer reports no longer
+    /// changes it. Optional so devices saved by earlier builds decode; nil means not set.
+    var naturalScrollChosen: Bool?
     /// Ask the Mac for a BetterDisplay virtual display sized to this device. Optional so devices
     /// saved by earlier builds still decode; nil means off.
     var useVirtualDisplay: Bool?
@@ -98,7 +103,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// The keyboard remapping this device's sessions use.
     var keyRemap: KeyRemap { KeyRemap.forHost(platform, commandSendsControl: commandSendsControl) }
 
-    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil, commandSendsControl: Bool? = nil, hostPublicKey: Data? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: UInt16 = VantageProtocol.defaultPort, os: String = "macOS", lastConnected: Date? = nil, connectionCount: Int = 0, preferredCodec: VideoCodec? = nil, naturalScroll: Bool = true, naturalScrollChosen: Bool? = nil, useVirtualDisplay: Bool? = nil, updatedAt: Date? = nil, homeAddress: String? = nil, controlStrip: ControlStripLayout? = nil, playMacAudio: Bool? = nil, commandSendsControl: Bool? = nil, hostPublicKey: Data? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -108,6 +113,7 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
         self.connectionCount = connectionCount
         self.preferredCodec = preferredCodec
         self.naturalScroll = naturalScroll
+        self.naturalScrollChosen = naturalScrollChosen
         self.useVirtualDisplay = useVirtualDisplay
         self.updatedAt = updatedAt
         self.homeAddress = homeAddress

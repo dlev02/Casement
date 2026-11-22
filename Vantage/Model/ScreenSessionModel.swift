@@ -11,6 +11,8 @@ protocol ScreenSessionStore: AnyObject {
     func markConnected(_ device: SavedDevice)
     func recordPlatform(_ platform: HostPlatform, for id: UUID)
     func recordHostKey(_ key: Data, for id: UUID)
+    /// The computer's own Natural Scrolling setting, kept unless the person chose one.
+    func adoptHostNaturalScroll(_ natural: Bool, for id: UUID)
     func setPlayMacAudio(_ on: Bool, for id: UUID)
     func setCurtain(_ on: Bool, for id: UUID)
     func setUseVirtualDisplay(_ on: Bool, for id: UUID)
@@ -103,6 +105,10 @@ final class ScreenSessionModel {
     private let wakeRequest = TimedNotice<Bool>()
     private(set) var screenSharingTyping: ScreenSharingTypingState?
     var screenSharingError: String?
+    /// What the Keychain holds for this computer, read when the session starts, when the host's
+    /// status changes and after saving (not on every redraw).
+    private(set) var hasSavedPassword = false
+    private(set) var hasSavedAccountName = false
     /// VoiceOver is on, so notices stay long enough to reach their buttons.
     var usesVoiceOver = false
 
@@ -139,6 +145,7 @@ final class ScreenSessionModel {
     private var viewportDebounce: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
     private var screenSharingTask: Task<Void, Never>?
+    private var confirmationTask: Task<Void, Never>?
     private var watchers: [Task<Void, Never>] = []
     private var defaultsObserver: (any NSObjectProtocol)?
     private var queuedTestFile = false
@@ -209,6 +216,7 @@ final class ScreenSessionModel {
         input.naturalScroll = naturalScroll
         input.trackpadSensitivity = trackpadSensitivity
         input.keyRemap = keyRemap
+        refreshSavedSignIn()
         watchDefaults()
         startWatching()
         connect(pairingCode: ClientOptions.pairingCode)
@@ -228,6 +236,8 @@ final class ScreenSessionModel {
         viewportDebounce?.cancel()
         screenSharingTask?.cancel()
         screenSharingTask = nil
+        confirmationTask?.cancel()
+        confirmationTask = nil
         for watcher in watchers { watcher.cancel() }
         watchers = []
         if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
@@ -367,9 +377,25 @@ final class ScreenSessionModel {
 
     // MARK: Type Password
 
+    /// The status banner's Unlock / Approve button, while the Mac's lock screen or a secure field
+    /// blocks typing.
+    var unlockOffer: HostUnlockOffer? {
+        HostUnlockOffer.make(host: host, status: session.hostStatus, hasPassword: hasSavedPassword,
+                             hasAccountName: hasSavedAccountName, isTyping: screenSharingTyping == .typing || confirmationTask != nil)
+    }
+
+    func refreshSavedSignIn() {
+        let device = savedDevice
+        hasSavedPassword = DeviceSecrets.password(for: device) != nil
+        hasSavedAccountName = DeviceSecrets.username(for: device) != nil
+    }
+
     /// Types the saved password for this Mac and presses Return, through Screen Sharing when the
-    /// Mac blocks ordinary typing, or asks for what's missing (`TypePasswordDecision`).
-    func typePassword() {
+    /// Mac blocks ordinary typing, or asks for what's missing (`TypePasswordDecision`). The
+    /// password leaves the Keychain only after Face ID, Touch ID or the passcode
+    /// (`PasswordConfirmation`), unless it was `confirmed` already (just typed into the sheet).
+    func typePassword(confirmed: Bool = false) {
+        let device = savedDevice
         let decision = TypePasswordDecision.decide(host: host, password: DeviceSecrets.password(for: device),
                                                    hasAccountName: DeviceSecrets.username(for: device) != nil,
                                                    status: session.hostStatus)
@@ -378,29 +404,62 @@ final class ScreenSessionModel {
             break
         case .ask(let prompt):
             passwordPrompt = prompt
-        case .type(let password):
-            stickyModifiers = []
-            input.typeCharacters(password)
-            input.tapChord(keyCode: 0x24, modifiers: []) // Return
-        case .screenSharing:
-            typeThroughScreenSharing()
+        case .type, .screenSharing:
+            guard confirmed else {
+                confirmThenType(reason: confirmationReason)
+                return
+            }
+            if case .type(let password) = decision {
+                stickyModifiers = []
+                input.typeCharacters(password)
+                input.tapChord(keyCode: 0x24, modifiers: []) // Return
+            } else {
+                typeThroughScreenSharing()
+            }
+        }
+    }
+
+    private var confirmationReason: String {
+        session.hostStatus?.isScreenLocked == true ? "Unlock \(device.name)" : "Type your password on \(device.name)"
+    }
+
+    /// Asks, then decides again: the Mac may have locked or unlocked while the prompt was up.
+    private func confirmThenType(reason: String) {
+        guard confirmationTask == nil, screenSharingTyping != .typing else { return }
+        confirmationTask = Task { [weak self] in
+            let outcome = await PasswordConfirmation.confirm(reason)
+            guard let self, !Task.isCancelled else { return }
+            confirmationTask = nil
+            switch outcome {
+            case .confirmed: typePassword(confirmed: true)
+            case .cancelled: break
+            case .failed(let message): screenSharingError = message
+            }
         }
     }
 
     /// The password sheet was saved: keeps what it gave (a password, an account name, or both)
-    /// and types.
-    func savePasswordAndType(password: String?, accountName: String?) {
+    /// and types, without asking for Face ID about a password just typed. Returns why the
+    /// Keychain didn't take it, and then the sheet stays.
+    func savePasswordAndType(password: String?, accountName: String?) -> String? {
+        let device = savedDevice
+        do {
+            if let password, !password.isEmpty { try DeviceSecrets.setPassword(password, for: device) }
+            if let accountName, !accountName.isEmpty { try DeviceSecrets.setUsername(accountName, for: device) }
+        } catch {
+            return error.localizedDescription
+        }
         passwordPrompt = nil
-        if let password, !password.isEmpty { DeviceSecrets.setPassword(password, for: device) }
-        if let accountName, !accountName.isEmpty { DeviceSecrets.setUsername(accountName, for: device) }
-        typePassword()
+        refreshSavedSignIn()
+        typePassword(confirmed: true)
+        return nil
     }
 
     private func typeThroughScreenSharing() {
         guard screenSharingTyping != .typing else { return }
         stickyModifiers = []
         screenSharingTyping = .typing
-        screenSharingTask = Task { [weak self, device] in
+        screenSharingTask = Task { [weak self, device = savedDevice] in
             do {
                 try await ScreenSharingPassword.type(for: device)
                 guard let self, !Task.isCancelled else { return }
@@ -605,6 +664,9 @@ final class ScreenSessionModel {
             }
         }
         watch({ $0.keyRemap }) { model, remap in model.input.keyRemap = remap }
+        // A lock screen or secure field: the banner's button says what's saved (another device
+        // may have synced a password in meanwhile).
+        watch({ $0.session.hostStatus }) { model, _ in model.refreshSavedSignIn() }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
         watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
         watch({ $0.quality }) { model, quality in model.session.setQuality(quality) }
@@ -655,6 +717,7 @@ final class ScreenSessionModel {
             // Hosts before the platform field are all Macs.
             store.recordPlatform(session.hostPlatform ?? .macOS, for: device.id)
             if let key = session.hostPublicKey { store.recordHostKey(key, for: device.id) }
+            if let natural = session.capabilities?.naturalScroll { store.adoptHostNaturalScroll(natural, for: device.id) }
             #if os(macOS)
             checkForThisMac()
             #endif

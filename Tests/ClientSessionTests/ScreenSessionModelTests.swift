@@ -158,6 +158,7 @@ private final class MockScreenHost: @unchecked Sendable {
     func markConnected(_ device: SavedDevice) { connections += 1 }
     func recordPlatform(_ platform: HostPlatform, for id: UUID) { device.os = platform.savedOS }
     func recordHostKey(_ key: Data, for id: UUID) { device.hostPublicKey = key }
+    func adoptHostNaturalScroll(_ natural: Bool, for id: UUID) { if device.naturalScrollChosen != true { device.naturalScroll = natural } }
     func setPlayMacAudio(_ on: Bool, for id: UUID) { device.playMacAudio = on }
     func setCurtain(_ on: Bool, for id: UUID) { device.curtain = on }
     func setUseVirtualDisplay(_ on: Bool, for id: UUID) { device.useVirtualDisplay = on }

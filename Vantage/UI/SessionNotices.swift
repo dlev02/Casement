@@ -3,11 +3,15 @@ import VantageCore
 
 // The screen session's banners, badges and the password sheet (`RemoteSessionLayout` places them).
 
-/// Explains why input may be ignored: the host is locked or a secure field has focus. A locked
-/// PC can't be unlocked from here (there's no saved password to type), so it says where to go.
+/// Explains why input may be ignored: the host is locked or a secure field has focus. On a Mac
+/// its button types the saved password through Screen Sharing after Face ID (`HostUnlockOffer`),
+/// or saves one first. A locked PC can't be unlocked from here (there's no saved password to
+/// type), so it says where to go.
 struct HostStatusBanner: View {
     let status: HostStatus
     var host = HostNoun.mac
+    var offer: HostUnlockOffer?
+    var onUnlock: () -> Void = {}
 
     private var text: String {
         if host.isWindows {
@@ -24,13 +28,28 @@ struct HostStatusBanner: View {
             Text(text)
                 .font(.callout)
             Spacer(minLength: 0)
+            if let offer {
+                Button(action: onUnlock) {
+                    if offer.isBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(offer.title(confirmation: PasswordConfirmation.willAsk ? PasswordConfirmation.biometryName : nil),
+                              systemImage: offer.symbol)
+                    }
+                }
+                .font(.callout.weight(.semibold))
+                .buttonStyle(.onCardProminent)
+                .disabled(offer.isBusy)
+                .accessibilityIdentifier("session.unlock")
+            }
         }
         .foregroundStyle(.primary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.leading, 14)
+        .padding(.trailing, offer == nil ? 14 : 6)
+        .padding(.vertical, offer == nil ? 10 : 6)
         .platformGlass(in: .capsule)
-        .frame(maxWidth: 520)
-        .accessibilityElement(children: .combine)
+        .frame(maxWidth: 560)
+        .accessibilityElement(children: offer == nil ? .combine : .contain)
         .announcing(text)
     }
 }
@@ -146,9 +165,11 @@ struct PasswordPromptSheet: View {
     let prompt: PasswordPrompt
     let onCancel: () -> Void
     /// Save & Type: the password (for `.missing`) and the account name, empty when not given.
-    let onSave: (_ password: String?, _ accountName: String?) -> Void
+    /// Returns why the Keychain didn't take them (the sheet stays and says so), or nil.
+    let onSave: (_ password: String?, _ accountName: String?) -> String?
     @State private var password = ""
     @State private var username = ""
+    @State private var saveError: String?
 
     private var canSave: Bool {
         switch prompt {
@@ -195,10 +216,15 @@ struct PasswordPromptSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save & Type") {
-                        onSave(prompt == .missing ? password : nil, username.isEmpty ? nil : username)
+                        saveError = onSave(prompt == .missing ? password : nil, username.isEmpty ? nil : username)
                     }
                     .disabled(!canSave)
                 }
+            }
+            .alert("Couldn't Save the Password", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveError ?? "")
             }
         }
         #if os(macOS)

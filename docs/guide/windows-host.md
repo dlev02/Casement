@@ -106,6 +106,10 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
   answer, the idle pass), with `HevcSessionTests`, `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
   and `DisplayFittingTests.AQualityChangeAloneDoesNotRestartTheStream` over loopback.
+- **Scroll signs** (`WindowsInputTranslator.Scroll`): the Mac host's. Lines: WHEEL = +deltaY,
+  HWHEEL = −deltaX; continuous deltas arrive negated, so WHEEL = −deltaY, HWHEEL = +deltaX. Until
+  2026-11-22 continuous deltas took the line signs and trackpad scrolling ran backwards from every
+  client (`MacTrackpadAndWheelScrollTheSameWay`).
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
@@ -386,7 +390,8 @@ VANTAGE_INTEROP_HOST=127.0.0.1:47862 VANTAGE_INTEROP_INPUT_LOG=/tmp/in.jsonl \
 defined in `Packages/VantageCore/Tests/VantageCoreTests/WireGoldenVectorTests.swift` and
 `WindowsHost/tests/Vantage.Protocol.Tests/GoldenVectorTests.cs`. Each side decodes the other's
 (JSON compared key for key after canonicalising, binary byte for byte);
-`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files. A change to any message must update both lists.
+`VANTAGE_WRITE_GOLDEN=1` rewrites a side's files (the Swift wire encoder sorts JSON keys, so only
+messages that changed show up in the diff). A change to any message must update both lists.
 **Interop harness**: `Tests/ClientSessionTests/WindowsHostInteropTests.swift` (opt-in,
 `.serialized`) drives the real `ClientSession` and raw channels against a running Windows host:
 pairing, burning, probe, version mismatch, the stream decoded with VideoToolbox (a PNG is written,

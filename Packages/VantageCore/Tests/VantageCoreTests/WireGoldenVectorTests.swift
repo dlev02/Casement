@@ -34,7 +34,8 @@ import Testing
         ("authenticate", .authenticate(Authenticate(signature: signature64, pairingCode: "024680"))),
         ("authResultOk", .authResult(AuthResult(status: .ok, sessionToken: token, displays: [display],
                                                 capabilities: HostCapabilities(codecs: [.h264], canManageVirtualDisplay: false, clipboard: true, maxFPS: 60,
-                                                                               fileTransfer: true, filesOnlySessions: true, platform: .windows)))),
+                                                                               fileTransfer: true, filesOnlySessions: true, platform: .windows,
+                                                                               naturalScroll: false)))),
         ("authResultPairing", .authResult(AuthResult(status: .pairingRequired, message: "Enter the pairing code shown on the PC"))),
         ("authResultProbe", .authResult(AuthResult(status: .ok, readiness: HostReadiness(screenRecordingGranted: true, accessibilityGranted: true)))),
         ("displayList", .displayList(DisplayList(displays: [display]))),
@@ -95,7 +96,7 @@ import Testing
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try frame.write(to: url)
         }
-        // JSON key order isn't promised by JSONEncoder, so compare what the committed bytes mean.
+        // Compare what the committed bytes mean, so a reordered or reformatted file still passes.
         let committed = try Data(contentsOf: url)
         try Self.expectSameMessage(committed, as: message)
     }

@@ -562,12 +562,14 @@ double-clicks back to back.
 **Modifiers on pointer and scroll events:** the host adds the event's modifier bits to whatever
 modifier keys are held. On Windows, press the missing modifier keys around the click, then release them.
 
-**Scroll, Windows v1 rule (verify the sign on hardware; keep it in one constant):**
-- A **positive deltaY means content should move down**, i.e. reveal what's above, i.e. a positive
-  `WHEEL_DELTA`.
-- Discrete (wheel): `wheel = round(deltaY × 120)` via `MOUSEEVENTF_WHEEL`.
-- Continuous (trackpad): accumulate `deltaY × 120 / 48` per point and carry the fractional remainder.
-- Horizontal: `MOUSEEVENTF_HWHEEL` with `−deltaX` using the same scale (positive HWHEEL scrolls right).
+**Scroll, Windows rule (the Mac host's signs, so an event scrolls the same way on either host):**
+- Discrete (wheel): a **positive deltaY reveals what's above**: `wheel = round(deltaY × 120)` via
+  `MOUSEEVENTF_WHEEL`; horizontally `MOUSEEVENTF_HWHEEL` with `round(−deltaX × 120)` (positive
+  HWHEEL scrolls right).
+- Continuous (trackpad): the Mac host posts these negated, so here a **negative deltaY reveals what's
+  above**: accumulate `−deltaY × 120 / 48` per point (and `+deltaX × 120 / 48` for HWHEEL), carrying
+  the fractional remainder. The first Windows host gave continuous deltas the discrete signs, which
+  turned trackpad scrolling around from both clients (2026-11-22).
 - The Mac forwards scroll phases unchanged, except an iPad flick (`ended` + momentum `began` +
   velocity), which a host must glide like the Mac's `ScrollMomentum`: post the `ended` alone, then
   momentum began/changed/ended frames every 1/60 s in whole points, the velocity decaying 0.998 per

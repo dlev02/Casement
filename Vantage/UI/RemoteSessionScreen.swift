@@ -162,7 +162,7 @@ struct RemoteSessionLayout: View {
                 #endif
                 // A sleeping Mac also reports its lock screen; the asleep note says enough.
                 if let status = session.hostStatus, !session.isDisplayAsleep, status.isScreenLocked || status.isSecureInputActive {
-                    HostStatusBanner(status: status, host: host)
+                    HostStatusBanner(status: status, host: host, offer: model.unlockOffer) { model.typePassword() }
                         .padding(.top, 12)
                         .transition(bannerTransition)
                 }

@@ -534,7 +534,14 @@ final class ClientSession {
         case .streamConfig(let config):
             activeConfig = config
             if isAwaitingFittedStream { fittedStreamAnswered() }
-        case .hostStatus(let status):
+        case .hostStatus(var status):
+            #if DEBUG
+            switch ClientOptions.hostStatusFixture {
+            case "locked"?: status.isScreenLocked = true
+            case "secure"?: status.isSecureInputActive = true
+            default: break
+            }
+            #endif
             hostStatus = status
         case .curtainStatus(let status):
             curtainStatus = status

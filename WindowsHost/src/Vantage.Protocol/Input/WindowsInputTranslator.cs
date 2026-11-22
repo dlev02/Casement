@@ -17,15 +17,9 @@ public sealed class WindowsInputTranslator : IInputSink
     /// <summary>Wheel units per discrete line (<c>WHEEL_DELTA</c>).</summary>
     public const int WheelDelta = 120;
 
-    /// <summary>
-    /// Trackpad points per wheel notch: <c>deltaY × 120 / 48</c> wheel units per point. Positive
-    /// deltaY scrolls content down (reveals what's above) = positive WHEEL. Verify the sign on
-    /// hardware; this and <see cref="VerticalSign"/> are the only knobs.
-    /// </summary>
+    /// <summary>Trackpad points per wheel notch: <c>deltaY × 120 / 48</c> wheel units per point.</summary>
     public const double PointsPerNotch = 48;
 
-    /// <summary>+1: the wire's positive deltaY is a positive <c>MOUSEEVENTF_WHEEL</c>.</summary>
-    public const int VerticalSign = 1;
 
     private readonly IInputInjector _injector;
     private readonly ILogger _log;
@@ -100,7 +94,15 @@ public sealed class WindowsInputTranslator : IInputSink
         Flush();
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// The wire's signs are the Mac host's (<c>InputInjector.postScroll</c>): it posts line deltas
+    /// as they come and continuous deltas negated, so the same event scrolls the same way on either
+    /// host. A positive <c>MOUSEEVENTF_WHEEL</c> reveals what's above, as a positive Mac wheel does;
+    /// a positive <c>MOUSEEVENTF_HWHEEL</c> scrolls right, the opposite of a Mac's. So lines go as
+    /// WHEEL = +deltaY, HWHEEL = −deltaX, and continuous deltas as WHEEL = −deltaY, HWHEEL = +deltaX.
+    /// Continuous deltas once took the line signs here, which turned trackpad scrolling around from
+    /// every client (a Mac's trackpad and an iPad's alike).
+    /// </summary>
     public void Scroll(ScrollEvent scrollEvent)
     {
         if (scrollEvent.Phase == ScrollPhase.Began)
@@ -111,8 +113,8 @@ public sealed class WindowsInputTranslator : IInputSink
         int vertical, horizontal;
         if (scrollEvent.IsContinuous)
         {
-            _verticalRemainder += VerticalSign * scrollEvent.DeltaY * WheelDelta / PointsPerNotch;
-            _horizontalRemainder += -scrollEvent.DeltaX * WheelDelta / PointsPerNotch;
+            _verticalRemainder += -scrollEvent.DeltaY * WheelDelta / PointsPerNotch;
+            _horizontalRemainder += scrollEvent.DeltaX * WheelDelta / PointsPerNotch;
             vertical = (int)Math.Truncate(_verticalRemainder);
             horizontal = (int)Math.Truncate(_horizontalRemainder);
             _verticalRemainder -= vertical;
@@ -120,7 +122,7 @@ public sealed class WindowsInputTranslator : IInputSink
         }
         else
         {
-            vertical = (int)Math.Round(VerticalSign * scrollEvent.DeltaY * (double)WheelDelta);
+            vertical = (int)Math.Round(scrollEvent.DeltaY * (double)WheelDelta);
             horizontal = (int)Math.Round(-scrollEvent.DeltaX * (double)WheelDelta);
         }
         if (vertical == 0 && horizontal == 0) return;
