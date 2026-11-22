@@ -10,7 +10,7 @@ enum MacHostedIPadApp {
 
 /// Casement › Settings… (⌘,) in the iPad app on a Mac. macOS's own item opens a generic window
 /// for the iOS app's system settings, which looked like a stray window; this opens Casement's
-/// Settings instead (`ContentView` presents it).
+/// Settings instead (`ContentView` presents `SettingsSheet`).
 @MainActor
 @Observable
 final class MacHostedSettingsRequest {
@@ -25,22 +25,6 @@ struct MacHostedSettingsCommand: Commands {
                 Button("Settings…") { MacHostedSettingsRequest.shared.isPresented = true }
                     .keyboardShortcut(",", modifiers: .command)
             }
-        }
-    }
-}
-
-/// Settings in a sheet, with Done, for the menu bar's Settings….
-struct MacHostedSettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            SettingsScreen()
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
         }
     }
 }

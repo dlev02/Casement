@@ -120,6 +120,10 @@ _Avoid_: sound streaming, remote audio
 Speaking into the device to type on the computer, transcribed either on the device or on the Mac.
 _Avoid_: voice input, speech-to-text
 
+**Dictation History**:
+The last 30 dictations sent from a device, kept on that device only, to copy or send again.
+_Avoid_: transcript log, recents
+
 **Type Password**:
 Typing a password saved on the device into that computer, through Screen Sharing when the Mac's lock screen or a password field blocks ordinary typing.
 _Avoid_: autofill, password manager

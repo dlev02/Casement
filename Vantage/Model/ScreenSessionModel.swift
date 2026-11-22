@@ -93,6 +93,7 @@ final class ScreenSessionModel {
     var passwordPrompt: PasswordPrompt?
     var isPickingFiles = false
     var isShowingTransfers = false
+    var isShowingDictationHistory = false
     var isEditingControls = false
     /// "Files are still transferring. Disconnect anyway?" (an older host would stop them).
     var isConfirmingDisconnect = false
@@ -157,6 +158,7 @@ final class ScreenSessionModel {
     static let trackpadSensitivityKey = "vantage.trackpadSensitivity"
     static let keyboardModeKey = "vantage.softwareKeyboardMode"
     static let dictationEngineKey = "vantage.dictationEngine"
+    static let threeFingerSwipesKey = "vantage.threeFingerSwipes"
 
     /// `fileLink`: the computer's shared link (`FileTransferCenter`), so files keep moving after
     /// the screen closes; nil keeps the session's own (tests).
@@ -227,6 +229,7 @@ final class ScreenSessionModel {
         input.keyRemap = keyRemap
         refreshSavedSignIn()
         input.relativeOnly = isInputOnly
+        input.hostPlatform = hostPlatform
         watchDefaults()
         startWatching()
         connect(pairingCode: ClientOptions.pairingCode)
@@ -620,7 +623,8 @@ final class ScreenSessionModel {
     /// The computer (MacWhisper, Parakeet) when the host advertised it and Settings allows it;
     /// otherwise this device.
     var dictationRoute: DictationRoute {
-        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines)
+        DictationRoute.resolve(preference: dictationEngine, hostEngines: session.dictationEngines,
+                               hasOnDeviceParakeet: OnDeviceSpeechEngines.parakeet != nil)
     }
 
     func dictationPressed(_ press: DictationPress) {
@@ -631,6 +635,24 @@ final class ScreenSessionModel {
         case .toggle: dictation.toggle(route: dictationRoute)
         case .cancelled: dictation.pressCancelled()
         }
+    }
+
+    /// Recent dictations, to copy or send again. Listening pauses while the list is up.
+    func showDictationHistory() {
+        dictation.pause()
+        isShowingDictationHistory = true
+    }
+
+    /// Types a past dictation on the computer again, as it was sent the first time.
+    func resendDictation(_ text: String) {
+        stickyModifiers = []
+        input.typeText(text)
+        DictationHistory.shared.add(text, computer: savedDevice.name)
+    }
+
+    /// Dictated text copied rather than typed (a secure field on the Mac was in the way).
+    func dictationCopied(_ text: String) {
+        DictationHistory.shared.add(text, computer: savedDevice.name)
     }
 
     // MARK: Wiring
@@ -653,9 +675,10 @@ final class ScreenSessionModel {
         session.onFitRequested = { [weak self] in self?.expectFirstFrame(requiringNewConfig: true) }
         input.send = { [weak self] message in self?.session.send(message) }
         dictation.send = { [weak self] message in self?.session.send(message) }
-        dictation.deliver = { [input] text, pressReturn in
+        dictation.deliver = { [weak self, input] text, pressReturn in
             input.typeText(text)
             if pressReturn { input.tapChord(keyCode: 0x24, modifiers: []) }
+            DictationHistory.shared.add(text, computer: self?.savedDevice.name)
         }
         dictation.onMicrophoneActive = { [macAudio] active in macAudio.setMicrophoneActive(active) }
     }
@@ -690,6 +713,7 @@ final class ScreenSessionModel {
         // A lock screen or secure field: the banner's button says what's saved (another device
         // may have synced a password in meanwhile).
         watch({ $0.session.hostStatus }) { model, _ in model.refreshSavedSignIn() }
+        watch({ $0.hostPlatform }) { model, platform in model.input.hostPlatform = platform }
         watch({ $0.naturalScroll }) { model, natural in model.input.naturalScroll = natural }
         watch({ $0.wantsFitDisplay }) { model, on in model.session.setFitDisplay(on) }
         watch({ $0.quality }) { model, quality in model.session.setQuality(quality) }
@@ -819,6 +843,7 @@ final class ScreenSessionModel {
         var trackpadSensitivity: Double?
         var keyboardMode: SoftwareKeyboardMode?
         var dictationEngine: DictationEnginePreference?
+        var threeFingerSwipes: Bool?
         var defaultStripLayout: ControlStripLayout?
         var capturesShortcuts: Bool?
     }
@@ -835,6 +860,11 @@ final class ScreenSessionModel {
             readDefaults.trackpadSensitivity = sensitivity
             trackpadSensitivity = sensitivity
             input.trackpadSensitivity = sensitivity
+        }
+        let swipes = defaults.object(forKey: Self.threeFingerSwipesKey) as? Bool ?? true
+        if swipes != readDefaults.threeFingerSwipes {
+            readDefaults.threeFingerSwipes = swipes
+            input.threeFingerSwipes = swipes
         }
         let keyboard = defaults.string(forKey: Self.keyboardModeKey).flatMap(SoftwareKeyboardMode.init(rawValue:)) ?? .unicode
         if keyboard != readDefaults.keyboardMode {

@@ -21,6 +21,8 @@ struct ControlStrip: View {
     /// Dictation is listening (the mic button shows as active).
     var isDictating = false
     var onDictation: (DictationPress) -> Void = { _ in }
+    /// Opens the recent dictations from the session menu; nil (history off) leaves the item out.
+    var onShowDictationHistory: (() -> Void)?
     /// Set while the strip is being dragged between corners, so the button under the finger
     /// doesn't also fire when it's let go.
     var tapGuard: StripTapGuard?
@@ -545,6 +547,12 @@ struct ControlStrip: View {
         .accessibilityIdentifier("session.menu.transfers")
         Button(action: onSendClipboard) {
             Label("Send Clipboard to \(noun.name)", systemImage: "doc.on.clipboard")
+        }
+        if let onShowDictationHistory {
+            Button(action: onShowDictationHistory) {
+                Label("Dictation History…", systemImage: "clock")
+            }
+            .accessibilityIdentifier("session.menu.dictationHistory")
         }
     }
 

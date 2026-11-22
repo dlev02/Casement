@@ -33,7 +33,7 @@ struct TransfersView: View {
                 } actions: {
                     if canSend {
                         Button("Send File…") { showImporter = true }
-                            .buttonStyle(.glassProminent)
+                            .buttonStyle(.onCardProminent)
                     }
                 }
             } else {

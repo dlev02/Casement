@@ -298,23 +298,26 @@ private struct MacDeviceDetail: View {
             }
             // One row where the pane is wide enough; otherwise Connect on its own line with the
             // rest under it, and in a narrow pane the rest as icons (each keeps its tooltip).
+            // Every button is the same size and shape: one filled push button and plain
+            // bordered ones, as in a Mac inspector, rather than a row of glass pills.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     connectButton
                     secondaryButtons
                         .labelStyle(.titleAndIcon)
                 }
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     connectButton
                     HStack(spacing: 8) { secondaryButtons }
                         .labelStyle(.titleAndIcon)
                 }
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     connectButton
                     HStack(spacing: 8) { secondaryButtons }
                         .labelStyle(.iconOnly)
                 }
             }
+            .controlSize(.large)
             if let files, files.hasActiveTransfers {
                 DeviceTransferBadge(files: files, macName: device.name) { actions.transfersDevice = device }
             }
@@ -329,8 +332,7 @@ private struct MacDeviceDetail: View {
             Label("Connect", systemImage: "play.display")
                 .padding(.horizontal, 6)
         }
-        .buttonStyle(.glassProminent)
-        .controlSize(.large)
+        .buttonStyle(.borderedProminent)
         .labelStyle(.titleAndIcon)
         .keyboardShortcut(.defaultAction)
         .help("Open \(device.name)'s screen in a window")
@@ -355,13 +357,13 @@ private struct MacDeviceDetail: View {
             .help("Change \(device.name)'s settings")
             if ScreenSharingPassword.canLogIn(device) {
                 Button { actions.requestLogIn(to: device) } label: {
-                    Label("Log In with Screen Sharing", systemImage: "key")
+                    Label("Log In…", systemImage: "key")
                 }
-                .help("Type \(device.name)'s saved password at its login or lock screen")
+                .help("Log in with Screen Sharing: type \(device.name)'s saved password at its login or lock screen")
+                .accessibilityLabel("Log In with Screen Sharing")
             }
         }
-        .buttonStyle(.glass)
-        .controlSize(.regular)
+        .buttonStyle(.bordered)
     }
 
     private var address: String {

@@ -25,9 +25,11 @@ extension PrimitiveButtonStyle where Self == BorderedProminentButtonStyle {
 }
 #endif
 
-// Buttons that sit on a glass card. On the Mac a glass button on a glass card reads as one
-// smear, so they're plain bordered buttons there (as they already are on visionOS); iPadOS and
-// iOS keep Liquid Glass.
+// Buttons that sit on a glass card, or in a Mac window's own content (an empty state's action,
+// the lock screen's Unlock). On the Mac a glass button on a glass card reads as one smear, and
+// glass buttons scattered through a window's content compete with its toolbar and sidebar, which
+// are glass already: so they're standard bordered push buttons there (as they already are on
+// visionOS). iPadOS and iOS keep Liquid Glass.
 #if os(macOS) || os(visionOS)
 extension PrimitiveButtonStyle where Self == BorderedButtonStyle {
     static var onCard: BorderedButtonStyle { .bordered }

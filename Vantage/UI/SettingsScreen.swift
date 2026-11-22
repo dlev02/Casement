@@ -96,12 +96,16 @@ private struct DeviceListLayoutSection: View {
 struct ControlSettings: View {
     @AppStorage("vantage.touchMode") private var touchMode = InputController.TouchMode.trackpad
     @AppStorage("vantage.trackpadSensitivity") private var sensitivity = 1.5
+    @AppStorage(ScreenSessionModel.threeFingerSwipesKey) private var threeFingerSwipes = true
     @AppStorage("vantage.softwareKeyboardMode") private var keyboardMode = SoftwareKeyboardMode.unicode
     @AppStorage("vantage.toolbarDock") private var dock = ToolbarDock.bottomLeft
     @AppStorage("vantage.toolbarCollapsed") private var collapsed = false
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
+    @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
+    @State private var isConfirmingClearHistory = false
+    private let dictationHistory = DictationHistory.shared
     @AppStorage(Haptic.settingKey) private var haptics = true
     @AppStorage(TabletopDeckMode.enabledKey) private var tabletopLayout = true
     @AppStorage(TabletopDeckMode.defaultsKey) private var tabletopDeck = TabletopDeckMode.trackpad
@@ -157,10 +161,12 @@ struct ControlSettings: View {
                         .accessibilityLabel("Trackpad sensitivity")
                         .accessibilityValue("\(sensitivity.formatted(.number.precision(.fractionLength(1)))) times")
                 }
+                Toggle("Three-Finger Swipes", isOn: $threeFingerSwipes)
+                    .accessibilityIdentifier("settings.threeFingerSwipes")
             } header: {
                 Text("Pointer")
             } footer: {
-                Text("Trackpad moves the Mac's pointer like a laptop trackpad and taps to click. Direct Touch clicks exactly where you tap.")
+                Text("Trackpad moves the Mac's pointer like a laptop trackpad and taps to click. Direct Touch clicks exactly where you tap. In Trackpad, three-finger swipes work as on a Mac's trackpad: left and right switch Spaces, up opens Mission Control, and down shows the app's windows.")
             }
             #endif
 
@@ -249,7 +255,7 @@ struct ControlSettings: View {
         .navigationTitle("Controls")
     }
 
-    private var dictationSection: some View {
+    @ViewBuilder private var dictationSection: some View {
         Section {
             Picker("Transcribe", selection: $dictationEngine) {
                 ForEach(DictationEnginePreference.allCases) { engine in
@@ -260,11 +266,45 @@ struct ControlSettings: View {
             Text("Dictation")
         } footer: {
             #if os(macOS)
-            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the control strip to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead, with the same model. This Mac works offline and shows words as you speak.")
+            Text("Choose Dictate in the Session menu (⌃⌥⌘D), or hold the microphone button in the control strip to talk. On the other Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When that Mac has only Apple Speech, this Mac transcribes instead. This Mac works offline and shows words as you speak.")
             #else
-            Text("Hold the microphone button in the control strip to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead, with the same model. On this \(LocalDevice.noun) works offline and shows words as you speak.")
+            Text("Hold the microphone button in the control strip to talk, or tap it to start and tap again to stop. On the Mac, Casement Host transcribes with the engine chosen in its Settings → Dictation: MacWhisper, its built-in Parakeet, or Apple Speech. When the Mac has only Apple Speech, this \(LocalDevice.noun) transcribes instead. On this \(LocalDevice.noun) works offline and shows words as you speak.")
             #endif
         }
+
+        #if canImport(FluidAudio)
+        OnDeviceParakeetSection()
+        #endif
+
+        Section {
+            Toggle("Save Dictation History", isOn: $savesDictationHistory)
+                .accessibilityIdentifier("settings.dictationHistory")
+            #if os(macOS)
+            // System Settings puts a section's buttons on the trailing edge.
+            HStack {
+                Spacer()
+                clearHistoryButton
+            }
+            #else
+            clearHistoryButton
+            #endif
+        } footer: {
+            Text("The last \(DictationHistory.limit) dictations you sent, kept on \(LocalDevice.this) only, to copy or send again from the dictation panel. Turning this off deletes them.")
+        }
+        .onChange(of: savesDictationHistory) { _, saves in
+            if !saves { dictationHistory.clear() }
+        }
+        .task { dictationHistory.load() }
+        .confirmationDialog("Clear dictation history?", isPresented: $isConfirmingClearHistory, titleVisibility: .visible) {
+            Button("Clear History", role: .destructive) { dictationHistory.clear() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var clearHistoryButton: some View {
+        Button("Clear History…", role: .destructive) { isConfirmingClearHistory = true }
+            .disabled(dictationHistory.entries.isEmpty)
+            .accessibilityIdentifier("settings.clearDictationHistory")
     }
 
     #if os(macOS)
@@ -608,11 +648,11 @@ struct HelpScreen: View {
             FAQEntry("Does my screen go through a server?",
                      "No. There is no Casement account or Casement relay. Video and input travel between your own devices inside Tailscale's encrypted tunnel; Tailscale may relay encrypted traffic when a direct connection is unavailable. Casement has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Does Casement Host connect to anything else?",
-                     "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face."),
+                     "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face. The Casement app does the same only if you choose to download its own Parakeet model in Settings → Controls."),
             FAQEntry("Can someone else connect to my Mac or PC?",
                      "Only a device on your tailnet that you've paired, using a key the computer has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Casement store on this device?",
-                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a computer forgets its saved secrets too."),
+                     "Your saved Macs and preferences, plus keys in the Keychain: this device's identity and, if you added them, your Tailscale key and Mac account name and password, readable only while this device is unlocked. Removing a computer forgets its saved secrets too. Unless you turn it off in Settings → Controls, it also keeps the last \(DictationHistory.limit) dictations you sent, on this device only."),
             FAQEntry("What does iCloud sync share?",
                      "Your saved Macs, their passwords, and your Tailscale key — the things you'd otherwise set up again on each device. Passwords and keys go through iCloud Keychain, which is end-to-end encrypted. Each device keeps its own identity key, so a new device still pairs with the Mac once. Turn it on in Settings → Privacy & Security."),
         ]),
@@ -626,6 +666,10 @@ struct HelpScreen: View {
 }
 
 extension HelpScreen {
+    private static let dictationHistoryEntry = FAQEntry(
+        "Can I get back something I dictated?",
+        "Yes. The clock in the dictation panel, or Dictation History… in the session menu, lists the last \(DictationHistory.limit) dictations you sent, each with Copy and Send. They're kept on \(LocalDevice.this) only and never synced. Turn off Save Dictation History in Settings → Controls to stop keeping them, which also deletes them.")
+
     #if os(macOS)
     private static let siriEntry = FAQEntry("Can I connect from Siri, Shortcuts, or Spotlight?",
                                            "Yes. Say \"Connect to Studio Mac in Casement\" to Siri, search the Mac's name in Spotlight, or add the Connect to Mac action to a Shortcut. The Mac opens in a window of its own. If Casement is locked with Touch ID, the connection waits until you unlock.")
@@ -648,7 +692,8 @@ extension HelpScreen {
         FAQEntry("Can I change the buttons in the control strip?",
                  "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Control Strip… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own, with Apple's speech recognition or with Parakeet if you download it in Settings → Controls (handy for a PC, which has no engine of its own). Pause holds the recording while you think and Resume carries on. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+        dictationHistoryEntry,
     ]
     #else
     #if os(visionOS)
@@ -676,6 +721,8 @@ extension HelpScreen {
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the control strip or in Settings → Controls."),
                 FAQEntry("How do I right-click or middle-click?",
                          "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+                FAQEntry("What do three-finger swipes do?",
+                         "In Trackpad mode they work as on a Mac's own trackpad: swipe three fingers left or right to move between Spaces, up for Mission Control, and down for the front app's windows. On a PC the same swipes move between desktops, open Task View, and show the desktop. They also work on the trackpad half of an iPhone folded like a laptop. Turn them off in Settings → Controls → Three-Finger Swipes."),
     ]
     #endif
     private static let controllingTheMac: [FAQEntry] = touchEntries + [
@@ -690,7 +737,8 @@ extension HelpScreen {
                 FAQEntry("Can I change the buttons in the control strip?",
                          "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Control Strip… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own, with Apple's speech recognition or, on iPhone, iPad and Mac, with Parakeet if you download it in Settings → Controls (handy for a PC, which has no engine of its own). Pause holds the recording while you think and Resume carries on. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                dictationHistoryEntry,
     ]
     #endif
 }
@@ -794,4 +842,115 @@ private extension Bundle {
 
 #if canImport(UIKit)
 import UIKit
+#endif
+
+#if canImport(FluidAudio)
+/// Settings → Controls → Dictation: the optional Parakeet model for this device. One row holds
+/// its state, its size and the one thing to do with it; nothing is fetched until Download.
+private struct OnDeviceParakeetSection: View {
+    private let parakeet = OnDeviceParakeet.shared
+    @State private var isConfirmingMeteredDownload = false
+
+    var body: some View {
+        Section {
+            LabeledContent("Parakeet") { modelRow }
+            if case .failed(let message) = parakeet.state {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if parakeet.state == .installed {
+                Toggle("Use Parakeet", isOn: Binding(get: { parakeet.isEnabled }, set: { parakeet.setEnabled($0) }))
+                    .accessibilityIdentifier("settings.useParakeet")
+            }
+        } header: {
+            Text("On \(LocalDevice.thisCapitalized)")
+        } footer: {
+            Text("NVIDIA's Parakeet model transcribes English and 24 other European languages on \(LocalDevice.this), in place of Apple's speech recognition: for dictating to a PC, or to a Mac without MacWhisper. It is about \(downloadSize), downloaded from Hugging Face only when you choose Download.")
+        }
+        .confirmationDialog("Download \(downloadSize) on this connection?", isPresented: $isConfirmingMeteredDownload, titleVisibility: .visible) {
+            Button("Download") { parakeet.download() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(LocalDevice.thisCapitalized) is on cellular or a personal hotspot.")
+        }
+    }
+
+    private var downloadSize: String {
+        OnDeviceParakeet.approximateDownloadSize.formatted(.byteCount(style: .file))
+    }
+
+    @ViewBuilder private var modelRow: some View {
+        HStack(spacing: 10) {
+            switch parakeet.state {
+            case .notInstalled, .failed:
+                Text(parakeet.hasModelFiles ? "Incomplete" : downloadSize).foregroundStyle(.secondary)
+                if parakeet.hasModelFiles {
+                    Button("Remove", role: .destructive) { parakeet.remove() }
+                }
+                if !OnDeviceParakeet.isInstalled {
+                    Button("Download") { requestDownload() }
+                        .accessibilityIdentifier("settings.parakeetDownload")
+                }
+            case .downloading(let fraction):
+                if let fraction {
+                    ProgressView(value: fraction).frame(width: 72)
+                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Cancel") { parakeet.cancelDownload() }
+            case .preparing:
+                ProgressView().controlSize(.small)
+                Text("Getting Ready…").foregroundStyle(.secondary)
+            case .installed:
+                Text(parakeet.installedBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "Downloaded")
+                    .foregroundStyle(.secondary)
+                Button("Remove", role: .destructive) { parakeet.remove() }
+                    .accessibilityIdentifier("settings.parakeetRemove")
+            }
+        }
+        #if !os(macOS)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        #endif
+    }
+
+    /// Half a gigabyte over cellular or a hotspot asks first.
+    private func requestDownload() {
+        #if os(iOS)
+        Task {
+            if await OnDeviceParakeet.isOnExpensiveNetwork() {
+                isConfirmingMeteredDownload = true
+            } else {
+                parakeet.download()
+            }
+        }
+        #else
+        parakeet.download()
+        #endif
+    }
+}
+#endif
+
+#if !os(macOS)
+/// Settings in a sheet with Done: from the list's gear button, and from Casement › Settings… (⌘,)
+/// when the iPad app runs on a Mac. The Mac's own sheet is `MacSettingsSheet`.
+struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SettingsScreen()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("settings.done")
+                    }
+                }
+        }
+    }
+}
 #endif

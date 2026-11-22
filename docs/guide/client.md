@@ -23,10 +23,19 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `AppLock` counts that as leaving under the same delay (with Immediately it asks on every swipe
   back), without the away cover. The device list drops its large title and bar
   background there (`MacHostedListBar`; the window's title bar already says Casement), and
-  Casement › Settings… (⌘,) opens Casement's Settings in a sheet (`MacHostedSettingsCommand`)
-  instead of macOS's generic settings window for iOS apps.
+  Casement › Settings… (⌘,) opens Casement's Settings in the same sheet as the list's gear
+  (`MacHostedSettingsCommand`, `SettingsSheet`) instead of macOS's generic settings window for
+  iOS apps.
   The list's Grid/List is its own toolbar button beside Sort, and Settings → Appearance →
   Computer List.
+- **Device list and Settings**: the list's gear opens Settings as a sheet with Done on every
+  device (`DeviceActions.showSettings`; `SettingsSheet` on iOS and visionOS, `MacSettingsSheet`
+  on the Mac), never a pushed page: Drew wanted the list to stay where it is. The pages push
+  inside the sheet's own stack. An empty list shows `DeviceListEmptyState`: the three setup
+  steps (install Casement Host, add the computer, pair) with a link to the download, then Add
+  from Tailscale… and Add Manually… as two equal bordered buttons, side by side where they fit.
+  It is the setup guide for a two-part product, so the steps stay spelled out; buttons in a
+  window's content are bordered, not glass (`CODING_STANDARDS.md`).
 - **Screen session model** (`ScreenSessionModel`, `Vantage/Model`): one `@Observable` object per
   screen session owns the connection (`ClientSession`), the picture (`VideoStreamController`),
   `InputController`, `DictationController` and `MacAudioPlayer`, and wires them together once
@@ -85,7 +94,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   description folded into the label made it "Reorder Escape, Esc key" on iOS 27. Tests:
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
-- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display and Quality right under Audio and Curtain; compact puts Quality in the Mac/PC submenu).
+- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸ (Dictation History… sits here, after Send Clipboard, while the history is on), Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display and Quality right under Audio and Curtain; compact puts Quality in the Mac/PC submenu).
 - **Quality** (`SavedDevice.quality`, nil = Balanced; `QualityPreset.offered`, `label`, `summary` in `StripActions.swift`): Fluid (`motion`), Balanced (`auto`), Sharp Text (`text`), picked in the session menu (`qualityPicker`, `session.menu.quality`), the Mac's Session menu and device pane, and the Edit sheet (whose footer says what the choice trades). A change mid-session applies to the running stream without a restart; what each does on the host is in [connection.md](connection.md). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
 - **Trackpad & Keyboard** (`DeviceActions.inputOnlyDevice` → `RemoteSessionScreen(inputOnly:)` →
   `ScreenSessionModel.isInputOnly`): an input-only session laid out as `TabletopDeck` full screen,

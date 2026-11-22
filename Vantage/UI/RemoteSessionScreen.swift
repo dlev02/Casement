@@ -71,6 +71,7 @@ struct RemoteSessionLayout: View {
     @State private var stripTapGuard = StripTapGuard()
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
+    @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
     #if os(macOS)
     @AppStorage(MacKeyboardSettings.swapCommandControlKey) private var swapsCommandAndControl = false
     @State private var windowShape = SessionWindowShape()
@@ -340,6 +341,17 @@ struct RemoteSessionLayout: View {
             #endif
             .appLockCurtain()
         }
+        .sheet(isPresented: $model.isShowingDictationHistory) {
+            NavigationStack {
+                DictationHistoryView(canSend: model.isConnected && session.hostStatus?.isSecureInputActive != true,
+                                     computer: device.name,
+                                     onSend: { model.resendDictation($0) }, onCopy: Self.copyToClipboard)
+            }
+            #if os(macOS)
+            .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 480)
+            #endif
+            .appLockCurtain()
+        }
         .alert("Files are still transferring. Disconnect anyway?", isPresented: $model.isConfirmingDisconnect) {
             Button("Disconnect", role: .destructive) { model.end() }
             Button("Cancel", role: .cancel) {}
@@ -402,6 +414,7 @@ struct RemoteSessionLayout: View {
             onDisconnect: { model.disconnect() },
             isDictating: model.dictation.isListening,
             onDictation: { model.dictationPressed($0) },
+            onShowDictationHistory: savesDictationHistory ? { model.showDictationHistory() } : nil,
             tapGuard: stripTapGuard,
             items: model.stripItems,
             onCustomize: { model.isEditingControls = true },
@@ -654,7 +667,11 @@ struct RemoteSessionLayout: View {
         if model.dictation.isActive {
             DictationPanel(dictation: model.dictation,
                            isTypingBlocked: session.hostStatus?.isSecureInputActive == true,
-                           onCopy: Self.copyToClipboard)
+                           onCopy: { text in
+                               Self.copyToClipboard(text)
+                               model.dictationCopied(text)
+                           },
+                           onShowHistory: { model.showDictationHistory() })
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: toolbarDock.isTop ? .top : .bottom)))
         }
     }

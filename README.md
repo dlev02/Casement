@@ -68,7 +68,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 **See your screen, sharp and fast.** Hardware HEVC or H.264 encoding with low-latency settings, colour-accurate from end to end. Bitrate and frame rate adapt to your connection; text stays crisp and motion stays smooth. Optionally, a Mac can make a virtual display shaped like your iPad (with [BetterDisplay](https://github.com/waydabber/BetterDisplay)), and a PC can switch its display to the resolution closest to your screen's shape while you're connected.
 
 **Control it naturally.**
-- *iPad and iPhone:* Trackpad or Direct Touch, two- and three-finger clicks, scrolling with momentum, Apple Pencil, and a hardware keyboard, mouse, or trackpad. Move the pointer into a screen edge or corner and the Mac's Dock, menu bar, and hot corners respond.
+- *iPad and iPhone:* Trackpad or Direct Touch, two- and three-finger clicks, three-finger swipes for Spaces and Mission Control, scrolling with momentum, Apple Pencil, and a hardware keyboard, mouse, or trackpad. Move the pointer into a screen edge or corner and the Mac's Dock, menu bar, and hot corners respond.
 - *Mac:* each computer opens in its own window. Your keyboard shortcuts go through, and full screen really is full screen.
 - *Apple Vision Pro:* look and pinch, in windows that keep the computer's shape.
 - A **control strip** you can customize per computer, with Mission Control, Spotlight, Show Desktop, and the modifier keys (or Start, Task View, and Task Manager on a PC). Drag it to any corner or collapse it.
@@ -77,7 +77,7 @@ Casement will stay free, with no ads, subscriptions, or in-app purchases. Publis
 
 **Hear your Mac or PC.** Stream the computer's sound to your device with low latency (Opus).
 
-**Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model.
+**Dictate.** Speak and Casement types for you, transcribed on your device or on the Mac with [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) or a built-in Parakeet model. Pause and resume mid-sentence, and copy or resend anything from your last 30 dictations. An optional Parakeet download brings the same accuracy to your iPhone, iPad, or Mac when you dictate to a PC.
 
 **Share the clipboard.** Text, rich text, and images. What you copy on the computer arrives on your device, except what a password manager marks as private; your device's clipboard is sent only when you ask.
 
@@ -221,4 +221,4 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Casement is free software under the [GNU General Public License v3.0](LICENSE). Copyright © 2026 Drew Levinson.
 
-It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional on-Mac dictation, [Sparkle](https://sparkle-project.org) (MIT) for the Mac host's updates, and, in the Windows host, [NSec](https://nsec.rocks), [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) and the [Windows Community Toolkit](https://github.com/CommunityToolkit/Windows) (MIT) and [Concentus](https://github.com/lostromb/concentus) (BSD 3-Clause, a C# port of Opus). Casement isn't affiliated with Apple, Microsoft, or Tailscale.
+It builds on [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) and NVIDIA's Parakeet TDT 0.6B v3 model (CC BY 4.0) for optional dictation on the Mac host and on your own device, [Sparkle](https://sparkle-project.org) (MIT) for the Mac host's updates, and, in the Windows host, [NSec](https://nsec.rocks), [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) and the [Windows Community Toolkit](https://github.com/CommunityToolkit/Windows) (MIT) and [Concentus](https://github.com/lostromb/concentus) (BSD 3-Clause, a C# port of Opus). Casement isn't affiliated with Apple, Microsoft, or Tailscale.

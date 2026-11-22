@@ -7,13 +7,20 @@ struct VantageApp: App {
     #endif
     #if os(macOS)
     @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+    #endif
 
     init() {
+        #if os(macOS)
         // View › Enter Full Screen is Vantage's own (with ⌃⌥⌘F, which a session leaves to
         // Vantage); AppKit would add a second one. Registered before the menu bar is built.
         UserDefaults.standard.register(defaults: ["NSFullScreenMenuItemEverywhere": false])
+        #endif
+        #if canImport(FluidAudio)
+        // Offers this device's Parakeet to dictation if its model is downloaded and on. Reads
+        // the disk only: nothing is loaded or fetched here.
+        OnDeviceParakeet.shared.start()
+        #endif
     }
-    #endif
 
     var body: some Scene {
         #if os(macOS)

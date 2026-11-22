@@ -117,6 +117,10 @@ final class RemoteInteractionView: UIView {
         item.trailingBarButtonGroups = []
         return item
     }
+
+    /// iPadOS's own three-finger gestures (swipe to undo and redo, pinch to copy) would take the
+    /// fingers meant for the computer's Spaces and Mission Control.
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
     #endif
 
     override func layoutSubviews() {
@@ -182,6 +186,18 @@ final class RemoteInteractionView: UIView {
         twoFingerPan.allowedTouchTypes = Self.fingerTouchTypes
         addGestureRecognizer(twoFingerPan)
 
+        #if !os(visionOS) // look and pinch has no three-finger anything
+        // Three fingers swiping, as on a Mac's trackpad: Spaces, Mission Control, the app's
+        // windows. Only where fingers drive the pointer like a trackpad (`gestureRecognizerShouldBegin`).
+        let threeFingerPan = UIPanGestureRecognizer(target: self, action: #selector(handleThreeFingerPan))
+        threeFingerPan.minimumNumberOfTouches = 3
+        threeFingerPan.maximumNumberOfTouches = 3
+        threeFingerPan.allowedTouchTypes = Self.fingerTouchTypes
+        threeFingerPan.delegate = self
+        addGestureRecognizer(threeFingerPan)
+        threeFingerSwipeRecognizer = threeFingerPan
+        #endif
+
         // Trackpad and wheel scrolling arrive as scroll events rather than touches, and there is no
         // way to ask an update which kind produced it — so one recognizer per scroll type.
         for mask in [UIScrollTypeMask.continuous, .discrete] {
@@ -224,6 +240,34 @@ final class RemoteInteractionView: UIView {
     @objc private func handleThreeFingerTap(_ recognizer: UITapGestureRecognizer) {
         input.click(button: .middle, modifiers: heldModifiers)
         haptics.play(.secondaryClick, at: recognizer.location(in: self))
+    }
+
+    private var threeFingerSwipeRecognizer: UIPanGestureRecognizer?
+    private var swipeTracker = TrackpadSwipeTracker()
+
+    /// Three-finger swipes belong to the trackpad: in Direct Touch the fingers are on the
+    /// picture itself, and with the setting off three fingers do what they always did.
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard recognizer === threeFingerSwipeRecognizer else { return super.gestureRecognizerShouldBegin(recognizer) }
+        return input.threeFingerSwipes && !pointsAbsolutely
+    }
+
+    /// One swipe per drag, once it has gone far enough in one direction (`TrackpadSwipeTracker`).
+    /// A three-finger tap never gets here: the pan only begins once the fingers have moved, which
+    /// is also what fails the tap.
+    @objc private func handleThreeFingerPan(_ recognizer: UIPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            swipeTracker = TrackpadSwipeTracker()
+            fallthrough
+        case .changed:
+            let translation = recognizer.translation(in: self)
+            if let swipe = swipeTracker.swipe(for: CGSize(width: translation.x, height: translation.y)) {
+                input.swipe(swipe)
+            }
+        default:
+            break
+        }
     }
 
     private var lastPanPoint: CGPoint = .zero
@@ -536,6 +580,8 @@ final class RemoteInteractionView: UIView {
         hardwareModifiers = modifiers
     }
 }
+
+extension RemoteInteractionView: UIGestureRecognizerDelegate {}
 
 extension RemoteInteractionView: UIPointerInteractionDelegate {
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {

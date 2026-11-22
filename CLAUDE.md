@@ -195,6 +195,13 @@ decode, input, or Tailscale code.
 
 ## Known limitations
 
+- Client polish of 2026-11-22 (three-finger swipes, dictation Pause/Resume and history, Parakeet
+  on the device, Settings as a sheet, the Mac's bordered buttons and empty list): built for iOS,
+  visionOS and macOS and checked in the iPhone simulator. Still needing hands: the three-finger
+  swipe itself (no simulator input for it), Pause and Resume with a live microphone, Parakeet's
+  download and memory on a real iPhone, and every Mac change in a signed Mac build (see
+  `mac-client.md`, Settings).
+
 - The published Windows ARM64 packages (1.5, 1.6) probably won't start: they were published with
   `-p:Platform=x64`, so 44 native files, `Microsoft.ui.xaml.dll` among them, were x64. The script now passes the
   real platform and `check-package-arch.ps1` fails a release on the wrong kind of binary; 1.7 (2026-11-20)
