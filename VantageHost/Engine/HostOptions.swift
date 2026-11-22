@@ -26,6 +26,10 @@ import VantageCore
 ///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
 /// - `--synthetic-image /path.png`: a synthetic host streams that picture instead of the test
 ///   pattern, and its pretend display takes the picture's size at 2x (README screenshots).
+/// - `--virtual-hid`: try to create a virtual touchscreen and gamepad (`VirtualHIDProbe`) and log
+///   whether the build's entitlement allows it.
+/// - `--local-network`: take local-network connections and advertise over Bonjour, as Settings →
+///   General → Local Network Connections does, without writing that setting.
 /// - `--platform windows|macos`: the platform the host tells clients it runs (`HostPlatform`), so
 ///   the client can be tried against a pretend Windows PC. Any other value is sent as given.
 ///
@@ -45,6 +49,10 @@ nonisolated final class HostOptions: @unchecked Sendable {
     static let shared = HostOptions()
 
     let syntheticCapture: Bool
+    /// Take local-network connections whatever Settings says (DEBUG only).
+    let localNetwork: Bool
+    /// Probe virtual HID device creation at launch (DEBUG only).
+    let virtualHID: Bool
     let fixedPairingCode: String?
     let port: UInt16
     /// A client on this same Mac may raise the curtain (DEBUG only; for testing it). Real capture
@@ -97,6 +105,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
             args += extra.split(whereSeparator: \.isNewline).map(String.init)
         }
         syntheticCapture = args.contains("--synthetic-capture")
+        localNetwork = args.contains("--local-network")
+        virtualHID = args.contains("--virtual-hid")
         if let index = args.firstIndex(of: "--port"), index + 1 < args.count,
            let value = UInt16(args[index + 1]), value > 0 { port = value }
         else { port = 47820 }
@@ -173,6 +183,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
         }
         #else
         syntheticCapture = false
+        localNetwork = false
+        virtualHID = false
         fixedPairingCode = nil
         port = 47820
         allowsSelfCurtain = false

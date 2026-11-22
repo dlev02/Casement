@@ -53,6 +53,8 @@ struct DeviceListScreen: View {
                 await availability.monitor(store.devices)
             }
             .onChange(of: availability.platforms) { _, platforms in store.recordPlatforms(platforms) }
+            // Settings → Connection → Local Network: look for paired computers here while in front.
+            .onChange(of: scenePhase, initial: true) { _, phase in LocalDiscovery.shared.update(active: phase == .active) }
         }
     }
 

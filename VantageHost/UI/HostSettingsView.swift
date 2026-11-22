@@ -157,6 +157,12 @@ private struct GeneralSettingsTab: View {
                 }
             }
             Section {
+                Toggle(isOn: $controller.localNetworkEnabled) {
+                    Text("Local network connections")
+                    Text("Paired devices on this network or a cable, encrypted by Casement")
+                }
+            }
+            Section {
                 LabeledContent {
                     permissionState(controller.hasScreenPermission) { controller.requestScreenPermission() }
                 } label: {

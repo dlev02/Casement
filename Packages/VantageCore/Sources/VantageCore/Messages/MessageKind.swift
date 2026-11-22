@@ -61,6 +61,8 @@ public enum MessageKind: UInt8, Sendable, CaseIterable {
     case micAudio = 123
     /// A file chunk from the client (file channel only).
     case fileChunkToHost = 124
+    /// Capability-gated: only sent to hosts whose capabilities say `stylus`.
+    case stylusEvent = 125
 
     public var isBinary: Bool { rawValue >= 100 }
 }

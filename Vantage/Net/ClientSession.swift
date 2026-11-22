@@ -4,8 +4,10 @@ import Observation
 import VantageCore
 import os
 
-/// Drives a client connection: TCP connect over Tailscale, Ed25519 handshake/pairing, then the
-/// bidirectional message loop. Publishes connection state and hands decoded messages to observers.
+/// Drives a client connection: TCP connect (over the local network when the computer is
+/// advertising there under the key this device paired with, else over Tailscale), Ed25519
+/// handshake/pairing, then the bidirectional message loop. Publishes connection state and hands
+/// decoded messages to observers.
 @MainActor
 @Observable
 final class ClientSession {
@@ -40,6 +42,11 @@ final class ClientSession {
     /// connection must present the same one.
     private(set) var hostPublicKey: Data?
     private(set) var lastRTTMillis: Double = 0
+    /// How the current connection reaches the computer; nil until one is open.
+    private(set) var route: HostRoute?
+    /// This connection is an input-only session: the device is the computer's trackpad and
+    /// keyboard, and nothing asks for a picture.
+    private(set) var isInputOnly = false
     private(set) var hostStatus: HostStatus?
 
     private var channel: MessageChannel?
@@ -129,8 +136,9 @@ final class ClientSession {
 
     var fingerprint: String { identity.fingerprint }
 
-    func connect(to device: SavedDevice, viewport: Viewport, pairingCode: String? = nil) {
+    func connect(to device: SavedDevice, viewport: Viewport, pairingCode: String? = nil, inputOnly: Bool? = nil) {
         disconnect()
+        if let inputOnly { isInputOnly = inputOnly }
         pairingError = nil
         self.device = device
         fileLink.update(device)
@@ -155,7 +163,7 @@ final class ClientSession {
         guard let device else { return }
         switch state {
         case .failed, .suspended, .reconnecting:
-            connect(to: device, viewport: viewport, pairingCode: pairingCode)
+            connect(to: device, viewport: viewport, pairingCode: pairingCode, inputOnly: isInputOnly)
         default: break
         }
     }
@@ -180,6 +188,7 @@ final class ClientSession {
         state = .idle
         activeConfig = nil
         hostStatus = nil
+        route = nil
         Task { await oldChannel?.close() }
     }
 
@@ -293,22 +302,43 @@ final class ClientSession {
                 state = .failed("Invalid port")
                 return
             }
-            let connection = NWConnection(host: NWEndpoint.Host(device.host), port: port,
-                                          using: VantageNetwork.tcpParameters())
-            let channel = MessageChannel(connection: connection, label: "vantage.client.session")
-            self.channel = channel
-            // Also bound the handshake: an accepted socket need not send a challenge.
-            let timeout = Task {
-                do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                await channel.close()
-            }
+            let routes = HostRoute.candidates(for: device, port: port)
+            var channel = MessageChannel(connection: NWConnection(to: routes[0].endpoint, using: VantageNetwork.tcpParameters()),
+                                         label: "vantage.client.session")
+            var timeout: Task<Void, Never>?
             do {
-                try await channel.start()
-                guard connectionID == id, !Task.isCancelled else {
-                    timeout.cancel(); await channel.close(); return
+                // The local network first when the computer is advertising there; anything going
+                // wrong on it (gone a moment ago, Local Network off on the computer, a device that
+                // can't prove the key) falls through to Tailscale at once.
+                var opened: (authenticated: Bool, fileToken: Data?, keys: SessionKeys?)?
+                for (index, candidate) in routes.enumerated() {
+                    if index > 0 {
+                        channel = MessageChannel(connection: NWConnection(to: candidate.endpoint, using: VantageNetwork.tcpParameters()),
+                                                 label: "vantage.client.session")
+                    }
+                    self.channel = channel
+                    // Also bound the handshake: an accepted socket need not send a challenge.
+                    timeout = Task { [channel] in
+                        do { try await Task.sleep(for: candidate.connectTimeout) } catch { return }
+                        await channel.close()
+                    }
+                    do {
+                        try await channel.start()
+                        guard connectionID == id, !Task.isCancelled else {
+                            timeout?.cancel(); await channel.close(); return
+                        }
+                        opened = try await handshake(channel: channel, viewport: viewport, id: id, route: candidate)
+                        route = candidate
+                        break
+                    } catch where candidate.isLocal && index + 1 < routes.count && connectionID == id && !Task.isCancelled {
+                        timeout?.cancel()
+                        await channel.close()
+                        log.info("local connection didn't work (\(error.localizedDescription, privacy: .public)); trying Tailscale")
+                    }
                 }
-                let (authenticated, fileToken) = try await handshake(channel: channel, viewport: viewport, id: id)
-                timeout.cancel()
+                guard let opened else { throw ClientHandshakeError.badHandshake }
+                let (authenticated, fileToken, keys) = opened
+                timeout?.cancel()
                 guard connectionID == id, !Task.isCancelled else {
                     await channel.close(); return
                 }
@@ -317,20 +347,34 @@ final class ClientSession {
                     self.channel = nil
                     return // Leave the pairing prompt visible until the user submits a code.
                 }
-                // Every new connection needs its own stream request, including reconnects.
-                try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
-                    targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
-                    useVirtualDisplay: wantsFitDisplay)))
-                if wantsMacAudio, hostOffersAudio {
-                    try await channel.send(.audioRequest(AudioRequest(enabled: true)))
-                }
                 curtainStatus = nil
-                if wantsCurtain, hostOffersCurtain {
-                    try await channel.send(.curtainRequest(CurtainRequest(enabled: true)))
+                if isInputOnly {
+                    // A host that predates input-only sessions would sit waiting for a display.
+                    guard capabilities?.inputOnlySessions == true else {
+                        throw ProtocolErrorMessage(code: "inputOnly",
+                                                   message: "Update Casement Host on \(device.name) to use this device as its trackpad and keyboard.")
+                    }
+                } else {
+                    // Every new connection needs its own stream request, including reconnects.
+                    try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
+                        targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
+                        useVirtualDisplay: wantsFitDisplay)))
+                    if wantsMacAudio, hostOffersAudio {
+                        try await channel.send(.audioRequest(AudioRequest(enabled: true)))
+                    }
+                    if wantsCurtain, hostOffersCurtain {
+                        try await channel.send(.curtainRequest(CurtainRequest(enabled: true)))
+                    }
                 }
                 state = .connected
                 connectedAt = .now
-                fileLink.screenDidConnect(token: fileToken, capabilities: capabilities, host: device.host, port: port)
+                if !isInputOnly {
+                    // The file channel goes to the address this connection resolved to, so the
+                    // host sees it come from the same place as the session (its token is bound
+                    // to that) even when the route was a Bonjour service.
+                    let fileEndpoint = channel.remoteEndpoint ?? HostRoute.saved(host: device.host, port: port).endpoint
+                    fileLink.screenDidConnect(token: fileToken, capabilities: capabilities, endpoint: fileEndpoint, keys: keys)
+                }
                 // No video for a while (the Mac's display asleep, a static screen) is normal:
                 // only the connection itself ending brings a reconnect.
                 while let message = try await channel.receive() {
@@ -346,7 +390,7 @@ final class ClientSession {
                     route(message)
                 }
             } catch let error as ProtocolErrorMessage {
-                timeout.cancel()
+                timeout?.cancel()
                 await channel.close()
                 guard connectionID == id, !Task.isCancelled else { return }
                 self.channel = nil
@@ -356,10 +400,11 @@ final class ClientSession {
             } catch {
                 log.error("connection error: \(error.localizedDescription)")
             }
-            timeout.cancel()
+            timeout?.cancel()
             await channel.close()
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
+            route = nil
             fileLink.screenDidDrop() // an older Mac's file channel goes too; files wait for the next one
             if let connectedAt, ContinuousClock.now - connectedAt > .seconds(10) { reconnectAttempts = 0 }
             reconnectAttempts += 1
@@ -374,15 +419,20 @@ final class ClientSession {
         }
     }
 
-    /// Returns whether the session is authenticated, and the host's file channel token if it gave one.
-    private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID) async throws -> (Bool, Data?) {
-        let clientNonce = AuthTranscript.randomNonce()
+    /// Returns whether the session is authenticated, the host's file channel token if it gave one,
+    /// and the keys sealing this connection when it's encrypted.
+    private func handshake(channel: MessageChannel, viewport: Viewport, id: UUID,
+                           route: HostRoute) async throws -> (authenticated: Bool, fileToken: Data?, keys: SessionKeys?) {
+        let exchange = ClientHandshake(clientPublicKey: identity.publicKeyData, offersEncryption: route.offersEncryption,
+                                       requiresEncryption: route.isLocal)
+        let features = isInputOnly
+            ? ClientFeatures(dictation: true, inputOnly: true)
+            : ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true, curtain: true)
         let hello = Hello(clientName: deviceName, deviceModel: deviceModel, appVersion: "1.0",
-                          clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264],
-                          maxDecodeWidth: 4096, maxDecodeHeight: 2304, viewport: viewport,
-                          features: ClientFeatures(dictation: true, macAudio: true, fileTransfer: true, localCursor: true, curtain: true),
-                          clientNonce: clientNonce)
-        try await channel.send(.hello(hello))
+                          clientPublicKey: identity.publicKeyData, supportedCodecs: isInputOnly ? [] : [.hevc, .h264],
+                          maxDecodeWidth: isInputOnly ? 0 : 4096, maxDecodeHeight: isInputOnly ? 0 : 2304, viewport: isInputOnly ? nil : viewport,
+                          features: features)
+        try await channel.send(.hello(exchange.prepare(hello)))
 
         guard case let .challenge(challenge)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
         guard connectionID == id, !Task.isCancelled else { throw CancellationError() }
@@ -394,16 +444,16 @@ final class ClientSession {
         // The host proves it holds the key it names, and that key must be the one this device was
         // first connected to. Only then is anything signed or a pairing code sent.
         do {
-            hostPublicKey = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
-                                                         expected: device?.hostPublicKey)
+            hostPublicKey = try exchange.verify(challenge, expected: device?.hostPublicKey)
         } catch let failure as HostIdentityCheck.Failure {
             throw ProtocolErrorMessage(code: "hostIdentity", message: failure.message(deviceName: device?.name ?? challenge.hostName,
                                                                                       host: HostNoun(challenge.hostPlatform ?? .macOS)))
         }
-        let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
-                                                                     hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData,
-                                                                     purpose: .screen))
+        let signature = try identity.sign(exchange.transcript(for: challenge, purpose: .screen))
         let auth = Authenticate(signature: signature, pairingCode: challenge.isPaired ? nil : pairingCode)
+        // Sealed from here when the host answered the key share; the pairing code with it.
+        let keys = try exchange.sessionKeys(for: challenge)
+        if let keys { await channel.encrypt(with: keys) }
         try await channel.send(.authenticate(auth))
 
         guard case let .authResult(result)? = try await channel.receive() else { throw ClientHandshakeError.badHandshake }
@@ -414,13 +464,13 @@ final class ClientSession {
             capabilities = result.capabilities
             if let platform = result.capabilities?.platform { hostPlatform = platform }
             onCursorShape?(nil) // until the host sends the pointer it leaves out of the video
-            return (true, result.sessionToken)
+            return (true, result.sessionToken, keys)
         case .pairingRequired, .badPairingCode:
             pairingError = result.status == .badPairingCode
                 ? "Incorrect pairing code. Check the code in Casement Host on your Mac and try again."
                 : nil
             state = .pairingRequired
-            return (false, nil)
+            return (false, nil, nil)
         default:
             throw ProtocolErrorMessage(code: result.status.rawValue, message: result.message ?? "Authentication failed")
         }
@@ -523,6 +573,8 @@ extension HostIdentityCheck.Failure {
             "\(deviceName) couldn't prove its identity, so Casement didn't sign in. Check that this is the right \(host.name) and try again."
         case .changed:
             "\(deviceName)'s identity has changed since Casement last connected to it. If Casement Host was reinstalled there, edit \(deviceName) in Casement and choose Forget Identity. Otherwise, don't connect."
+        case .unencrypted:
+            "Update Casement Host on \(deviceName) to connect over the local network."
         }
     }
 }

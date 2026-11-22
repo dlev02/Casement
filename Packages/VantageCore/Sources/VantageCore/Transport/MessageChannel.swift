@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 import os
 
 public enum ChannelError: Error, Sendable {
@@ -13,6 +14,10 @@ public enum ChannelError: Error, Sendable {
 ///
 /// Sends are serialized by the actor; inbound messages are read with `receive()`, which returns
 /// `nil` on clean close and throws on failure.
+///
+/// After `encrypt(with:)` (or `send(_:thenEncryptWith:)`) every frame travels as a sealed record
+/// (`SessionCrypto`). A sealed record that arrives before this side has its keys waits for them;
+/// a plain frame that arrives after is a downgrade and ends the channel.
 public actor MessageChannel {
     private let connection: NWConnection
     private let queue: DispatchQueue
@@ -28,6 +33,16 @@ public actor MessageChannel {
     /// consumer (a file being written to disk) pushes back through TCP instead of buffering.
     private let maxBufferedMessages: Int?
     private var drainWaiter: CheckedContinuation<Void, Never>?
+    /// Seals outgoing frames once the connection is encrypted. Locked, not actor state, because
+    /// the hot path sends from any isolation: sealing and handing the record to the connection
+    /// happen under one lock, so the record counter follows the order on the wire.
+    private nonisolated let sealer = Mutex<RecordSealer?>(nil)
+    private var opener: RecordOpener?
+    /// The receive loop, holding a sealed record that came before the keys.
+    private var keyWaiter: CheckedContinuation<Void, Never>?
+
+    /// Whether frames in both directions are sealed records now.
+    public var isEncrypted: Bool { opener != nil }
 
     public nonisolated var remoteEndpoint: NWEndpoint? { connection.currentPath?.remoteEndpoint }
     public nonisolated var endpoint: NWEndpoint { connection.endpoint }
@@ -99,12 +114,57 @@ public actor MessageChannel {
         guard !isClosed else { throw ChannelError.closed }
         let frame = try message.encodedFrame()
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
+            transmit(frame) { error in
+                if let error { cont.resume(throwing: error) } else { cont.resume() }
+            }
+        }
+    }
+
+    /// Seals everything from now on with `keys`, both ways. The client calls this once the
+    /// host's challenge checks out, before it sends `authenticate`; the client side of a file
+    /// channel right after `attachMedia`, and the host side once it has looked up the token.
+    public func encrypt(with keys: SessionKeys) {
+        installOpener(keys)
+        sealer.withLock { $0 = RecordSealer(key: keys.sendKey) }
+    }
+
+    /// Sends `message` as it is, then seals everything after it: the host's `challenge`, which
+    /// carries its key share. The receive side switches first, since the peer's next frame is
+    /// already sealed.
+    public func send(_ message: Message, thenEncryptWith keys: SessionKeys) async throws {
+        installOpener(keys)
+        try await send(message)
+        sealer.withLock { $0 = RecordSealer(key: keys.sendKey) }
+    }
+
+    private func installOpener(_ keys: SessionKeys) {
+        precondition(opener == nil, "MessageChannel is already encrypted")
+        opener = RecordOpener(key: keys.receiveKey)
+        if let keyWaiter {
+            self.keyWaiter = nil
+            keyWaiter.resume()
+        }
+    }
+
+    /// Tests only: a frame that skips the sealer, as something splicing into the stream would send.
+    func sendUnsealedForTesting(_ message: Message) async throws {
+        let frame = try message.encodedFrame()
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
             connection.send(content: frame, completion: .contentProcessed { error in
-                if let error {
-                    cont.resume(throwing: ChannelError.connectionFailed(error.localizedDescription))
-                } else {
-                    cont.resume()
-                }
+                if let error { cont.resume(throwing: error) } else { cont.resume() }
+            })
+        }
+    }
+
+    /// Hands one encoded frame to the connection, sealed when the channel is encrypted.
+    private nonisolated func transmit(_ frame: Data, completion: @escaping @Sendable ((any Error)?) -> Void) {
+        sealer.withLock { sealer in
+            var content = frame
+            if sealer != nil {
+                do { content = try sealer!.seal(frame) } catch { completion(error); return }
+            }
+            connection.send(content: content, completion: .contentProcessed { error in
+                completion(error.map { ChannelError.connectionFailed($0.localizedDescription) })
             })
         }
     }
@@ -115,16 +175,14 @@ public actor MessageChannel {
     public nonisolated func send(_ message: Message, completion: @escaping @Sendable ((any Error)?) -> Void) {
         let frame: Data
         do { frame = try message.encodedFrame() } catch { completion(error); return }
-        connection.send(content: frame, completion: .contentProcessed { error in
-            completion(error.map { ChannelError.connectionFailed($0.localizedDescription) })
-        })
+        transmit(frame, completion: completion)
     }
 
     /// Fire-and-forget send for hot-path messages (video, cursor, input). Safe to call from any
     /// isolation; a send failure is surfaced by the receive loop ending, so it is ignored here.
     public nonisolated func sendDetached(_ message: Message) {
         guard let frame = try? message.encodedFrame() else { return }
-        connection.send(content: frame, completion: .contentProcessed { _ in })
+        transmit(frame) { _ in }
     }
 
     public func close() {
@@ -143,6 +201,10 @@ public actor MessageChannel {
             self.drainWaiter = nil
             drainWaiter.resume()
         }
+        if let keyWaiter {
+            self.keyWaiter = nil
+            keyWaiter.resume()
+        }
         connection.cancel()
     }
 
@@ -150,9 +212,23 @@ public actor MessageChannel {
         do {
             while !isClosed {
                 let headerData = try await receiveExactly(Frame.headerLength)
-                let header = try Frame.Header.decode(headerData)
-                let payload = header.length == 0 ? Data() : try await receiveExactly(Int(header.length))
-                let message = try Message.decode(kind: header.kind, payload: payload)
+                let message: Message
+                if headerData.first == SessionCrypto.recordMagic {
+                    let sealed = try await receiveExactly(try RecordOpener.sealedLength(ofHeader: headerData))
+                    // The peer switched first (the host's challenge, a file channel's attach):
+                    // hold the record until this side has the keys, or the channel closes.
+                    if opener == nil { await withCheckedContinuation { keyWaiter = $0 } }
+                    guard !isClosed else { break }
+                    guard var opener else { throw RecordError.malformed }
+                    let frame = try opener.open(header: headerData, sealed: sealed)
+                    self.opener = opener
+                    message = try Self.decodeFrame(frame)
+                } else {
+                    guard opener == nil else { throw RecordError.plaintextAfterEncryption }
+                    let header = try Frame.Header.decode(headerData)
+                    let payload = header.length == 0 ? Data() : try await receiveExactly(Int(header.length))
+                    message = try Message.decode(kind: header.kind, payload: payload)
+                }
                 deliver(message)
                 if let maxBufferedMessages, pending.count >= maxBufferedMessages, !isClosed {
                     await withCheckedContinuation { drainWaiter = $0 }
@@ -164,6 +240,13 @@ public actor MessageChannel {
             }
             finish(error: (error as? ChannelError) == .closed ? nil : error)
         }
+    }
+
+    /// One whole frame opened from a record: its header must account for every byte.
+    private static func decodeFrame(_ frame: Data) throws -> Message {
+        let header = try Frame.Header.decode(frame.prefix(Frame.headerLength))
+        guard Int(header.length) == frame.count - Frame.headerLength else { throw RecordError.malformed }
+        return try Message.decode(kind: header.kind, payload: Data(frame.dropFirst(Frame.headerLength)))
     }
 
     /// Reads `length` bytes by taking whatever has arrived and appending. Never ask

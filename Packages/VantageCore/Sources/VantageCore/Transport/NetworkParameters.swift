@@ -1,6 +1,29 @@
 import Foundation
 import Network
 
+/// Where a host's peer reaches it from, which decides what the connection needs.
+public enum PeerReach: Sendable, Equatable {
+    /// Inside Tailscale: WireGuard already encrypts and authenticates the stream.
+    case tailnet
+    /// The home network or a cable: Casement encrypts the stream itself, and only devices that
+    /// already paired (over Tailscale) may connect.
+    case localNetwork
+    /// The same computer (Debug builds only): encrypted when the device offers it, so tests can
+    /// run both kinds of connection over loopback.
+    case loopback
+
+    /// The challenge answers a device's key share.
+    public var encryptsWhenOffered: Bool { self != .tailnet }
+
+    /// Which kind of peer `host` is, or nil for one no host accepts (a public address).
+    public static func classify(_ host: NWEndpoint.Host) -> PeerReach? {
+        if VantageNetwork.isTailscaleAddress(host) { return .tailnet }
+        if VantageNetwork.isLoopback(host) { return .loopback }
+        if VantageNetwork.isLocalNetworkAddress(host) { return .localNetwork }
+        return nil
+    }
+}
+
 public enum VantageNetwork {
     /// TCP parameters tuned for an interactive stream inside a WireGuard tunnel
     /// (MTU 1280): no Nagle, aggressive keepalive for fast dead-peer detection.
@@ -69,6 +92,48 @@ public enum VantageNetwork {
         @unknown default:
             return false
         }
+    }
+
+    // MARK: Local network
+
+    /// The Bonjour service a host advertises when it takes local-network connections.
+    public static let bonjourServiceType = "_casement._tcp"
+    /// TXT record keys: the host key's fingerprint (`DeviceIdentity.fingerprint`), which is how a
+    /// device finds the computer it paired with whatever its name or address is now; the protocol
+    /// version; the platform. A fingerprint is only a hint: the handshake still proves the key.
+    public static let bonjourFingerprintKey = "fp"
+    public static let bonjourProtocolKey = "pv"
+    public static let bonjourPlatformKey = "os"
+
+    /// A private, link-local or unique-local address that isn't Tailscale's: the home network, a
+    /// cable's link-local network, a Thunderbolt bridge. Public addresses never count, so a
+    /// forwarded port on the router can't reach a host.
+    public static func isLocalNetworkAddress(_ host: NWEndpoint.Host) -> Bool {
+        switch host {
+        case .ipv4(let address):
+            return isPrivateIPv4(address)
+        case .ipv6(let address):
+            return isPrivateIPv6(address)
+        case .name(let name, _):
+            if let v4 = IPv4Address(name) { return isPrivateIPv4(v4) }
+            if let v6 = IPv6Address(name) { return isPrivateIPv6(v6) }
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    static func isPrivateIPv4(_ address: IPv4Address) -> Bool {
+        let b = [UInt8](address.rawValue)
+        guard b.count == 4 else { return false }
+        return b[0] == 10 || (b[0] == 172 && (b[1] & 0xF0) == 16) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
+    }
+
+    static func isPrivateIPv6(_ address: IPv6Address) -> Bool {
+        let b = [UInt8](address.rawValue)
+        guard b.count == 16, !isTailscaleIPv6(address) else { return false }
+        if let v4 = address.asIPv4 { return isPrivateIPv4(v4) } // ::ffff:192.168.x.x
+        return (b[0] == 0xFE && (b[1] & 0xC0) == 0x80) || (b[0] & 0xFE) == 0xFC // fe80::/10, fc00::/7
     }
 
     /// Enumerates local interface addresses that fall inside Tailscale's ranges.

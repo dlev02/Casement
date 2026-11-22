@@ -151,19 +151,47 @@ final class HostController {
                 Task { await session.curtainWindowsChanged() }
             }
         }
-        listener.onAccept = { [weak self] connection in
-            Task { @MainActor in self?.accept(connection) }
+        listener.onAccept = { [weak self] connection, reach in
+            Task { @MainActor in self?.accept(connection, reach: reach) }
         }
         listener.onStateChange = { [weak self] state in
             Task { @MainActor in self?.handleListenerState(state) }
         }
+        startListener()
+    }
+
+    private func startListener() {
+        listener.localAdvertisement = acceptsLocalNetwork
+            ? TailscaleListener.LocalAdvertisement(fingerprint: identity.fingerprint, platform: environment.platform ?? .macOS)
+            : nil
         do {
             try listener.start()
-            status = .listening
+            if status == .idle || { if case .error = status { true } else { false } }() { status = .listening }
         } catch {
             status = .error(error.localizedDescription)
             log.error("listener failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Settings → General → Local Network Connections: devices that already paired (over
+    /// Tailscale) may also connect over this Mac's local network or a cable, encrypted end to end
+    /// by Casement, and the Mac advertises itself there over Bonjour. Off by default.
+    var localNetworkEnabled: Bool = UserDefaults.standard.bool(forKey: HostController.localNetworkKey) {
+        didSet {
+            guard localNetworkEnabled != oldValue else { return }
+            UserDefaults.standard.set(localNetworkEnabled, forKey: Self.localNetworkKey)
+            restartListener()
+        }
+    }
+    static let localNetworkKey = "vantage.localNetwork"
+    /// The setting, or DEBUG `--local-network` for a test host (which never writes the setting).
+    private var acceptsLocalNetwork: Bool { localNetworkEnabled || HostOptions.shared.localNetwork }
+
+    /// Picks up a changed Local Network setting. Sessions already open carry on.
+    private func restartListener() {
+        guard status != .idle else { return }
+        listener.stop()
+        startListener()
     }
 
     func stop() {
@@ -299,7 +327,7 @@ final class HostController {
     /// Every connection starts by saying what it is: a `hello` opens a session; an
     /// `attachMedia` with a live token from the same address becomes that session's file channel.
     /// Anything else, or silence for 15 s, is dropped.
-    private func accept(_ connection: NWConnection) {
+    private func accept(_ connection: NWConnection, reach: PeerReach) {
         let peer = Self.describe(connection.endpoint)
         let peerHost = Self.hostPart(connection.endpoint)
         // Bounded so a file arriving faster than the disk takes it pushes back through TCP.
@@ -322,7 +350,7 @@ final class HostController {
             timeout.cancel()
             switch first {
             case .hello(let hello):
-                startSession(hello: hello, channel: channel, peer: peer, peerHost: peerHost)
+                startSession(hello: hello, channel: channel, peer: peer, peerHost: peerHost, reach: reach)
             case .attachMedia(let attach):
                 guard let session = attachTokens.claim(attach.sessionToken, peer: peerHost) else {
                     log.error("refusing a file channel from \(peer, privacy: .public): unknown, used, or foreign token")
@@ -338,14 +366,14 @@ final class HostController {
         }
     }
 
-    private func startSession(hello: Hello, channel: MessageChannel, peer: String, peerHost: String) {
+    private func startSession(hello: Hello, channel: MessageChannel, peer: String, peerHost: String, reach: PeerReach) {
         guard pendingHandshakes.count < Self.maxPendingHandshakes else {
             log.error("refusing a session from \(peer, privacy: .public): \(self.pendingHandshakes.count) connections are still signing in")
             Task { await channel.close() }
             return
         }
         let session = HostSession(channel: channel, identity: identity, trust: trust, environment: environment,
-                                  peerDescription: peer, peerHost: peerHost, attachTokens: attachTokens,
+                                  peerDescription: peer, peerHost: peerHost, reach: reach, attachTokens: attachTokens,
                                   onFileChannel: { [weak self] fileChannel in Task { @MainActor in self?.fileChannelOpened(fileChannel) } },
                                   onStreaming: { [weak self] session, name, model, key in
                                       Task { @MainActor in

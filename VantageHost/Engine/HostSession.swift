@@ -14,6 +14,13 @@ import os
 /// A files-only session (`ClientFeatures.filesOnly`) stops after authenticating: it hands out a
 /// file channel token and answers pings, and never touches displays, capture, input, audio, the
 /// clipboard, the lock monitor, or power assertions, whatever the client sends.
+///
+/// An input-only session (`ClientFeatures.inputOnly`) is the device as this Mac's trackpad and
+/// keyboard: input, typed text, dictation and the clipboard, and never a display list, capture,
+/// video, audio or curtain.
+///
+/// A connection from outside the tailnet (`PeerReach.localNetwork`) is sealed from the challenge
+/// on (`SessionCrypto`), and so is its file channel.
 actor HostSession {
     enum State: Equatable { case handshaking, streaming, filesOnly, closed }
 
@@ -23,6 +30,14 @@ actor HostSession {
     private let trust: any HostTrust
     private let env: HostEnvironment
     private let peerDescription: String
+    /// Where the peer connected from; decides encryption and pairing (`SessionAdmission.begin`).
+    private let reach: PeerReach
+    /// This connection's keys when it's encrypted; its file channel's come from them.
+    private var sessionKeys: SessionKeys?
+    /// The file channel's token, for its keys.
+    private var fileToken: Data?
+    /// An input-only session: no capture, input from wherever the pointer is.
+    private var isInputOnly = false
     private let onEnded: @Sendable (HostSession) -> Void
 
     private var state: State = .handshaking
@@ -77,7 +92,7 @@ actor HostSession {
     private var captureFailsUntil: ContinuousClock.Instant?
 
     init(channel: MessageChannel, identity: DeviceIdentity, trust: any HostTrust, environment: HostEnvironment,
-         peerDescription: String, peerHost: String,
+         peerDescription: String, peerHost: String, reach: PeerReach = .tailnet,
          attachTokens: AttachTokenRegistry<HostSession>, onFileChannel: @escaping @Sendable (HostFileChannel) -> Void,
          onStreaming: @escaping @Sendable (HostSession, String, String, String) -> Void = { _, _, _, _ in },
          onAuthenticated: @escaping @Sendable (HostSession) -> Void = { _ in },
@@ -91,6 +106,7 @@ actor HostSession {
         self.lockMonitor = environment.makeStatusMonitor()
         self.lifecycle = CaptureLifecycle(restartsByDisplayID: environment.screen.canRestartByDisplayID)
         self.peerDescription = peerDescription
+        self.reach = reach
         self.peerHost = peerHost
         self.attachTokens = attachTokens
         self.onFileChannel = onFileChannel
@@ -133,13 +149,22 @@ actor HostSession {
     /// sets up the kind of session it admitted.
     private func handshake(_ hello: Hello) async throws -> Bool {
         let begin = try SessionAdmission.begin(hello: hello, identity: identity, hostName: env.hostName, platform: env.platform,
-                                               isPaired: trust.isTrusted(hello.clientPublicKey),
-                                               peerTailnetName: { env.peers?.userName(ofPeer: peerDescription) })
+                                               isPaired: trust.isTrusted(hello.clientPublicKey), peer: reach,
+                                               peerTailnetName: { reach == .tailnet ? env.peers?.userName(ofPeer: peerDescription) : nil })
         guard case .challenged(let challenge, let pending) = begin else {
-            if case .refused(let result) = begin { try await channel.send(.authResult(result)) }
+            if case .refused(let result) = begin {
+                try await channel.send(.authResult(result))
+                log.error("refused a \(String(describing: self.reach), privacy: .public) connection: \(result.message ?? "", privacy: .public)")
+            }
             throw SessionError.versionMismatch
         }
-        try await channel.send(.challenge(challenge))
+        if let keys = pending.sessionKeys {
+            // Everything after the challenge is sealed; the device's answer already is.
+            sessionKeys = keys
+            try await channel.send(.challenge(challenge), thenEncryptWith: keys)
+        } else {
+            try await channel.send(.challenge(challenge))
+        }
         guard case let .authenticate(auth)? = try await channel.receive() else { throw SessionError.badHandshake }
         let kind: SessionAdmission.Kind
         switch pending.finish(auth, pairing: trust) {
@@ -153,10 +178,13 @@ actor HostSession {
         }
         if kind != .availabilityCheck { nameFromTailnet(DeviceIdentity.fingerprint(of: hello.clientPublicKey)) }
         // Dictation kinds are new, so they're advertised only to a client that said it knows them.
-        if kind == .screen, hello.features?.dictation == true, let dictation = env.dictation { dictationEngines = await dictation.availableEngines() }
+        if kind == .screen || kind == .inputOnly, hello.features?.dictation == true, let dictation = env.dictation {
+            dictationEngines = await dictation.availableEngines()
+        }
         let abilities = SessionAdmission.HostAbilities(platform: env.platform, screenRecordingGranted: env.screenRecordingGranted(),
                                                        accessibilityGranted: env.accessibilityGranted(),
-                                                       canManageVirtualDisplay: env.screen.canManageVirtualDisplay, dictationEngines: dictationEngines)
+                                                       canManageVirtualDisplay: env.screen.canManageVirtualDisplay, dictationEngines: dictationEngines,
+                                                       inputOnlyAndStylus: true)
 
         switch kind {
         case .availabilityCheck:
@@ -170,6 +198,7 @@ actor HostSession {
             clientModel = hello.deviceModel
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             let token = attachTokens.issue(for: self, peer: peerHost)
+            fileToken = token
             try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token,
                                                           capabilities: SessionAdmission.capabilities(for: .filesOnly, hello: hello, host: abilities))))
             state = .filesOnly
@@ -191,6 +220,7 @@ actor HostSession {
             clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
             // The file channel's ticket in: single use, from this address only, gone with the session.
             let token = clientTakesFiles ? attachTokens.issue(for: self, peer: peerHost) : nil
+            fileToken = token
             try await channel.send(.authResult(AuthResult(status: .ok, sessionToken: token, displays: displays,
                                                           capabilities: SessionAdmission.capabilities(for: .screen, hello: hello, host: abilities))))
             state = .streaming
@@ -208,6 +238,30 @@ actor HostSession {
                 if adopted { channel.sendDetached(.curtainStatus(CurtainStatus(isUp: true))) }
             }
             return true
+
+        case .inputOnly:
+            if let refusal = SessionAdmission.inputOnlyRefusal(host: abilities) {
+                try await channel.send(.authResult(refusal))
+                throw SessionError.authFailed
+            }
+            clientName = hello.clientName
+            clientModel = hello.deviceModel
+            clientKey = DeviceIdentity.fingerprint(of: hello.clientPublicKey)
+            isInputOnly = true
+            // No display list (that would need Screen Recording) and no capture: positions are
+            // the pointer's own from here on.
+            if let makeInputSink = env.makeInputSink {
+                let sink = makeInputSink(.zero)
+                sink.followPointer()
+                injector = sink
+            }
+            startClipboard()
+            try await channel.send(.authResult(AuthResult(status: .ok,
+                                                          capabilities: SessionAdmission.capabilities(for: .inputOnly, hello: hello, host: abilities))))
+            state = .streaming
+            onStreaming(self, trust.name(ofFingerprint: clientKey) ?? hello.clientName, hello.deviceModel, clientKey)
+            log.info("input-only session for \(hello.clientName)")
+            return true
         }
     }
 
@@ -220,6 +274,8 @@ actor HostSession {
         while state == .streaming, let message = try await channel.receive() {
             guard state == .streaming else { return }
             switch message {
+            case .selectDisplay where isInputOnly, .curtainRequest where isInputOnly, .audioRequest where isInputOnly:
+                break // nothing to show or hear
             case .selectDisplay(let select):
                 if captureFailsUntil == nil, let failsFor = env.captureFailsFor {
                     captureFailsUntil = now + failsFor
@@ -235,6 +291,9 @@ actor HostSession {
             case .keyEvent(let event):
                 pacer?.noteInput()
                 if admitsInput(isRelease: !event.isDown) { injector?.handle(event) }
+            case .stylusEvent(let event):
+                pacer?.noteInput()
+                if admitsInput(isRelease: event.phase == .up || event.phase == .leave) { injector?.handle(event) }
             case .textInput(let input):
                 guard admitsInput(isRelease: false), let injector else { break }
                 // More than one key event's worth (a dictation, a paste from the iPad) is pasted:
@@ -390,22 +449,26 @@ actor HostSession {
             throw CaptureError.stoppedWhileStarting
         }
 
-        clipboard?.stop()
-        if let makeClipboard = env.makeClipboard {
-            let clipboard = self.clipboard ?? makeClipboard()
-            clipboard.onLocalChange = { [weak self] payload in
-                guard let self else { return }
-                Task { await self.sendClipboard(payload) }
-            }
-            clipboard.start()
-            self.clipboard = clipboard
-            let initial = clipboard.currentPayload()
-            if !initial.isEmpty { channel.sendDetached(.clipboard(initial)) }
-        }
+        startClipboard()
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
         log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
         return (chosen, codec)
+    }
+
+    /// Both ways from here: the Mac's pasteboard as it is now, then each change.
+    private func startClipboard() {
+        clipboard?.stop()
+        guard let makeClipboard = env.makeClipboard else { return }
+        let clipboard = self.clipboard ?? makeClipboard()
+        clipboard.onLocalChange = { [weak self] payload in
+            guard let self else { return }
+            Task { await self.sendClipboard(payload) }
+        }
+        clipboard.start()
+        self.clipboard = clipboard
+        let initial = clipboard.currentPayload()
+        if !initial.isEmpty { channel.sendDetached(.clipboard(initial)) }
     }
 
     private func ingest(_ frame: CapturedFrame, epoch: UInt64) {
@@ -584,6 +647,10 @@ actor HostSession {
             await fileChannel.close()
             return
         }
+        if let sessionKeys, let fileToken {
+            // An encrypted session's file channel is sealed too, with keys only this device has.
+            await fileChannel.encrypt(with: sessionKeys.fileChannelKeys(token: fileToken))
+        }
         let destination = env.fileDestination()
         var configuration = destination.configuration
         // A file cut off earlier keeps writing to its partial, even if Settings → Files moved the
@@ -717,6 +784,11 @@ actor HostSession {
     /// Whether input may reach the screen: while the display is asleep it wakes it (at most once
     /// a second) instead, except releases, which still go through so nothing stays held.
     private func admitsInput(isRelease: Bool) -> Bool {
+        if isInputOnly {
+            // No capture watches the display here; posted events don't light it, so input does.
+            if !isRelease, power.isDisplayAsleep { _ = power.wakeDisplay(reason: "input-only session", minimumInterval: .seconds(1)) }
+            return true
+        }
         switch lifecycle.admitsInput(isRelease: isRelease, now: now) {
         case .deliver: return true
         case .drop: return false

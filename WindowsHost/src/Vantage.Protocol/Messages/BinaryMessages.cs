@@ -104,6 +104,8 @@ public enum PointerAction : byte
     Move = 0,
     Down = 1,
     Up = 2,
+    /// <summary>Move by X, Y points from wherever the pointer is (input-only sessions; never sent to this host).</summary>
+    MoveBy = 3,
 }
 
 /// <summary>
@@ -216,6 +218,63 @@ public sealed record ScrollEvent : IBinaryMessage
             Y = reader.ReadSingle(),
             VelocityX = reader.ReadSingle(),
             VelocityY = reader.ReadSingle(),
+            Modifiers = (KeyModifiers)reader.ReadUInt32(),
+        };
+    }
+}
+
+public enum StylusPhase : byte
+{
+    Hover = 0,
+    Down = 1,
+    Move = 2,
+    Up = 3,
+    Leave = 4,
+}
+
+/// <summary>
+/// Kind 125, 26 bytes: an Apple Pencil sample with pressure (0…1), altitude and azimuth (radians).
+/// Only sent to hosts with <see cref="HostCapabilities.Stylus"/>, which this one doesn't offer.
+/// </summary>
+public sealed record StylusEvent : IBinaryMessage
+{
+    MessageKind IMessage.Kind => MessageKind.StylusEvent;
+    public required StylusPhase Phase { get; init; }
+    public required float X { get; init; }
+    public required float Y { get; init; }
+    public required float Pressure { get; init; }
+    public required float Altitude { get; init; }
+    public required float Azimuth { get; init; }
+    public byte ClickCount { get; init; } = 1;
+    public KeyModifiers Modifiers { get; init; }
+
+    public int EncodedLength => 26;
+
+    public void Encode(Span<byte> destination)
+    {
+        var writer = new LittleEndianWriter(destination);
+        writer.Write((byte)Phase);
+        writer.Write(X);
+        writer.Write(Y);
+        writer.Write(Pressure);
+        writer.Write(Altitude);
+        writer.Write(Azimuth);
+        writer.Write(ClickCount);
+        writer.Write((uint)Modifiers);
+    }
+
+    public static StylusEvent Decode(ReadOnlySpan<byte> payload)
+    {
+        var reader = new LittleEndianReader(payload);
+        return new StylusEvent
+        {
+            Phase = reader.ReadEnum<StylusPhase>(),
+            X = reader.ReadSingle(),
+            Y = reader.ReadSingle(),
+            Pressure = reader.ReadSingle(),
+            Altitude = reader.ReadSingle(),
+            Azimuth = reader.ReadSingle(),
+            ClickCount = reader.ReadByte(),
             Modifiers = (KeyModifiers)reader.ReadUInt32(),
         };
     }

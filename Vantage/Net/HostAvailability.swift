@@ -25,14 +25,28 @@ enum HostAvailability: Equatable, Sendable {
     }
 
     /// The host's availability, plus the platform its challenge named (nil when it never got that
-    /// far, or from an older host, which is a Mac).
+    /// far, or from an older host, which is a Mac). Checks the local network first when the
+    /// computer is advertising there, since that's where a connection would go.
     static func probe(_ device: SavedDevice, identity: DeviceIdentity,
                       timeout: Duration = .seconds(5)) async -> (availability: HostAvailability, platform: HostPlatform?) {
         guard !Task.isCancelled,
               let address = try? ConnectionAddress(host: device.host, port: String(device.port)),
               let port = NWEndpoint.Port(rawValue: address.port) else { return (.unavailable, nil) }
-        let channel = MessageChannel(connection: NWConnection(host: NWEndpoint.Host(address.host), port: port,
-                                                              using: VantageNetwork.tcpParameters()))
+        var saved = device
+        saved.host = address.host
+        let routes = HostRoute.candidates(for: saved, port: port)
+        for route in routes.dropLast() {
+            let result = await probe(route, device: device, identity: identity, timeout: min(timeout, route.connectTimeout))
+            // Only a computer that checked out locally counts; anything odd there (an imposter on the
+            // network, a refusal) is settled over the saved address instead.
+            if [.ready, .online, .needsPermission].contains(result.availability) { return result }
+        }
+        return await probe(routes[routes.count - 1], device: device, identity: identity, timeout: timeout)
+    }
+
+    private static func probe(_ route: HostRoute, device: SavedDevice, identity: DeviceIdentity,
+                              timeout: Duration) async -> (availability: HostAvailability, platform: HostPlatform?) {
+        let channel = MessageChannel(connection: NWConnection(to: route.endpoint, using: VantageNetwork.tcpParameters()))
         let timer = Task {
             do { try await Task.sleep(for: timeout) } catch { return }
             await channel.close()
@@ -42,10 +56,11 @@ enum HostAvailability: Equatable, Sendable {
         let status: HostAvailability = await withTaskCancellationHandler {
             do {
                 try await channel.start()
-                let clientNonce = AuthTranscript.randomNonce()
-                try await channel.send(.hello(Hello(clientName: "Casement availability", deviceModel: "client", appVersion: "1.0",
+                let exchange = ClientHandshake(clientPublicKey: identity.publicKeyData, offersEncryption: route.offersEncryption,
+                                               requiresEncryption: route.isLocal)
+                try await channel.send(.hello(exchange.prepare(Hello(clientName: "Casement availability", deviceModel: "client", appVersion: "1.0",
                     clientPublicKey: identity.publicKeyData, supportedCodecs: [.hevc, .h264], maxDecodeWidth: 0,
-                    maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true, clientNonce: clientNonce)))
+                    maxDecodeHeight: 0, viewport: nil, isReadinessProbe: true))))
                 guard let response = try await channel.receive() else { return .unavailable }
                 if case .authResult(let result) = response, result.status == .versionMismatch { return .incompatible }
                 guard case .challenge(let challenge) = response else { return .unavailable }
@@ -53,8 +68,7 @@ enum HostAvailability: Equatable, Sendable {
                 // This runs in the background, so it signs nothing for a host that can't prove it's
                 // the one this device was paired with (and the signature is good for a probe only).
                 do {
-                    _ = try HostIdentityCheck.verify(challenge, clientNonce: clientNonce, clientPublicKey: identity.publicKeyData,
-                                                     expected: device.hostPublicKey)
+                    _ = try exchange.verify(challenge, expected: device.hostPublicKey)
                 } catch HostIdentityCheck.Failure.unsigned {
                     return .incompatible
                 } catch HostIdentityCheck.Failure.changed {
@@ -62,8 +76,8 @@ enum HostAvailability: Equatable, Sendable {
                 } catch {
                     return .unavailable
                 }
-                let signature = try identity.sign(AuthTranscript.clientBytes(clientNonce: clientNonce, hostNonce: challenge.nonce,
-                    hostPublicKey: challenge.hostPublicKey, clientPublicKey: identity.publicKeyData, purpose: .probe))
+                let signature = try identity.sign(exchange.transcript(for: challenge, purpose: .probe))
+                if let keys = try exchange.sessionKeys(for: challenge) { await channel.encrypt(with: keys) }
                 try await channel.send(.authenticate(Authenticate(signature: signature)))
                 guard case .authResult(let result)? = try await channel.receive() else { return .unavailable }
                 switch result.status {

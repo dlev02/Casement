@@ -1,6 +1,6 @@
 # Casement
 
-Casement lets a person see and control their own Mac or Windows PC from an iPhone, iPad, Mac or Apple Vision Pro, over their own Tailscale network and nothing else. Terms use the words the apps show; the code's older name is noted where it differs (the code still says Vantage, see [ADR-0003](docs/adr/0003-code-keeps-the-vantage-names.md)).
+Casement lets a person see and control their own Mac or Windows PC from an iPhone, iPad, Mac or Apple Vision Pro, over their own Tailscale network or, once paired, their own local network, and nothing else. Terms use the words the apps show; the code's older name is noted where it differs (the code still says Vantage, see [ADR-0003](docs/adr/0003-code-keeps-the-vantage-names.md)).
 
 ## The two apps
 

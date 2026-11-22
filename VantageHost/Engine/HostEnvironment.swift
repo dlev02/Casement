@@ -99,7 +99,11 @@ nonisolated protocol HostStatusMonitor: AnyObject, Sendable {
 /// Where a session's input goes.
 nonisolated protocol InputSink: AnyObject, Sendable {
     func updateDisplayFrame(_ frame: CGRect)
+    /// An input-only session: clicks land where the pointer is, and `moveBy` moves it.
+    func followPointer()
     func handle(_ event: PointerEvent)
+    /// Apple Pencil samples, as tablet events.
+    func handle(_ event: StylusEvent)
     func handle(_ event: ScrollEvent)
     func handle(_ event: KeyEvent)
     func typeText(_ text: String)

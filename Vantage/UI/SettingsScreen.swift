@@ -293,6 +293,7 @@ struct ConnectionSettings: View {
     @Environment(TailscaleReachability.self) private var reachability
     @Environment(TailscaleAccount.self) private var account
     @AppStorage("vantage.availabilityChecks") private var availabilityChecks = true
+    @AppStorage(LocalDiscovery.enabledKey) private var localNetwork = false
 
     var body: some View {
         Form {
@@ -343,7 +344,14 @@ struct ConnectionSettings: View {
             } header: {
                 Text("Network")
             } footer: {
-                Text("Casement only connects to Macs and PCs on your tailnet. Traffic never leaves Tailscale's encrypted tunnel.")
+                Text("Casement connects to Macs and PCs on your tailnet, inside Tailscale's encrypted tunnel.")
+            }
+
+            Section {
+                Toggle("Local Network", isOn: $localNetwork)
+                    .onChange(of: localNetwork) { LocalDiscovery.shared.update(active: true) }
+            } footer: {
+                Text("At home or over a cable, connects straight to a computer you've already paired that has Local network connections on in Casement Host, encrypted end to end by Casement. Elsewhere it goes over Tailscale.")
             }
 
             Section {
@@ -528,6 +536,8 @@ struct HelpScreen: View {
             siriEntry,
             FAQEntry("Does Casement work away from home?",
                      "Yes. Casement connects over Tailscale, so it works from any network — including cellular — as long as both the computer and this device are on your tailnet."),
+            FAQEntry("Can Casement connect without going through Tailscale?",
+                     "At home, yes. Turn on Local network connections in Casement Host's settings on the Mac and Settings → Connection → Local Network here. A Mac you've already paired (over Tailscale) is then found on the same Wi-Fi or over a cable even if its name or address changed, and the connection is encrypted end to end by Casement with fresh keys each time. Away from home, or if the Mac can't be found, it goes over Tailscale as usual. Pairing a new device still happens over Tailscale. Windows PCs connect over Tailscale only for now."),
             FAQEntry("Why does Casement want a Tailscale key?",
                      "Only to read your device list, so it can offer your Macs and PCs by name instead of making you type IP addresses. The key is read-only, lives in this device's Keychain, and is sent only to api.tailscale.com. Adding computers by name or IP by hand works without one."),
         ]),
