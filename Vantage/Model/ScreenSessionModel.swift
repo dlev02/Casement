@@ -610,7 +610,7 @@ final class ScreenSessionModel {
     var quality: QualityPreset { savedDevice.quality ?? .auto }
 
     var qualityChoice: QualityChoice {
-        QualityChoice(selection: quality, onSelect: { [weak self] in self?.setQuality($0) })
+        QualityChoice(selection: quality, isAvailable: !isInputOnly, onSelect: { [weak self] in self?.setQuality($0) })
     }
 
     func setQuality(_ preset: QualityPreset) {

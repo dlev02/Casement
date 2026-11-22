@@ -532,6 +532,7 @@ struct ControlStrip: View {
             Label("Quality", systemImage: "dial.medium")
         }
         .pickerStyle(.menu)
+        .disabled(!quality.isAvailable)
         .accessibilityIdentifier("session.menu.quality")
     }
 

@@ -45,6 +45,8 @@ struct FitDisplayToggle {
 /// The session menu's Quality choice.
 struct QualityChoice {
     var selection: QualityPreset = .auto
+    /// False in a Trackpad & Keyboard session, which has no picture.
+    var isAvailable = true
     var onSelect: (QualityPreset) -> Void = { _ in }
 }
 
