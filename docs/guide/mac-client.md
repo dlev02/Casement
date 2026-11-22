@@ -94,7 +94,9 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
 - **Scrolling** (`ScrollTranslator`): precise deltas go as `-scrollingDelta`, wheel lines as
   `+scrollingDelta`; the host negates continuous deltas only (`InputInjector.postScroll`), so the
   posted event equals the local one, already corrected for this Mac's natural-scrolling setting
-  (the per-Mac Natural Scrolling toggle is hidden on macOS). `NSEventPhase` bits aren't wire
+  (the per-Mac Natural Scrolling toggle is hidden on macOS). The Windows host posts with the same
+  signs (continuous negated), so a PC scrolls the same way; before 2026-11-22 it gave continuous
+  deltas the line signs and a Mac's trackpad scrolled a PC backwards. `NSEventPhase` bits aren't wire
   values: may-begin and stationary are dropped, as is an end or cancel without a began; momentum
   passes through; wheels send whole lines with the fraction carried, and a change of direction
   starts from zero. Test: `ScrollTranslatorTests`.

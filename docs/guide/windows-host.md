@@ -92,6 +92,10 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   that holds chosen encodes, fake clock: a lost answer, a late answer, a timeout queued behind an
   answer), with `HevcSessionTests` and `HostListenerTests.StreamStartsWithStatusConfigThenAnIdr…`
   over loopback.
+- **Scroll signs** (`WindowsInputTranslator.Scroll`): the Mac host's. Lines: WHEEL = +deltaY,
+  HWHEEL = −deltaX; continuous deltas arrive negated, so WHEEL = −deltaY, HWHEEL = +deltaX. Until
+  2026-11-22 continuous deltas took the line signs and trackpad scrolling ran backwards from every
+  client (`MacTrackpadAndWheelScrollTheSameWay`).
 - **Scroll momentum**: an iPad flick glides on a PC as on a Mac. `HostSessionCore` wraps the input
   sink in `MomentumInputSink`, which plays `ScrollMomentum` (the Mac's numbers: 1/60 s frames,
   0.998 per ms, ≥ 60 pt/s to start, ends under 10 pt/s or at 3 s) as momentum scrolls through the
