@@ -37,4 +37,6 @@ nonisolated enum LocalDevice {
 
     /// "this iPad" / "this iPhone" / "this Mac".
     static var this: String { "this \(noun)" }
+    /// The same, to start a sentence or a heading.
+    static var thisCapitalized: String { "This \(noun)" }
 }

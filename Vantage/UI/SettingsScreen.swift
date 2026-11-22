@@ -272,6 +272,10 @@ struct ControlSettings: View {
             #endif
         }
 
+        #if canImport(FluidAudio)
+        OnDeviceParakeetSection()
+        #endif
+
         Section {
             Toggle("Save Dictation History", isOn: $savesDictationHistory)
                 .accessibilityIdentifier("settings.dictationHistory")
@@ -624,7 +628,7 @@ struct HelpScreen: View {
             FAQEntry("Does my screen go through a server?",
                      "No. There is no Casement account or Casement relay. Video and input travel between your own devices inside Tailscale's encrypted tunnel; Tailscale may relay encrypted traffic when a direct connection is unavailable. Casement has no ads, analytics, or tracking; the privacy policy is linked in About."),
             FAQEntry("Does Casement Host connect to anything else?",
-                     "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face."),
+                     "Casement Host checks GitHub for its own updates about once a day, and downloads them from there. Nothing about you or your devices is sent, and each update is signed, so only a real release installs. You can turn it off in Casement Host's settings. On a Mac, if you turn on its built-in dictation model, that downloads from Hugging Face. The Casement app does the same only if you choose to download its own Parakeet model in Settings → Controls."),
             FAQEntry("Can someone else connect to my Mac or PC?",
                      "Only a device on your tailnet that you've paired, using a key the computer has already trusted. Casement Host refuses connections from any address outside Tailscale's range."),
             FAQEntry("What does Casement store on this device?",
@@ -668,7 +672,7 @@ extension HelpScreen {
         FAQEntry("Can I change the buttons in the control strip?",
                  "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, choose Customize Control Strip… in the Session menu, or the Controls row in that Mac's settings. Every control is also in the Session menu."),
         FAQEntry("Can I dictate to the Mac?",
-                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own with Apple's speech recognition. Pause holds the recording while you think and Resume carries on. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                 "Yes. Choose Dictate in the Session menu (⌃⌥⌘D) or use the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the other Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the other Mac picks which in Casement Host Settings → Dictation; otherwise this Mac transcribes on its own, with Apple's speech recognition or with Parakeet if you download it in Settings → Controls (handy for a PC, which has no engine of its own). Pause holds the recording while you think and Resume carries on. Choose the Mac or this one in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
         dictationHistoryEntry,
     ]
     #else
@@ -713,7 +717,7 @@ extension HelpScreen {
                 FAQEntry("Can I change the buttons in the control strip?",
                          "Yes. Go to Settings → Controls → Customize Control Strip to choose which buttons show and drag them into the order you want. To give one Mac its own set, open Customize Control Strip… from the session menu, or the Controls row in that Mac's settings. The red button ends the session; reconnecting is one tap."),
                 FAQEntry("Can I dictate to the Mac?",
-                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own with Apple's speech recognition. Pause holds the recording while you think and Resume carries on. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
+                         "Yes. Tap the microphone in the control strip, speak, then Send (or Send + Return). Casement can transcribe on the Mac with MacWhisper (using the model you've picked there) or with Casement Host's built-in Parakeet model, and the Mac picks which in Casement Host Settings → Dictation; otherwise this device transcribes on its own, with Apple's speech recognition or, on iPhone, iPad and Mac, with Parakeet if you download it in Settings → Controls (handy for a PC, which has no engine of its own). Pause holds the recording while you think and Resume carries on. Choose the Mac or this device in Settings → Controls. Audio is only used for that one transcript and isn't kept."),
                 dictationHistoryEntry,
     ]
     #endif
@@ -818,4 +822,94 @@ private extension Bundle {
 
 #if canImport(UIKit)
 import UIKit
+#endif
+
+#if canImport(FluidAudio)
+/// Settings → Controls → Dictation: the optional Parakeet model for this device. One row holds
+/// its state, its size and the one thing to do with it; nothing is fetched until Download.
+private struct OnDeviceParakeetSection: View {
+    private let parakeet = OnDeviceParakeet.shared
+    @State private var isConfirmingMeteredDownload = false
+
+    var body: some View {
+        Section {
+            LabeledContent("Parakeet") { modelRow }
+            if case .failed(let message) = parakeet.state {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if parakeet.state == .installed {
+                Toggle("Use Parakeet", isOn: Binding(get: { parakeet.isEnabled }, set: { parakeet.setEnabled($0) }))
+                    .accessibilityIdentifier("settings.useParakeet")
+            }
+        } header: {
+            Text("On \(LocalDevice.thisCapitalized)")
+        } footer: {
+            Text("NVIDIA's Parakeet model transcribes English and 24 other European languages on \(LocalDevice.this), in place of Apple's speech recognition: for dictating to a PC, or to a Mac without MacWhisper. It is about \(downloadSize), downloaded from Hugging Face only when you choose Download.")
+        }
+        .confirmationDialog("Download \(downloadSize) on this connection?", isPresented: $isConfirmingMeteredDownload, titleVisibility: .visible) {
+            Button("Download") { parakeet.download() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(LocalDevice.thisCapitalized) is on cellular or a personal hotspot.")
+        }
+    }
+
+    private var downloadSize: String {
+        OnDeviceParakeet.approximateDownloadSize.formatted(.byteCount(style: .file))
+    }
+
+    @ViewBuilder private var modelRow: some View {
+        HStack(spacing: 10) {
+            switch parakeet.state {
+            case .notInstalled, .failed:
+                Text(parakeet.hasModelFiles ? "Incomplete" : downloadSize).foregroundStyle(.secondary)
+                if parakeet.hasModelFiles {
+                    Button("Remove", role: .destructive) { parakeet.remove() }
+                }
+                if !OnDeviceParakeet.isInstalled {
+                    Button("Download") { requestDownload() }
+                        .accessibilityIdentifier("settings.parakeetDownload")
+                }
+            case .downloading(let fraction):
+                if let fraction {
+                    ProgressView(value: fraction).frame(width: 72)
+                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Cancel") { parakeet.cancelDownload() }
+            case .preparing:
+                ProgressView().controlSize(.small)
+                Text("Getting Ready…").foregroundStyle(.secondary)
+            case .installed:
+                Text(parakeet.installedBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "Downloaded")
+                    .foregroundStyle(.secondary)
+                Button("Remove", role: .destructive) { parakeet.remove() }
+                    .accessibilityIdentifier("settings.parakeetRemove")
+            }
+        }
+        #if !os(macOS)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        #endif
+    }
+
+    /// Half a gigabyte over cellular or a hotspot asks first.
+    private func requestDownload() {
+        #if os(iOS)
+        Task {
+            if await OnDeviceParakeet.isOnExpensiveNetwork() {
+                isConfirmingMeteredDownload = true
+            } else {
+                parakeet.download()
+            }
+        }
+        #else
+        parakeet.download()
+        #endif
+    }
+}
 #endif

@@ -34,6 +34,7 @@
 		A100000000000000000000B2 /* VantageCore in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D2 /* VantageCore */; };
 		A100000000000000000000B3 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D3 /* FluidAudio */; };
 		A100000000000000000000B4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000D4 /* Sparkle */; };
+		A100000000000000000000B5 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; platformFilters = (ios, macos, ); productRef = A100000000000000000000D5 /* FluidAudio */; };
 		C10000000000000000000011 /* VantageWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* VantageWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -80,6 +81,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000000000000000000B1 /* VantageCore in Frameworks */,
+				A100000000000000000000B5 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +154,7 @@
 			name = Vantage;
 			packageProductDependencies = (
 				A100000000000000000000D1 /* VantageCore */,
+				A100000000000000000000D5 /* FluidAudio */,
 			);
 			productName = Vantage;
 			productReference = A100000000000000000000A1 /* Casement.app */;
@@ -741,6 +744,8 @@
 				kind = upToNextMinorVersion;
 				minimumVersion = 0.16.1;
 			};
+			traits = (
+			);
 		};
 		A100000000000000000000EB /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -762,6 +767,11 @@
 			productName = VantageCore;
 		};
 		A100000000000000000000D3 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
+		A100000000000000000000D5 /* FluidAudio */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A100000000000000000000EA /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;

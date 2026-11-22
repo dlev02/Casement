@@ -18,6 +18,7 @@ Casement stores the following on your devices to work. None of it is sent to the
 - Your preferences, such as appearance, controls, and keyboard options.
 - In the Keychain: this device's identity key, used to prove to your computers that it's really this device. If you choose to add them, it also holds your Tailscale API token or OAuth client, and the account name and password for each Mac you saved one for.
 - The last 30 dictations you sent, so you can copy or send one again. They stay on that device, are never synced or backed up, and are deleted when you turn off **Save Dictation History** in Settings › Controls.
+- The Parakeet speech model, if you choose to download it for dictation on your device.
 - Files you receive, in the app's own folder (on iPhone and iPad, Files › On My iPhone/iPad › Casement › Received; on a Mac, your Downloads folder).
 
 **In Casement Host:**
@@ -37,7 +38,7 @@ Casement connects only to the places below, and only when you use the matching f
 | Your own computers, over Tailscale | When you connect, check availability, transfer files, or dictate | The session itself: screen video, sound, input, clipboard content, files, and dictation audio |
 | Your Mac's built-in Screen Sharing (port 5900) | Only when you use Type Password or Log In with Screen Sharing | Your saved Mac account name and password, to type them at the Mac |
 | `api.tailscale.com` | Only if you add a Tailscale key, to list your tailnet's devices | Your Tailscale key. Tailscale returns your device list, which stays on your device |
-| Hugging Face | Only if you turn on the built-in Parakeet dictation model in Casement Host | A download request for the model files (about 490 MB) |
+| Hugging Face | Only if you turn on the built-in Parakeet dictation model in Casement Host, or choose **Download** for Parakeet in Casement's own Settings › Controls on an iPhone, iPad, or Mac | A download request for the model files (about 490 MB). Hugging Face sees your IP address, as with any download |
 | GitHub | Casement Host for Mac and Windows, about once a day, while **Install updates automatically** is on (it is by default), or when you choose **Check for updates** | A download request for the latest release's update information and, when there's a newer version, the update itself. GitHub sees your computer's IP address and Casement Host's version, as with any download. Nothing about you or your devices is sent, and the developer can't see these requests |
 
 Casement doesn't add its own encryption layer. It relies on Tailscale's encrypted WireGuard tunnel between your devices, and on the pairing step, where each device proves its identity with a signing key. Casement Host refuses connections from outside Tailscale's address ranges. Tailscale's handling of your data is covered by [Tailscale's privacy policy](https://tailscale.com/privacy-policy).
