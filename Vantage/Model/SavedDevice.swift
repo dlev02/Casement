@@ -78,6 +78,9 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     var playMacAudio: Bool?
     /// Black out the computer's own screen while connected (nil = off).
     var curtain: Bool?
+    /// Fluid, Balanced or Sharp Text (`QualityPreset`); nil is Balanced. Optional so devices saved
+    /// by earlier builds decode; syncs with the rest of the entry.
+    var quality: QualityPreset?
     /// On a PC, the keyboard's ⌘ presses Ctrl (and Control the Windows key), so ⌘C copies as it
     /// does on a Mac (`KeyRemap`). Nil means on for a PC; a Mac ignores it. Optional so devices
     /// saved by earlier builds decode.

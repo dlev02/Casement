@@ -170,7 +170,11 @@ final class ClientSession {
         }
     }
 
-    func disconnect() {
+    /// Lets go of the connection. `endingSession`: the screen is closing for good, so the host
+    /// hears `disconnect` first and puts a fitted PC display back at once, instead of holding it
+    /// for a reconnect (a dropped connection, or the app going to the background).
+    func disconnect(endingSession: Bool = false) {
+        let saysGoodbye = endingSession && state == .connected
         connectionID = UUID()
         connectionTask?.cancel()
         connectionTask = nil
@@ -180,7 +184,11 @@ final class ClientSession {
         state = .idle
         activeConfig = nil
         hostStatus = nil
-        Task { await oldChannel?.close() }
+        stopAwaitingFittedStream()
+        Task {
+            if saysGoodbye { try? await oldChannel?.send(.disconnect(DisconnectMessage(reason: "closed"))) }
+            await oldChannel?.close()
+        }
     }
 
     // MARK: Sending
@@ -198,8 +206,84 @@ final class ClientSession {
         guard viewport != self.viewport else { return }
         self.viewport = viewport
         guard state == .connected, wantsFitDisplay, hostOffersDisplayFitting else { return }
-        send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: .auto,
-                                          preferredCodec: device?.preferredCodec, useVirtualDisplay: true)))
+        // Before the first picture the host's answer brings the refit: one request at a time.
+        guard !isAwaitingFittedStream else { return }
+        sendStreamRequest(useVirtualDisplay: true)
+    }
+
+    /// The stream this session asks for: the current view, quality and codec.
+    private func streamRequest(useVirtualDisplay: Bool) -> SelectDisplay {
+        SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: wantsQuality,
+                      preferredCodec: device?.preferredCodec, useVirtualDisplay: useVirtualDisplay)
+    }
+
+    private func sendStreamRequest(useVirtualDisplay: Bool) {
+        let request = streamRequest(useVirtualDisplay: useVirtualDisplay)
+        lastRequest = request
+        send(.selectDisplay(request))
+    }
+
+    /// The last stream request sent on this connection; a quality change resends it as it was,
+    /// so the host can tell nothing else changed and keep the stream running.
+    private var lastRequest: SelectDisplay?
+    /// The quality this session asks for. Survives reconnects, like `wantsFitDisplay`; nil falls
+    /// back to the saved device's choice.
+    private var qualityOverride: QualityPreset?
+    var wantsQuality: QualityPreset { qualityOverride ?? device?.quality ?? .auto }
+
+    /// Fluid, Balanced or Sharp Text for this session (and every reconnect), applied to the
+    /// running stream at once.
+    func setQuality(_ preset: QualityPreset) {
+        let changed = wantsQuality != preset
+        qualityOverride = preset
+        guard changed, state == .connected, var request = lastRequest else { return }
+        request.quality = preset
+        lastRequest = request
+        send(.selectDisplay(request))
+    }
+
+    /// True from a fitted stream request at the start of a connection until the host answers it
+    /// (`streamConfig`): the screen holds back the picture until then, so it opens on the fitted
+    /// display instead of showing it change shape. A view that changed shape meanwhile (a window
+    /// settling, a rotation) is asked for once more first. Later refits keep the current picture
+    /// until the new one comes.
+    private(set) var isAwaitingFittedStream = false
+    /// A fitted request went out before the first picture: frames before it don't count.
+    var onFitRequested: (() -> Void)?
+    private var fitRequestedViewport: Viewport?
+    private var fitWaitLimit: Task<Void, Never>?
+
+    private func awaitFittedStream(for viewport: Viewport) {
+        isAwaitingFittedStream = true
+        fitRequestedViewport = viewport
+        onFitRequested?()
+        fitWaitLimit?.cancel()
+        let id = connectionID
+        // A host that never answers (an older one, a capture that won't start) still gets its
+        // picture shown once it has one.
+        fitWaitLimit = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            guard let self, self.connectionID == id else { return }
+            self.stopAwaitingFittedStream()
+        }
+    }
+
+    private func stopAwaitingFittedStream() {
+        isAwaitingFittedStream = false
+        fitRequestedViewport = nil
+        fitWaitLimit?.cancel()
+        fitWaitLimit = nil
+    }
+
+    /// The host answered the fitted request: ask again if the view has changed shape since, else
+    /// let the picture show.
+    private func fittedStreamAnswered() {
+        if wantsFitDisplay, hostOffersDisplayFitting, viewport != fitRequestedViewport {
+            awaitFittedStream(for: viewport)
+            sendStreamRequest(useVirtualDisplay: true)
+        } else {
+            stopAwaitingFittedStream()
+        }
     }
 
     /// The host can fit its display to this device's screen (BetterDisplay on a Mac, mode and
@@ -216,9 +300,9 @@ final class ClientSession {
     func setFitDisplay(_ enabled: Bool) {
         let changed = wantsFitDisplay != enabled
         fitDisplayOverride = enabled
+        if !enabled { stopAwaitingFittedStream() }
         guard changed, state == .connected, hostOffersDisplayFitting else { return }
-        send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: .auto,
-                                          preferredCodec: device?.preferredCodec, useVirtualDisplay: enabled)))
+        sendStreamRequest(useVirtualDisplay: enabled)
         // On a Mac host, switch capture back to the main display first, then disconnect the now-
         // unused virtual display so capture isn't yanked out from under itself. A PC restores its
         // display mode and scale on `selectDisplay(useVirtualDisplay: false)` alone.
@@ -289,6 +373,8 @@ final class ClientSession {
             state = reconnectAttempts == 0 ? .connecting : .reconnecting
             activeConfig = nil
             hostStatus = nil
+            lastRequest = nil
+            stopAwaitingFittedStream()
             guard let port = NWEndpoint.Port(rawValue: device.port) else {
                 state = .failed("Invalid port")
                 return
@@ -318,9 +404,10 @@ final class ClientSession {
                     return // Leave the pairing prompt visible until the user submits a code.
                 }
                 // Every new connection needs its own stream request, including reconnects.
-                try await channel.send(.selectDisplay(SelectDisplay(selection: .fitViewport(viewport),
-                    targetFPS: 60, quality: .auto, preferredCodec: device.preferredCodec,
-                    useVirtualDisplay: wantsFitDisplay)))
+                let request = streamRequest(useVirtualDisplay: wantsFitDisplay)
+                lastRequest = request
+                if wantsFitDisplay, hostOffersDisplayFitting { awaitFittedStream(for: viewport) }
+                try await channel.send(.selectDisplay(request))
                 if wantsMacAudio, hostOffersAudio {
                     try await channel.send(.audioRequest(AudioRequest(enabled: true)))
                 }
@@ -446,6 +533,7 @@ final class ClientSession {
             onClipboard?(payload)
         case .streamConfig(let config):
             activeConfig = config
+            if isAwaitingFittedStream { fittedStreamAnswered() }
         case .hostStatus(let status):
             hostStatus = status
         case .curtainStatus(let status):

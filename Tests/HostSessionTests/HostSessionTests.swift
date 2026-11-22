@@ -384,6 +384,7 @@ nonisolated final class LosingEncoder: VideoEncoding {
         inner.encode(pixelBuffer, ptsNanos: ptsNanos, forceKeyframe: forceKeyframe, encodeID: encodeID)
     }
     func setBitrate(kbps: Int) { inner.setBitrate(kbps: kbps) }
+    func setMaxQP(_ maxQP: Int) { inner.setMaxQP(maxQP) }
     func setExpectedFrameRate(_ fps: Int) { inner.setExpectedFrameRate(fps) }
     func stop() { inner.stop() }
 }

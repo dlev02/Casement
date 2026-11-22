@@ -20,16 +20,21 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
 
     /// What became of one frame handed to `encode`: an encoded frame, or nothing. Every frame
     /// gets exactly one of these, so whoever counts encodes in flight never waits on a frame
-    /// VideoToolbox dropped (it does so under load, with a nil sample buffer and no error). It
-    /// names the encode it answers, so an answer that comes after the encode was written off is
-    /// told apart from the one in flight.
+    /// VideoToolbox dropped. It names the encode it answers, so an answer that comes after the
+    /// encode was written off is told apart from the one in flight.
     enum Outcome: Sendable {
         case encoded(Output, encodeID: UInt64)
+        /// Rate control left the frame out (no error, no data, `frameDropped`), as it does after
+        /// a large frame and under a tight QP ceiling. The encoder goes on from the last frame it
+        /// did encode, which the device has, so the picture needs no keyframe.
+        case skipped(encodeID: UInt64)
+        /// Anything else that produced nothing: the device's picture may now differ from the
+        /// encoder's, so the next frame should be a keyframe.
         case dropped(String, encodeID: UInt64)
 
         var encodeID: UInt64 {
             switch self {
-            case .encoded(_, let encodeID), .dropped(_, let encodeID): encodeID
+            case .encoded(_, let encodeID), .skipped(let encodeID), .dropped(_, let encodeID): encodeID
             }
         }
     }
@@ -93,7 +98,7 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
                 guard let self else { return }
                 guard status == noErr else { return self.report(.dropped("encoder error \(status)", encodeID: encodeID)) }
                 guard let sampleBuffer, CMSampleBufferGetDataBuffer(sampleBuffer) != nil else {
-                    return self.report(.dropped(flags.contains(.frameDropped) ? "frame dropped by the encoder" : "encoder returned no data", encodeID: encodeID))
+                    return self.report(flags.contains(.frameDropped) ? .skipped(encodeID: encodeID) : .dropped("encoder returned no data", encodeID: encodeID))
                 }
                 self.handleEncoded(sampleBuffer, keyframe: Self.isKeyframe(sampleBuffer), encodeID: encodeID)
             }
@@ -120,6 +125,17 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: NSNumber(value: bps))
             let limit: [Any] = [NSNumber(value: bps / 8 * 2), NSNumber(value: 1)]
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: limit as CFArray)
+        }
+    }
+
+    /// A new QP ceiling, from the next frame on (text or motion mode, or the one sharper
+    /// re-encode of a still screen). VideoToolbox takes it mid-session.
+    func setMaxQP(_ maxQP: Int) {
+        queue.async { [weak self] in
+            guard let self, let session = self.session, self.config.maxQP != maxQP else { return }
+            self.config.maxQP = maxQP
+            let status = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxAllowedFrameQP, value: NSNumber(value: maxQP))
+            if status != noErr { self.log.error("max QP \(maxQP) refused: \(status)") }
         }
     }
 

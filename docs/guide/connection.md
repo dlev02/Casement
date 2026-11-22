@@ -62,7 +62,29 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   default path streams the main display immediately; never put BetterDisplay's CLI back on the
   connect path unconditionally — on Drew's Mac it answers "Failed." to everything and the old
   15 s poll made every connect take 16 s. When the toggle is on, a connected non-built-in display
-  whose point size already matches the viewport is reused without touching the CLI.
+  whose point size already matches the viewport is reused without touching the CLI (so a reconnect
+  or the same window size again switches nothing; a Mac host also leaves its virtual display
+  connected when a session ends). Otherwise `provision` waits (≤ 4 s) until CoreGraphics shows the
+  requested mode, then `layoutSettle` (500 ms) for the window server to move and redraw windows,
+  before capture starts: capture is stopped across the whole switch, so the device sees the old
+  picture or the connecting overlay, never the layout shifting; the screen-parameter changes the
+  switch causes land while the start is under way or inside `restartDebounce` and restart nothing.
+  A display that never reaches the mode is streamed as it is, after the 4 s.
+- **The first picture** (client): with Fit Display on, `ClientSession.isAwaitingFittedStream` holds
+  from the connection's fitted `selectDisplay` until the host's `streamConfig` answers it; the
+  overlay says "Fitting display…" and `pictureCover` keeps the picture black. A viewport change
+  meanwhile isn't sent at once (`ScreenSessionModel.viewportChanged` skips its debounce until the
+  first picture, so the session always knows the latest shape): the answer brings one more request,
+  so there is at most one in flight and the picture opens on the display as fitted to the view as
+  it settled. Each fitted request marks a new first-frame epoch (`onFitRequested` →
+  `VideoStreamController.resetFirstFrame(epoch:requiringNewConfig:)`): only a frame after a
+  `videoConfig` received since then counts (every new stream opens with one), so frames still
+  coming from the stream it replaces stay hidden. An 8 s limit lets the picture through from a host
+  that never answers. Refits later in the session (a rotation, a resized window, Fit Display turned
+  on) keep showing the last picture until the new stream's frames replace it. Closing the screen
+  sends `disconnect` (`disconnect(endingSession: true)`), so a PC puts its mode back at once; a
+  dropped connection or the app going to the background doesn't, and the PC holds the fitted mode
+  for a reconnect (`DisplayHolds`, [windows-host.md](windows-host.md)).
 - **Tailscale account**: `TailscaleAccount` (client) talks read-only to `api.tailscale.com`
   (`GET /api/v2/tailnet/-/devices`) with either an API access token or an OAuth client
   (`client_credentials` at `/api/v2/oauth/token`, tokens cached ~1 h). Tailscale has no end-user
@@ -97,7 +119,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   keeping its codec, then the device's own choice; synthetic displays only the latter), stop it,
   send a `HostStatus` (only when it differs from the last one sent, as the Windows host does), wake
   or sleep the display, re-read the status, begin monitoring, request a keyframe (a wake with
-  capture still running), or log a note. It also answers whether input may reach the screen.
+  capture still running), apply a new quality to the running stream, or log a note. It also answers whether input may reach the screen.
   `HostSession.dispatch` feeds it and executes the decisions (`apply`, `execute`), runs the ticks
   while `wantsTicks` (`syncTicker`), and keeps only what is platform-bound: the capture and encoder
   objects, the wait for ScreenCaptureKit to list displays after a wake, and DEBUG
@@ -136,7 +158,33 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (`outstanding`), the session's stall watch calls `encodeTimedOut` then, and a timeout for an
   encode already answered does nothing. A changed frame waiting behind an encode stays pending
   through still frames that follow it; they refresh the picture, not the need to send it.
+  A frame VideoToolbox's rate control leaves out (`Outcome.skipped`: no error, no data,
+  `frameDropped`, which it does often after a large frame or under a tight ceiling) forces no
+  keyframe: the encoder goes on from the last frame it did encode, which the device has (checked by
+  decoding a stream with every other frame skipped), so the change is just encoded again; a skipped
+  forced keyframe is still owed, and any other failure (`.dropped`) still forces one.
   `VideoPacerTests` cover these on a fake encoder.
+- **Quality and the sharper still screen** (`AdaptiveController.Limits(preset:)`, `VideoPacer`; the
+  Windows host's `QualityProfile` has the same numbers): `SelectDisplay.quality` picks the limits.
+  Balanced (`auto`, the default) is text 30 fps / max QP 32, motion 60 fps / 44, still 24, floor
+  2 Mbit/s; Fluid (`motion`) 60 fps always, 36 / 44, no still pass; Sharp Text (`text`) 28 / 38,
+  still 20, floor 6 Mbit/s (`maximum`, not offered: 24 / 34 / 18, 10 Mbit/s). The mode's ceiling
+  reaches the encoder (`VideoEncoding.setMaxQP`, `kVTCompressionPropertyKey_MaxAllowedFrameQP`,
+  which VideoToolbox takes mid-session) before the frame it applies to; before this the Mac set 44
+  at session start and never changed it. Once the screen has been still for `sharpenDelay`
+  (300 ms) after an encode, `sharpenIfDue` encodes the last frame once more as a P-frame under the
+  still ceiling: SCK sends nothing for a still screen and re-encoding at the motion ceiling changes
+  nothing, so text scrolled at QP 44 used to stay soft. Every other encode moves the deadline, so
+  scrolling costs nothing; a keyframe or a change owed goes first; one pass per still picture (a
+  skipped pass isn't retried); the next encode puts the mode's ceiling back. `HostSession`'s
+  `watchSharpen` keeps one timer on `sharpenDeadline`, like the stall watch. Measured with
+  VideoToolbox at 2560×1600 (dense coloured text scrolled at 8 Mbit/s, HEVC): luma PSNR 33.4 dB
+  after scrolling, 46.2 dB after one pass at 18 (≈ 830 KB), 42.6 dB at 22 (≈ 570 KB), 39.0 dB at
+  26 (≈ 320 KB); H.264 is similar. HEVC 4:4:4 isn't available from Apple's hardware encoders
+  (`docs/research/media-pipeline.md`), so colour fringes on small text come down to bits too. A
+  quality change on a running stream (`CaptureLifecycle` sees a `selectionRequested` equal to what's
+  wanted apart from quality) is `.applyQuality`: `VideoPacer.setQuality` applies it without a
+  restart (`ClientSession.setQuality` resends the last request with only the quality changed).
 - **Display sleep** (`PowerManager`/`DisplayPower`, `LockMonitor`, `HostSession`, through
   `HostPowerControl` and `HostStatusMonitor`, decided by `CaptureLifecycle`): while the
   display sleeps, ScreenCaptureKit lists no displays and stops any stream (SCStreamError -3815,

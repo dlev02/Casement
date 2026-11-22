@@ -246,6 +246,7 @@ private struct MacDeviceDetail: View {
                                                          set: { store.setPlayMacAudio($0, for: device.id) }))
                     Toggle("Fit Display", isOn: Binding(get: { device.useVirtualDisplay == true },
                                                         set: { store.setUseVirtualDisplay($0, for: device.id) }))
+                    qualityPicker(for: device)
                     LabeledContent("⌘ Acts as Ctrl", value: device.keyRemap.swapsCommandAndControl ? "On" : "Off")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                 } header: {
@@ -259,6 +260,7 @@ private struct MacDeviceDetail: View {
                                                           set: { store.setPlayMacAudio($0, for: device.id) }))
                     Toggle("Virtual Display", isOn: Binding(get: { device.useVirtualDisplay == true },
                                                             set: { store.setUseVirtualDisplay($0, for: device.id) }))
+                    qualityPicker(for: device)
                     LabeledContent("Video", value: (device.preferredCodec ?? .hevc) == .hevc ? "HEVC" : "H.264")
                     LabeledContent("Controls", value: device.controlStrip == nil ? "Default" : "Custom")
                     LabeledContent("Mac Sign-In", value: DeviceSecrets.password(for: device) == nil ? "Not Saved" : "Saved")
@@ -270,6 +272,14 @@ private struct MacDeviceDetail: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func qualityPicker(for device: SavedDevice) -> some View {
+        Picker("Quality", selection: Binding(get: { device.quality ?? .auto }, set: { store.setQuality($0, for: device.id) })) {
+            ForEach(QualityPreset.offered, id: \.self) { preset in
+                Text(preset.label).tag(preset)
+            }
+        }
     }
 
     private var header: some View {

@@ -31,7 +31,7 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   screen session owns the connection (`ClientSession`), the picture (`VideoStreamController`),
   `InputController`, `DictationController` and `MacAudioPlayer`, and wires them together once
   (`wire()`). It reads the saved computer's choices through `ScreenSessionStore` (`DeviceStore`
-  conforms; sound, Curtain, Fit Display / Virtual Display, Natural Scrolling, ⌘ as Ctrl, control strip), reacts to the connection
+  conforms; sound, Curtain, Fit Display / Virtual Display, Quality, Natural Scrolling, ⌘ as Ctrl, control strip), reacts to the connection
   in one place (`watch`, built on `Observations`: a lost connection resets the first frame,
   dictation and sound; connecting records the platform and host identity; a refused Curtain clears
   the saved choice and says why), owns the notices that clear themselves (`TimedNotice`: received
@@ -85,7 +85,8 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   description folded into the label made it "Reorder Escape, Esc key" on iOS 27. Tests:
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
-- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display right under Audio and Curtain). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
+- **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸, Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display and Quality right under Audio and Curtain; compact puts Quality in the Mac/PC submenu).
+- **Quality** (`SavedDevice.quality`, nil = Balanced; `QualityPreset.offered`, `label`, `summary` in `StripActions.swift`): Fluid (`motion`), Balanced (`auto`), Sharp Text (`text`), picked in the session menu (`qualityPicker`, `session.menu.quality`), the Mac's Session menu and device pane, and the Edit sheet (whose footer says what the choice trades). A change mid-session applies to the running stream without a restart; what each does on the host is in [connection.md](connection.md). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
 - **iPhone Duo tabletop** (`TabletopDeck.swift`, iOS 27.1): half-folded with the fold running
   across (the inner display in portrait; open flat in landscape the fold runs top to bottom), the
   session splits at the fold. `TabletopLayout` comes from the division reserved region

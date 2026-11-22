@@ -181,6 +181,13 @@ final class DeviceStore {
         save()
     }
 
+    func setQuality(_ preset: QualityPreset, for id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), (devices[index].quality ?? .auto) != preset else { return }
+        devices[index].quality = preset == .auto ? nil : preset
+        devices[index].updatedAt = Date()
+        save()
+    }
+
     func setUseVirtualDisplay(_ on: Bool, for id: UUID) {
         guard let index = devices.firstIndex(where: { $0.id == id }), (devices[index].useVirtualDisplay ?? false) != on else { return }
         devices[index].useVirtualDisplay = on

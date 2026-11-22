@@ -117,6 +117,19 @@ internal sealed class CaptureSupervisor(TimeProvider time, ILogger log)
         return steps;
     }
 
+    /// <summary>
+    /// The device asked for what is already streaming in another quality preset: true (and the
+    /// preset remembered for restarts) when capture is up and not starting, so the session changes
+    /// the preset in place instead of restarting the stream; false means ask through <see cref="DeviceAsked"/>.
+    /// </summary>
+    public bool QualityChanged(SelectDisplay select)
+    {
+        if (_wanted is not { } wanted || _starting || !_capturing || select.Quality == wanted.Quality) return false;
+        if (select with { Quality = wanted.Quality } != wanted) return false;
+        _wanted = select;
+        return true;
+    }
+
     /// <summary>A <see cref="CaptureStep.Start"/> succeeded: capture runs on <paramref name="display"/> with <paramref name="codec"/>.</summary>
     public IReadOnlyList<CaptureStep> Started(DisplayInfo display, VideoCodec codec)
     {

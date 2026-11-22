@@ -126,11 +126,13 @@ public class DisplayFittingTests
         do frame = await Loopback.Next<VideoFrame>(connection); while (!frame.IsKeyframe);
         Assert.Equal(["fit 1376x1032", "restore"], fitter.Snapshot());
 
-        // Asking again fits again; the session ending restores.
+        // Asking again fits again; the device saying goodbye restores at once.
         await connection.SendAsync(Fit(s_iPad));
         await WaitUntil(() => fitter.IsHeld, "fitted again");
-        connection.Close();
+        await Loopback.Next<StreamConfig>(connection);
+        await connection.SendAsync(new DisconnectMessage { Reason = "closed" });
         await WaitUntil(() => !fitter.IsHeld, "restored at the end");
+        connection.Close();
         Assert.Equal(["fit 1376x1032", "restore", "fit 1376x1032", "restore"], fitter.Snapshot());
     }
 
@@ -161,6 +163,58 @@ public class DisplayFittingTests
         connection.Close();
     }
 
+    /// <summary>
+    /// A dropped connection keeps the device's fitted mode for <see cref="DisplayHolds.ReconnectGrace"/>:
+    /// the reconnect (even one that arrives before the old session has noticed it's gone) takes the
+    /// hold over with no switch, and only a device that stays away gets its mode put back.
+    /// </summary>
+    [Fact]
+    public void AReconnectWithinTheGraceKeepsTheFittedModeAndOnlyStayingAwayRestoresIt()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var fitter = new RecordingDisplayFitter();
+        var holds = new DisplayHolds(fitter, clock, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        Guid old = Guid.NewGuid(), lingering = Guid.NewGuid(), back = Guid.NewGuid();
+        var display = Vantage.SyntheticHost.FakeDisplay.Info;
+
+        Assert.Equal(DisplayFitResult.Changed, holds.Fit(old, "ipad", display, s_iPad));
+        // The new connection arrives while the old session still thinks it's up: not Busy, nothing switches.
+        Assert.Equal(DisplayFitResult.Unchanged, holds.Fit(lingering, "ipad", display, s_iPad));
+        holds.Release(old, "ipad"); // the old one finally notices; it no longer holds anything
+        Assert.False(holds.Restore(old, "ipad"));
+
+        holds.Release(lingering, "ipad"); // dropped again
+        clock.Advance(DisplayHolds.ReconnectGrace - TimeSpan.FromSeconds(1));
+        Assert.Equal(DisplayFitResult.Unchanged, holds.Fit(back, "ipad", display, s_iPad)); // back in time
+        clock.Advance(DisplayHolds.ReconnectGrace * 2);
+        Assert.True(fitter.IsHeld);
+        Assert.Equal(["fit 1376x1032", "fit 1376x1032", "fit 1376x1032"], fitter.Snapshot()); // never restored
+
+        holds.Release(back, "ipad"); // and this time it stays away
+        clock.Advance(DisplayHolds.ReconnectGrace);
+        Assert.False(fitter.IsHeld);
+        Assert.Equal("restore", fitter.Snapshot()[^1]);
+    }
+
+    /// <summary>Switching only the quality preset (the session menu's Quality) changes it in place: no new capture, no new streamConfig.</summary>
+    [Fact]
+    public async Task AQualityChangeAloneDoesNotRestartTheStream()
+    {
+        await using var host = new TestHost();
+        var (connection, _, _) = await new TestClient().ConnectAsync(host.Port, "246810");
+        await connection.SendAsync(Fit(s_iPad, useVirtualDisplay: false));
+        await Loopback.Next<StreamConfig>(connection);
+        await Loopback.Next<VideoFrame>(connection);
+
+        await connection.SendAsync(Fit(s_iPad, useVirtualDisplay: false) with { Quality = QualityPreset.Text });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Loopback.Next<StreamConfig>(connection, TimeSpan.FromSeconds(1)));
+
+        // Anything else about the selection still restarts it.
+        await connection.SendAsync(Fit(s_iPad, useVirtualDisplay: false) with { Quality = QualityPreset.Text, TargetFPS = 30 });
+        Assert.Equal(30, (await Loopback.Next<StreamConfig>(connection)).Fps);
+        connection.Close();
+    }
+
     [Fact]
     public async Task ASecondDeviceStreamsWhatsThere()
     {
@@ -171,13 +225,16 @@ public class DisplayFittingTests
         await a.SendAsync(Fit(s_iPad));
         await Loopback.Next<VideoFrame>(a);
 
-        var (b, _, _) = await first.ConnectAsync(host.Port); // the same paired key stands in for a second device
+        host.Listener.Pairing.NewCode(); // the fixed code again, for a second device
+        var (b, _, _) = await new TestClient().ConnectAsync(host.Port, "246810");
         await b.SendAsync(Fit(new Viewport { WidthPoints = 874, HeightPoints = 402, Scale = 3 }));
         Assert.True((await Loopback.Next<VideoFrame>(b)).IsKeyframe);
         Assert.Equal(["fit 1376x1032", "fit 874x402"], fitter.Snapshot()); // the second got Busy
+        await b.SendAsync(new DisconnectMessage { Reason = "closed" });
         b.Close();
         await Task.Delay(300);
         Assert.True(fitter.IsHeld); // still the first device's
+        await a.SendAsync(new DisconnectMessage { Reason = "closed" });
         a.Close();
         await WaitUntil(() => !fitter.IsHeld, "restored when its owner left");
     }

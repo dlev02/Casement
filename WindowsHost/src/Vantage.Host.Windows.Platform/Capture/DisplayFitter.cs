@@ -14,7 +14,7 @@ namespace Vantage.Host.Windows.Capture;
 /// nature"): nothing is written to the registry, so Windows returns to the user's mode by itself,
 /// and restoring is <c>ChangeDisplaySettingsEx(name, null, null, 0, null)</c>. A scale is saved by
 /// Windows, so it would outlive a crash: <c>restoreFile</c> holds the value to go back to while a
-/// scale is changed, and the next launch applies it. One session holds a monitor at a time.
+/// scale is changed, and the next launch applies it. One owner (a device, through <c>DisplayHolds</c>) holds a monitor at a time.
 /// </summary>
 public sealed class DisplayFitter : IDisplayFitter, IDisposable
 {

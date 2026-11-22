@@ -31,6 +31,10 @@ struct VideoPacerTests {
         }
         func setBitrate(kbps: Int) { lock.withLock { _bitrates.append(kbps) } }
         func setExpectedFrameRate(_ fps: Int) { lock.withLock { _frameRates.append(fps) } }
+        private var _maxQPs: [(qp: Int, beforeEncode: Int)] = []
+        /// Each ceiling the pacer set, and how many encodes came before it.
+        var maxQPs: [(qp: Int, beforeEncode: Int)] { lock.withLock { _maxQPs } }
+        func setMaxQP(_ maxQP: Int) { lock.withLock { _maxQPs.append((maxQP, _encodes.count)) } }
     }
 
     private final class Wire: Sendable {
@@ -120,6 +124,57 @@ struct VideoPacerTests {
         #expect(encoder.encodes.count == 2)
         pacer.encoderReported(encoded(sequence: 1, keyframe: true), now: t0 + .seconds(1))
         #expect(encoder.encodes.count == 3 && encoder.encodes[2].forceKeyframe == true)
+    }
+
+    @Test func aStillScreenGetsOneSharperReencodeOnceMotionStops() throws {
+        let encoder = FakeEncoder(), wire = Wire()
+        var pacer = pacer(encoder, wire)
+        // Scrolling: a changed frame every 16 ms keeps moving the deadline, so nothing extra is encoded.
+        for index in 0..<20 {
+            let at = t0 + .milliseconds(16 * index)
+            pacer.sharpenIfDue(now: at)
+            _ = pacer.ingest(frame(at: UInt64(index + 1)), now: at)
+            pacer.encoderReported(encoded(sequence: UInt64(index), keyframe: index == 0), now: at)
+        }
+        let last = t0 + .milliseconds(16 * 19)
+        #expect(encoder.encodes.count == 20 && encoder.maxQPs.isEmpty)
+        #expect(pacer.sharpenDeadline == last + VideoPacer.sharpenDelay)
+        // Still since: just before the deadline nothing; at it, the last frame once more under the
+        // idle ceiling, as a P-frame.
+        pacer.sharpenIfDue(now: last + .milliseconds(299))
+        #expect(encoder.encodes.count == 20)
+        pacer.sharpenIfDue(now: last + VideoPacer.sharpenDelay)
+        let sharp = try #require(encoder.encode(at: 20))
+        #expect(!sharp.forceKeyframe && encoder.maxQPs.map(\.qp) == [24] && encoder.maxQPs[0].beforeEncode == 20)
+        pacer.encoderReported(encoded(sequence: 20, keyframe: false), now: last + .milliseconds(320))
+        #expect(pacer.sharpenDeadline == nil) // once per still picture
+        // The next change goes out under the mode's ceiling again.
+        _ = pacer.ingest(frame(at: 100), now: last + .seconds(2))
+        #expect(encoder.encodes.count == 22 && encoder.maxQPs.map(\.qp) == [24, 44] && encoder.maxQPs[1].beforeEncode == 21)
+        // Fluid never spends a burst on a still screen.
+        _ = pacer.setQuality(.motion, now: last + .seconds(2))
+        pacer.encoderReported(encoded(sequence: 21, keyframe: false), now: last + .seconds(2))
+        #expect(pacer.sharpenDeadline == nil)
+    }
+
+    @Test func aRateControlSkipResendsTheChangeWithoutAKeyframe() throws {
+        let encoder = FakeEncoder(), wire = Wire()
+        var pacer = pacer(encoder, wire)
+        _ = pacer.ingest(frame(at: 1), now: t0)
+        pacer.encoderReported(encoded(sequence: 0, keyframe: true), now: t0)
+        _ = pacer.ingest(frame(at: 2), now: t0)
+        // VideoToolbox's rate control left it out: the change goes again at once, as a P-frame
+        // (the device has every frame the encoder refers to), even if the screen now stays still.
+        pacer.encoderReported(.skipped(encodeID: 2), now: t0)
+        let resent = try #require(encoder.encode(at: 2))
+        #expect(!resent.forceKeyframe && resent.ptsNanos != 2)
+        // A keyframe that was skipped is still owed.
+        pacer.requestKeyframe(now: t0)
+        pacer.encoderReported(encoded(sequence: 1, keyframe: false, index: 2), now: t0)
+        let keyframe = try #require(encoder.encode(at: 3))
+        #expect(keyframe.forceKeyframe)
+        pacer.encoderReported(.skipped(encodeID: keyframe.id), now: t0)
+        #expect(encoder.encode(at: 4)?.forceKeyframe == true)
     }
 
     @Test func frameRateAndBitrateReachTheEncoderOnlyWhenTheyChange() {

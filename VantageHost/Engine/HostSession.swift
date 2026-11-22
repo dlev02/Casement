@@ -39,6 +39,8 @@ actor HostSession {
     /// so a lost encoder answer is written off even while the screen is still. One task per
     /// capture, alive only while the encoder owes an answer (`watchStall`).
     private var stallWatch: Task<Void, Never>?
+    /// Waits for the still screen's sharper re-encode (`watchSharpen`).
+    private var sharpenWatch: Task<Void, Never>?
     private let power: any HostPowerControl
     private var clipboard: (any HostClipboard)?
     private let lockMonitor: any HostStatusMonitor
@@ -341,7 +343,8 @@ actor HostSession {
 
         let codec: VideoCodec = select.preferredCodec ?? .hevc
         let startFPS = min(select.targetFPS, 60)
-        let adaptive = AdaptiveController(startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
+        let adaptive = AdaptiveController(limits: .init(preset: select.quality),
+                                          startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
 
         let epoch = captureEpoch
         let encoder = env.makeVideoEncoder(.init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
@@ -415,16 +418,52 @@ actor HostSession {
         if !lifecycle.wantsTicks { syncTicker() }
         if let fps = pacer?.ingest(frame, now: now) { capture?.updateFPS(fps) }
         watchStall()
+        watchSharpen()
     }
 
     private func emit(_ outcome: VideoEncoder.Outcome, epoch: UInt64) {
         guard epoch == captureEpoch else { return } // a stopped encoder's late word
         pacer?.encoderReported(outcome, now: now)
         watchStall()
+        watchSharpen()
     }
 
     private func requestKeyframe() {
         pacer?.requestKeyframe(now: now)
+        watchStall()
+        watchSharpen()
+    }
+
+    /// Keeps one timer on the still screen's sharper re-encode (`VideoPacer.sharpenDeadline`).
+    /// While frames keep changing the deadline keeps moving and the timer just sleeps again, at
+    /// most once per `sharpenDelay`; it ends once nothing is owed or an encode is in flight (the
+    /// encoder's answer starts it again).
+    private func watchSharpen() {
+        guard pacer?.sharpenDeadline != nil, sharpenWatch == nil else { return }
+        let epoch = captureEpoch
+        sharpenWatch = Task { [weak self, clock = env.clock] in
+            while !Task.isCancelled {
+                guard let self, let deadline = await self.sharpenToWatch(epoch: epoch) else { return }
+                try? await clock.sleep(for: deadline - clock.now)
+                guard !Task.isCancelled else { return }
+                await self.sharpenIfDue(epoch: epoch)
+            }
+        }
+    }
+
+    /// The deadline the sharpen timer waits for next; nil ends it, with no await between the
+    /// check and clearing it, so a deadline set meanwhile starts a new one.
+    private func sharpenToWatch(epoch: UInt64) -> ContinuousClock.Instant? {
+        guard epoch == captureEpoch, let deadline = pacer?.sharpenDeadline else {
+            if epoch == captureEpoch { sharpenWatch = nil }
+            return nil
+        }
+        return deadline
+    }
+
+    private func sharpenIfDue(epoch: UInt64) {
+        guard epoch == captureEpoch else { return }
+        if let qp = pacer?.sharpenIfDue(now: now) { log.debug("still screen re-encoded at max QP \(qp)") }
         watchStall()
     }
 
@@ -657,6 +696,10 @@ actor HostSession {
                 await dispatch(.statusChanged(lockMonitor.currentStatus()))
             case .requestKeyframe:
                 requestKeyframe()
+            case .applyQuality(let preset):
+                if let fps = pacer?.setQuality(preset, now: now) { capture?.updateFPS(fps) }
+                watchSharpen()
+                log.info("quality \(preset.rawValue, privacy: .public)")
             case .note(let text):
                 log.info("\(text, privacy: .public)")
             }
@@ -766,6 +809,8 @@ actor HostSession {
         pacer = nil
         stallWatch?.cancel()
         stallWatch = nil
+        sharpenWatch?.cancel()
+        sharpenWatch = nil
         encoder?.stop()
         await capture?.stop()
     }
