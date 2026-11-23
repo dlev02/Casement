@@ -90,6 +90,18 @@ final class ScreenSessionModel {
     var isDropTargeted = ClientOptions.dropHintFixture
 
     // What the actions open.
+    /// The Connection card over the picture (the session menu shows and hides it).
+    var isShowingConnection = false {
+        didSet {
+            guard isShowingConnection != oldValue else { return }
+            connectionMeter = ConnectionMeter()
+            connectionDetails = nil
+        }
+    }
+    /// The card's figures, once a second while it's open; nil while it's closed or until the
+    /// first second has been measured.
+    private(set) var connectionDetails: ConnectionDetails?
+    @ObservationIgnored private var connectionMeter = ConnectionMeter()
     var passwordPrompt: PasswordPrompt?
     var isPickingFiles = false
     var isShowingTransfers = false
@@ -836,7 +848,7 @@ final class ScreenSessionModel {
     }
 
     /// Every 250 ms while connected: a ping, and how the picture is doing, for the host's
-    /// adaptive bitrate.
+    /// adaptive bitrate (and, while it's open, the Connection card).
     private func startFeedbackLoop() {
         feedbackTask?.cancel()
         feedbackTask = Task { [weak self] in
@@ -846,6 +858,11 @@ final class ScreenSessionModel {
                 session.ping()
                 let feedback = video.snapshotStats(windowSeconds: 0.25, rttMillis: session.lastRTTMillis)
                 session.sendFeedback(feedback)
+                // Only while the card is open: nothing is kept or published otherwise.
+                if isShowingConnection, var details = connectionMeter.add(feedback) {
+                    details.pictureSize = video.pictureSize()
+                    if details != connectionDetails { connectionDetails = details }
+                }
             }
         }
     }

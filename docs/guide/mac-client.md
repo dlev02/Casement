@@ -37,7 +37,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   without it), appearance, the lock curtain, and the pending-connection watch.
 - **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
   Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Curtain ⌃⌥⌘B,
-  Fit Display / Virtual Display, Quality ▸, Dictate
+  Fit Display / Virtual Display, Quality ▸, Connection ⌃⌥⌘I, Dictate
   ⌃⌥⌘D (Stop Dictating / Resume Dictating by state), Dictation History…, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)

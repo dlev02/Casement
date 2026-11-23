@@ -44,6 +44,9 @@ final class ClientSession {
     private(set) var lastRTTMillis: Double = 0
     /// How the current connection reaches the computer; nil until one is open.
     private(set) var route: HostRoute?
+    /// The address the current connection reached, as the path resolved it (an IP for a name or a
+    /// Bonjour service); nil until one is open.
+    private(set) var remoteAddress: String?
     /// This connection is an input-only session: the device is the computer's trackpad and
     /// keyboard, and nothing asks for a picture.
     private(set) var isInputOnly = false
@@ -207,6 +210,18 @@ final class ClientSession {
 
     func send(_ message: Message) {
         channel?.sendDetached(message)
+    }
+
+    /// "100.64.0.7" or "fd7a:115c:a1e0::7" from a resolved endpoint, without the port or an
+    /// interface suffix.
+    nonisolated static func address(of endpoint: NWEndpoint) -> String? {
+        guard case .hostPort(let host, _) = endpoint else { return nil }
+        switch host {
+        case .ipv4(let address): return "\(address)".components(separatedBy: "%").first
+        case .ipv6(let address): return "\(address)".components(separatedBy: "%").first
+        case .name(let name, _): return name
+        @unknown default: return nil
+        }
     }
 
     /// The session view changed size: an iPhone Duo folding or unfolding, a rotation, Split View,
@@ -462,6 +477,7 @@ final class ClientSession {
                         try await channel.send(.curtainRequest(CurtainRequest(enabled: true)))
                     }
                 }
+                remoteAddress = channel.remoteEndpoint.flatMap(Self.address(of:))
                 state = .connected
                 connectedAt = .now
                 if !isInputOnly {
@@ -501,6 +517,7 @@ final class ClientSession {
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
             route = nil
+            remoteAddress = nil
             fileLink.screenDidDrop() // an older Mac's file channel goes too; files wait for the next one
             if let connectedAt, ContinuousClock.now - connectedAt > .seconds(10) { reconnectAttempts = 0 }
             reconnectAttempts += 1

@@ -68,6 +68,17 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
         }
     }
 
+    /// The size of the frames being decoded, in pixels (the stream's own size, which the host
+    /// may have scaled from its display's); nil before the first stream.
+    func pictureSize() -> CGSize? {
+        queue.sync {
+            formatDescription.map { description in
+                let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+                return CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+            }
+        }
+    }
+
     private func applyConfig(_ config: VideoConfig) {
         currentConfig = config
         awaitingConfig = false
