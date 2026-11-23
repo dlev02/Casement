@@ -45,6 +45,12 @@ final class RemoteInteractionNSView: NSView {
     /// The host's pointer as an `NSCursor`, rebuilt when its image or the picture's scale changes.
     private var remoteCursor: NSCursor?
     private var remoteCursorKey: (image: CGImage, scale: CGFloat)?
+    /// The session's own way out of full screen while the system can't show the toolbar
+    /// (`KeyboardCapture.capturesFullScreen`): resting the pointer at the top shows it.
+    private var topEdge = TopEdgeReveal()
+    private var topEdgeCheck: DispatchWorkItem?
+    /// The way-out pill should show (true) or go (false).
+    var onTopEdgeReveal: ((Bool) -> Void)?
 
     private let refreshHint: StreamRefreshHint?
 
@@ -59,6 +65,9 @@ final class RemoteInteractionNSView: NSView {
         layer?.addSublayer(displayLayer)
         keyboard.view = self
         keyboard.onLostKeyboard = { [weak self] in self?.releaseButtons() }
+        keyboard.onFullScreenCapture = { [weak self] capturing in
+            if !capturing { self?.resetTopEdge() }
+        }
         input.onLocalCursorChange = { [weak self] in self?.updateRemoteCursor() }
     }
 
@@ -129,6 +138,44 @@ final class RemoteInteractionNSView: NSView {
         updateCursor(overPicture: false)
     }
 
+    // MARK: Full screen's way out
+
+    /// Feeds the top-edge rest while full screen hides the toolbar. Pointer input keeps going to
+    /// the computer until the pill is actually up.
+    private func followTopEdge(_ event: NSEvent) {
+        guard keyboard.capturesFullScreen else { return }
+        let point = point(of: event)
+        let wasShown = topEdge.isShown
+        topEdge.pointerMoved(to: point, at: event.timestamp)
+        scheduleTopEdgeCheck()
+        if topEdge.isShown != wasShown { onTopEdgeReveal?(topEdge.isShown) }
+    }
+
+    /// The pointer stops sending moves while it rests, so the rest is checked once it could
+    /// have run out.
+    private func scheduleTopEdgeCheck() {
+        topEdgeCheck?.cancel()
+        guard let ends = topEdge.restEnds else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.keyboard.capturesFullScreen else { return }
+                if self.topEdge.check(at: ProcessInfo.processInfo.systemUptime) { self.onTopEdgeReveal?(true) }
+            }
+        }
+        topEdgeCheck = work
+        // `NSEvent.timestamp` counts from the same boot clock as `systemUptime`.
+        let delay = max(0, ends - ProcessInfo.processInfo.systemUptime) + 0.02
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func resetTopEdge() {
+        topEdgeCheck?.cancel()
+        topEdgeCheck = nil
+        let wasShown = topEdge.isShown
+        topEdge.hide()
+        if wasShown { onTopEdgeReveal?(false) }
+    }
+
     /// Over the picture while input goes to the host: its pointer when it sends one, else blank.
     /// The arrow everywhere else.
     private func updateCursor(overPicture: Bool) {
@@ -172,6 +219,7 @@ final class RemoteInteractionNSView: NSView {
     // MARK: Pointer
 
     override func mouseMoved(with event: NSEvent) {
+        followTopEdge(event)
         let overlay = isOverOverlay(event)
         updateCursor(overPicture: !overlay)
         guard sendsInput, !overlay, !event.isFromVantageHost else { return }
@@ -215,6 +263,8 @@ final class RemoteInteractionNSView: NSView {
     /// ⌃-click stays a left click with ⌃ held; the Mac makes it a secondary click itself.
     private func press(_ button: PointerButton, _ event: NSEvent) {
         guard sendsInput, !event.isFromVantageHost else { return }
+        // A middle, back or forward button Settings gave a shortcut taps it once, with no click.
+        if input.sendsShortcut(for: button, isDown: true) { return }
         heldButtons.insert(button)
         input.moveAbsolute(viewPoint: point(of: event), action: .down, button: button,
                            clickCount: event.clickCount, modifiers: modifiers(of: event))
@@ -228,6 +278,7 @@ final class RemoteInteractionNSView: NSView {
     }
 
     private func release(_ button: PointerButton, _ event: NSEvent) {
+        if input.sendsShortcut(for: button, isDown: false) { return }
         guard heldButtons.remove(button) != nil, !event.isFromVantageHost else { return }
         input.moveAbsolute(viewPoint: point(of: event), action: .up, button: button,
                            clickCount: event.clickCount, modifiers: modifiers(of: event))

@@ -61,6 +61,10 @@ struct RemoteSessionLayout: View {
     @State private var toolbarDock = ToolbarDock(rawValue: UserDefaults.standard.string(forKey: "vantage.toolbarDock") ?? "") ?? .bottomLeft
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     /// Where the finger has dragged the strip from its corner. Plain state rather than
     /// `@GestureState`, so the release can animate it back in the same transaction that moves
     /// the corner and the strip travels one path instead of two competing springs.
@@ -163,6 +167,22 @@ struct RemoteSessionLayout: View {
 
             VStack {
                 #if os(macOS)
+                if model.showsFullScreenExit && model.isConnected {
+                    FullScreenExitPill(name: device.name,
+                                       onExitFullScreen: {
+                                           model.showsFullScreenExit = false
+                                           windowShape.toggleFullScreen()
+                                       },
+                                       onDisconnect: { model.disconnect() })
+                        .padding(.top, 12)
+                        .transition(bannerTransition)
+                }
+                if let hint = model.fullScreenNotice.value {
+                    SessionHintNotice(symbol: "arrow.down.right.and.arrow.up.left", message: hint)
+                        .padding(.top, 12)
+                        .transition(bannerTransition)
+                        .allowsHitTesting(false)
+                }
                 if model.viewsThisMac && model.isConnected {
                     ThisMacBanner(isViewOnly: model.isViewOnly)
                         .padding(.top, 12)
@@ -227,7 +247,15 @@ struct RemoteSessionLayout: View {
                 floatingControls
             }
             #endif
+
+            if model.isShowingConnection && model.isConnected && !model.isInputOnly && !connectionUsesSheet {
+                ConnectionCard(facts: connectionFacts, onClose: { model.isShowingConnection = false })
+                    .padding(connectionInsets)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: connectionAlignment)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: connectionAnchor)))
+            }
         }
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.35, bounce: 0.1), value: model.isShowingConnection)
         .animation(.smooth(duration: 0.35), value: model.isLive)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35), value: model.screenNote)
         #if os(visionOS)
@@ -261,6 +289,8 @@ struct RemoteSessionLayout: View {
         .focusedSceneValue(\.screenSession, model)
         .focusedSceneValue(\.sessionWindowShape, windowShape)
         .animation(.smooth(duration: 0.3), value: model.viewsThisMac && model.isConnected)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.3), value: model.showsFullScreenExit)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.3), value: model.fullScreenNotice.value)
         // The Mac client isn't suspended in the background (its windows stay on screen); it lets
         // go when the Mac sleeps and picks up again when it wakes.
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
@@ -385,6 +415,17 @@ struct RemoteSessionLayout: View {
             .appLockCurtain()
         }
         .modifier(AdminShortcutConfirmation(model: model))
+        #if os(iOS)
+        // An iPhone held upright: a card in a corner would cover most of the picture, so the
+        // figures come up in a short sheet that leaves the picture above it usable.
+        .sheet(isPresented: Binding(get: { model.isShowingConnection && connectionUsesSheet && model.isConnected },
+                                    set: { if !$0 && connectionUsesSheet { model.isShowingConnection = false } })) {
+            ConnectionCard(facts: connectionFacts, floats: false, onClose: { model.isShowingConnection = false })
+                .presentationDetents([.height(Self.connectionSheetHeight), .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .height(Self.connectionSheetHeight)))
+                .presentationDragIndicator(.visible)
+        }
+        #endif
         .alert("Couldn't Type the Password", isPresented: Binding(get: { model.screenSharingError != nil },
                                                                 set: { if !$0 { model.screenSharingError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -422,6 +463,8 @@ struct RemoteSessionLayout: View {
             curtain: model.curtainToggle,
             fitDisplay: model.fitDisplayToggle,
             quality: model.qualityChoice,
+            isShowingConnection: model.isShowingConnection,
+            onToggleConnection: model.isInputOnly ? nil : { model.isShowingConnection.toggle() },
             files: model.sendFileAction,
             host: model.hostPlatform
         )
@@ -504,6 +547,60 @@ struct RemoteSessionLayout: View {
         case .bottomLeft: .bottomLeading
         case .bottomRight: .bottomTrailing
         }
+    }
+
+    // MARK: Connection card
+
+    private var connectionFacts: ConnectionCard.Facts {
+        ConnectionCard.Facts(details: model.connectionDetails, stream: session.activeConfig, quality: model.quality,
+                             isLocal: session.route?.isLocal, address: session.remoteAddress ?? (session.route == nil ? nil : device.host),
+                             host: host)
+    }
+
+    /// An iPhone held upright gets the short sheet; everything else the card in a corner.
+    private var connectionUsesSheet: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact && verticalSizeClass == .regular && tabletop == nil
+        #else
+        false
+        #endif
+    }
+
+    private static let connectionSheetHeight: CGFloat = 330
+
+    /// The corner across from the control strip, so the two never meet; the top right while the
+    /// strip is hidden, on visionOS (where it's an ornament) and in tabletop (over the picture).
+    private var connectionAlignment: Alignment {
+        #if os(visionOS)
+        return .topTrailing
+        #else
+        guard tabletop == nil, !model.areControlsHidden else { return .topTrailing }
+        switch toolbarDock {
+        case .topLeft: return .bottomTrailing
+        case .topRight: return .bottomLeading
+        case .bottomLeft: return .topTrailing
+        case .bottomRight: return .topLeading
+        }
+        #endif
+    }
+
+    private var connectionAnchor: UnitPoint {
+        switch connectionAlignment {
+        case .topLeading: .topLeading
+        case .bottomLeading: .bottomLeading
+        case .bottomTrailing: .bottomTrailing
+        default: .topTrailing
+        }
+    }
+
+    private var connectionInsets: EdgeInsets {
+        #if os(visionOS)
+        EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20)
+        #else
+        var insets = Self.toolbarInsets
+        insets.bottom += belowPicture
+        return insets
+        #endif
     }
 
     // MARK: Files

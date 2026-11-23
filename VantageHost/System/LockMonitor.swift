@@ -18,6 +18,8 @@ nonisolated final class LockMonitor: @unchecked Sendable {
 
     func start() {
         queue.sync {
+            // A session can start while the Mac is already locked, when no notification is coming.
+            locked = Self.screenIsLocked()
             lastSecure = IsSecureEventInputEnabled()
             lastAsleep = DisplayPower.isAsleep()
         }
@@ -35,7 +37,8 @@ nonisolated final class LockMonitor: @unchecked Sendable {
                 self?.queue.async { self?.emit() }
             })
         }
-        // Poll secure-input state (no notification exists for it).
+        // Poll secure-input state (no notification exists for it), and the lock in case a
+        // notification was missed.
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 1, repeating: 1)
         timer.setEventHandler { [weak self] in self?.emit() }
@@ -70,10 +73,18 @@ nonisolated final class LockMonitor: @unchecked Sendable {
                           isDisplayAsleep: asleep)
     }
 
+    /// Whether the login session says its screen is locked. The key is only there while it is.
+    private static func screenIsLocked() -> Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return session["CGSSessionScreenIsLocked"] as? Bool == true
+    }
+
     private func emit() {
         let secure = IsSecureEventInputEnabled()
         let asleep = DisplayPower.isAsleep()
-        guard secure != lastSecure || asleep != lastAsleep else { return }
+        let isLocked = Self.screenIsLocked()
+        guard secure != lastSecure || asleep != lastAsleep || isLocked != locked else { return }
+        locked = isLocked
         lastSecure = secure
         lastAsleep = asleep
         onChange?(status(secure: secure, asleep: asleep))

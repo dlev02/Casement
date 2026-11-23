@@ -19,6 +19,9 @@ import VantageCore
 /// pointer reaches the remote Mac's own Dock and menu bar at the screen's edges. The options go
 /// back as soon as the window stops being key, capture stops, or full screen ends. Keys macOS
 /// keeps for itself (⌘Space, Mission Control, screenshots, media keys) still never arrive.
+/// AppKit brings a full-screen toolbar down only with the menu bar, so while the options are on
+/// the session's toolbar never shows: `onFullScreenCapture` tells the view, which offers its own
+/// way out (`TopEdgeReveal`), and `onEnteredFullScreenCapture` says when to name ⌃⌥⌘F.
 @MainActor
 final class KeyboardCapture {
     let input: InputController
@@ -28,7 +31,7 @@ final class KeyboardCapture {
     var isActive = false {
         didSet {
             guard isActive != oldValue else { return }
-            if !isActive { releaseAll() }
+            if !isActive { releaseAll() } else { announcesFullScreen = true }
             updatePresentation()
         }
     }
@@ -36,6 +39,7 @@ final class KeyboardCapture {
     var capturesShortcuts = true {
         didSet {
             guard capturesShortcuts != oldValue else { return }
+            if capturesShortcuts { announcesFullScreen = true }
             updatePresentation()
         }
     }
@@ -64,8 +68,25 @@ final class KeyboardCapture {
     private var monitor: Any?
     private var observers: [NSObjectProtocol] = []
     private weak var window: NSWindow?
-    /// The Dock, menu bar and app switching are off for a full-screen capture.
-    private var capturesFullScreen = false
+    /// The Dock, menu bar and app switching are off for a full-screen capture, so the system
+    /// never shows the full-screen toolbar.
+    private(set) var capturesFullScreen = false {
+        didSet {
+            guard capturesFullScreen != oldValue else { return }
+            onFullScreenCapture?(capturesFullScreen)
+            if capturesFullScreen, announcesFullScreen {
+                announcesFullScreen = false
+                onEnteredFullScreenCapture?()
+            }
+        }
+    }
+    /// The next full-screen capture names the way out: set on entering full screen and on capture
+    /// starting, not on the window merely becoming key again.
+    private var announcesFullScreen = false
+    /// The full-screen capture started (true) or ended (false).
+    var onFullScreenCapture: ((Bool) -> Void)?
+    /// Full screen was entered, or capture turned on in full screen: time to say how to leave.
+    var onEnteredFullScreenCapture: (() -> Void)?
 
     init(input: InputController) {
         self.input = input
@@ -98,6 +119,9 @@ final class KeyboardCapture {
         })
         // SwiftUI owns the window's delegate, so full screen is followed by notification; the
         // options can only change once the window is there.
+        observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.announcesFullScreen = true }
+        })
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didEnterFullScreenNotification] {
             observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updatePresentation() }

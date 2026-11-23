@@ -44,6 +44,9 @@ final class ClientSession {
     private(set) var lastRTTMillis: Double = 0
     /// How the current connection reaches the computer; nil until one is open.
     private(set) var route: HostRoute?
+    /// The address the current connection reached, as the path resolved it (an IP for a name or a
+    /// Bonjour service); nil until one is open.
+    private(set) var remoteAddress: String?
     /// This connection is an input-only session: the device is the computer's trackpad and
     /// keyboard, and nothing asks for a picture.
     private(set) var isInputOnly = false
@@ -214,6 +217,18 @@ final class ClientSession {
         channel?.sendDetached(message)
     }
 
+    /// "100.64.0.7" or "fd7a:115c:a1e0::7" from a resolved endpoint, without the port or an
+    /// interface suffix.
+    nonisolated static func address(of endpoint: NWEndpoint) -> String? {
+        guard case .hostPort(let host, _) = endpoint else { return nil }
+        switch host {
+        case .ipv4(let address): return "\(address)".components(separatedBy: "%").first
+        case .ipv6(let address): return "\(address)".components(separatedBy: "%").first
+        case .name(let name, _): return name
+        @unknown default: return nil
+        }
+    }
+
     /// The session view changed size: an iPhone Duo folding or unfolding, a rotation, Split View,
     /// a resized window. Reconnects use the new size, and a host that is fitting its display to
     /// this view is asked for one in the new shape, so the picture fills the screen again instead
@@ -319,16 +334,22 @@ final class ClientSession {
     /// scale fitting on a PC).
     var hostOffersDisplayFitting: Bool { capabilities?.canManageVirtualDisplay == true }
     /// Whether this session wants the host's display fitted to this view. Survives reconnects,
-    /// like `wantsMacAudio` and `wantsCurtain`; nil falls back to the saved device's choice.
+    /// like `wantsMacAudio` and `wantsCurtain`; nil falls back to the saved device, read for the
+    /// platform the host said it runs (from its challenge, before the first stream request), so
+    /// a PC added by hand and never connected before still opens fitted.
     private var fitDisplayOverride: Bool?
-    var wantsFitDisplay: Bool { fitDisplayOverride ?? (device?.useVirtualDisplay == true) }
+    var wantsFitDisplay: Bool {
+        fitDisplayOverride ?? device.map { $0.fitsDisplay(on: hostPlatform ?? $0.platform) } ?? false
+    }
 
-    /// Turns display fitting on or off for this session (and every reconnect). On a live session
-    /// whose host supports it, asks the host to fit to the current viewport or put its own display
-    /// back right away.
-    func setFitDisplay(_ enabled: Bool) {
-        let changed = wantsFitDisplay != enabled
-        fitDisplayOverride = enabled
+    /// Turns display fitting on or off for this session (and every reconnect); nil follows the
+    /// saved device's default for the host's platform. On a live session whose host supports it,
+    /// a change asks the host to fit to the current viewport or put its own display back right away.
+    func setFitDisplay(_ choice: Bool?) {
+        let before = wantsFitDisplay
+        fitDisplayOverride = choice
+        let enabled = wantsFitDisplay
+        let changed = before != enabled
         if !enabled { stopAwaitingFittedStream() }
         guard changed, state == .connected, hostOffersDisplayFitting else { return }
         sendStreamRequest(useVirtualDisplay: enabled)
@@ -473,6 +494,7 @@ final class ClientSession {
                         try await channel.send(.curtainRequest(CurtainRequest(enabled: true)))
                     }
                 }
+                remoteAddress = channel.remoteEndpoint.flatMap(Self.address(of:))
                 state = .connected
                 connectedAt = .now
                 if !isInputOnly {
@@ -512,6 +534,7 @@ final class ClientSession {
             guard connectionID == id, !Task.isCancelled else { return }
             self.channel = nil
             route = nil
+            remoteAddress = nil
             fileLink.screenDidDrop() // an older Mac's file channel goes too; files wait for the next one
             if let connectedAt, ContinuousClock.now - connectedAt > .seconds(10) { reconnectAttempts = 0 }
             reconnectAttempts += 1

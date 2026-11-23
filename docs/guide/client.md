@@ -95,6 +95,23 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `ControlStripLayoutTests`, `SessionUITests.testDisconnectButtonReturnsToDeviceList`,
   `testCustomizeControlsFromTheSession`, `testControlStripEditorScreens`.
 - **Session menu** (`ControlStrip.sessionMenu`): `fullMenu` where both size classes are regular (iPad), `shortMenu` wherever either is compact (a phone), because a phone in landscape shows about seven rows and the full menu has over twenty: Touch, Mac/PC Audio, Curtain, Files & Clipboard ▸ (Dictation History… sits here, after Send Clipboard, while the history is on), Mac/PC ▸ (includes Fit Display / Virtual Display on compact), Controls ▸, Disconnect. The rows are shared (`fullMenu` places Fit Display / Virtual Display and Quality right under Audio and Curtain; compact puts Quality in the Mac/PC submenu).
+- **Connection card** (`ConnectionCard`, `ConnectionDetails`/`ConnectionMeter` in
+  `Model/ConnectionDetails.swift`, 2026-11-23): the session menu's Connection item
+  (`session.menu.connection`; full menu under Quality, the phone's short menu in the Mac/PC
+  submenu; the Mac's Session › Connection ⌃⌥⌘I; not in Trackpad & Keyboard) shows a glass card in
+  the corner across from the control strip (top right while the strip is hidden, in tabletop and
+  on visionOS), and the same item or the card's close button hides it. An iPhone held upright
+  (compact width, regular height) gets a short sheet instead (330 pt detent, background
+  interaction on). Only what the device measures or knows: round trip (the 250 ms ping loop's
+  mean per second, with a 30 s sparkline), route and the address the connection resolved
+  (`ClientSession.route`, `remoteAddress`), the decoded picture's pixels
+  (`VideoStreamController.pictureSize`), codec, frames and bits received per second, frames this
+  device couldn't use, quality and the platform. No host version (`Challenge.hostVersion` is
+  always "1.0") and no decode time (`lastDecodeMillis` times the hand-off to the renderer, not
+  the decode). The meter runs, and the model publishes, only while the card is open. Checked on
+  the iPad simulator against the Windows synthetic host (both strip corners, light and dark); the
+  iPhone sheet couldn't be opened by automation (the short menu's submenus dismiss on a synthetic
+  tap) and still needs a look.
 - **Quality** (`SavedDevice.quality`, nil = Balanced; `QualityPreset.offered`, `label`, `summary` in `StripActions.swift`): Fluid (`motion`), Balanced (`auto`), Sharp Text (`text`), picked in the session menu (`qualityPicker`, `session.menu.quality`), the Mac's Session menu and device pane, and the Edit sheet (whose footer says what the choice trades). A change mid-session applies to the running stream without a restart; what each does on the host is in [connection.md](connection.md). One opening of the full menu on an iPhone ignored every swipe, showing a row highlight and a dimmed menu instead of scrolling (9 of 9 gestures; not reproducible on demand, cause unknown). `SessionUITests` that reach menu rows directly expect `fullMenu`, so run them on an iPad.
 - **Trackpad & Keyboard** (`DeviceActions.inputOnlyDevice` → `RemoteSessionScreen(inputOnly:)` →
   `ScreenSessionModel.isInputOnly`): an input-only session laid out as `TabletopDeck` full screen,

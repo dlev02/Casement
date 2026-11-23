@@ -90,6 +90,18 @@ final class ScreenSessionModel {
     var isDropTargeted = ClientOptions.dropHintFixture
 
     // What the actions open.
+    /// The Connection card over the picture (the session menu shows and hides it).
+    var isShowingConnection = false {
+        didSet {
+            guard isShowingConnection != oldValue else { return }
+            connectionMeter = ConnectionMeter()
+            connectionDetails = nil
+        }
+    }
+    /// The card's figures, once a second while it's open; nil while it's closed or until the
+    /// first second has been measured.
+    private(set) var connectionDetails: ConnectionDetails?
+    @ObservationIgnored private var connectionMeter = ConnectionMeter()
     var passwordPrompt: PasswordPrompt?
     var isPickingFiles = false
     var isShowingTransfers = false
@@ -141,6 +153,16 @@ final class ScreenSessionModel {
     /// The session's Mac is the one this app runs on (see `ThisMac`).
     private(set) var viewsThisMac = false
     private var checkedThisMac = false
+    /// Full screen's own way out is up: the pointer rested at the top while the keyboard capture
+    /// keeps the menu bar, and with it the toolbar, hidden (`TopEdgeReveal`).
+    var showsFullScreenExit = false
+    /// "Press ⌃⌥⌘F to leave full screen", for a few seconds after entering it while capturing.
+    let fullScreenNotice = TimedNotice<String>()
+
+    /// Full screen began with the keyboard captured, so the system's toolbar won't come down.
+    func fullScreenEntered() {
+        fullScreenNotice.show("Press ⌃⌥⌘F to leave full screen", for: .seconds(4))
+    }
     #endif
 
     /// `-VantageMacAudio` (DEBUG) until the user flips the toggle.
@@ -258,6 +280,10 @@ final class ScreenSessionModel {
         receivedNotice.clear()
         macAudioNotice.clear()
         wakeRequest.clear()
+        #if os(macOS)
+        fullScreenNotice.clear()
+        showsFullScreenExit = false
+        #endif
         macAudio.setWanted(false)
         session.files.onReceived = nil
         session.disconnect(endingSession: true)
@@ -295,7 +321,9 @@ final class ScreenSessionModel {
         macAudio.setWanted(wantsMacAudio)
         session.setMacAudio(wantsMacAudio)
         session.setCurtain(wantsCurtain)
-        session.setFitDisplay(wantsFitDisplay)
+        // Until the person chooses, the session decides from the platform its host names in the
+        // handshake (a PC added by hand is saved as a Mac until it first answers).
+        session.setFitDisplay(savedDevice.fitDisplayChosen == true ? wantsFitDisplay : nil)
         session.setQuality(quality)
     }
 
@@ -581,7 +609,9 @@ final class ScreenSessionModel {
         session.setCurtain(on)
     }
 
-    var wantsFitDisplay: Bool { savedDevice.useVirtualDisplay == true }
+    /// The person's choice, or until they make one, on for a PC and off for a Mac
+    /// (`SavedDevice.fitsDisplay`).
+    var wantsFitDisplay: Bool { savedDevice.fitsDisplay(on: hostPlatform) }
     var isFitDisplayAvailable: Bool { isConnected && session.hostOffersDisplayFitting }
     /// The host is fitting its display to this window, so the window shouldn't lock itself to the
     /// host's aspect ratio.
@@ -818,7 +848,7 @@ final class ScreenSessionModel {
     }
 
     /// Every 250 ms while connected: a ping, and how the picture is doing, for the host's
-    /// adaptive bitrate.
+    /// adaptive bitrate (and, while it's open, the Connection card).
     private func startFeedbackLoop() {
         feedbackTask?.cancel()
         feedbackTask = Task { [weak self] in
@@ -828,6 +858,11 @@ final class ScreenSessionModel {
                 session.ping()
                 let feedback = video.snapshotStats(windowSeconds: 0.25, rttMillis: session.lastRTTMillis)
                 session.sendFeedback(feedback)
+                // Only while the card is open: nothing is kept or published otherwise.
+                if isShowingConnection, var details = connectionMeter.add(feedback) {
+                    details.pictureSize = video.pictureSize()
+                    if details != connectionDetails { connectionDetails = details }
+                }
             }
         }
     }
@@ -844,6 +879,7 @@ final class ScreenSessionModel {
         var keyboardMode: SoftwareKeyboardMode?
         var dictationEngine: DictationEnginePreference?
         var threeFingerSwipes: Bool?
+        var mouseButtonActions: [PointerButton: MouseButtonAction]?
         var defaultStripLayout: ControlStripLayout?
         var capturesShortcuts: Bool?
     }
@@ -865,6 +901,14 @@ final class ScreenSessionModel {
         if swipes != readDefaults.threeFingerSwipes {
             readDefaults.threeFingerSwipes = swipes
             input.threeFingerSwipes = swipes
+        }
+        var mouse: [PointerButton: MouseButtonAction] = [:]
+        for button in MouseButtonAction.remappableButtons {
+            mouse[button] = defaults.string(forKey: MouseButtonAction.defaultsKey(for: button)).flatMap(MouseButtonAction.init(rawValue:)) ?? .click
+        }
+        if mouse != readDefaults.mouseButtonActions {
+            readDefaults.mouseButtonActions = mouse
+            input.mouseButtonActions = mouse
         }
         let keyboard = defaults.string(forKey: Self.keyboardModeKey).flatMap(SoftwareKeyboardMode.init(rawValue:)) ?? .unicode
         if keyboard != readDefaults.keyboardMode {

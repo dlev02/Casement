@@ -65,9 +65,16 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     /// The person set Natural Scrolling for this computer, so what the computer reports no longer
     /// changes it. Optional so devices saved by earlier builds decode; nil means not set.
     var naturalScrollChosen: Bool?
-    /// Ask the Mac for a BetterDisplay virtual display sized to this device. Optional so devices
-    /// saved by earlier builds still decode; nil means off.
+    /// Fit the computer's display to this device: a BetterDisplay virtual display on a Mac, the
+    /// display mode and scale on a PC. Optional so devices saved by earlier builds still decode.
+    /// Read it through `fitsDisplay(on:)`: until the person chooses (`fitDisplayChosen`), a PC
+    /// fits and a Mac doesn't, whatever an earlier build wrote here.
     var useVirtualDisplay: Bool?
+    /// The person set Fit Display / Virtual Display for this computer (Edit Computer, the session
+    /// menu, the Mac's device pane). Earlier builds wrote `useVirtualDisplay = false` on every
+    /// save without anyone choosing, so only this says the value is a choice. Nil means not set;
+    /// an older build that re-saves the entry drops it, which only brings back the default.
+    var fitDisplayChosen: Bool?
     /// When this entry last changed, so two devices syncing through iCloud can agree on the
     /// newer copy. Optional so devices saved by earlier builds still decode.
     var updatedAt: Date?
@@ -100,6 +107,20 @@ struct SavedDevice: Codable, Identifiable, Hashable, Sendable {
     var platform: HostPlatform { HostPlatform(savedOS: os) }
     /// "Mac" or "PC" for this device.
     var hostNoun: HostNoun { HostNoun(platform) }
+    /// Whether sessions fit the computer's display to this device, for a computer running
+    /// `platform` (what the session heard, else what was saved).
+    func fitsDisplay(on platform: HostPlatform) -> Bool {
+        Self.fitsDisplay(saved: useVirtualDisplay, chosen: fitDisplayChosen, platform: platform)
+    }
+
+    /// The person's choice once made; until then a PC fits (its host matches the mode and Windows
+    /// scale to the device, which fills the screen at a readable size) and a Mac fits only if an
+    /// earlier build saved it on (a Mac's virtual display needs BetterDisplay).
+    nonisolated static func fitsDisplay(saved: Bool?, chosen: Bool?, platform: HostPlatform) -> Bool {
+        if chosen == true { return saved == true }
+        return platform == .windows || saved == true
+    }
+
     /// The keyboard remapping this device's sessions use.
     var keyRemap: KeyRemap { KeyRemap.forHost(platform, commandSendsControl: commandSendsControl) }
 

@@ -36,6 +36,10 @@ struct ControlStrip: View {
     var curtain = CurtainToggle()
     var fitDisplay = FitDisplayToggle()
     var quality = QualityChoice()
+    /// The Connection card is showing; `onToggleConnection` nil leaves the item out (Trackpad &
+    /// Keyboard has no picture to describe).
+    var isShowingConnection = false
+    var onToggleConnection: (() -> Void)?
     /// Send File and the Transfers list (the session owns the transfers).
     var files = SendFileAction()
     /// What the host runs: names the controls (Search or Spotlight, Win or ⌘) and picks the
@@ -455,6 +459,7 @@ struct ControlStrip: View {
             Menu {
                 fitDisplayRow
                 qualityPicker
+                connectionRow
                 if !noun.isWindows { passwordRow }
                 hostRows
             } label: {
@@ -488,6 +493,7 @@ struct ControlStrip: View {
             audioAndCurtainRows
             fitDisplayRow
             qualityPicker
+            connectionRow
             fileRows
             if !noun.isWindows { passwordRow }
         }
@@ -534,6 +540,16 @@ struct ControlStrip: View {
         .pickerStyle(.menu)
         .disabled(!quality.isAvailable)
         .accessibilityIdentifier("session.menu.quality")
+    }
+
+    /// Shows the Connection card, and the same item hides it.
+    @ViewBuilder private var connectionRow: some View {
+        if let onToggleConnection {
+            Toggle(isOn: Binding(get: { isShowingConnection }, set: { _ in onToggleConnection() })) {
+                Label("Connection", systemImage: "gauge.with.dots.needle.33percent")
+            }
+            .accessibilityIdentifier("session.menu.connection")
+        }
     }
 
     @ViewBuilder private var fileRows: some View {

@@ -21,6 +21,8 @@ struct AddDeviceSheet: View {
     /// What the toggle showed when the sheet opened: changing it makes it the person's choice.
     @State private var initialNaturalScroll = true
     @State private var useVirtualDisplay = false
+    /// What the display toggle showed when the sheet opened: changing it makes it the person's choice.
+    @State private var initialUseVirtualDisplay = false
     @State private var playAudio = false
     @State private var curtain = false
     @State private var password = ""
@@ -198,7 +200,8 @@ struct AddDeviceSheet: View {
         quality = existing.quality ?? .auto
         naturalScroll = existing.naturalScroll
         initialNaturalScroll = existing.naturalScroll
-        useVirtualDisplay = existing.useVirtualDisplay == true
+        useVirtualDisplay = existing.fitsDisplay(on: existing.platform)
+        initialUseVirtualDisplay = useVirtualDisplay
         playAudio = existing.playMacAudio == true
         curtain = existing.curtain == true
         password = DeviceSecrets.password(for: existing) ?? ""
@@ -225,7 +228,10 @@ struct AddDeviceSheet: View {
         device.quality = quality == .auto ? nil : quality
         if naturalScroll != initialNaturalScroll { device.naturalScrollChosen = true }
         device.naturalScroll = naturalScroll
-        device.useVirtualDisplay = useVirtualDisplay
+        if useVirtualDisplay != initialUseVirtualDisplay {
+            device.useVirtualDisplay = useVirtualDisplay
+            device.fitDisplayChosen = true
+        }
         device.playMacAudio = playAudio ? true : nil
         device.curtain = curtain ? true : nil
         let home = homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)

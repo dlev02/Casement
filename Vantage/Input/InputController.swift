@@ -52,8 +52,13 @@ final class InputController {
     /// Three-finger swipes on the trackpad send the host's Spaces and Mission Control shortcuts
     /// (Settings → Controls).
     var threeFingerSwipes = true
-    /// Which platform's shortcuts a swipe stands for.
+    /// Which platform's shortcuts a swipe or a remapped mouse button stands for.
     var hostPlatform = HostPlatform.macOS
+    /// What the mouse's middle, back and forward buttons do (Settings → Controls → Mouse); a
+    /// button missing here keeps its own click.
+    var mouseButtonActions: [PointerButton: MouseButtonAction] = [:]
+    /// Buttons whose press went out as a shortcut, so their release sends nothing.
+    private var buttonsSentAsShortcuts: Set<PointerButton> = []
 
     /// Point size of the streamed display (set from StreamConfig).
     var displayPointSize: CGSize = CGSize(width: 1210, height: 834)
@@ -121,6 +126,22 @@ final class InputController {
     /// Lets go of `button` where the pointer already is.
     func release(button: PointerButton = .left, modifiers: KeyModifiers = []) {
         emitPointer(action: .up, button: button, clickCount: 1, modifiers: modifiers)
+    }
+
+    /// Presses `button` where the pointer already is.
+    func press(button: PointerButton, modifiers: KeyModifiers = []) {
+        emitPointer(action: .down, button: button, clickCount: 1, modifiers: modifiers)
+    }
+
+    /// A mouse button Settings gave a shortcut: the press taps it once and the release is
+    /// swallowed. True when the button was handled here, so the caller sends no down or up.
+    func sendsShortcut(for button: PointerButton, isDown: Bool) -> Bool {
+        guard isDown else { return buttonsSentAsShortcuts.remove(button) != nil }
+        let action = mouseButtonActions[button] ?? .click
+        guard case .shortcut(let shortcut) = MouseButtonMapping.press(button, action: action, on: hostPlatform) else { return false }
+        buttonsSentAsShortcuts.insert(button)
+        tapChord(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers)
+        return true
     }
 
     func click(button: PointerButton, clickCount: Int = 1, modifiers: KeyModifiers = []) {

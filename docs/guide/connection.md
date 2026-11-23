@@ -87,8 +87,12 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
 - **Virtual display**: `VirtualDisplayManager` provisions a BetterDisplay virtual display sized to
   the client's viewport in points (`viewport.widthPoints × heightPoints`, so 1× and 3× displays get
   the right logical size on iPad, iPhone, Mac, Vision Pro, and Full Screen; behind a protocol so
-  `CGVirtualDisplay` can replace it later). It is opt-in per saved device
-  (`SavedDevice.useVirtualDisplay` → `SelectDisplay.useVirtualDisplay`; toggleable live from the
+  `CGVirtualDisplay` can replace it later). It is opt-in per saved Mac and on by default for a PC
+  (`SavedDevice.fitsDisplay(on:)`: the person's choice once `fitDisplayChosen` is set, else on for
+  a PC, off for a Mac unless an earlier build saved it on; earlier builds wrote `false` on every
+  Edit save, so a stored `false` alone isn't a choice. `ClientSession.wantsFitDisplay` reads it for
+  the platform the challenge names, so a PC added by hand, saved as a Mac until it answers, opens
+  fitted on its first connection. → `SelectDisplay.useVirtualDisplay`; toggleable live from the
   session menu, the Mac's Session menu and detail pane, and the Edit sheet, where a PC shows it as
   "Fit the PC's display to this screen"). Turning it off mid-session sends
   `selectDisplay(useVirtualDisplay: false)` first (switching capture back to the main display; a PC

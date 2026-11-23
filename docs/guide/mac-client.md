@@ -37,7 +37,7 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   without it), appearance, the lock curtain, and the pending-connection watch.
 - **Menu bar** (`MacCommands`): File › Add Mac… ⌘N, Add from Tailscale… ⇧⌘N, Connect to ⟨Mac⟩ ⌘O,
   Send Files…; Session (Send Keyboard Shortcuts to Mac ⌃⌥⌘K, View Only, Mac Audio ⌃⌥⌘A, Curtain ⌃⌥⌘B,
-  Fit Display / Virtual Display, Quality ▸, Dictate
+  Fit Display / Virtual Display, Quality ▸, Connection ⌃⌥⌘I, Dictate
   ⌃⌥⌘D (Stop Dictating / Resume Dictating by state), Dictation History…, Send File… ⌃⌥⌘U, Transfers… ⌃⌥⌘T, Send Clipboard ⌃⌥⌘V, Type Password ⌃⌥⌘P, Mac ▸
   Spotlight/Mission Control/Application Windows/Show Desktop/App Switcher (⌘Tab)/Sleep Display/Lock
   (PC ▸ Start/Search/Task View/Switch Apps/Show Desktop/Task Manager/… for a PC)
@@ -69,7 +69,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `acceptsFirstMouse` false) and overrides the raw mouse, drag and `scrollWheel` methods on
   purpose: recognizers don't give per-button downs, ups and drags, `clickCount`, or scroll
   phases. Pointing is always absolute through `PointerMapping`; drags that leave the view keep
-  arriving and pin to the Mac's edge. Buttons 2/3/4 are middle, back and forward, and ⌃-click
+  arriving and pin to the Mac's edge. Buttons 2/3/4 are middle, back and forward (or the shortcut
+  Settings › Controls › Mouse gives them, see Mouse buttons in [input.md](input.md)), and ⌃-click
   stays a left click with ⌃. `mouseMoved` is skipped while the point hit-tests to a SwiftUI
   overlay; the cursor is blank over the picture only while input is on.
   `NSTextInputClient.insertText` types Character Viewer and emoji text; `keyDown` never calls
@@ -90,7 +91,19 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   app deactivate, window close, capture off, View Only, lock and teardown. In full screen while
   capturing, `presentationOptions` swap auto-hide for `.hideDock`, `.hideMenuBar`,
   `.disableProcessSwitching`; AppKit resets them ~0.1 s after `didEnterFullScreen`, so they're
-  re-applied at 0.15, 0.4 and 1 s, and restored on resign-key, capture off, lock or exit. Tests:
+  re-applied at 0.15, 0.4 and 1 s, and restored on resign-key, capture off, lock or exit.
+  **Full screen's way out**: AppKit drops a full-screen toolbar only with the menu bar, so with
+  `.hideMenuBar` on the `.onHover` toolbar (6ec674a, 2026-11-20) never came down and nothing
+  showed how to leave (Drew, connected to a PC). While `KeyboardCapture.capturesFullScreen`, the
+  session view feeds pointer moves to `TopEdgeReveal` (pure; `TopEdgeRevealTests`): the pointer
+  resting within 2 pt of the top, within 6 pt of where it stopped, for 0.5 s drops
+  `FullScreenExitPill` (the computer's name, Exit Full Screen, Disconnect) at the top centre;
+  moving along the edge never counts, input keeps going to the computer until the pill shows,
+  and it goes once the pointer is more than 84 pt down, or capture or full screen ends. Entering
+  full screen while capturing (or turning capture on there) shows "Press ⌃⌥⌘F to leave full
+  screen" for 4 s (`fullScreenNotice`). Without capture (Send Keyboard Shortcuts off, View Only)
+  the system's own reveal works as before. Only compiled and laid out offscreen: the dwell in a
+  real full-screen session needs a signed build. Tests:
   `KeyTranslatorTests`, `KeyCapturePolicyTests`, `SessionInputUITests` (needs Automation Mode).
 - **Scrolling** (`ScrollTranslator`): precise deltas go as `-scrollingDelta`, wheel lines as
   `+scrollingDelta`; the host negates continuous deltas only (`InputInjector.postScroll`), so the

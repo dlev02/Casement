@@ -244,7 +244,7 @@ private struct MacDeviceDetail: View {
                 Section {
                     Toggle("Play PC Audio", isOn: Binding(get: { device.playMacAudio ?? false },
                                                          set: { store.setPlayMacAudio($0, for: device.id) }))
-                    Toggle("Fit Display", isOn: Binding(get: { device.useVirtualDisplay == true },
+                    Toggle("Fit Display", isOn: Binding(get: { device.fitsDisplay(on: device.platform) },
                                                         set: { store.setUseVirtualDisplay($0, for: device.id) }))
                     qualityPicker(for: device)
                     LabeledContent("⌘ Acts as Ctrl", value: device.keyRemap.swapsCommandAndControl ? "On" : "Off")
@@ -258,7 +258,7 @@ private struct MacDeviceDetail: View {
                 Section {
                     Toggle("Play Mac Audio", isOn: Binding(get: { device.playMacAudio ?? false },
                                                           set: { store.setPlayMacAudio($0, for: device.id) }))
-                    Toggle("Virtual Display", isOn: Binding(get: { device.useVirtualDisplay == true },
+                    Toggle("Virtual Display", isOn: Binding(get: { device.fitsDisplay(on: device.platform) },
                                                             set: { store.setUseVirtualDisplay($0, for: device.id) }))
                     qualityPicker(for: device)
                     LabeledContent("Video", value: (device.preferredCodec ?? .hevc) == .hevc ? "HEVC" : "H.264")

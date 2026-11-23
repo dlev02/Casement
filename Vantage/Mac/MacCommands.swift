@@ -117,6 +117,9 @@ private struct SessionMenuItems: View {
             }
         }
         .disabled(session == nil)
+        Toggle("Connection", isOn: toggle(\.isShowingConnection) { $0.isShowingConnection.toggle() })
+            .keyboardShortcut("i", modifiers: MacCommands.vantageChord)
+            .disabled(session == nil || session?.isInputOnly == true)
         Button(dictateTitle) { session?.dictationPressed(.toggle) }
             .keyboardShortcut("d", modifiers: MacCommands.vantageChord)
             .disabled(!canType)

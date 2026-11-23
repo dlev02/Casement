@@ -20,6 +20,10 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
     var screenLabel = ""
     /// Just before ⌘V goes to the Mac.
     var onPaste: () -> Void
+    /// Full screen's own way out should show or go (see `TopEdgeReveal`).
+    var onTopEdgeReveal: (Bool) -> Void = { _ in }
+    /// Full screen began with the keyboard captured: say how to leave it.
+    var onEnteredFullScreenCapture: () -> Void = {}
     #if DEBUG
     var keyProbe: KeyProbe?
     #endif
@@ -33,6 +37,8 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
         view.keyboard.swapsCommandAndControl = swapsCommandAndControl
         view.keyboard.pasteModifier = pasteModifier
         view.keyboard.onPaste = onPaste
+        view.keyboard.onEnteredFullScreenCapture = onEnteredFullScreenCapture
+        view.onTopEdgeReveal = onTopEdgeReveal
         #if DEBUG
         view.keyboard.probe = keyProbe
         #endif
