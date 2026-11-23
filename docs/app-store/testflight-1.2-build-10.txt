@@ -1,0 +1,23 @@
+Casement 1.2 (10) — iPhone, iPad, Mac, and Apple Vision Pro
+
+Works with Casement Host 1.8 on the computer: https://github.com/dlev02/Casement/releases
+
+A PC THAT FILLS YOUR SCREEN
+A PC now opens with Fit Display on, so its picture fills your iPad or iPhone instead of sitting small in the middle. Turn it off in the session menu or Edit Computer and it stays off.
+
+HOW THE CONNECTION IS DOING
+Connection in the session menu (⌃⌥⌘I on the Mac) opens a small card in a corner: how you're connected, the delay, the picture's size and frame rate, and the bitrate. Choose it again, or the X, to put it away.
+
+MOUSE BUTTONS
+Settings > Controls > Mouse chooses what a mouse's middle, back and forward buttons do on the computer: a click, or a shortcut such as Mission Control.
+
+A WAY OUT OF FULL SCREEN ON THE MAC
+Rest the pointer at the top of the screen for a moment and a small bar drops down with Exit Full Screen and Disconnect. ⌃⌥⌘F still leaves Full Screen too.
+
+WHAT TO TEST
+• Connect to a PC: the picture should fill the screen. Turn Fit Display off, reconnect, and it should stay off.
+• Open Connection during a session, on an iPad and on an upright iPhone. Do the numbers look right?
+• With a mouse that has middle and side buttons, set each one in Settings and try it. On an iPad, tell me if Back and Forward are swapped.
+• On the Mac, enter Full Screen while connected, then rest the pointer at the very top. Moving along the top edge to reach the computer's own menu bar shouldn't bring the bar down.
+
+Report a problem from Settings/About and include diagnostics.
