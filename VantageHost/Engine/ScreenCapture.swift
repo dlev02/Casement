@@ -120,7 +120,9 @@ nonisolated final class ScreenCapture: NSObject, FrameSource, SCStreamOutput, SC
         config.width = pixelWidth
         config.height = pixelHeight
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
-        config.queueDepth = 5
+        // A surface must come back within interval × (depth − 1): 58 ms at 120 fps with 8, while
+        // the pacer holds the latest frame and the encoder one more.
+        config.queueDepth = 8
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange // '420v'
         config.colorSpaceName = CGColorSpace.sRGB
         config.showsCursor = true

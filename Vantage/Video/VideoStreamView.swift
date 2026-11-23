@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreMedia
+import Synchronization
 import VantageCore
 import os
 
@@ -21,6 +22,10 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
     private var framesDropped: UInt64 = 0
     private var bytesReceived: UInt64 = 0
     private var lastDecodeMillis: Double = 0
+    private let lastFrameNanos = Atomic<UInt64>(0)
+
+    /// When a frame last reached the renderer (`DispatchTime` uptime), for `StreamRefreshHint`.
+    var lastFrameUptimeNanos: UInt64 { lastFrameNanos.load(ordering: .relaxed) }
 
     var onNeedsKeyframe: (() -> Void)?
     /// Fires once per stream when the first frame has been handed to the renderer, with the
@@ -114,6 +119,7 @@ nonisolated final class VideoStreamController: @unchecked Sendable {
             onNeedsKeyframe?()
         }
         renderer.enqueue(sampleBuffer)
+        lastFrameNanos.store(DispatchTime.now().uptimeNanoseconds, ordering: .relaxed)
         lastDecodeMillis = Double(DispatchTime.now().uptimeNanoseconds &- start) / 1_000_000
         framesReceived &+= 1
         if !deliveredFirstFrame, !awaitingConfig {

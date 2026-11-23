@@ -1,3 +1,4 @@
+using Vantage.Protocol.Adaptive;
 using Vantage.Protocol.Auth;
 using Vantage.Protocol.Messages;
 
@@ -183,7 +184,7 @@ internal sealed class SessionAdmission
                 // No virtual displays on Windows: a fitter switches the shared display's mode instead.
                 CanManageVirtualDisplay = _env.DisplayFitter is { IsEnabled: true },
                 Clipboard = true,
-                MaxFPS = 60,
+                MaxFPS = AdaptiveController.MaxFps,
                 FileTransfer = ClientTakesFiles ? true : null,
                 FilesOnlySessions = ClientTakesFiles ? true : null,
                 Platform = _env.Platform,

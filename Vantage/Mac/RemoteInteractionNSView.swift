@@ -52,7 +52,10 @@ final class RemoteInteractionNSView: NSView {
     /// The way-out pill should show (true) or go (false).
     var onTopEdgeReveal: ((Bool) -> Void)?
 
-    init(input: InputController, displayLayer: AVSampleBufferDisplayLayer) {
+    private let refreshHint: StreamRefreshHint?
+
+    init(input: InputController, displayLayer: AVSampleBufferDisplayLayer, refreshHint: StreamRefreshHint? = nil) {
+        self.refreshHint = refreshHint
         self.input = input
         self.displayLayer = displayLayer
         self.keyboard = KeyboardCapture(input: input)
@@ -97,7 +100,11 @@ final class RemoteInteractionNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window else { return }
+        guard let window else {
+            refreshHint?.stop()
+            return
+        }
+        refreshHint?.start { displayLink(target: $0, selector: $1) }
         displayLayer.contentsScale = window.backingScaleFactor
         keyboard.attach(to: window)
         window.makeFirstResponder(self)

@@ -109,6 +109,11 @@ final class ClientSession {
         self.fileLink = FileLink(files: files ?? FileTransferController(), identity: identity,
                                  clientName: deviceName, clientModel: deviceModel)
         adopt(fileLink)
+        for name in DisplayFrameRate.changeNotifications {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.frameRateMayHaveChanged() }
+            }
+        }
     }
 
     /// Moves files to `link` (the Mac's shared one) before connecting.
@@ -240,12 +245,24 @@ final class ClientSession {
 
     /// The stream this session asks for: the current view, quality and codec.
     private func streamRequest(useVirtualDisplay: Bool) -> SelectDisplay {
-        SelectDisplay(selection: .fitViewport(viewport), targetFPS: 60, quality: wantsQuality,
+        SelectDisplay(selection: .fitViewport(viewport), targetFPS: DisplayFrameRate.current(), quality: wantsQuality,
                       preferredCodec: device?.preferredCodec, useVirtualDisplay: useVirtualDisplay)
     }
 
     private func sendStreamRequest(useVirtualDisplay: Bool) {
         let request = streamRequest(useVirtualDisplay: useVirtualDisplay)
+        lastRequest = request
+        send(.selectDisplay(request))
+    }
+
+    /// Low Power Mode or the device's temperature changed what its screen shows: the running
+    /// stream is asked for again at the new rate (the host restarts it), so a phone held to 60 Hz
+    /// isn't sent 120 fps, and gets 120 back once it can show them.
+    private func frameRateMayHaveChanged() {
+        let fps = DisplayFrameRate.current()
+        guard state == .connected, !isAwaitingFittedStream, var request = lastRequest, request.targetFPS != fps else { return }
+        log.info("asking for \(fps) fps (was \(request.targetFPS))")
+        request.targetFPS = fps
         lastRequest = request
         send(.selectDisplay(request))
     }

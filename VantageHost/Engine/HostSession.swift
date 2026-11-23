@@ -47,9 +47,11 @@ actor HostSession {
     /// made in, so a late one from a stopped capture or encoder can't touch its replacement's state.
     private var captureEpoch: UInt64 = 0
     private var injector: (any InputSink)?
-    /// From captured frames to wire frames: one encode in flight, the latest frame wins, idle
+    /// From captured frames to wire frames: two encodes in flight, the latest frame wins, idle
     /// suppression, keyframes on demand, the adaptive rate and bitrate. One per capture.
     private var pacer: VideoPacer?
+    /// Video the pacer sent that the network stack hasn't taken yet, for the current capture.
+    private var videoBacklog: SendBacklog?
     /// Wakes the pacer when the encode in flight reaches its deadline (`VideoPacer.outstanding`),
     /// so a lost encoder answer is written off even while the screen is still. One task per
     /// capture, alive only while the encoder owes an answer (`watchStall`).
@@ -309,7 +311,10 @@ actor HostSession {
                 // Awaited, so a ⌘V the client sends right behind its clipboard pastes this one.
                 if let clipboard { await clipboard.apply(payload) }
             case .qualityFeedback(let feedback):
-                pacer?.apply(feedback: feedback)
+                let waiting = videoBacklog?.takePeak() ?? 0
+                let backlogged = waiting >= SendBacklog.fullAt
+                if backlogged { log.info("send backlog: \(waiting) video frames waiting for the network") }
+                pacer?.apply(feedback: feedback, backlogged: backlogged)
             case .requestKeyframe:
                 requestKeyframe()
             case .hostCommand(let command):
@@ -401,9 +406,11 @@ actor HostSession {
         guard state == .streaming else { throw SessionError.closed } // ended while displays were listed
 
         let codec: VideoCodec = select.preferredCodec ?? .hevc
-        let startFPS = min(select.targetFPS, 60)
+        let fpsCap = AdaptiveController.fpsCap(requested: select.targetFPS, displayRefresh: chosen.refreshRate)
         let adaptive = AdaptiveController(limits: .init(preset: select.quality),
-                                          startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: startFPS))
+                                          startBitrateKbps: VideoPacer.startingBitrateKbps(pixels: chosen.pixelWidth * chosen.pixelHeight, fps: min(fpsCap, 60)),
+                                          fpsCap: fpsCap)
+        let startFPS = adaptive.fps()
 
         let epoch = captureEpoch
         let encoder = env.makeVideoEncoder(.init(codec: codec, width: chosen.pixelWidth, height: chosen.pixelHeight, fps: startFPS, bitrateKbps: adaptive.bitrateKbps, maxQP: adaptive.maxQP))
@@ -412,7 +419,13 @@ actor HostSession {
             Task { await self.emit(outcome, epoch: epoch) }
         }
         self.encoder = encoder
-        pacer = VideoPacer(encoder: encoder, adaptive: adaptive, fps: startFPS) { [channel] message in channel.sendDetached(message) }
+        let backlog = SendBacklog()
+        videoBacklog = backlog
+        pacer = VideoPacer(encoder: encoder, adaptive: adaptive, fps: startFPS, maxInFlight: 2) { [channel] message in
+            guard case .videoFrame = message else { channel.sendDetached(message); return }
+            backlog.sent()
+            channel.send(message) { _ in backlog.taken() }
+        }
         // A frame may arrive before `start` returns; the lifecycle credits it to this start.
 
         let frame = CGRect(x: chosen.originX, y: chosen.originY, width: Double(chosen.pointWidth), height: Double(chosen.pointHeight))
@@ -455,7 +468,7 @@ actor HostSession {
         startClipboard()
 
         try await channel.send(.streamConfig(StreamConfig(display: chosen, codec: codec, fps: startFPS, bitrateKbps: adaptive.bitrateKbps)))
-        log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
+        log.info("streaming display \(chosen.id) at \(chosen.pixelWidth)x\(chosen.pixelHeight), up to \(fpsCap) fps (asked \(select.targetFPS), display \(Int(chosen.refreshRate)) Hz) (\(chosen.isVirtual ? "virtual" : chosen.isMain ? "main" : "secondary"), origin \(Int(chosen.originX)),\(Int(chosen.originY)))")
         return (chosen, codec)
     }
 
@@ -879,6 +892,7 @@ actor HostSession {
         self.capture = nil
         self.encoder = nil
         pacer = nil
+        videoBacklog = nil
         stallWatch?.cancel()
         stallWatch = nil
         sharpenWatch?.cancel()
@@ -972,4 +986,32 @@ enum SessionError: Error {
     case pairingRequired
     /// The session ended (the device was removed, the connection closed) while something was starting.
     case closed
+}
+
+/// Video frames handed to the connection that the network stack hasn't taken yet
+/// (`.contentProcessed`). Over TCP an overloaded link shows up as delay rather than loss, so the
+/// device's report can't show it; frames piling up here can. The most waiting at once since the
+/// last feedback is what counts.
+nonisolated final class SendBacklog: Sendable {
+    /// This many frames waiting at once means the link is full: one is normal, two can be a
+    /// keyframe's burst, three is a queue (25 ms at 120 fps).
+    static let fullAt = 3
+
+    private let counts = Mutex((waiting: 0, peak: 0))
+
+    func sent() {
+        counts.withLock { $0.waiting += 1; $0.peak = max($0.peak, $0.waiting) }
+    }
+
+    func taken() {
+        counts.withLock { $0.waiting = max(0, $0.waiting - 1) }
+    }
+
+    /// The most frames that waited at once since the last call; starts the next window from now.
+    func takePeak() -> Int {
+        counts.withLock { counts in
+            defer { counts.peak = counts.waiting }
+            return counts.peak
+        }
+    }
 }
