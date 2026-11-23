@@ -89,6 +89,7 @@ final class HostController {
             return SyntheticHostEnvironment.make(hostName: hostName, platform: options.platform,
                                                  display: FakeDisplay(asleep: options.fakeDisplaySleep),
                                                  picture: SyntheticHostEnvironment.loadPicture(atPath: options.syntheticImage),
+                                                 refreshRate: options.syntheticRefresh,
                                                  fileDestination: files, resumeFolder: { ResumeFolders.shared.folder(for: $0) },
                                                  captureFailsFor: captureFailsFor)
         }

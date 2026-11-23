@@ -34,9 +34,15 @@ struct RemoteSessionRepresentable: UIViewControllerRepresentable {
 
 final class RemoteSessionViewController: UIViewController {
     let interactionView: RemoteInteractionView
+    #if !os(visionOS)
+    private let refreshHint: StreamRefreshHint
+    #endif
 
     init(input: InputController, video: VideoStreamController) {
         self.interactionView = RemoteInteractionView(input: input, displayLayer: video.displayLayer)
+        #if !os(visionOS)
+        self.refreshHint = StreamRefreshHint(video: video)
+        #endif
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -49,6 +55,16 @@ final class RemoteSessionViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         interactionView.becomeFirstResponder()
+        #if !os(visionOS)
+        refreshHint.start { CADisplayLink(target: $0, selector: $1) }
+        #endif
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        #if !os(visionOS)
+        refreshHint.stop()
+        #endif
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool { true }

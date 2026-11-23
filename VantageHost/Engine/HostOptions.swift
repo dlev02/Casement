@@ -26,6 +26,8 @@ import VantageCore
 ///   first stream request, as when ScreenCaptureKit lists no displays while the Mac is awake.
 /// - `--synthetic-image /path.png`: a synthetic host streams that picture instead of the test
 ///   pattern, and its pretend display takes the picture's size at 2x (README screenshots).
+/// - `--synthetic-refresh 120`: a synthetic host's pretend display refreshes that many times a
+///   second instead of 60, so a stream can run above 60 fps without a real display.
 /// - `--virtual-hid`: try to create a virtual touchscreen and gamepad (`VirtualHIDProbe`) and log
 ///   whether the build's entitlement allows it.
 /// - `--local-network`: take local-network connections and advertise over Bonjour, as Settings →
@@ -86,6 +88,8 @@ nonisolated final class HostOptions: @unchecked Sendable {
     let platform: HostPlatform
     /// A still picture a synthetic host streams instead of its test pattern (DEBUG only).
     let syntheticImage: String?
+    /// The pretend display's refresh rate (`--synthetic-refresh`, DEBUG only; 60 otherwise).
+    let syntheticRefresh: Double
     /// The appcast to update from instead of the release feed (DEBUG only).
     let updateFeed: String?
     /// Skip the updater's waits (DEBUG only).
@@ -168,6 +172,11 @@ nonisolated final class HostOptions: @unchecked Sendable {
         } else {
             syntheticImage = nil
         }
+        if let index = args.firstIndex(of: "--synthetic-refresh"), index + 1 < args.count, let hz = Double(args[index + 1]), hz >= 1 {
+            syntheticRefresh = hz
+        } else {
+            syntheticRefresh = 60
+        }
         if let index = args.firstIndex(of: "--update-feed"), index + 1 < args.count {
             updateFeed = args[index + 1]
         } else {
@@ -202,6 +211,7 @@ nonisolated final class HostOptions: @unchecked Sendable {
         captureFailsForSeconds = nil
         platform = .macOS
         syntheticImage = nil
+        syntheticRefresh = 60
         updateFeed = nil
         updateSoon = false
         updateCheckNow = false

@@ -251,7 +251,9 @@ Windows projects set `EnableWindowsTargeting`), and `dotnet test --solution Vant
 runs the Windows tests too. Export `DOTNET_CLI_TELEMETRY_OPTOUT=1 TESTINGPLATFORM_TELEMETRY_OPTOUT=1`
 first; the scripts do. XAML compiles only on Windows: build the app from `Vantage.Windows.PC.slnx`.
 
-Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--exit-after S`,
+Flags (both executables): `--port N`, `--pairing-code NNNNNN` (Debug), `--pairing-code-rearm S` (Debug;
+shows the fixed code again S seconds after a pairing uses it, so a test run can pair several
+identities without a restart), `--exit-after S`,
 `--receive-folder PATH`, `--log-file PATH`, `--dump-h264 PATH` (append the encoded Annex-B stream,
 H.264 or HEVC: whichever the session streams),
 `--platform windows|macos`, `--synthetic` (Debug; separate `Vantage Host (Synthetic)` data folder, input

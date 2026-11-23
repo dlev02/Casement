@@ -459,7 +459,8 @@ public sealed class HostSessionCore
         await StopCaptureAsync().ConfigureAwait(false);
         if (_captureFailsUntil is { } until && _env.Time.GetUtcNow() < until) throw new CaptureUnavailableException("capture fails on purpose (--capture-fails-for)");
         var chosen = await _display.ChooseAsync(select).ConfigureAwait(false);
-        var fps = Math.Clamp(select.TargetFPS, 1, 60);
+        // The display's own refresh rate (after any fitting) bounds it: a 60 Hz mode can't give 120 different frames.
+        var fps = AdaptiveController.FpsCap(select.TargetFPS, chosen.RefreshRate);
         var hello = _hello!;
         // A client that draws the pointer itself gets it at its own frame rate, the way Remote
         // Desktop does; leaving it out of the video also stops a moving pointer from costing frames.
@@ -473,7 +474,8 @@ public sealed class HostSessionCore
             capture = await StartCaptureAsync(request).ConfigureAwait(false);
         }
         var (width, height) = VideoGeometry.EncodedSize(capture.FrameWidth, capture.FrameHeight, hello.MaxDecodeWidth, hello.MaxDecodeHeight);
-        var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, fps), _env.Time, select.Quality);
+        // Frames at 120 differ less than at 60, so the start bitrate is the 60 fps one; AIMD climbs from there.
+        var adaptive = new AdaptiveController(AdaptiveController.StartBitrate(width * height, Math.Min(fps, 60)), _env.Time, select.Quality);
         var codec = ChooseCodec(select.PreferredCodec, _env.Encoders.SupportedCodecs, hello.SupportedCodecs);
         VideoPipeline video;
         try
@@ -524,8 +526,8 @@ public sealed class HostSessionCore
 
         await _connection.SendAsync(new StreamConfig { Display = chosen, Codec = codec, Fps = fps, BitrateKbps = video.BitrateKbps }).ConfigureAwait(false);
         _listener.SessionChanged();
-        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}); stream setup took {Ms} ms",
-                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
+        _log.LogInformation("streaming display {Id} at {Width}x{Height} (encoded {EncodedWidth}x{EncodedHeight}, {Codec}), up to {Fps} fps (asked {Asked}, display {Refresh:0} Hz); stream setup took {Ms} ms",
+                            chosen.Id, chosen.PixelWidth, chosen.PixelHeight, width, height, codec, fps, select.TargetFPS, chosen.RefreshRate, (int)_env.Time.GetElapsedTime(began).TotalMilliseconds);
         return (chosen, codec);
     }
 

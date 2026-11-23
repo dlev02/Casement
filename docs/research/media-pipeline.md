@@ -23,6 +23,7 @@
 ### Encode (macOS host) — see §2 for the full property table
 
 8. Create the session with `kVTVideoEncoderSpecification_EnableLowLatencyRateControl = true`, then set `RealTime = true`, `AllowFrameReordering = false`, `MaxKeyFrameInterval` very large (rely on on-demand IDRs, not periodic ones), `ExpectedFrameRate = 60`, `MaximizePowerEfficiency = false`.
+   *Superseded 2026-11-22 by measurement (M3 Max, macOS 27, HEVC): low-latency rate control took 14 ms a frame at 2420 × 1668 and 21 ms at 4K against 6 and 13 ms without it, so the host no longer asks for it; `MaxKeyFrameInterval` must be `Int32.max`, since `Int.max` is refused and the encoder then makes a keyframe a second. See Encoder settings in `docs/guide/connection.md`.*
 9. **H.264 High profile is the safe default; HEVC Main is the quality win.** For 4:2:0 screen content at a fixed bitrate HEVC buys roughly 30–50% bitrate at equal quality, but verify low-latency rate control support on your exact chip/OS before committing (§2). **4:4:4 is not available on Apple hardware encoders** — this is the hard constraint behind coloured-text fringing, and the practical answer is "more bitrate", not "better chroma".
 10. **Do not periodically force IDRs.** Force one only on (a) session start, (b) client-signalled decode failure/packet loss, (c) resolution/format change. Periodic IDRs at 2.4K are the single largest bitrate spike and the main cause of visible "breathing".
 

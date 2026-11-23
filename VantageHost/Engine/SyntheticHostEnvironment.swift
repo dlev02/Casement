@@ -12,11 +12,11 @@ import os
 /// Tests build one with a fake clock and a temp folder.
 nonisolated enum SyntheticHostEnvironment {
     static func make(hostName: String = "Synthetic Mac", platform: HostPlatform = .macOS, display: FakeDisplay = FakeDisplay(),
-                     picture: CGImage? = nil, fileDestination: @escaping @Sendable () -> FileDestination,
+                     picture: CGImage? = nil, refreshRate: Double = 60, fileDestination: @escaping @Sendable () -> FileDestination,
                      resumeFolder: @escaping @Sendable (UUID) -> URL? = { _ in nil },
                      captureFailsFor: Duration? = nil, clock: any HostClock = SystemHostClock()) -> HostEnvironment {
         HostEnvironment(hostName: hostName, platform: platform,
-                        screen: SyntheticScreen(display: display, picture: picture),
+                        screen: SyntheticScreen(display: display, picture: picture, refreshRate: refreshRate),
                         screenRecordingGranted: { true }, accessibilityGranted: { true },
                         makePower: { SyntheticPower(display: display) },
                         makeStatusMonitor: { SyntheticStatusMonitor(display: display) },
@@ -150,11 +150,11 @@ nonisolated enum SyntheticHostEnvironment {
     }
 
     /// A synthetic display sized to a 2x iPad by default.
-    static func syntheticDisplay(pointWidth: Int = 1470, pointHeight: Int = 956) -> DisplayInfo {
+    static func syntheticDisplay(pointWidth: Int = 1470, pointHeight: Int = 956, refreshRate: Double = 60) -> DisplayInfo {
         DisplayInfo(id: 1, name: "Vantage Synthetic Display",
                     pixelWidth: pointWidth * 2, pixelHeight: pointHeight * 2,
                     pointWidth: pointWidth, pointHeight: pointHeight, scale: 2,
-                    originX: 0, originY: 0, isMain: true, isBuiltIn: false, isVirtual: true, refreshRate: 60)
+                    originX: 0, originY: 0, isMain: true, isBuiltIn: false, isVirtual: true, refreshRate: refreshRate)
     }
 
     /// `--synthetic-image`: the picture a synthetic host streams instead of its test pattern.
@@ -205,15 +205,16 @@ nonisolated final class FakeDisplay: @unchecked Sendable {
 nonisolated struct SyntheticScreen: HostScreen {
     let display: FakeDisplay
     let picture: CGImage?
+    var refreshRate: Double = 60
 
     var canRestartByDisplayID: Bool { false }
     var canManageVirtualDisplay: Bool { false }
 
     func displays() async throws -> [DisplayInfo] {
         if let picture {
-            return [SyntheticHostEnvironment.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2)]
+            return [SyntheticHostEnvironment.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2, refreshRate: refreshRate)]
         }
-        return [SyntheticHostEnvironment.syntheticDisplay()]
+        return [SyntheticHostEnvironment.syntheticDisplay(refreshRate: refreshRate)]
     }
 
     func resolve(_ select: SelectDisplay) async throws -> DisplayInfo {
@@ -224,11 +225,11 @@ nonisolated struct SyntheticScreen: HostScreen {
             if let picture {
                 // A `--synthetic-image` display keeps the picture's shape, as a real Mac's display
                 // does, so the client letterboxes or reshapes its window to it.
-                return SyntheticHostEnvironment.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2)
+                return SyntheticHostEnvironment.syntheticDisplay(pointWidth: picture.width / 2, pointHeight: picture.height / 2, refreshRate: refreshRate)
             }
-            return SyntheticHostEnvironment.syntheticDisplay(pointWidth: max(640, Int(viewport.widthPoints)), pointHeight: max(480, Int(viewport.heightPoints)))
+            return SyntheticHostEnvironment.syntheticDisplay(pointWidth: max(640, Int(viewport.widthPoints)), pointHeight: max(480, Int(viewport.heightPoints)), refreshRate: refreshRate)
         case .display:
-            return SyntheticHostEnvironment.syntheticDisplay()
+            return SyntheticHostEnvironment.syntheticDisplay(refreshRate: refreshRate)
         }
     }
 

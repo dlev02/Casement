@@ -90,9 +90,11 @@ not on `PATH`: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH DOTNET
   has passed; one already queued behind the answer that finished its encode does nothing. A forced
   keyframe that comes back skipped makes the next encode an IDR again. The
   session only makes the encoder and hands it over. **Quality presets** (`selectDisplay.quality`,
-  the Mac's numbers in `QualityProfile.For`): Balanced (`auto`) 30/60 fps, max QP 32 text / 44
-  motion; Fluid (`motion`) 60 fps always, 36/44, no idle pass; Sharp Text (`text`) 30/60, 28/38,
-  bitrate floor 6 Mbit/s; `maximum` (not offered) 24/34, floor 10 Mbit/s. A `selectDisplay` that
+  the Mac's numbers in `QualityProfile.For`): Balanced (`auto`) 30/120 fps, max QP 32 text / 44
+  motion; Fluid (`motion`) 60/120 fps, 36/44, no idle pass; Sharp Text (`text`) 30/60, 28/38,
+  bitrate floor 6 Mbit/s; `maximum` (not offered) 24/34, floor 10 Mbit/s. The stream's ceiling is
+  `AdaptiveController.FpsCap`: the device's `targetFPS`, the chosen display's refresh rate after
+  fitting, and 120, whichever is lowest (Frame rate in `connection.md`). A `selectDisplay` that
   differs from the running one only in `quality` changes it in place (`CaptureSupervisor.QualityChanged`,
   `VideoPipeline.SetQuality`): no new capture or `streamConfig`. **Idle sharpening**: a still screen
   sends nothing, so the soft frame motion's ceiling left would stay; every encode other than the

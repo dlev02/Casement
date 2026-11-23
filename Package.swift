@@ -17,7 +17,7 @@ let package = Package(
                     "Model/LocalDevice.swift", "Model/ClipboardSync.swift", "Audio/MacAudioPlayer.swift",
                     "Input/KeyTranslator.swift", "Input/KeyCapturePolicy.swift", "Input/ScrollTranslator.swift",
                     // The screen session model and what it drives (the picture, dictation, Type Password).
-                    "Model/ScreenSessionModel.swift", "Model/TypePassword.swift", "Model/PasswordConfirmation.swift", "Model/StripActions.swift", "Video/VideoStreamView.swift",
+                    "Model/ScreenSessionModel.swift", "Model/TypePassword.swift", "Model/PasswordConfirmation.swift", "Model/StripActions.swift", "Video/VideoStreamView.swift", "Video/DisplayFrameRate.swift",
                     "Dictation/DictationController.swift", "Dictation/LiveTranscriber.swift", "Dictation/MicrophoneCapture.swift",
                     "Net/ScreenSharingPassword.swift", "Mac/ThisMac.swift"],
                 swiftSettings: [.defaultIsolation(MainActor.self)]),

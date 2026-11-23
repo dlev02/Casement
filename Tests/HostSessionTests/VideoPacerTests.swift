@@ -80,6 +80,26 @@ struct VideoPacerTests {
         #expect(pacer.framesSent == 1)
     }
 
+    /// A real host overlaps two encodes to reach 120 fps. A dropped encode takes the one behind it
+    /// with it: that picture may refer to the lost frame, so it never reaches the device, and the
+    /// IDR that repairs the stream waits until nothing else is in flight.
+    @Test func twoEncodesOverlapAndADropDiscardsThePictureBehindIt() {
+        let encoder = FakeEncoder(), wire = Wire()
+        var pacer = VideoPacer(encoder: encoder, adaptive: AdaptiveController(startBitrateKbps: 20_000), fps: 120, maxInFlight: 2) { wire.append($0) }
+        _ = pacer.ingest(frame(at: 1), now: t0)
+        _ = pacer.ingest(frame(at: 2), now: t0)
+        _ = pacer.ingest(frame(at: 3), now: t0)
+        #expect(encoder.encodes.map(\.ptsNanos) == [1, 2], "two in flight, the newest waits")
+        pacer.encoderReported(encoded(sequence: 0, keyframe: true), now: t0)
+        #expect(encoder.encodes.map(\.ptsNanos) == [1, 2, 3])
+        pacer.encoderReported(.dropped("frame dropped by the encoder", encodeID: 2), now: t0)
+        _ = pacer.ingest(frame(at: 4), now: t0)
+        #expect(encoder.encodes.count == 3, "no keyframe beside an encode still in flight")
+        pacer.encoderReported(encoded(sequence: 1, keyframe: false, index: 2), now: t0)
+        #expect(wire.kinds == [.videoFrame], "the picture behind the dropped one is discarded")
+        #expect(encoder.encodes.count == 4 && encoder.encodes[3].forceKeyframe && encoder.encodes[3].ptsNanos == 4)
+    }
+
     @Test func aDroppedFrameNeverFreezesThePictureAndForcesTheNextKeyframe() {
         let encoder = FakeEncoder(), wire = Wire()
         var pacer = pacer(encoder, wire)

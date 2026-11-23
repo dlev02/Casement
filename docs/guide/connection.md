@@ -179,7 +179,8 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   a replacement's fields alone. Rules below are the module's; `CaptureLifecycleTests` check them with a
   fake clock and frame source, `HostSessionTests` over loopback.
 - **Keeping the picture moving** (`VideoPacer`, `VantageHost/Engine`; the Windows host's
-  `VideoPipeline` is the same design): one encode in flight and the latest frame wins, a still frame
+  `VideoPipeline` is the same design, one encode at a time): up to `maxInFlight` encodes in flight
+  (two on the Mac host, one in tests) and the latest frame wins, a still frame
   is skipped unless a keyframe is due, and the encoder's answer to every frame keeps the count
   honest. The encoder (`VideoEncoder`, made through `HostEnvironment.makeVideoEncoder`) puts the
   parameter sets on every keyframe, and the pacer sends `videoConfig` only when they differ from
@@ -193,6 +194,16 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   (`outstanding`), the session's stall watch calls `encodeTimedOut` then, and a timeout for an
   encode already answered does nothing. A changed frame waiting behind an encode stays pending
   through still frames that follow it; they refresh the picture, not the need to send it.
+  Two in flight is what gets a Mac to 120 fps: answers come in order, a keyframe or the
+  sharper still pass only starts with nothing in flight, and a dropped or written-off encode
+  discards the pictures of the encodes behind it (`discardThrough`: they may refer to the lost
+  frame) and owes an IDR.
+  **Encoder settings** (measured 2026-11-22 on an M3 Max, macOS 27, HEVC): no
+  `EnableLowLatencyRateControl`. With it each frame took 14 ms at 2420 × 1668 and 21 ms at 4K,
+  so one encode at a time capped a 4K stream at 45 fps; without it 6 ms on scrolling text and
+  13 ms at 4K, with frames given more bits under the same target. `MaxKeyFrameInterval` is
+  `Int32.max`: the encoder refuses `Int.max` and falls back to a keyframe every second (1.3 MB
+  each at 2420 × 1668), which the low-latency mode had hidden. `MaxAllowedFrameQP` still holds.
   A frame VideoToolbox's rate control leaves out (`Outcome.skipped`: no error, no data,
   `frameDropped`, which it does often after a large frame or under a tight ceiling) forces no
   keyframe: the encoder goes on from the last frame it did encode, which the device has (checked by
@@ -201,9 +212,26 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `VideoPacerTests` cover these on a fake encoder.
 - **Quality and the sharper still screen** (`AdaptiveController.Limits(preset:)`, `VideoPacer`; the
   Windows host's `QualityProfile` has the same numbers): `SelectDisplay.quality` picks the limits.
-  Balanced (`auto`, the default) is text 30 fps / max QP 32, motion 60 fps / 44, still 24, floor
-  2 Mbit/s; Fluid (`motion`) 60 fps always, 36 / 44, no still pass; Sharp Text (`text`) 28 / 38,
-  still 20, floor 6 Mbit/s (`maximum`, not offered: 24 / 34 / 18, 10 Mbit/s). The mode's ceiling
+  Balanced (`auto`, the default) is text 30 fps / max QP 32, motion 120 fps / 44, still 24, floor
+  2 Mbit/s; Fluid (`motion`) 60 fps on a still-ish screen and 120 in motion, 36 / 44, no still
+  pass; Sharp Text (`text`) 30/60 fps, 28 / 38, still 20, floor 6 Mbit/s (`maximum`, not offered:
+  30/60, 24 / 34 / 18, 10 Mbit/s).
+- **Frame rate** (2026-11-22; both hosts): the stream runs at most at
+  `AdaptiveController.fpsCap(requested:displayRefresh:)` (`FpsCap` on Windows): the smallest of
+  `selectDisplay.targetFPS`, the captured display's refresh rate (after fitting) and 120
+  (`maxFPS`; no device shows more, so a 240 Hz PC monitor still streams 120). The client asks for
+  `DisplayFrameRate.current()`: its screen's `maximumFramesPerSecond` (120 on ProMotion, 90 on
+  Vision Pro), 60 in Low Power Mode or when the device is hot, and asks again when either changes
+  (the host restarts the stream). `StreamRefreshHint` keeps a ProMotion panel at the stream's
+  rate with a display link while frames arrive (a sample-buffer layer alone doesn't ask for
+  120) and lets it slow down half a second after they stop. The starting bitrate is the 60 fps
+  one; `maxFPS` in `HostCapabilities` is 120. Hosts before this clamp to 60, and clients before
+  it ask for 60. The secure-desktop helper on Windows stays at 60. **Send backlog**: over TCP an
+  overloaded link shows up as delay, never as loss in the device's report (its `queueDepth` is
+  always 0), so the Mac host counts video frames the network stack hasn't taken yet
+  (`SendBacklog`); three waiting at once in a feedback window counts as loss and cuts the
+  bitrate, as the Windows host's lane drop (`NoteBacklog`) already did. `--synthetic-refresh 120`
+  (DEBUG) gives a synthetic host a 120 Hz pretend display. The mode's ceiling
   reaches the encoder (`VideoEncoding.setMaxQP`, `kVTCompressionPropertyKey_MaxAllowedFrameQP`,
   which VideoToolbox takes mid-session) before the frame it applies to; before this the Mac set 44
   at session start and never changed it. Once the screen has been still for `sharpenDelay`

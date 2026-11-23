@@ -19,6 +19,13 @@ public sealed record HostCommandLine
     /// <summary><c>--pairing-code NNNNNN</c> (debug): a fixed code that never expires.</summary>
     public string? PairingCode { get; init; }
 
+    /// <summary>
+    /// <c>--pairing-code-rearm S</c> (debug): with <see cref="PairingCode"/>, show the code again this long
+    /// after a pairing used it (or wrong guesses burned it), so a test run can pair new identities
+    /// without restarting the host. Without it the code works for one pairing per launch.
+    /// </summary>
+    public TimeSpan? PairingCodeRearm { get; init; }
+
     /// <summary><c>--exit-after S</c>: quit by itself after this long.</summary>
     public TimeSpan? ExitAfter { get; init; }
 
@@ -78,6 +85,8 @@ public sealed record HostCommandLine
 
           --port N                    listen on N (default 47820; tests use 47821+)
           --pairing-code NNNNNN       fixed pairing code that never expires (debug builds)
+          --pairing-code-rearm SECONDS
+                                      show that code again this long after a pairing used it (debug builds)
           --exit-after SECONDS        quit by itself
           --receive-folder PATH       save received files here
           --log-file PATH             also log to this file
@@ -128,6 +137,10 @@ public sealed record HostCommandLine
                     var code = Value();
                     if (code.Length != 6 || !code.All(char.IsAsciiDigit)) throw new ArgumentException("--pairing-code takes six digits.");
                     result = result with { PairingCode = code };
+                    break;
+                case "--pairing-code-rearm":
+                    DebugOnly();
+                    result = result with { PairingCodeRearm = ParseSeconds(arg, Value()) };
                     break;
                 case "--exit-after":
                     result = result with { ExitAfter = ParseSeconds(arg, Value()) };
