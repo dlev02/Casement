@@ -18,8 +18,9 @@ nonisolated protocol VideoEncoding: AnyObject, Sendable {
 
 extension VideoEncoder: VideoEncoding {}
 
-/// From a captured frame to wire frames, for one stream: one encode in flight and the latest
-/// frame wins, a static frame is skipped unless a keyframe is due, a keyframe request on a still
+/// From a captured frame to wire frames, for one stream: up to `maxInFlight` encodes in flight
+/// (two on a real host: Apple's encoder takes ~11 ms a frame, so one at a time tops out under
+/// 100 fps, while two overlap to well over 120) and the latest frame wins, a static frame is skipped unless a keyframe is due, a keyframe request on a still
 /// screen re-encodes the last frame at once (the protocol's rule, as the Windows host does), the
 /// adaptive controller's frame rate and bitrate reach the encoder (and the capture, through the
 /// caller) only when they change, `videoConfig` goes out before the first IDR and before any IDR
@@ -65,9 +66,17 @@ nonisolated struct VideoPacer {
     /// A changed frame arrived while an encode was in flight and its change hasn't been encoded yet.
     private var pendingEncode = false
     private var lastEncodeID: UInt64 = 0
-    /// The encode awaiting the encoder's answer, when it is written off if still unanswered, and
-    /// whether it was a forced keyframe or the sharper re-encode of a still screen.
-    private var inFlight: (encodeID: UInt64, deadline: ContinuousClock.Instant, forced: Bool, sharpening: Bool)?
+    /// The encodes awaiting the encoder's answer, oldest first (it answers in order): when each is
+    /// written off if still unanswered, and whether it was a forced keyframe or the sharper
+    /// re-encode of a still screen. A keyframe and a sharper re-encode only start with nothing
+    /// else in flight; only ordinary changed frames overlap.
+    private var inFlight: [(encodeID: UInt64, deadline: ContinuousClock.Instant, forced: Bool, sharpening: Bool)] = []
+    /// How many encodes may overlap.
+    let maxInFlight: Int
+    /// An encode older than one still in flight was dropped or written off: the encodes after it
+    /// may refer to a frame the device never got, so their pictures are discarded too, up to and
+    /// including this id, and the keyframe that follows repairs the stream.
+    private var discardThrough: UInt64 = 0
     /// The QP ceiling the encoder was last given (it starts with the adaptive controller's).
     private var encoderMaxQP: Int
     /// When the still screen gets its sharper re-encode; nil when it has had it or never will.
@@ -79,8 +88,10 @@ nonisolated struct VideoPacer {
     /// The frame rate the encoder was last told; it and the capture hear only changes.
     private var currentFPS: Int
 
-    init(encoder: any VideoEncoding, adaptive: AdaptiveController, fps: Int, send: @escaping @Sendable (Message) -> Void) {
+    init(encoder: any VideoEncoding, adaptive: AdaptiveController, fps: Int, maxInFlight: Int = 1,
+         send: @escaping @Sendable (Message) -> Void) {
         self.encoder = encoder
+        self.maxInFlight = max(1, maxInFlight)
         self.adaptive = adaptive
         self.currentFPS = fps
         self.encoderMaxQP = adaptive.maxQP
@@ -98,11 +109,17 @@ nonisolated struct VideoPacer {
 
     /// The encode in flight and the moment to call `encodeTimedOut` for it; nil when the encoder
     /// owes nothing.
-    var outstanding: (encodeID: UInt64, deadline: ContinuousClock.Instant)? { inFlight.map { ($0.encodeID, $0.deadline) } }
+    var outstanding: (encodeID: UInt64, deadline: ContinuousClock.Instant)? { inFlight.first.map { ($0.encodeID, $0.deadline) } }
 
     /// When to call `sharpenIfDue`; nil while an encode is in flight (its answer takes over) or
     /// when nothing is owed.
-    var sharpenDeadline: ContinuousClock.Instant? { inFlight == nil ? sharpenAt : nil }
+    var sharpenDeadline: ContinuousClock.Instant? { inFlight.isEmpty ? sharpenAt : nil }
+
+    /// Whether another encode may start now: always with nothing in flight; beside others only
+    /// for an ordinary changed frame (no keyframe owed) while there's room.
+    private var canStartEncode: Bool {
+        inFlight.isEmpty || (inFlight.count < maxInFlight && !needsKeyframe)
+    }
 
     /// Pointer, scroll or key input: the frame rate stays up for a moment.
     mutating func noteInput() {
@@ -125,7 +142,7 @@ nonisolated struct VideoPacer {
         // Idle suppression: skip encoding a static frame (but always honour a pending keyframe).
         // A change still waiting behind an encode stays pending; this frame only refreshes the picture.
         if frame.dirtyRatio <= Self.idleDirtyRatio, !needsKeyframe, framesSent > 0 { return frameRateChange }
-        guard inFlight == nil else {
+        guard canStartEncode else {
             pendingEncode = true // the latest frame wins once the encoder answers
             return frameRateChange
         }
@@ -136,10 +153,16 @@ nonisolated struct VideoPacer {
     /// The encoder's word on a frame it was given. Only the encode in flight is listened to: an
     /// answer from one already written off is dropped, its accounting and picture alike.
     mutating func encoderReported(_ outcome: VideoEncoder.Outcome, now: ContinuousClock.Instant) {
-        guard let finished = inFlight, finished.encodeID == outcome.encodeID else { return }
-        inFlight = nil
+        guard let index = inFlight.firstIndex(where: { $0.encodeID == outcome.encodeID }) else { return }
+        // Answers come in order; any older one still listed never will, so it counts as dropped.
+        if index > 0 { markLost(through: inFlight[index - 1].encodeID) }
+        let finished = inFlight[index]
+        inFlight.removeFirst(index + 1)
         var resend = false
         switch outcome {
+        case .encoded where finished.encodeID <= discardThrough:
+            // It may refer to a frame the device never got; the keyframe owed replaces it.
+            needsKeyframe = true
         case .encoded(let output, _):
             if let config = output.config, config.parameterSets != sentParameterSets {
                 send(.videoConfig(config))
@@ -155,11 +178,11 @@ nonisolated struct VideoPacer {
             resend = !finished.sharpening
         case .dropped:
             // The client's decoder has a hole now; the next frame fills it.
-            needsKeyframe = true
+            markLost(through: finished.encodeID)
         }
         if pendingEncode || resend || (needsKeyframe && latest != nil) {
             encodeLatest(now: now, reencoding: !pendingEncode)
-        } else if let sharpenAt, now >= sharpenAt {
+        } else if inFlight.isEmpty, let sharpenAt, now >= sharpenAt {
             encodeLatest(now: now, reencoding: true, sharpening: true)
         }
     }
@@ -168,7 +191,7 @@ nonisolated struct VideoPacer {
     /// limit has really run out, it is written off and the latest frame re-encoded as a keyframe;
     /// a timeout for an encode that has since been answered or replaced does nothing.
     mutating func encodeTimedOut(_ encodeID: UInt64, now: ContinuousClock.Instant) {
-        guard inFlight?.encodeID == encodeID else { return }
+        guard inFlight.first?.encodeID == encodeID else { return }
         guard writeOffIfStalled(now: now) else { return }
         if latest != nil { encodeLatest(now: now, reencoding: true) }
     }
@@ -178,12 +201,13 @@ nonisolated struct VideoPacer {
     mutating func requestKeyframe(now: ContinuousClock.Instant) {
         needsKeyframe = true
         writeOffIfStalled(now: now)
-        if inFlight == nil, latest != nil { encodeLatest(now: now, reencoding: true) }
+        if inFlight.isEmpty, latest != nil { encodeLatest(now: now, reencoding: true) }
     }
 
-    /// Client feedback; a bitrate change reaches the encoder.
-    mutating func apply(feedback: QualityFeedback) {
-        if let bitrate = adaptive.apply(feedback: feedback) { encoder.setBitrate(kbps: bitrate) }
+    /// Client feedback, and whether video has been piling up unsent since the last; a bitrate
+    /// change reaches the encoder.
+    mutating func apply(feedback: QualityFeedback, backlogged: Bool = false) {
+        if let bitrate = adaptive.apply(feedback: feedback, backlogged: backlogged) { encoder.setBitrate(kbps: bitrate) }
     }
 
     /// The device picked another quality: its limits apply from the next frame, and a still
@@ -208,7 +232,7 @@ nonisolated struct VideoPacer {
     /// the detail the earlier frames left out. Returns the ceiling it used when it did.
     @discardableResult
     mutating func sharpenIfDue(now: ContinuousClock.Instant) -> Int? {
-        guard let sharpenAt, now >= sharpenAt, inFlight == nil else { return nil }
+        guard let sharpenAt, now >= sharpenAt, inFlight.isEmpty else { return nil }
         guard latest != nil else {
             self.sharpenAt = nil
             return nil
@@ -216,17 +240,25 @@ nonisolated struct VideoPacer {
         // A change or a keyframe still owed goes first, as an ordinary encode (which sets the
         // deadline again), so a due deadline never sits waiting on something that isn't coming.
         encodeLatest(now: now, reencoding: !pendingEncode, sharpening: !pendingEncode && !needsKeyframe)
-        return inFlight?.sharpening == true ? encoderMaxQP : nil
+        return inFlight.last?.sharpening == true ? encoderMaxQP : nil
     }
 
     /// The encoder answers every frame, encoded or dropped; this is the net under that promise:
     /// an encode past its deadline is given up on, and the next frame is an IDR.
     @discardableResult
     private mutating func writeOffIfStalled(now: ContinuousClock.Instant) -> Bool {
-        guard let inFlight, now >= inFlight.deadline else { return false }
-        self.inFlight = nil
-        needsKeyframe = true
+        guard let oldest = inFlight.first, now >= oldest.deadline else { return false }
+        // Everything behind it goes too: its answers would refer to the frame given up on.
+        markLost(through: inFlight.last!.encodeID)
+        inFlight.removeAll()
         return true
+    }
+
+    /// The device won't get the encode with this id (or an earlier one): a keyframe is owed, and
+    /// every encode up to `id` that still answers has its picture discarded.
+    private mutating func markLost(through id: UInt64) {
+        needsKeyframe = true
+        discardThrough = max(discardThrough, inFlight.last?.encodeID ?? id, id)
     }
 
     /// Encodes the newest frame, forcing an IDR when one is due, under the mode's QP ceiling (or
@@ -234,7 +266,7 @@ nonisolated struct VideoPacer {
     /// sets the sharper re-encode's deadline back. A re-encode of the same frame takes a fresh
     /// timestamp, so the encoder never sees two frames at one instant.
     private mutating func encodeLatest(now: ContinuousClock.Instant, reencoding: Bool, sharpening: Bool = false) {
-        guard let latest, inFlight == nil else { return }
+        guard let latest, canStartEncode, !sharpening || inFlight.isEmpty else { return }
         pendingEncode = false
         let force = needsKeyframe
         needsKeyframe = false
@@ -246,7 +278,7 @@ nonisolated struct VideoPacer {
         }
         sharpenAt = sharpens || adaptive.limits.idleMaxQP == nil ? nil : now + Self.sharpenDelay
         lastEncodeID &+= 1
-        inFlight = (lastEncodeID, now + Self.encodeLimit, force, sharpens)
+        inFlight.append((lastEncodeID, now + Self.encodeLimit, force, sharpens))
         encoder.encode(latest, ptsNanos: reencoding ? MonotonicClock.nanos() : latestPTSNanos, forceKeyframe: force, encodeID: lastEncodeID)
     }
 }

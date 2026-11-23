@@ -25,7 +25,7 @@ struct RemoteSessionNSRepresentable: NSViewRepresentable {
     #endif
 
     func makeNSView(context: Context) -> RemoteInteractionNSView {
-        RemoteInteractionNSView(input: input, displayLayer: video.displayLayer)
+        RemoteInteractionNSView(input: input, displayLayer: video.displayLayer, refreshHint: StreamRefreshHint(video: video))
     }
 
     func updateNSView(_ view: RemoteInteractionNSView, context: Context) {

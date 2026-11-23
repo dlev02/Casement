@@ -295,7 +295,7 @@ public enum SessionAdmission {
         case .screen:
             let takesFiles = hello.features?.fileTransfer == true
             // Audio rides on the Screen Recording grant, so a session that got this far can always offer it.
-            return HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: host.canManageVirtualDisplay, clipboard: true, maxFPS: 60,
+            return HostCapabilities(codecs: [.hevc, .h264], canManageVirtualDisplay: host.canManageVirtualDisplay, clipboard: true, maxFPS: 120,
                                     dictationEngines: hello.features?.dictation == true ? host.dictationEngines : nil,
                                     audio: true, fileTransfer: takesFiles ? true : nil, filesOnlySessions: takesFiles ? true : nil,
                                     platform: host.platform, curtain: true, naturalScroll: host.naturalScroll,

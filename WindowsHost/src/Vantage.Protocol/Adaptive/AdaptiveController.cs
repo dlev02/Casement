@@ -19,10 +19,10 @@ public readonly record struct QualityProfile(int TextFps, int MotionFps, int Tex
     /// <summary>Balanced (<c>auto</c>), Fluid (<c>motion</c>), Sharp Text (<c>text</c>), and <c>maximum</c> (not offered in Casement).</summary>
     public static QualityProfile For(QualityPreset preset) => preset switch
     {
-        QualityPreset.Motion => new(TextFps: 60, MotionFps: 60, TextMaxQP: 36, MotionMaxQP: 44, IdleMaxQP: null, MinBitrateKbps: 2_000),
+        QualityPreset.Motion => new(TextFps: 60, MotionFps: 120, TextMaxQP: 36, MotionMaxQP: 44, IdleMaxQP: null, MinBitrateKbps: 2_000),
         QualityPreset.Text => new(TextFps: 30, MotionFps: 60, TextMaxQP: 28, MotionMaxQP: 38, IdleMaxQP: 20, MinBitrateKbps: 6_000),
         QualityPreset.Maximum => new(TextFps: 30, MotionFps: 60, TextMaxQP: 24, MotionMaxQP: 34, IdleMaxQP: 18, MinBitrateKbps: 10_000),
-        _ => new(TextFps: 30, MotionFps: 60, TextMaxQP: 32, MotionMaxQP: 44, IdleMaxQP: 24, MinBitrateKbps: 2_000),
+        _ => new(TextFps: 30, MotionFps: 120, TextMaxQP: 32, MotionMaxQP: 44, IdleMaxQP: 24, MinBitrateKbps: 2_000),
     };
 }
 
@@ -37,6 +37,15 @@ public sealed class AdaptiveController
     public const int MaxBitrateKbps = 60_000;
     public const int TextFps = 30;
     public const int MotionFps = 60;
+    /// <summary>No device shows more than this; 240 would only double the cost (Mac <c>AdaptiveController.maxFPS</c>).</summary>
+    public const int MaxFps = 120;
+
+    /// <summary>The stream's frame-rate ceiling: what the device asked for, no faster than the display refreshes, never over <see cref="MaxFps"/>.</summary>
+    public static int FpsCap(int requested, double displayRefresh)
+    {
+        var refresh = displayRefresh >= 1 ? (int)Math.Round(displayRefresh) : 60;
+        return Math.Max(1, Math.Min(requested, Math.Min(refresh, MaxFps)));
+    }
 
     private readonly TimeProvider _time;
     private double _smoothedDirty;

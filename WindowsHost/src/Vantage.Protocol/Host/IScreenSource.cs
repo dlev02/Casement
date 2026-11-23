@@ -66,7 +66,7 @@ public interface IScreenSource
 
 /// <summary>What to capture.</summary>
 /// <param name="Display">The display, as last returned by <see cref="IScreenSource.GetDisplaysAsync"/>.</param>
-/// <param name="Fps">Frames per second to aim for (≤ 60). May change later through <see cref="ICaptureStream.SetFrameRate"/>.</param>
+/// <param name="Fps">Frames per second to aim for (≤ 120; the secure-desktop helper gives at most 60). May change later through <see cref="ICaptureStream.SetFrameRate"/>.</param>
 /// <param name="IncludesCursor">Draw the pointer into the frames. False when the client draws it from <see cref="ICursorSource"/>.</param>
 public sealed record CaptureRequest(DisplayInfo Display, int Fps, bool IncludesCursor = true);
 
