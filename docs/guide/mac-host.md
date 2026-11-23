@@ -147,7 +147,9 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   tailnet host then the home address, which is reachable pre-login only through a Tailscale subnet
   router on the home LAN.
 - **Lock screen / password fields**: Secure Event Input blocks CGEvent keystrokes from every
-  third-party app. The host detects lock and secure-input state (`LockMonitor`) and the client shows
+  third-party app. The host detects lock and secure-input state (`LockMonitor`; one per session, so it
+  reads the lock from `CGSessionCopyCurrentDictionary` at start and each second, since a session that
+  begins at a locked Mac gets no notification and used to report only a secure field) and the client shows
   a banner; the key button then types the saved password through Apple's `screensharingd` (see Mac
   shortcuts and password in [input.md](input.md)). That also works at a logged-out login window if the Mac is
   reachable, but not at FileVault pre-boot.
