@@ -17,13 +17,18 @@ extension RemoteSessionLayout {
                                      capturesShortcuts: model.capturesShortcuts, swapsCommandAndControl: swapsKeys,
                                      pasteModifier: host.isWindows ? .control : .command,
                                      stickyModifiers: model.stickyModifiers, screenLabel: screenLabel,
-                                     onPaste: { model.pasteThroughClipboard() }, keyProbe: MacSessionOptions.keyProbe ? macKeyProbe : nil)
+                                     onPaste: { model.pasteThroughClipboard() },
+                                     onTopEdgeReveal: { model.showsFullScreenExit = $0 },
+                                     onEnteredFullScreenCapture: { model.fullScreenEntered() },
+                                     keyProbe: MacSessionOptions.keyProbe ? macKeyProbe : nil)
         #else
         RemoteSessionNSRepresentable(input: model.input, video: model.video, sendsInput: sendsInput,
                                      capturesShortcuts: model.capturesShortcuts, swapsCommandAndControl: swapsKeys,
                                      pasteModifier: host.isWindows ? .control : .command,
                                      stickyModifiers: model.stickyModifiers, screenLabel: screenLabel,
-                                     onPaste: { model.pasteThroughClipboard() })
+                                     onPaste: { model.pasteThroughClipboard() },
+                                     onTopEdgeReveal: { model.showsFullScreenExit = $0 },
+                                     onEnteredFullScreenCapture: { model.fullScreenEntered() })
         #endif
     }
 
@@ -107,6 +112,46 @@ extension RemoteSessionLayout {
         }
     }
     #endif
+}
+
+/// Full screen's way out while the keyboard capture keeps the menu bar, and so the toolbar,
+/// hidden: the computer's name, Exit Full Screen and Disconnect, dropped from the top when the
+/// pointer rests there (`TopEdgeReveal`). Clicks on it stay on this Mac (the session view skips
+/// moves over SwiftUI overlays).
+struct FullScreenExitPill: View {
+    let name: String
+    let onExitFullScreen: () -> Void
+    let onDisconnect: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(name)
+                .font(.headline)
+                .lineLimit(1)
+                .padding(.leading, 6)
+                .padding(.trailing, 4)
+            Button(action: onExitFullScreen) {
+                Label("Exit Full Screen", systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+            .buttonStyle(.onCard)
+            .help("Exit Full Screen (⌃⌥⌘F)")
+            .accessibilityIdentifier("session.fullScreenExit.exit")
+            Button(action: onDisconnect) {
+                Label("Disconnect", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.onCard)
+            .help("Disconnect (⌃⌥⌘W)")
+            .accessibilityIdentifier("session.fullScreenExit.disconnect")
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .platformGlass(in: .capsule)
+        .pointerStyle(.default) // the session hides the pointer over the picture only
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(name)
+        .accessibilityIdentifier("session.fullScreenExit")
+    }
 }
 
 /// The session's Mac is the one Vantage runs on: say so, since the picture shows itself and the

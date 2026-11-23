@@ -163,6 +163,22 @@ struct RemoteSessionLayout: View {
 
             VStack {
                 #if os(macOS)
+                if model.showsFullScreenExit && model.isConnected {
+                    FullScreenExitPill(name: device.name,
+                                       onExitFullScreen: {
+                                           model.showsFullScreenExit = false
+                                           windowShape.toggleFullScreen()
+                                       },
+                                       onDisconnect: { model.disconnect() })
+                        .padding(.top, 12)
+                        .transition(bannerTransition)
+                }
+                if let hint = model.fullScreenNotice.value {
+                    SessionHintNotice(symbol: "arrow.down.right.and.arrow.up.left", message: hint)
+                        .padding(.top, 12)
+                        .transition(bannerTransition)
+                        .allowsHitTesting(false)
+                }
                 if model.viewsThisMac && model.isConnected {
                     ThisMacBanner(isViewOnly: model.isViewOnly)
                         .padding(.top, 12)
@@ -261,6 +277,8 @@ struct RemoteSessionLayout: View {
         .focusedSceneValue(\.screenSession, model)
         .focusedSceneValue(\.sessionWindowShape, windowShape)
         .animation(.smooth(duration: 0.3), value: model.viewsThisMac && model.isConnected)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.3), value: model.showsFullScreenExit)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.3), value: model.fullScreenNotice.value)
         // The Mac client isn't suspended in the background (its windows stay on screen); it lets
         // go when the Mac sleeps and picks up again when it wakes.
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in

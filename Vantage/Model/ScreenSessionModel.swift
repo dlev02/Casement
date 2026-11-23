@@ -141,6 +141,16 @@ final class ScreenSessionModel {
     /// The session's Mac is the one this app runs on (see `ThisMac`).
     private(set) var viewsThisMac = false
     private var checkedThisMac = false
+    /// Full screen's own way out is up: the pointer rested at the top while the keyboard capture
+    /// keeps the menu bar, and with it the toolbar, hidden (`TopEdgeReveal`).
+    var showsFullScreenExit = false
+    /// "Press ⌃⌥⌘F to leave full screen", for a few seconds after entering it while capturing.
+    let fullScreenNotice = TimedNotice<String>()
+
+    /// Full screen began with the keyboard captured, so the system's toolbar won't come down.
+    func fullScreenEntered() {
+        fullScreenNotice.show("Press ⌃⌥⌘F to leave full screen", for: .seconds(4))
+    }
     #endif
 
     /// `-VantageMacAudio` (DEBUG) until the user flips the toggle.
@@ -258,6 +268,10 @@ final class ScreenSessionModel {
         receivedNotice.clear()
         macAudioNotice.clear()
         wakeRequest.clear()
+        #if os(macOS)
+        fullScreenNotice.clear()
+        showsFullScreenExit = false
+        #endif
         macAudio.setWanted(false)
         session.files.onReceived = nil
         session.disconnect(endingSession: true)

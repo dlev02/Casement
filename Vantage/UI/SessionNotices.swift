@@ -173,6 +173,28 @@ struct MacAudioNotice: View {
     }
 }
 
+/// A short notice that clears itself (`TimedNotice`), in the same capsule as the other notices.
+struct SessionHintNotice: View {
+    let symbol: String
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .accessibilityHidden(true)
+            Text(message)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .platformGlass(in: .capsule)
+        .frame(maxWidth: 520)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session.hintNotice")
+        .announcing(message)
+    }
+}
+
 struct ScreenSharingTypingBadge: View {
     let state: ScreenSharingTypingState
 
