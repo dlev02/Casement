@@ -858,6 +858,7 @@ final class ScreenSessionModel {
         var keyboardMode: SoftwareKeyboardMode?
         var dictationEngine: DictationEnginePreference?
         var threeFingerSwipes: Bool?
+        var mouseButtonActions: [PointerButton: MouseButtonAction]?
         var defaultStripLayout: ControlStripLayout?
         var capturesShortcuts: Bool?
     }
@@ -879,6 +880,14 @@ final class ScreenSessionModel {
         if swipes != readDefaults.threeFingerSwipes {
             readDefaults.threeFingerSwipes = swipes
             input.threeFingerSwipes = swipes
+        }
+        var mouse: [PointerButton: MouseButtonAction] = [:]
+        for button in MouseButtonAction.remappableButtons {
+            mouse[button] = defaults.string(forKey: MouseButtonAction.defaultsKey(for: button)).flatMap(MouseButtonAction.init(rawValue:)) ?? .click
+        }
+        if mouse != readDefaults.mouseButtonActions {
+            readDefaults.mouseButtonActions = mouse
+            input.mouseButtonActions = mouse
         }
         let keyboard = defaults.string(forKey: Self.keyboardModeKey).flatMap(SoftwareKeyboardMode.init(rawValue:)) ?? .unicode
         if keyboard != readDefaults.keyboardMode {

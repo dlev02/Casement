@@ -22,6 +22,21 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   `HostCapabilities.naturalScroll` (`DeviceStore.adoptHostNaturalScroll`). A PC sends nothing.
   Whether the iPad's own Trackpad & Mouse setting stacks with it still needs a device check.
   Pencil squeeze/double-tap map to `PencilAction` (Settings → Controls).
+  **Mouse buttons** (Settings → Controls → Mouse, 2026-11-23): middle, back and forward each do
+  their own click (the default) or send a host shortcut once on the press and nothing on the
+  release (`MouseButtonAction`, `vantage.mouseMiddleButton`/`…BackButton`/`…ForwardButton`; pure
+  `MouseButtonMapping`, `MouseButtonMappingTests`; `InputController.sendsShortcut(for:isDown:)`
+  remembers which presses went out as shortcuts, so a setting changed mid-press can't leave a
+  button down). Shortcuts are strip slots resolved per host (Mission Control → Task View, App
+  Switcher → Switch Apps on a PC; Start keeps the click on a Mac). Left and right are never
+  remapped, nor the three-finger tap's middle click. What each platform delivers: the Mac client
+  gets buttons 2, 3, 4 (middle, back, forward) and horizontal wheel deltas; iPadOS gives apps the
+  middle button through `buttonMask` but never 4 and 5, which only GameController reports
+  (`GCMouse.mouseInput.auxiliaryButtons`, watched by `MouseSideButtons` in
+  `RemoteInteractionView` while a session view is on screen; the first is taken as back, the
+  second as forward, unverified with a real mouse). A thumb wheel arrives as horizontal scroll
+  deltas, which both clients already send. Logitech Options+ remaps only its own Mac's mouse, so
+  through Casement the computer always sees a plain middle click unless this setting says otherwise.
   **Three-finger swipes** (iPhone and iPad, where fingers act as a trackpad: Trackpad mode and the
   iPhone Duo's `TrackpadSurface`; never Direct Touch or visionOS): a three-finger pan recognizer
   that `gestureRecognizerShouldBegin` only lets start there and while Settings → Controls →

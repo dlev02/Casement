@@ -69,7 +69,8 @@ branches). `ContentView` is iOS/visionOS only; the Mac starts at `MacRootView`.
   `acceptsFirstMouse` false) and overrides the raw mouse, drag and `scrollWheel` methods on
   purpose: recognizers don't give per-button downs, ups and drags, `clickCount`, or scroll
   phases. Pointing is always absolute through `PointerMapping`; drags that leave the view keep
-  arriving and pin to the Mac's edge. Buttons 2/3/4 are middle, back and forward, and ⌃-click
+  arriving and pin to the Mac's edge. Buttons 2/3/4 are middle, back and forward (or the shortcut
+  Settings › Controls › Mouse gives them, see Mouse buttons in [input.md](input.md)), and ⌃-click
   stays a left click with ⌃. `mouseMoved` is skipped while the point hit-tests to a SwiftUI
   overlay; the cursor is blank over the picture only while input is on.
   `NSTextInputClient.insertText` types Character Viewer and emoji text; `keyDown` never calls

@@ -1,5 +1,8 @@
 #if canImport(UIKit)
 import AVFoundation
+#if os(iOS)
+import GameController
+#endif
 import UIKit
 import VantageCore
 
@@ -529,11 +532,35 @@ final class RemoteInteractionView: UIView {
             let isDown = mask.contains(flag)
             let wasDown = lastButtonMask.contains(flag)
             guard isDown != wasDown else { continue }
+            // A middle button Settings gave a shortcut taps it once and sends no click.
+            if input.sendsShortcut(for: button, isDown: isDown) { continue }
             input.moveAbsolute(viewPoint: location, action: isDown ? .down : .up,
                                button: button, clickCount: clickCount, modifiers: heldModifiers)
         }
         lastButtonMask = mask
     }
+
+    #if os(iOS)
+    /// A mouse's side buttons: iPadOS never puts them in `buttonMask`, but GameController reports
+    /// them as the mouse's auxiliary buttons (the first is back, the second forward, on the mice
+    /// checked so far). They press where the pointer already is, or send what Settings gave them.
+    private var sideButtons: MouseSideButtons?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard !isTrackpadSurface else { return }
+        if window == nil {
+            sideButtons = nil
+        } else if sideButtons == nil {
+            sideButtons = MouseSideButtons { [weak self] button, isDown in self?.sideButton(button, isDown: isDown) }
+        }
+    }
+
+    private func sideButton(_ button: PointerButton, isDown: Bool) {
+        if input.sendsShortcut(for: button, isDown: isDown) { return }
+        if isDown { input.press(button: button, modifiers: heldModifiers) } else { input.release(button: button, modifiers: heldModifiers) }
+    }
+    #endif
 
     // MARK: Hardware keyboard
 
@@ -619,4 +646,44 @@ extension RemoteInteractionView: UIPencilInteractionDelegate {
     }
 }
 #endif
+#endif
+
+#if os(iOS)
+/// Watches every connected mouse's auxiliary buttons (`GCMouse`) for as long as it lives.
+@MainActor
+private final class MouseSideButtons {
+    private let onButton: (PointerButton, Bool) -> Void
+    private var observer: (any NSObjectProtocol)?
+
+    init(onButton: @escaping (PointerButton, Bool) -> Void) {
+        self.onButton = onButton
+        watchAll()
+        observer = NotificationCenter.default.addObserver(forName: .GCMouseDidConnect, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.watchAll() }
+        }
+    }
+
+    isolated deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        // The handlers go with this session; the next one sets its own.
+        for mouse in GCMouse.mice() {
+            mouse.mouseInput?.auxiliaryButtons?.forEach { $0.pressedChangedHandler = nil }
+        }
+    }
+
+    /// Setting a handler again replaces it, so every connect just covers every mouse.
+    private func watchAll() {
+        GCMouse.mice().forEach(watch)
+    }
+
+    private func watch(_ mouse: GCMouse) {
+        let buttons = mouse.mouseInput?.auxiliaryButtons ?? []
+        for (index, input) in buttons.prefix(2).enumerated() {
+            let button: PointerButton = index == 0 ? .back : .forward
+            input.pressedChangedHandler = { [weak self] _, _, pressed in
+                MainActor.assumeIsolated { self?.onButton(button, pressed) }
+            }
+        }
+    }
+}
 #endif

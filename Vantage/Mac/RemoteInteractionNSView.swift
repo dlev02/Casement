@@ -256,6 +256,8 @@ final class RemoteInteractionNSView: NSView {
     /// ⌃-click stays a left click with ⌃ held; the Mac makes it a secondary click itself.
     private func press(_ button: PointerButton, _ event: NSEvent) {
         guard sendsInput, !event.isFromVantageHost else { return }
+        // A middle, back or forward button Settings gave a shortcut taps it once, with no click.
+        if input.sendsShortcut(for: button, isDown: true) { return }
         heldButtons.insert(button)
         input.moveAbsolute(viewPoint: point(of: event), action: .down, button: button,
                            clickCount: event.clickCount, modifiers: modifiers(of: event))
@@ -269,6 +271,7 @@ final class RemoteInteractionNSView: NSView {
     }
 
     private func release(_ button: PointerButton, _ event: NSEvent) {
+        if input.sendsShortcut(for: button, isDown: false) { return }
         guard heldButtons.remove(button) != nil, !event.isFromVantageHost else { return }
         input.moveAbsolute(viewPoint: point(of: event), action: .up, button: button,
                            clickCount: event.clickCount, modifiers: modifiers(of: event))

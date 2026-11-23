@@ -102,6 +102,9 @@ struct ControlSettings: View {
     @AppStorage("vantage.toolbarCollapsed") private var collapsed = false
     @AppStorage("vantage.pencilSqueeze") private var pencilSqueeze = PencilAction.collapseControls
     @AppStorage("vantage.pencilDoubleTap") private var pencilDoubleTap = PencilAction.rightClick
+    @AppStorage(MouseButtonAction.defaultsKey(for: .middle)) private var middleButton = MouseButtonAction.click
+    @AppStorage(MouseButtonAction.defaultsKey(for: .back)) private var backButton = MouseButtonAction.click
+    @AppStorage(MouseButtonAction.defaultsKey(for: .forward)) private var forwardButton = MouseButtonAction.click
     @AppStorage("vantage.dictationEngine") private var dictationEngine = DictationEnginePreference.mac
     @AppStorage(DictationHistory.enabledKey) private var savesDictationHistory = true
     @State private var isConfirmingClearHistory = false
@@ -116,6 +119,7 @@ struct ControlSettings: View {
         Form {
             #if os(macOS)
             macKeyboardSection
+            mouseSection
             dictationSection
             Section {
                 customizeLink
@@ -233,6 +237,8 @@ struct ControlSettings: View {
                 }
             }
 
+            mouseSection
+
             Section {
                 Picker("Squeeze", selection: $pencilSqueeze) {
                     ForEach(PencilAction.allCases) { action in
@@ -253,6 +259,32 @@ struct ControlSettings: View {
             #endif
         }
         .navigationTitle("Controls")
+    }
+
+    /// What the mouse's extra buttons do. The Mac delivers middle, back and forward; iPadOS the
+    /// middle button through UIKit and the side buttons through GameController.
+    @ViewBuilder private var mouseSection: some View {
+        Section {
+            mouseButtonPicker("Middle Button", button: .middle, selection: $middleButton)
+            mouseButtonPicker("Back Button", button: .back, selection: $backButton)
+            mouseButtonPicker("Forward Button", button: .forward, selection: $forwardButton)
+        } header: {
+            Text("Mouse")
+        } footer: {
+            Text("A PC gets Task View, Switch Apps and Show Desktop instead. Start works on a PC only.")
+        }
+    }
+
+    private func mouseButtonPicker(_ title: String, button: PointerButton, selection: Binding<MouseButtonAction>) -> some View {
+        Picker(title, selection: selection) {
+            Label(MouseButtonAction.click.label(for: button), systemImage: MouseButtonAction.click.symbol(for: button))
+                .tag(MouseButtonAction.click)
+            Section {
+                ForEach(MouseButtonAction.allCases.filter { $0 != .click }) { action in
+                    Label(action.label(for: button), systemImage: action.symbol(for: button)).tag(action)
+                }
+            }
+        }
     }
 
     @ViewBuilder private var dictationSection: some View {
@@ -720,7 +752,7 @@ extension HelpScreen {
                 FAQEntry("Trackpad or Direct Touch?",
                          "Trackpad moves the Mac's pointer relative to your finger, like a laptop trackpad — better for precision on a big desktop. Direct Touch puts the pointer exactly where you tap. Switch in the control strip or in Settings → Controls."),
                 FAQEntry("How do I right-click or middle-click?",
-                         "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held."),
+                         "Two-finger tap is a right-click and three-finger tap is a middle-click. With a mouse or trackpad attached, the real buttons work, including dragging with the right or middle button held. Settings → Controls → Mouse can give a mouse's middle and side buttons a shortcut instead, like Mission Control."),
                 FAQEntry("What do three-finger swipes do?",
                          "In Trackpad mode they work as on a Mac's own trackpad: swipe three fingers left or right to move between Spaces, up for Mission Control, and down for the front app's windows. On a PC the same swipes move between desktops, open Task View, and show the desktop. They also work on the trackpad half of an iPhone folded like a laptop. Turn them off in Settings → Controls → Three-Finger Swipes."),
     ]
