@@ -203,9 +203,13 @@ final class DeviceStore {
         save()
     }
 
+    /// The person flipped Fit Display / Virtual Display: from now on it's their choice, not the
+    /// platform's default (`SavedDevice.fitsDisplay`).
     func setUseVirtualDisplay(_ on: Bool, for id: UUID) {
-        guard let index = devices.firstIndex(where: { $0.id == id }), (devices[index].useVirtualDisplay ?? false) != on else { return }
+        guard let index = devices.firstIndex(where: { $0.id == id }),
+              devices[index].useVirtualDisplay != on || devices[index].fitDisplayChosen != true else { return }
         devices[index].useVirtualDisplay = on
+        devices[index].fitDisplayChosen = true
         devices[index].updatedAt = Date()
         save()
     }

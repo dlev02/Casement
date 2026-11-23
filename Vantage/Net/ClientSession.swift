@@ -302,16 +302,22 @@ final class ClientSession {
     /// scale fitting on a PC).
     var hostOffersDisplayFitting: Bool { capabilities?.canManageVirtualDisplay == true }
     /// Whether this session wants the host's display fitted to this view. Survives reconnects,
-    /// like `wantsMacAudio` and `wantsCurtain`; nil falls back to the saved device's choice.
+    /// like `wantsMacAudio` and `wantsCurtain`; nil falls back to the saved device, read for the
+    /// platform the host said it runs (from its challenge, before the first stream request), so
+    /// a PC added by hand and never connected before still opens fitted.
     private var fitDisplayOverride: Bool?
-    var wantsFitDisplay: Bool { fitDisplayOverride ?? (device?.useVirtualDisplay == true) }
+    var wantsFitDisplay: Bool {
+        fitDisplayOverride ?? device.map { $0.fitsDisplay(on: hostPlatform ?? $0.platform) } ?? false
+    }
 
-    /// Turns display fitting on or off for this session (and every reconnect). On a live session
-    /// whose host supports it, asks the host to fit to the current viewport or put its own display
-    /// back right away.
-    func setFitDisplay(_ enabled: Bool) {
-        let changed = wantsFitDisplay != enabled
-        fitDisplayOverride = enabled
+    /// Turns display fitting on or off for this session (and every reconnect); nil follows the
+    /// saved device's default for the host's platform. On a live session whose host supports it,
+    /// a change asks the host to fit to the current viewport or put its own display back right away.
+    func setFitDisplay(_ choice: Bool?) {
+        let before = wantsFitDisplay
+        fitDisplayOverride = choice
+        let enabled = wantsFitDisplay
+        let changed = before != enabled
         if !enabled { stopAwaitingFittedStream() }
         guard changed, state == .connected, hostOffersDisplayFitting else { return }
         sendStreamRequest(useVirtualDisplay: enabled)

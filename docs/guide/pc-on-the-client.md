@@ -36,7 +36,11 @@ Part of the project guide; [`CLAUDE.md`](../../CLAUDE.md) has the naming, layout
   answers `audioRequest` like a Mac, so the strip item, session menu and Mac menu bar show "PC
   Audio" (`label(for:)`; dimmed with `MacAudioToggle.unavailableReason` on a host without audio),
   and the Mac client's detail pane has Play PC Audio (`SavedDevice.playMacAudio`) and Fit Display
-  (`SavedDevice.useVirtualDisplay`). Fit Display is also toggleable live from the session menu and
+  (`SavedDevice.useVirtualDisplay`), on by default for a PC (2026-11-23: the PC's own 16:9 mode
+  showed letterboxed with a tiny taskbar on an iPad; Host 1.8+ matches mode and scale to the
+  device) until the person turns it off (`fitDisplayChosen`, set by Edit Computer, the session
+  menu, the Mac's Session menu and device pane; see Virtual display in
+  [connection.md](connection.md)). Fit Display is also toggleable live from the session menu and
   the Mac's Session menu (and edited in the Edit sheet as "Fit the PC's display to this screen"):
   turning it on sends `SelectDisplay.useVirtualDisplay = true` + `fitViewport`, and turning it off
   sends `selectDisplay(useVirtualDisplay: false)` (a PC restores mode and scale on that alone,

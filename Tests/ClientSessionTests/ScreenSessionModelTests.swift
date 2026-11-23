@@ -161,7 +161,7 @@ private final class MockScreenHost: @unchecked Sendable {
     func adoptHostNaturalScroll(_ natural: Bool, for id: UUID) { if device.naturalScrollChosen != true { device.naturalScroll = natural } }
     func setPlayMacAudio(_ on: Bool, for id: UUID) { device.playMacAudio = on }
     func setCurtain(_ on: Bool, for id: UUID) { device.curtain = on }
-    func setUseVirtualDisplay(_ on: Bool, for id: UUID) { device.useVirtualDisplay = on }
+    func setUseVirtualDisplay(_ on: Bool, for id: UUID) { device.useVirtualDisplay = on; device.fitDisplayChosen = true }
     func setQuality(_ preset: QualityPreset, for id: UUID) { device.quality = preset }
 }
 
@@ -348,7 +348,11 @@ struct ScreenSessionModelTests {
         do {
             let host = try await MockScreenHost(keepsFiles: true, canManageVirtualDisplay: true, platform: .windows)
             defer { host.stop() }
-            let store = FakeStore(device: SavedDevice(name: "Desk PC", host: "127.0.0.1", port: host.port, os: "Windows"))
+            // Turned off by the person (a PC's default is on, see `fitDisplayDefaultsOnForAPC`).
+            var pc = SavedDevice(name: "Desk PC", host: "127.0.0.1", port: host.port, os: "Windows")
+            pc.useVirtualDisplay = false
+            pc.fitDisplayChosen = true
+            let store = FakeStore(device: pc)
             let model = try makeModel(host: host, store: store)
             #expect(!model.isFitDisplayAvailable && !model.fitDisplayToggle.isAvailable, "disabled before connect")
             model.start(viewport: viewport)
