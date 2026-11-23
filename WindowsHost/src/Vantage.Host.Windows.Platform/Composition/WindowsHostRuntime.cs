@@ -121,6 +121,7 @@ public sealed class WindowsHostRuntime : IAsyncDisposable
             Port = options.Port,
             AllowLoopback = debugBuild,
             FixedPairingCode = debugBuild ? options.PairingCode : null,
+            RearmFixedPairingCodeAfter = debugBuild ? options.PairingCodeRearm : null,
             SendFileOnConnect = debugBuild ? options.SendFileOnConnect : null,
             CaptureFailsFor = debugBuild ? options.CaptureFailsFor : null,
         };
