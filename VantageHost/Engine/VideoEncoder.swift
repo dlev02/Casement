@@ -7,7 +7,7 @@ import os
 /// Hardware H.264/HEVC encoder tuned for low-latency screen streaming.
 ///
 /// Feeds `CVPixelBuffer`s from ScreenCaptureKit straight into a `VTCompressionSession` configured
-/// with low-latency rate control, no frame reordering, and event-driven keyframes. Emits AVCC/HVCC
+/// in real time with no frame reordering, and event-driven keyframes. Emits AVCC/HVCC
 /// length-prefixed access units plus the parameter sets needed to build a client format description.
 nonisolated final class VideoEncoder: @unchecked Sendable {
     struct Output: Sendable {
@@ -149,9 +149,10 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
 
     private func createSession() throws {
         let codecType: CMVideoCodecType = config.codec == .hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264
-        let encoderSpec: [CFString: Any] = [
-            kVTVideoEncoderSpecification_EnableLowLatencyRateControl: kCFBooleanTrue!,
-        ]
+        // No `EnableLowLatencyRateControl`: on an M3 Max (macOS 27) it made each frame take 14 ms
+        // at 2420 × 1668 and 21 ms at 4K against 11 and 9 ms without it, capping a stream at 45 fps
+        // at 4K; `RealTime`, no reordering and `DataRateLimits` keep frames small and prompt.
+        let encoderSpec: [CFString: Any] = [:]
         var session: VTCompressionSession?
         let status = VTCompressionSessionCreate(
             allocator: kCFAllocatorDefault,
@@ -175,8 +176,10 @@ nonisolated final class VideoEncoder: @unchecked Sendable {
         set(kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse!)
         set(kVTCompressionPropertyKey_MaximizePowerEfficiency, kCFBooleanFalse!)
         set(kVTCompressionPropertyKey_ExpectedFrameRate, NSNumber(value: config.fps))
-        // Rely on event-driven IDRs, never periodic ones (avoids the 2.4K keyframe spike).
-        set(kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: Int.max))
+        // Rely on event-driven IDRs, never periodic ones (avoids the 2.4K keyframe spike). The
+        // encoder refuses `Int.max` and falls back to a keyframe a second (1.3 MB each at
+        // 2420 × 1668); `Int32.max` holds.
+        set(kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: Int32.max))
         set(kVTCompressionPropertyKey_AverageBitRate, NSNumber(value: config.bitrateKbps * 1000))
         set(kVTCompressionPropertyKey_DataRateLimits, [NSNumber(value: config.bitrateKbps * 1000 / 8 * 2), NSNumber(value: 1)] as CFArray)
         if let maxQP = config.maxQP {
